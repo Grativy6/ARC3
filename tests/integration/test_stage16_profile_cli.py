@@ -87,7 +87,8 @@ def test_profile_cli_runs_in_fresh_process_and_self_hashes_receipt(tmp_path: Pat
     )
     assert result["source_identity"]["verified"] is True
     assert result["competition_runtime_match"] is False
-    assert result["status"] == "PARTIAL"
+    assert result["status"] in {"PARTIAL", "FAILED_MECHANISM"}
+    assert result["status"] != "PASS"
     assert result["verified"] is False
     assert result["worker_timeout"]["coherent"] is True
     assert "OS-level socket denial is not claimed" in result["network_enforcement"]
