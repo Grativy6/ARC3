@@ -4,6 +4,10 @@ from __future__ import annotations
 
 import hashlib
 import importlib.metadata
+import os
+import platform
+import re
+import sys
 import tomllib
 from collections.abc import Mapping
 from pathlib import Path
@@ -12,6 +16,10 @@ from typing import Any, cast
 from arc3.integrity.hashes import canonical_json_bytes, sha256_bytes
 from arc3.integrity.models import DependencyRecord
 from arc3.types import JSONValue
+
+_SIMPLE_PLATFORM_MARKER = re.compile(
+    r"^\s*(sys_platform|os_name|platform_system)\s*(==|!=)\s*(['\"])([^'\"]+)\3\s*$"
+)
 
 
 def _source_kind(value: object) -> str:
@@ -22,6 +30,64 @@ def _source_kind(value: object) -> str:
         if candidate in source:
             return candidate
     return "unknown"
+
+
+def _simple_platform_marker_is_false(marker: str) -> bool | None:
+    """Evaluate one conservative, platform-only PEP 508 marker.
+
+    Unknown or compound marker syntax returns ``None`` so callers cannot use an
+    incomplete parser to excuse a dependency that may apply to this runtime.
+    """
+
+    match = _SIMPLE_PLATFORM_MARKER.fullmatch(marker)
+    if match is None:
+        return None
+    variable, operator, _, expected = match.groups()
+    actual = {
+        "os_name": os.name,
+        "platform_system": platform.system(),
+        "sys_platform": sys.platform,
+    }[variable]
+    applies = actual == expected if operator == "==" else actual != expected
+    return not applies
+
+
+def _platform_excluded_names(document: Mapping[str, Any]) -> frozenset[str]:
+    """Return locked names referenced only by provably false platform edges."""
+
+    raw_packages = document.get("package")
+    if not isinstance(raw_packages, list):
+        return frozenset()
+    incoming: dict[str, list[str | None]] = {}
+    for raw_package in raw_packages:
+        if not isinstance(raw_package, Mapping):
+            continue
+        dependency_groups: list[object] = [raw_package.get("dependencies", [])]
+        for group_name in ("optional-dependencies", "dev-dependencies"):
+            raw_groups = raw_package.get(group_name)
+            if isinstance(raw_groups, Mapping):
+                dependency_groups.extend(raw_groups.values())
+        for raw_group in dependency_groups:
+            if not isinstance(raw_group, list):
+                continue
+            for raw_dependency in raw_group:
+                if not isinstance(raw_dependency, Mapping):
+                    continue
+                name = raw_dependency.get("name")
+                marker = raw_dependency.get("marker")
+                if isinstance(name, str):
+                    incoming.setdefault(name, []).append(
+                        marker if isinstance(marker, str) else None
+                    )
+    return frozenset(
+        name
+        for name, markers in incoming.items()
+        if markers
+        and all(
+            marker is not None and _simple_platform_marker_is_false(marker) is True
+            for marker in markers
+        )
+    )
 
 
 def _compact_license(value: str) -> tuple[str, str]:
@@ -89,6 +155,7 @@ def inventory_locked_dependencies(
     if not isinstance(raw_packages, list):
         raise ValueError("uv lock has no package array")
 
+    platform_excluded = _platform_excluded_names(document)
     records: list[DependencyRecord] = []
     for raw_package in raw_packages:
         if not isinstance(raw_package, Mapping):
@@ -113,6 +180,8 @@ def inventory_locked_dependencies(
             continue
         if include_installed_metadata:
             installed, status, evidence, metadata_hash = _installed_metadata(name)
+            if installed is None and name in platform_excluded:
+                status = "PLATFORM_EXCLUDED"
         else:
             installed, status, evidence, metadata_hash = None, "NOT_QUERIED", (), None
         records.append(

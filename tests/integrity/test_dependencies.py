@@ -39,6 +39,63 @@ source = { registry = "https://example.invalid/simple" }
 
 
 @pytest.mark.competition
+def test_provably_inapplicable_platform_dependency_is_not_reported_missing(
+    tmp_path: Path,
+) -> None:
+    lock = tmp_path / "uv.lock"
+    lock.write_text(
+        """version = 1
+
+[[package]]
+name = "arc3"
+version = "0.1.0"
+source = { editable = "." }
+dependencies = [
+    { name = "platform-only-fixture", marker = "sys_platform == 'not-a-real-platform'" },
+]
+
+[[package]]
+name = "platform-only-fixture"
+version = "1.0.0"
+source = { registry = "https://example.invalid/simple" }
+""",
+        encoding="utf-8",
+    )
+    records = inventory_locked_dependencies(lock)
+    fixture = next(record for record in records if record.name == "platform-only-fixture")
+    assert fixture.installed_version is None
+    assert fixture.license_status == "PLATFORM_EXCLUDED"
+
+
+@pytest.mark.competition
+def test_unknown_or_compound_platform_marker_cannot_excuse_missing_metadata(
+    tmp_path: Path,
+) -> None:
+    lock = tmp_path / "uv.lock"
+    lock.write_text(
+        """version = 1
+
+[[package]]
+name = "arc3"
+version = "0.1.0"
+source = { editable = "." }
+dependencies = [
+    { name = "compound-fixture", marker = "sys_platform == 'never' or python_version > '0'" },
+]
+
+[[package]]
+name = "compound-fixture"
+version = "1.0.0"
+source = { registry = "https://example.invalid/simple" }
+""",
+        encoding="utf-8",
+    )
+    records = inventory_locked_dependencies(lock)
+    fixture = next(record for record in records if record.name == "compound-fixture")
+    assert fixture.license_status == "MISSING_DISTRIBUTION"
+
+
+@pytest.mark.competition
 def test_installed_version_mismatch_is_explicit_supply_failure(
     integrity_repo: tuple[Path, str, str],
 ) -> None:
