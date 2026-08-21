@@ -217,3 +217,17 @@ This file records material decisions made during the autonomous build. It is app
 - **Consequences:** Controller code may consume only `LabSession` observations; evaluator ground truth is limited to scoring, diagnostics, and test assertions; synthetic results remain separately labeled.
 - **Reopening condition:** A leakage test fails, a seeded episode is unsolvable, or measured public transition structure demonstrates a missing generic laboratory axis.
 - **Supersedes / superseded by:** none.
+
+## D-20260821-015 — Spend probes on model disagreement under an explicit budget
+
+- **Status:** ADOPTED
+- **Stage:** 07
+- **Date:** 2026-08-21
+- **Commit:** pending
+- **Decision:** Rank legal probes using explicit alternative-discrimination, progress, reversibility, novelty, failure-risk, repetition, and budget-pressure terms; scope ineffective-action suppression to structural conditions; enable undo only after a receipt establishes restoration semantics.
+- **Alternatives:** Fixed action cycling; novelty-only probing; assume conventional directional/undo names are authoritative; permanently blacklist a no-op action across changed states.
+- **Evidence:** `docs/reports/007-action-semantics-and-exploration.md`; 14 focused tests; the 101-case comparison in `docs/evidence/007-exploration-acceptance.json`.
+- **Why:** Environment actions are costly, while internal comparison of active alternatives is cheap; evidence-gated semantics and condition-specific suppression reduce avoidable actions without turning generic priors into rules.
+- **Consequences:** The controller must preserve predicted disagreements and budget state before probe selection; near budget it falls back to progress/risk, and game over mandates reset.
+- **Reopening condition:** Integrated held-out or public results fail to improve action efficiency, or calibrated risk/progress evidence supports revised utility terms.
+- **Supersedes / superseded by:** none.

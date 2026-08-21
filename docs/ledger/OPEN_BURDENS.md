@@ -389,3 +389,17 @@ This file preserves unresolved technical, evidential, legal, and external burden
 - **Next discriminating action:** Keep generator ground truth away from production code, evaluate mechanisms on frozen held-out combinations/families in Stage 14, and separately measure the untouched public partition in Stage 15.
 - **Resolution condition:** Never fully closed by synthetic results; narrow only with independent public/official receipts while preserving surface labels.
 - **Resolution receipt:** none.
+
+## B-20260821-021 — Exploration improvement is isolated from game completion
+
+- **Status:** OPEN
+- **Stage:** 07, 12, 14, 15
+- **Opened:** 2026-08-21
+- **Last updated:** 2026-08-21
+- **Owner:** Codex
+- **Burden:** Information-directed probes reduced median actions in a held-out typed semantic-identification fixture, but the fixture isolates one discriminating action and does not measure complete procedural or official games.
+- **Why it matters:** A probe policy can identify a local mapping efficiently yet spend too many actions, misclassify effects, or fail to translate knowledge into a successful plan.
+- **Current evidence:** `docs/evidence/007-exploration-acceptance.json` records median 1 versus random 4 and cycle 3 over 101 synthetic cases; all claims are limited to that surface.
+- **Next discriminating action:** Integrate exploration with retrodictive models, goals, and planning in Stage 12, then run equal-budget full-game ablations in Stage 14 and untouched public evaluation in Stage 15.
+- **Resolution condition:** Full-game evidence shows action/completion benefit, or the mechanism is retained only as an isolated capability with an honest negative integrated result.
+- **Resolution receipt:** none.

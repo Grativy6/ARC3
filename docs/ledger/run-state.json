@@ -5,8 +5,8 @@
   "repository": "Grativy6/ARC3",
   "owner": "Christopher D. Pang",
   "status": "IN_PROGRESS",
-  "current_stage": "07",
-  "current_task": "stage-07-action-semantics-and-efficient-exploration",
+  "current_stage": "08",
+  "current_task": "stage-08-retrodictive-executable-world-model",
   "implementation_branch": "build/000-arc3-end-to-end",
   "pull_request": {
     "number": 3,
@@ -24,7 +24,8 @@
     "03",
     "04",
     "05",
-    "06"
+    "06",
+    "07"
   ],
   "stage_status": {
     "00": "PASS",
@@ -34,8 +35,8 @@
     "04": "PASS",
     "05": "PASS",
     "06": "PASS",
-    "07": "IN_PROGRESS",
-    "08": "PENDING",
+    "07": "PASS",
+    "08": "IN_PROGRESS",
     "09": "PENDING",
     "10": "PENDING",
     "11": "PENDING",
@@ -201,6 +202,28 @@
         "false_lead_contradiction": "PASS",
         "random_baselines": "PASS:3-partitions"
       }
+    },
+    "stage_07": {
+      "status": "PASS",
+      "label": "synthetic",
+      "mechanism_status": "MECHANISM_OBSERVED",
+      "report": "docs/reports/007-action-semantics-and-exploration.md",
+      "report_sha256": "sha256:db10db37e99891ecdc0e5ba984528525f6181dd873cb8fc048068483e292487e",
+      "acceptance_evidence": "docs/evidence/007-exploration-acceptance.json",
+      "acceptance_evidence_sha256": "sha256:83a637c1ea1032cbd87a440c73a08ca8f601918b000dd8880848588be4c1e0c4",
+      "checkpoint_commit": "pending",
+      "verification": {
+        "ruff_lint": "PASS",
+        "ruff_format": "PASS",
+        "mypy_strict": "PASS:8-source-files",
+        "pytest": "PASS:14",
+        "effect_classes": "PASS:7",
+        "action6_coordinate_sources": "PASS:6",
+        "probe_discrimination": "PASS",
+        "repetition_undo_reset_budget": "PASS",
+        "public_game_id_scan": "PASS:0-matches",
+        "held_out_comparison": "PASS:median-1-vs-4-random-vs-3-cycle"
+      }
     }
   },
   "blocked_items": [
@@ -271,6 +294,12 @@
       "label": "synthetic",
       "result": "15 rule families and 630/630 oracle-solvable leakage-checked episodes; random completion 33.33% development, 30.00% held-out combinations, 6.67% held-out families",
       "report": "docs/reports/006-synthetic-environment-laboratory.md"
+    },
+    {
+      "stage": "07",
+      "label": "synthetic",
+      "result": "MECHANISM_OBSERVED on 101 semantic-identification cases: median 1 action versus random 4 and cycle 3",
+      "report": "docs/reports/007-action-semantics-and-exploration.md"
     }
   ],
   "artifacts": {
@@ -333,9 +362,17 @@
     "stage_06_lab_acceptance": {
       "path": "docs/evidence/006-lab-acceptance.json",
       "sha256": "21f239e91f471e9e8d3dbebb01c7c69e3dbc6dc2df03e9fa81cc28ff9e77051c"
+    },
+    "stage_07_report": {
+      "path": "docs/reports/007-action-semantics-and-exploration.md",
+      "sha256": "db10db37e99891ecdc0e5ba984528525f6181dd873cb8fc048068483e292487e"
+    },
+    "stage_07_exploration_acceptance": {
+      "path": "docs/evidence/007-exploration-acceptance.json",
+      "sha256": "83a637c1ea1032cbd87a440c73a08ca8f601918b000dd8880848588be4c1e0c4"
     }
   },
-  "next_action": "Complete Stage 07 action-effect inference, information-efficient coordinate probes, repeated-action suppression, and held-out baseline comparison.",
+  "next_action": "Complete Stage 08 executable rule primitives, retrodiction gate, deterministic simulator, prediction receipts, mismatch reopening, and held-out mechanism comparison.",
   "notes": [
     "Initial READY state was validated against the repository at b1948e9d02ad7b1321cbc57f3538047813e01e98 before this run began.",
     "No prior completed stages, checkpoint commit, or evidence artifacts were recorded; bootstrap PR 1 and its merge commit were independently verified.",

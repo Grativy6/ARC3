@@ -1,0 +1,63 @@
+{
+  "schema": "arc3.stage-evidence.v0.1",
+  "stage": "07",
+  "status": "PASS",
+  "label": "synthetic",
+  "repository": "Grativy6/ARC3",
+  "implementation_branch": "build/000-arc3-end-to-end",
+  "measured_repository_commit": "54b09aa775973ca270f54ee42ff2d1c34ceb9f00",
+  "measurement_note": "Stage 07 files were uncommitted and are individually verified by the stage checkpoint diff.",
+  "runtime": {
+    "operating_system": "Windows 10.0.19045",
+    "python": "3.12.14",
+    "uv": "0.12.5"
+  },
+  "verification": {
+    "ruff_check": "PASS",
+    "ruff_format_check": "PASS",
+    "mypy_strict": "PASS:8-source-files",
+    "focused_pytest": "PASS:14",
+    "focused_pytest_seconds": 1.32,
+    "conditioned_action_effect_statistics": "PASS",
+    "weak_prior_overridden_by_one_observation": "PASS",
+    "effect_classes": "PASS:noop+movement+selection+interaction+undo+terminal+metadata-only",
+    "action6_coordinate_sources": "PASS:6",
+    "disagreement_probe_preference": "PASS",
+    "condition_aware_repetition_suppression": "PASS",
+    "supported_available_undo_gate": "PASS",
+    "mandatory_game_over_reset": "PASS",
+    "budget_fallback": "PASS",
+    "public_game_id_scan": "PASS:0-matches"
+  },
+  "comparison": {
+    "schema": "arc3.exploration.comparison.v0.1",
+    "label": "synthetic",
+    "status": "MECHANISM_OBSERVED",
+    "started_at": "2026-08-21T06:06:47.059847Z",
+    "completed_at": "2026-08-21T06:06:47.077856Z",
+    "case_seed": 20260821,
+    "policy_seed": 7107,
+    "episodes": 101,
+    "exploration_median_actions": 1.0,
+    "random_median_actions": 4.0,
+    "cycle_median_actions": 3.0,
+    "median_improvement_over_random": 3.0,
+    "median_improvement_over_cycle": 2.0,
+    "exploration_total_actions": 101,
+    "random_total_actions": 606,
+    "cycle_total_actions": 298,
+    "action_counts_sha256": "sha256:b393ca44bae09cb39c128bddbd6bfa8b501712672411874dc0e76160251d4f40"
+  },
+  "commands": [
+    "python -m uv run ruff check src/arc3/exploration scripts/measure_exploration.py tests/unit/test_exploration_effects.py tests/unit/test_exploration_coordinates.py tests/unit/test_exploration_policy.py tests/property/test_exploration_properties.py tests/integration/test_exploration_benchmark.py",
+    "python -m uv run ruff format --check src/arc3/exploration scripts/measure_exploration.py tests/unit/test_exploration_effects.py tests/unit/test_exploration_coordinates.py tests/unit/test_exploration_policy.py tests/property/test_exploration_properties.py tests/integration/test_exploration_benchmark.py",
+    "python -m uv run mypy src/arc3/exploration scripts/measure_exploration.py",
+    "python -m uv run pytest -q --no-cov --basetemp %TEMP%\\arc3-stage07-final-pytest tests/unit/test_exploration_effects.py tests/unit/test_exploration_coordinates.py tests/unit/test_exploration_policy.py tests/property/test_exploration_properties.py tests/integration/test_exploration_benchmark.py",
+    "python -m uv run python scripts/measure_exploration.py --case-seed 20260821 --policy-seed 7107 --episodes 101"
+  ],
+  "claim_limits": [
+    "The comparison isolates semantic-alternative discrimination in typed held-out synthetic fixtures; it does not measure game completion.",
+    "Movement detection is a generic geometric heuristic, not an accepted object or causal identity.",
+    "The result does not establish public-game performance or hidden generalization."
+  ]
+}
