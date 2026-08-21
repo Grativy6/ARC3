@@ -14,8 +14,8 @@
     "draft": true
   },
   "started_at": "2026-08-21T04:46:19Z",
-  "last_checkpoint_at": "2026-08-21T05:18:59Z",
-  "last_checkpoint_commit": "311110299444f71d7e0f0ff0e3b1f8d9c174a01b",
+  "last_checkpoint_at": "2026-08-21T05:23:18Z",
+  "last_checkpoint_commit": "420ef0c3ea7385e79cd1ff8051ec31db688ab92b",
   "resume_generation": 0,
   "completed_stages": [
     "00",
@@ -67,7 +67,7 @@
       "status": "PASS",
       "label": "synthetic",
       "report": "docs/reports/001-repository-foundation.md",
-      "report_sha256": "sha256:ab2d0b067085ddbf6a243c4922f2847c3a2e73e375fd069b71b326050d01c113",
+      "report_sha256": "sha256:c3ca9db0307807afd43dd626c9b229e7daf2990528dfebaafe75433a91646cca",
       "uv_lock_sha256": "sha256:c2c8fac365e0e93dd7743c8797f0d2b00a64183b4f7063546c17cabd3fd08a6a",
       "pyproject_sha256": "sha256:7d3d033e50dfcf156f9788dc8135d96ef593aa6e364c8de508a326713a75e821",
       "compatibility_agent_sha256": "sha256:b6f3653e5cca910a69690c9412b4a8d8ec86977c387b1259192d5d62f779d013",
@@ -81,7 +81,7 @@
         "doctor": "PASS",
         "powershell_bootstrap": "PASS",
         "remote_ci_initial": "FAILED_INFRASTRUCTURE:windows-crlf-formatting:runs-32450125300,32450125762",
-        "remote_ci_correction": "PENDING",
+        "remote_ci_correction": "PASS:ubuntu+windows:runs-32450257835,32450260123",
         "git_diff_check": "PASS"
       }
     }
@@ -131,7 +131,7 @@
     },
     "stage_01_report": {
       "path": "docs/reports/001-repository-foundation.md",
-      "sha256": "ab2d0b067085ddbf6a243c4922f2847c3a2e73e375fd069b71b326050d01c113"
+      "sha256": "c3ca9db0307807afd43dd626c9b229e7daf2990528dfebaafe75433a91646cca"
     },
     "uv_lock": {
       "path": "uv.lock",

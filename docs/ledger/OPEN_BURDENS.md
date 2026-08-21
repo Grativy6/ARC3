@@ -252,14 +252,14 @@ This file preserves unresolved technical, evidential, legal, and external burden
 
 ## B-20260821-015 — Remote CI and true clean-clone execution are not yet receipts
 
-- **Status:** OPEN
+- **Status:** NARROWED
 - **Stage:** 01, 18
 - **Opened:** 2026-08-21
 - **Last updated:** 2026-08-21
 - **Owner:** Codex
 - **Burden:** CI configuration and local bootstrap contracts can pass while a pushed Linux/Windows job or an isolated clone still fails.
 - **Why it matters:** Repository-local success is not evidence of cross-platform or clean-clone reproducibility.
-- **Current evidence:** Local Windows `scripts/bootstrap.ps1 -Check` passed. Initial Actions runs `32450125300` and `32450125762` passed on Ubuntu but failed Windows formatting because checkout converted LF to CRLF. `.gitattributes` was added to make source line endings invariant; the correcting run is pending. No true clean-clone receipt is claimed yet.
+- **Current evidence:** Local Windows `scripts/bootstrap.ps1 -Check` passed. Initial Actions runs `32450125300` and `32450125762` passed on Ubuntu but failed Windows formatting because checkout converted LF to CRLF. `.gitattributes` made source line endings invariant; correcting runs `32450257835` and `32450260123` passed both Ubuntu and Windows jobs.
 - **Next discriminating action:** Observe the pushed Stage 01 Actions run, then perform the Stage 18 fresh-clone locked bootstrap and artifact verification.
 - **Resolution condition:** Linux and Windows CI plus the declared Stage 18 clean-clone checks pass, or failures are preserved with exact outputs.
-- **Resolution receipt:** none.
+- **Resolution receipt:** Remote CI portion resolved by Actions runs `32450257835` and `32450260123`; true clean-clone verification remains open for Stage 18.

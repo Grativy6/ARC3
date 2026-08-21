@@ -86,8 +86,8 @@ The first pushed CI runs `32450125300` and `32450125762` passed on Ubuntu and fa
 Windows at `ruff format --check`: Git's Windows checkout converted tracked LF files to CRLF,
 and Ruff correctly reported 16 files as requiring normalization. This was an infrastructure
 configuration failure, not relabeled as a product pass. `.gitattributes` now fixes text files to
-LF across checkouts; the correcting CI result is recorded separately in the run ledger after it
-completes.
+LF across checkouts. Correcting runs `32450257835` and `32450260123` then passed all Ubuntu
+and Windows jobs (two push/PR trigger surfaces).
 
 ## Test coverage of the contract
 
