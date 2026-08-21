@@ -134,6 +134,11 @@ _SECRET_RULES: tuple[tuple[str, re.Pattern[str], str | None], ...] = (
         "secret",
     ),
     (
+        "kaggle-token",
+        re.compile(r"\b(?P<secret>KGAT_[A-Za-z0-9_-]{20,255})\b", re.ASCII),
+        "secret",
+    ),
+    (
         "hosted-model-token",
         re.compile(
             r"\b(?P<secret>sk-(?:(?:proj|ant|svcacct)-)?[A-Za-z0-9_-]{20,})\b",

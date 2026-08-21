@@ -24,6 +24,20 @@ def test_likely_secret_is_blocking_and_redacted(tmp_path: Path) -> None:
 
 
 @pytest.mark.competition
+def test_kaggle_token_is_blocking_and_redacted(tmp_path: Path) -> None:
+    token = "KGAT_" + ("X7" * 24)
+    candidate = tmp_path / "credential.txt"
+    candidate.write_text(token + "\n", encoding="utf-8")
+
+    findings = scan_secret_files(root=tmp_path, files=(candidate,))
+
+    assert len(findings) == 1
+    assert findings[0].rule_id == "kaggle-token"
+    assert findings[0].category is FindingCategory.LIKELY_SECRET
+    assert token not in str(findings)
+
+
+@pytest.mark.competition
 @pytest.mark.parametrize(
     "placeholder",
     [

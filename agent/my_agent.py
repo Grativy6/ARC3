@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import os
 import tempfile
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from enum import StrEnum
 from importlib import import_module
 from pathlib import Path
@@ -103,14 +103,56 @@ def _parse_root_seed(raw_seed: object) -> int:
     return seed
 
 
-def _translate_action(action: ActionRequest) -> object:
-    translated = _enum_member(GameAction, action.name.value)
+@dataclass(frozen=True, slots=True)
+class _FrameworkActionRequest:
+    """Instance-local request data paired with the pinned action vocabulary.
+
+    ``arcengine.GameAction`` is an ``Enum`` whose members are process-wide
+    singletons. Its ``set_data`` method mutates the member, so returning a
+    configured ``ACTION6`` from one Swarm thread can be overwritten by another
+    thread before the pinned Agent serializes the request. Keep the payload in
+    this immutable per-decision envelope and submit it explicitly instead.
+    """
+
+    member: object
+    payload_items: tuple[tuple[str, object], ...]
+
+    @property
+    def name(self) -> str:
+        name = getattr(self.member, "name", None)
+        if not isinstance(name, str):
+            raise RuntimeError("official action member has no string name")
+        return name
+
+    def payload(self) -> dict[str, object]:
+        """Return a fresh request payload for the framework boundary."""
+
+        return dict(self.payload_items)
+
+
+def _instance_local_payload(member: object, action: ActionRequest) -> dict[str, object]:
+    values: dict[str, object] = {}
     if action.coordinate is not None:
-        setter = getattr(translated, "set_data", None)
-        if not callable(setter):
-            raise RuntimeError("official ACTION6 member cannot carry coordinate data")
-        setter({"x": action.coordinate.x, "y": action.coordinate.y})
-    return translated
+        values.update({"x": action.coordinate.x, "y": action.coordinate.y})
+    action_type = getattr(member, "action_type", None)
+    if action_type is None:
+        return values
+    if not callable(action_type):
+        raise RuntimeError("official action member has a non-callable action type")
+    action_data = action_type(**values)
+    dumper = getattr(action_data, "model_dump", None)
+    if not callable(dumper):
+        raise RuntimeError("official action data cannot be serialized")
+    serialized = dumper()
+    if not isinstance(serialized, dict) or not all(isinstance(key, str) for key in serialized):
+        raise RuntimeError("official action data serialization has the wrong shape")
+    return serialized
+
+
+def _translate_action(action: ActionRequest) -> _FrameworkActionRequest:
+    member = _enum_member(GameAction, action.name.value)
+    payload = _instance_local_payload(member, action)
+    return _FrameworkActionRequest(member, tuple(sorted(payload.items())))
 
 
 class MyAgent(_AgentBase):  # type: ignore[misc,valid-type]
@@ -186,6 +228,21 @@ class MyAgent(_AgentBase):  # type: ignore[misc,valid-type]
             self._controller.observe(observation)
         decision = self._controller.choose_action()
         return _translate_action(decision.action)
+
+    def do_action_request(self, action: object) -> object:
+        """Submit immutable per-decision data at the pinned request boundary."""
+
+        if not isinstance(action, _FrameworkActionRequest):
+            raise RuntimeError("official wrapper received an unsealed action request")
+        environment = getattr(self, "arc_env", None)
+        step = getattr(environment, "step", None)
+        if not callable(step):
+            raise RuntimeError("official wrapper has no callable environment step")
+        raw = step(action.member, data=action.payload(), reasoning=None)
+        converter = getattr(self, "_convert_raw_frame_data", None)
+        if not callable(converter):
+            raise RuntimeError("official wrapper has no frame conversion boundary")
+        return converter(raw)
 
 
 __all__ = ["MyAgent"]

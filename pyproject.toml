@@ -1,5 +1,5 @@
 [build-system]
-requires = ["hatchling>=1.27,<2"]
+requires = ["hatchling==1.32.0"]
 build-backend = "hatchling.build"
 
 [project]
@@ -27,9 +27,11 @@ arc3 = "arc3.cli:main"
 [dependency-groups]
 dev = [
   "coverage[toml]>=7.6,<8",
+  "hatchling==1.32.0",
   "hypothesis>=6.120,<7",
   "mypy>=1.14,<2",
   "pre-commit>=4,<5",
+  "pyarrow==21.0.0",
   "pytest>=8.3,<9",
   "pytest-cov>=6,<7",
   "ruff>=0.11,<1",
@@ -41,7 +43,7 @@ packages = ["src/arc3"]
 
 [tool.uv]
 package = true
-required-version = ">=0.12.5"
+required-version = "==0.12.5"
 
 [tool.ruff]
 target-version = "py312"
