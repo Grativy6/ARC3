@@ -371,3 +371,31 @@ This file records material decisions made during the autonomous build. It is app
 - **Consequences:** The candidate bounds controller concurrency to one, preserves independent per-decision action data, contains no hosted or game-specific runtime dependency, and produces a deterministic `PACKAGING_PASS`. The full 110-game private workload, platform wheel inventory, private gateway, and scorer remain unmeasured; packaging success does not change the negative Stage 15 public result.
 - **Reopening condition:** An exact platform run shows that the sequential substitution breaks the pinned scorecard/gateway contract, a measured bounded concurrency greater than one improves total runtime within RAM and wall limits, or a newer officially pinned framework provides a verified native scheduling/action boundary.
 - **Supersedes / superseded by:** none.
+
+## D-20260821-026 — Isolate release-verification transients from sealed evidence
+
+- **Status:** ADOPTED
+- **Stage:** 18
+- **Date:** 2026-08-21
+- **Commit:** `70ed0f34507870b8f917f89c2c9bcf670b8bd429`
+- **Decision:** Require the clean-clone release verifier to place writable homes, caches, coverage, Hypothesis state, pytest basetemp, and other transient state under a fresh short out-of-tree root while retaining logs and claimed evidence under the declared in-repository output root. Pass the exact uv executable into sanitized nested processes rather than depending on ambient discovery.
+- **Alternatives:** Keep every temporary file below the evidence root; relax failing tests; shorten test names; rely on the caller's PATH or user profile; omit the failed run.
+- **Evidence:** The first run at `468d102ac609e99d85d333ffc642ae2a87463672` ended 417 passed / five failed from 261- and 263-character Windows paths, inherited `artifacts/**` ignore scope, and an ambient-uv assumption. The repaired run at `90ecf7267d5bb23d751d6f7ce3e8aa75f2f1a130` passed 423 tests and 13 replay/tamper tests; both runs are summarized in `docs/evidence/018-release-candidate-initial-failure.json` and `docs/evidence/018-release-candidate-acceptance.json`.
+- **Why:** A release check should exercise repository behavior from a clean clone without allowing its own evidence destination or caller environment to change test semantics.
+- **Consequences:** The sealed evidence and transient trees are distinct, reproduction must name both paths, and transient cache bytes are intentionally excluded from the release artifact-set claim.
+- **Reopening condition:** A supported platform cannot provide a short external transient path, the separation hides evidence needed to reproduce a claimed result, or a cleaner hermetic mechanism preserves the same failure visibility.
+- **Supersedes / superseded by:** none.
+
+## D-20260821-027 — Preserve partial public results and require full history for frozen ancestry
+
+- **Status:** ADOPTED
+- **Stage:** 18
+- **Date:** 2026-08-21
+- **Commits:** `90ecf7267d5bb23d751d6f7ce3e8aa75f2f1a130`, `67e4b0ed4be8dbe4e3ea5a0dbc7c20ef9b934c4e`
+- **Decision:** Verify a structurally complete `PARTIAL` public-evaluation artifact set even when the policy command returns failure, while retaining `FAILED_MECHANISM` as the required check and overall stage result. Require CI to fetch full Git history so frozen benchmark ancestry is proven rather than inferred or weakened.
+- **Alternatives:** Skip artifact verification after policy failure; treat verified artifacts as a policy pass; accept shallow-history uncertainty; auto-fetch history inside the offline verifier; delete or overwrite the negative run.
+- **Evidence:** Stage 18 FULL timed out in all six `local-public` smoke runs and completed zero levels, while the resulting manifest, traces, results, and hashes independently verified. Initial shallow CI correctly rejected the absent ancestry; push run `32485636282` and PR run `32485640575` passed Ubuntu and Windows after full-history checkout. See `docs/reports/018-release-candidate-verification.md` and `docs/evidence/018-release-candidate-acceptance.json`.
+- **Why:** Failure evidence must remain auditable, and a frozen-result comparison is meaningful only when the measured commit's ancestry is available and checked.
+- **Consequences:** Artifact integrity and policy effectiveness remain separate claims. A partial public result can be reproducibly sealed without becoming PASS, and CI pays the explicit full-history checkout cost.
+- **Reopening condition:** GitHub supplies a trustworthy minimal ancestry proof that retains the exact assertion, or a replacement artifact format verifies negative/partial runs with stronger provenance at lower cost.
+- **Supersedes / superseded by:** none.

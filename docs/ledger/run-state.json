@@ -5,8 +5,8 @@
   "repository": "Grativy6/ARC3",
   "owner": "Christopher D. Pang",
   "status": "IN_PROGRESS",
-  "current_stage": "18",
-  "current_task": "stage-18-clean-clone-release-candidate-verification",
+  "current_stage": "19",
+  "current_task": "stage-19-documentation-licensing-and-handoff",
   "implementation_branch": "build/000-arc3-end-to-end",
   "pull_request": {
     "number": 3,
@@ -14,8 +14,8 @@
     "draft": true
   },
   "started_at": "2026-08-21T04:46:19Z",
-  "last_checkpoint_at": "2026-08-21T12:26:56Z",
-  "last_checkpoint_commit": "e5f291912726e6139d1dda682707eada657cb5ce",
+  "last_checkpoint_at": "2026-08-21T13:35:46Z",
+  "last_checkpoint_commit": "67e4b0ed4be8dbe4e3ea5a0dbc7c20ef9b934c4e",
   "resume_generation": 0,
   "completed_stages": [
     "00",
@@ -35,7 +35,8 @@
     "14",
     "15",
     "16",
-    "17"
+    "17",
+    "18"
   ],
   "stage_status": {
     "00": "PASS",
@@ -56,8 +57,8 @@
     "15": "PASS",
     "16": "FAILED_MECHANISM",
     "17": "PASS",
-    "18": "IN_PROGRESS",
-    "19": "PENDING",
+    "18": "FAILED_MECHANISM",
+    "19": "IN_PROGRESS",
     "20": "PENDING"
   },
   "evidence": {
@@ -470,6 +471,44 @@
         "cross_target_install": "PASS:31-distributions",
         "official_submission": "NOT_PERFORMED"
       }
+    },
+    "stage_18": {
+      "status": "FAILED_MECHANISM",
+      "labels": [
+        "synthetic",
+        "local-public"
+      ],
+      "release_infrastructure_status": "PASS",
+      "official_smoke_status": "PARTIAL",
+      "claim": "NO_GENERALIZATION_CLAIM",
+      "report": "docs/reports/018-release-candidate-verification.md",
+      "report_sha256": "sha256:68e061ec22ab52b2f04c8baa58f37e4e7b2eb59da8f4878506539b14ec7ee96c",
+      "acceptance_evidence": "docs/evidence/018-release-candidate-acceptance.json",
+      "acceptance_evidence_sha256": "sha256:92d37027c50889a979b1c57487ed490f52e4c7d742c14fe35b63f06af0a0966c",
+      "initial_failure_evidence": "docs/evidence/018-release-candidate-initial-failure.json",
+      "initial_failure_evidence_sha256": "sha256:f494f48c7711260785362ffd86e0e3d5d62d093cfdbec36d6f1aaaf4d31d908b",
+      "candidate_commit": "90ecf7267d5bb23d751d6f7ce3e8aa75f2f1a130",
+      "candidate_tree": "0cf6e00b2fcc399e7a99a62c20e91bb84d485f13",
+      "ci_repair_descendant": "67e4b0ed4be8dbe4e3ea5a0dbc7c20ef9b934c4e",
+      "raw_receipt_file_sha256": "sha256:ae571ae99b2746bfe17f3e8ea790707810522f2f462d983a9c2726bb57dcc7a5",
+      "raw_receipt_self_sha256": "sha256:31ca85d0fa11de07372b740fc73dd3d9976e71808f9c84cb454710eaa92d6e91",
+      "sealed_artifact_set_sha256": "sha256:00e343694d460b5a751fd3812ace699825967622d52cd18cf91ba994156969e0",
+      "verification": {
+        "dependency_lock": "PASS:offline",
+        "ruff_lint": "PASS",
+        "ruff_format": "PASS",
+        "mypy_strict": "PASS:142-source-files",
+        "full_test_suite": "PASS:423+80-percent-coverage",
+        "trace_replay_tamper": "PASS:13",
+        "synthetic_benchmark": "PASS:10-of-10+exact-stage13-projection",
+        "offline_package_determinism": "PASS:byte-identical",
+        "competition_integrity": "PASS",
+        "official_inventory": "PASS:3-of-3",
+        "official_smoke": "FAILED_MECHANISM:full-0-of-6+6-timeouts+0-levels",
+        "official_artifact_verification": "PASS:partial-retained",
+        "secret_scan": "PASS:0-findings",
+        "remote_ci": "PASS:ubuntu+windows:runs-32485636282,32485640575"
+      }
     }
   },
   "blocked_items": [
@@ -612,6 +651,18 @@
       "label": "synthetic",
       "result": "PACKAGING_PASS: two clean-source offline CPU candidate builds were byte-identical across 11 artifacts; sandbox, pinned-public schema, secret, source-identity, exact 31-wheel, and bounded single-agent checks passed; no official submission",
       "report": "docs/reports/017-offline-kaggle-package.md"
+    },
+    {
+      "stage": "18",
+      "label": "synthetic",
+      "result": "release infrastructure PASS: clean-clone lock, lint, format, strict typing, 423 tests, 13 replay/tamper tests, exact Stage 13 reproduction, byte-identical package builds, integrity, artifact sealing, and secret scan passed",
+      "report": "docs/reports/018-release-candidate-verification.md"
+    },
+    {
+      "stage": "18",
+      "label": "local-public",
+      "result": "FAILED_MECHANISM: FULL timed out in all 6 smoke runs after 146 environment actions and completed zero levels; B0 and B1 also completed zero levels; all 18 terminal artifacts verify; official RHAE unmeasured; holdout unconsumed",
+      "report": "docs/reports/018-release-candidate-verification.md"
     }
   ],
   "artifacts": {
@@ -629,7 +680,7 @@
     },
     "uv_lock": {
       "path": "uv.lock",
-      "sha256": "c2c8fac365e0e93dd7743c8797f0d2b00a64183b4f7063546c17cabd3fd08a6a"
+      "sha256": "3bf42dcbe45720f71b7433584f56a5d5982ec1c687c341ad2626222fa5de285b"
     },
     "stage_02_report": {
       "path": "docs/reports/002-official-sdk-baselines.md",
@@ -766,9 +817,21 @@
     "stage_17_kaggle_package_acceptance": {
       "path": "docs/evidence/017-kaggle-package-acceptance.json",
       "sha256": "aac45a86092a7c83bdf26a2e12fbd396381f37257f9e3b5294850f65152583fa"
+    },
+    "stage_18_report": {
+      "path": "docs/reports/018-release-candidate-verification.md",
+      "sha256": "68e061ec22ab52b2f04c8baa58f37e4e7b2eb59da8f4878506539b14ec7ee96c"
+    },
+    "stage_18_release_candidate_acceptance": {
+      "path": "docs/evidence/018-release-candidate-acceptance.json",
+      "sha256": "92d37027c50889a979b1c57487ed490f52e4c7d742c14fe35b63f06af0a0966c"
+    },
+    "stage_18_initial_failure": {
+      "path": "docs/evidence/018-release-candidate-initial-failure.json",
+      "sha256": "f494f48c7711260785362ffd86e0e3d5d62d093cfdbec36d6f1aaaf4d31d908b"
     }
   },
-  "next_action": "Commit the Stage 18 clean-clone verifier, run it from a fresh clone of the exact candidate commit using only documented bootstrap paths and sealed inputs, repair any reproducibility gaps, then preserve the complete release receipt.",
+  "next_action": "Complete Stage 19 documentation, dependency/license inventory, nonoperative MIT-0 candidate, research report, and owner handoff without granting a license or crossing another human gate.",
   "notes": [
     "Initial READY state was validated against the repository at b1948e9d02ad7b1321cbc57f3538047813e01e98 before this run began.",
     "No prior completed stages, checkpoint commit, or evidence artifacts were recorded; bootstrap PR 1 and its merge commit were independently verified.",

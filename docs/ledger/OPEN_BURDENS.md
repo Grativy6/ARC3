@@ -931,3 +931,29 @@ This file preserves unresolved technical, evidential, legal, and external burden
 - **Next discriminating action:** Preserve both the superseded and repaired candidate identities; Stage 18 must rebuild from `e5f2919` or a descendant and compare complete package artifacts.
 - **Resolution condition:** Satisfied for Stage 17 by clean-source `PACKAGING_PASS` at `e5f2919`; any later upstream commit requires new raw-Git pins.
 - **Resolution receipt:** `docs/evidence/017-kaggle-package-acceptance.json`; repair commit `e5f291912726e6139d1dda682707eada657cb5ce`.
+
+---
+
+## 2026-08-21 Stage 18 updates
+
+## B-20260821-046 — Initial clean-clone verifier was not hermetic on Windows
+
+- **Status:** RESOLVED_FOR_STAGE_18_INFRASTRUCTURE
+- **Stage:** 18
+- **Opened:** 2026-08-21
+- **Last updated:** 2026-08-21
+- **Owner:** Codex
+- **Burden:** The first exact-candidate verifier run passed most release checks but the full suite ended 417 passed / five failed. Two paths reached 261 and 263 characters, two integrity fixtures inherited the evidence root's Git ignore scope, and a nested sanitized process assumed ambient uv discovery. Remote shallow CI also lacked the frozen benchmark commit needed for the required ancestry proof.
+- **Why it matters:** A release receipt that changes test semantics because of its output directory, user environment, or shallow history does not establish clean-clone reproducibility.
+- **Current evidence:** The failed run remains summarized in `docs/evidence/018-release-candidate-initial-failure.json`. Commits `70ed0f3`, `90ecf72`, and `67e4b0e` isolated all transient state, made the uv dependency explicit, preserved partial public artifacts, and fetched full CI history. The repaired clean-clone run passed all 423 tests, 13 replay/tamper tests, and every release-infrastructure check; corrected push and PR Actions passed Ubuntu and Windows.
+- **Next discriminating action:** Retain both failed and repaired receipts and rerun the same hermetic verifier after any release-affecting source change.
+- **Resolution condition:** Satisfied for the Stage 18 candidate; a later release candidate must establish its own clean-clone receipt.
+- **Resolution receipt:** `docs/evidence/018-release-candidate-initial-failure.json`; `docs/evidence/018-release-candidate-acceptance.json`.
+
+### B-20260821-038 — Repaired release infrastructure does not repair public policy effectiveness
+
+- **Status update:** OPEN; independently reproduced at the Stage 18 candidate.
+- **Last updated:** 2026-08-21
+- **Current evidence:** On the three-game `local-public` smoke partition at seeds 7 and 11, B4 FULL timed out in all six runs after 146 total environment actions, completed zero levels, and returned a `PARTIAL` evaluation. B0 random and B1 cycle each returned their full 480 actions and also completed zero levels. All partial artifacts verify. Official RHAE remains unmeasured/null.
+- **Remaining burden:** The Stage 16 synthetic runtime repair has not produced a passing sealed public development result. The public holdout therefore remains unconsumed, and no hidden-game or official-private generalization claim is available.
+- **Resolution receipt:** Current failure receipt `docs/evidence/018-release-candidate-acceptance.json`; prior negative receipt `docs/evidence/015-public-development-acceptance.json`.

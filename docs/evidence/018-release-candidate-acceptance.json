@@ -1,0 +1,177 @@
+{
+  "schema": "arc3.stage18.release-candidate-acceptance.v0.1",
+  "stage": "18",
+  "stage_status": "FAILED_MECHANISM",
+  "release_infrastructure_status": "PASS",
+  "surfaces": [
+    "synthetic",
+    "local-public"
+  ],
+  "claim": "NO_GENERALIZATION_CLAIM",
+  "source_identity": {
+    "repository": "https://github.com/Grativy6/ARC3",
+    "branch": "build/000-arc3-end-to-end",
+    "candidate_commit": "90ecf7267d5bb23d751d6f7ce3e8aa75f2f1a130",
+    "candidate_tree": "0cf6e00b2fcc399e7a99a62c20e91bb84d485f13",
+    "clean_clone": "C:/a/arc3-s18-70ed0f3",
+    "clean_before_and_after": true,
+    "ci_repair_descendant": "67e4b0ed4be8dbe4e3ea5a0dbc7c20ef9b934c4e"
+  },
+  "execution": {
+    "started_at": "2026-08-21T13:11:04.771199Z",
+    "completed_at": "2026-08-21T13:35:46.189811Z",
+    "output_root": "C:/a/arc3-s18-70ed0f3/artifacts/stage18/rc-90ecf72",
+    "transient_root": "C:/a/s18-t-90ecf72",
+    "python": "CPython 3.12.14",
+    "uv": "0.12.5",
+    "platform": "Windows-10-10.0.19045-SP0 AMD64",
+    "logical_cpu_count": 12,
+    "gpu_queried": false
+  },
+  "verification": {
+    "dependency_lock": "PASS:offline",
+    "ruff_lint": "PASS",
+    "ruff_format": "PASS",
+    "mypy_strict": "PASS:142-source-files",
+    "full_test_suite": "PASS:423-in-417.05-seconds+80-percent-coverage",
+    "trace_replay_tamper": "PASS:13-in-7.79-seconds",
+    "synthetic_benchmark": "PASS:10-of-10-terminal-runs",
+    "synthetic_semantic_reproduction": "PASS:exact-stage13-projection",
+    "synthetic_artifact_verification": "PASS",
+    "offline_package_a": "PACKAGING_PASS",
+    "offline_package_b": "PACKAGING_PASS",
+    "offline_package_determinism": "PASS:byte-identical",
+    "competition_integrity": "PASS",
+    "official_inventory": "PASS:3-of-3",
+    "official_smoke": "FAILED_MECHANISM:full-0-of-6+6-timeouts+0-levels",
+    "official_artifact_verification": "PASS:partial-result-retained",
+    "repository_clean_after": "PASS",
+    "generated_log_secret_scan": "PASS:0-redactions+0-findings",
+    "remote_ci": "PASS:ubuntu+windows:push-32485636282+pr-32485640575"
+  },
+  "synthetic_benchmark": {
+    "status": "PASS",
+    "surface": "synthetic",
+    "configuration": {
+      "partition": "smoke",
+      "agents": [
+        "random",
+        "cycle",
+        "novelty",
+        "trace",
+        "full"
+      ],
+      "seeds": [
+        7,
+        11
+      ],
+      "max_actions": 16,
+      "max_resets": 2,
+      "timeout_seconds": 30.0,
+      "network_mode": "offline"
+    },
+    "result_count": 10,
+    "failure_count": 0,
+    "semantic_projection_sha256": "sha256:99b4208ab602d951bf2d55d0a9ee428de47d18a28833efdd8e9f99bab6704702",
+    "reference_evidence": "docs/evidence/013-evaluation-harness-acceptance.json",
+    "reference_evidence_sha256": "sha256:ab354deec3ef4f7a84d285a8e7603dbe357afcf6c6bbff7862fe94979b94780e"
+  },
+  "local_public_smoke": {
+    "status": "PARTIAL",
+    "surface": "local-public",
+    "claim": "MECHANISM_NOT_OBSERVED",
+    "partition": "smoke",
+    "game_count": 3,
+    "policies": [
+      "B0-random",
+      "B1-cycle",
+      "B4-full"
+    ],
+    "seeds": [
+      7,
+      11
+    ],
+    "result_count": 18,
+    "failure_count": 6,
+    "full": {
+      "runs": 6,
+      "successful_harness_runs": 0,
+      "timeouts": 6,
+      "environment_actions": 146,
+      "levels_completed": 0,
+      "mean_score": 0.0
+    },
+    "random": {
+      "runs": 6,
+      "successful_harness_runs": 6,
+      "environment_actions": 480,
+      "levels_completed": 0,
+      "mean_score": 0.0
+    },
+    "cycle": {
+      "runs": 6,
+      "successful_harness_runs": 6,
+      "environment_actions": 480,
+      "levels_completed": 0,
+      "mean_score": 0.0
+    },
+    "rhae": null,
+    "rhae_boundary": "Official RHAE was not measured; local completion, environment-action, and scorecard fields are not RHAE.",
+    "game_source_inspected_for_solution_inference": false,
+    "public_game_derived_memory_or_tuning": false,
+    "holdout_consumed": false,
+    "summary_file_sha256": "sha256:8da2bda3ce14bb486fd713c2d95651e10f92c37f62908ed724d5cb06544d84a9",
+    "manifest_file_sha256": "sha256:fe8d6daaeabfd7d3f6e77bdc5890be60ce2ab6e91078853477563d5c2488badc",
+    "manifest_self_sha256": "sha256:b26484c1a896f6cfa8bba1b74e054a845e22202eb8804105f0d9ca8718bf5a90",
+    "exposure_ledger_sha256": "sha256:b95744ce20ae42e59280dc12165130b6bffe24f511f5c7b3fb2ba0be3c392fa6"
+  },
+  "package_determinism": {
+    "status": "PASS",
+    "candidate_bytes": 550068,
+    "candidate_sha256": "sha256:5d64883392f8b1506314e64442702f51ecf0b52e54e190277dad52f07e6cd3f7",
+    "payload_sha256": "sha256:ebcb5ae0137c8e76209287b0ac9b2a4b8db821cf00f836d8e7d82cac919b9227",
+    "notebook_sha256": "sha256:50a96f679ca3e307c3dbe235ccb7aab94cb325dc00f71b92582c0b56f4314b24",
+    "manifest_sha256": "sha256:b32b0270849f3547d1659ea9e90d642bff1db100344c815579a5929961f81a5f",
+    "requirements_sha256": "sha256:d71522e36a1d39bd4bcc8c0a0d65d07886e7360658d1b4794add94de02ff2056",
+    "wheel_manifest_sha256": "sha256:04a8774e252511d4b3e1c1f5ac7dab507f98ebb4e5a57c80a1415e50380df90e",
+    "sbom_sha256": "sha256:bac6c6ae8d3cae40479ec9e250e7bdd218fe37d8985da8bc54a2a3856ad21576",
+    "sandbox_output_sha256": "sha256:f601196d5298e525e04c22185acb3668c3a9f74c6f371040164169fcc17279c9",
+    "build_receipt_file_sha256": "sha256:c092a647b894e0f640db0bf9d3517641adf830fca883becb56d2de1d7be163f6",
+    "builds_byte_identical": true
+  },
+  "raw_artifacts": {
+    "release_receipt_file_sha256": "sha256:ae571ae99b2746bfe17f3e8ea790707810522f2f462d983a9c2726bb57dcc7a5",
+    "release_receipt_self_sha256": "sha256:31ca85d0fa11de07372b740fc73dd3d9976e71808f9c84cb454710eaa92d6e91",
+    "release_evidence_file_sha256": "sha256:66e980f95e5505ae166a76d6339dbaa0b9ee9cb4eca693c862e8f4409c7b2aa6",
+    "integrity_receipt_file_sha256": "sha256:d26ec7acaa311fd9eec8cde9c64c25c698ef2dc796ea963823b3b80156d8e8cd",
+    "integrity_receipt_self_sha256": "sha256:f19a18c8f90970c0f5c3483a7adbe0ae5866258db3ef7ee14c671d7b6f010ad1",
+    "sealed_artifact_set_sha256": "sha256:00e343694d460b5a751fd3812ace699825967622d52cd18cf91ba994156969e0",
+    "sealed_artifact_count": 1895,
+    "sealed_artifact_total_bytes": 208702479,
+    "sealed_complete": false,
+    "sealed_complete_meaning": "The verifier completed sealing; false records that the required official-smoke check failed its mechanism result."
+  },
+  "initial_failed_run": {
+    "preserved": true,
+    "evidence": "docs/evidence/018-release-candidate-initial-failure.json",
+    "candidate_commit": "468d102ac609e99d85d333ffc642ae2a87463672",
+    "full_suite": "FAILED_INFRASTRUCTURE:417-passed+5-failed",
+    "official_smoke": "FAILED_MECHANISM:full-0-of-6+6-timeouts+0-levels"
+  },
+  "owner_boundaries": {
+    "kaggle_authentication_used": false,
+    "terms_accepted": false,
+    "candidate_uploaded": false,
+    "official_submission_performed": false,
+    "license_granted": false,
+    "release_published": false,
+    "pull_request_merged": false
+  },
+  "limitations": [
+    "The repaired release infrastructure passes, but FULL timed out in all six local-public smoke runs and completed zero levels.",
+    "Palette and action-remap robustness remain failed mechanisms; one rule-change case remains unexercised.",
+    "The private Kaggle wheel inventory, platform Agents input, gateway, scorer, and complete 110-game runtime remain unavailable or unmeasured.",
+    "The public holdout remains unconsumed.",
+    "No hidden-game or official-private generalization claim is made."
+  ]
+}

@@ -1,0 +1,62 @@
+{
+  "candidate_commit": "468d102ac609e99d85d333ffc642ae2a87463672",
+  "claim": "FAILED_RUN_PRESERVED",
+  "failure_classes": {
+    "full_suite": {
+      "failed": 5,
+      "passed": 417,
+      "root_causes": [
+        "Windows paths of 261 and 263 characters under the in-repository evidence tree",
+        "pytest fixtures inherited the ancestor repository artifacts ignore scope",
+        "the nested sanitized test process assumed an ambient uv command"
+      ],
+      "tests": [
+        "tests/integration/test_stage16_profile_cli.py::test_profile_cli_runs_in_fresh_process_and_self_hashes_receipt",
+        "tests/integration/test_stage16_runtime_profile.py::test_early_completion_is_operational_when_planning_has_no_opportunity",
+        "tests/integrity/test_policy_scan.py::test_shipped_policy_data_asset_is_scanned",
+        "tests/integrity/test_secret_scan.py::test_private_key_in_uncommon_extension_is_discovered_and_blocked",
+        "tests/release/test_release_candidate_verifier.py::test_discovered_uv_command_survives_release_environment"
+      ]
+    },
+    "official_smoke": {
+      "claim": "MECHANISM_NOT_OBSERVED",
+      "full_policy_failures": 6,
+      "levels_completed": 0,
+      "result_count": 18,
+      "status": "PARTIAL",
+      "surface": "local-public"
+    }
+  },
+  "initial_run": {
+    "artifact_count": 1897,
+    "artifact_set_sha256": "sha256:a8163816946567ee0556d1618231240a8d4764a7e7db30b71a0914d1f9ebfbad",
+    "artifact_total_bytes": 210463501,
+    "completed_at": "2026-08-21T13:09:03.365759Z",
+    "output_root": "C:/a/arc3-s18-468d102/artifacts/stage18/rc-468d102",
+    "started_at": "2026-08-21T12:44:42.249070Z",
+    "status": "FAILED_MECHANISM"
+  },
+  "raw_artifacts": {
+    "curated_evidence_file_sha256": "sha256:b54683635293cc8ae66240431470b174c30ffded4c6e5d05f158f1121406c19a",
+    "full_test_log_sha256": "sha256:61be7677bfe6021e182b5e0f9a26afabf39b3fe9f77389b9469bb420370984d2",
+    "official_manifest_sha256": "sha256:484364e296d35379417a1458d3bd5f6be0c2ffdb528c40e1e57982adb4e57581",
+    "official_summary_sha256": "sha256:ad1355e090c38f06b36f8444688df49a6c9c8d60a7519dde3c740fe0a22c1978",
+    "receipt_file_sha256": "sha256:9667136143bfd2954e837c1b4f255ef4af33414aa2234e7fbd9a483e31acd27c",
+    "receipt_self_sha256": "sha256:992c2ccea52ffd55e9ff035bee0e30ae56e54b7c8a692ff53b0799b0d2452189"
+  },
+  "repairs": [
+    {
+      "commit": "70ed0f34507870b8f917f89c2c9bcf670b8bd429",
+      "effect": "move temporary, cache, isolated-home, and pytest state to a fresh short out-of-tree root"
+    },
+    {
+      "commit": "90ecf7267d5bb23d751d6f7ce3e8aa75f2f1a130",
+      "effect": "validate partial public-evaluation artifacts without promoting the failed policy result"
+    },
+    {
+      "commit": "67e4b0ed4be8dbe4e3ea5a0dbc7c20ef9b934c4e",
+      "effect": "fetch full CI history so frozen benchmark ancestry remains verifiable"
+    }
+  ],
+  "schema": "arc3.release-candidate-initial-failure.v0.1"
+}
