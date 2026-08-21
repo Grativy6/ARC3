@@ -152,8 +152,7 @@ def test_noncanonical_metadata_is_not_serialized_in_fault_receipt(tmp_path: Path
         "input_type": f"{Observation.__module__}.{Observation.__name__}",
     }
     trace_text = "\n".join(
-        path.read_text(encoding="utf-8")
-        for path in controller.context.trace_root.rglob("*.jsonl")
+        path.read_text(encoding="utf-8") for path in controller.context.trace_root.rglob("*.jsonl")
     )
     assert "DO_NOT_SERIALIZE_POISON_METADATA" not in trace_text
     assert controller.phase is ControllerPhase.FAULTED
@@ -179,10 +178,13 @@ def test_malformed_observation_fault_restores_from_close_checkpoint(tmp_path: Pa
     restored = ARC3Controller.restore(context, preset=ControllerPreset.FULL)
     assert restored.phase is ControllerPhase.FAULTED
     assert restored.snapshot.fault_count == 1
-    assert sum(
-        event.event_type == "observation.parse_failed"
-        for event in restored.journal.verify_manifest()
-    ) == 1
+    assert (
+        sum(
+            event.event_type == "observation.parse_failed"
+            for event in restored.journal.verify_manifest()
+        )
+        == 1
+    )
     restored.close()
 
 
