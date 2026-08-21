@@ -125,7 +125,7 @@ This file records material decisions made during the autonomous build. It is app
 - **Status:** ADOPTED
 - **Stage:** 01–02
 - **Date:** 2026-08-21
-- **Commit:** pending
+- **Commit:** 311110299444f71d7e0f0ff0e3b1f8d9c174a01b
 - **Decision:** Keep deterministic configuration, trace vocabulary, logging, and the thin starter-compatible agent importable without the official SDK, while locking `arc-agi==0.9.9` as the `official` project extra and in the committed all-extras resolution.
 - **Alternatives:** Import the SDK from every core module; omit it from the lock; vendor upstream source.
 - **Evidence:** The Stage 01 suite imports and exercises the first-party core with optional dependencies absent; `uv sync --all-extras --dev` installs the pinned official package; `arc3 doctor` reports optional dependency presence without making network calls.

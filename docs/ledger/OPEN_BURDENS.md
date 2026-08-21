@@ -248,7 +248,7 @@ This file preserves unresolved technical, evidential, legal, and external burden
 - **Last updated:** 2026-08-21
 - **Current evidence:** A first-party `agent/my_agent.py` compatibility wrapper and interface tests were implemented without copying starter source. `docs/reports/001-repository-foundation.md` records the boundary.
 - **Remaining burden:** Prove the independently implemented wrapper inside the generated offline Kaggle package and re-check upstream licensing before any future source adaptation.
-- **Resolution receipt:** Stage 01 implementation checkpoint, recorded in `docs/ledger/run-state.json` after commit.
+- **Resolution receipt:** Stage 01 implementation checkpoint `311110299444f71d7e0f0ff0e3b1f8d9c174a01b`.
 
 ## B-20260821-015 — Remote CI and true clean-clone execution are not yet receipts
 
