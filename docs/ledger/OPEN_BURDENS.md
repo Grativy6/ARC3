@@ -347,3 +347,17 @@ This file preserves unresolved technical, evidential, legal, and external burden
 - **Current evidence:** Every Stage 03 event validates an explicit UTC timestamp and the benchmark preserves exact start/completion times in `docs/evidence/003-trace-acceptance.json`.
 - **Remaining burden:** Stage 13 must emit start/completion timestamps for every scorecard and tie them to an immutable run manifest.
 - **Resolution receipt:** Stage 03 trace schema and acceptance suite; not fully resolved.
+
+## B-20260821-018 — Perception correspondence is heuristic and uncalibrated
+
+- **Status:** OPEN
+- **Stage:** 04, 08, 14, 16
+- **Opened:** 2026-08-21
+- **Last updated:** 2026-08-21
+- **Owner:** Codex
+- **Burden:** Component extraction depends on background/connectivity choices, and cross-frame correspondence uses generic hand-weighted geometry scores rather than calibrated probabilities or globally optimal multi-object assignments.
+- **Why it matters:** A plausible but wrong match could contaminate later mechanics, world models, and plans if downstream code treats it as accepted identity.
+- **Current evidence:** `docs/reports/004-perception-and-frame-differencing.md`; ambiguity retention and palette/position permutation tests pass, but only on synthetic fixtures.
+- **Next discriminating action:** Carry alternative segmentations/matches into Stage 08 retrodiction, measure contradiction/recovery behavior in Stage 14, and profile any stronger assignment method in Stage 16.
+- **Resolution condition:** Held-out procedural and public evidence demonstrates calibrated/robust matching or downstream recovery makes the remaining error rate an accepted bounded limit.
+- **Resolution receipt:** none.

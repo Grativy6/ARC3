@@ -1,0 +1,65 @@
+{
+  "schema": "arc3.stage-evidence.v0.1",
+  "stage": "04",
+  "status": "PASS",
+  "label": "synthetic",
+  "repository": "Grativy6/ARC3",
+  "implementation_branch": "build/000-arc3-end-to-end",
+  "measured_repository_commit": "11a6dd20ad5f2ea77bbc09046ad4e8bf5818a3fc",
+  "measurement_note": "Stage 04 files were uncommitted and are individually verified by the stage checkpoint diff.",
+  "runtime": {
+    "operating_system": "Windows 10.0.19045",
+    "python": "3.12.14",
+    "uv": "0.12.5",
+    "cpu": "AMD Ryzen 5 2600 Six-Core Processor",
+    "memory_bytes": 17124503552,
+    "gpu": "NVIDIA GeForce GTX 1660",
+    "gpu_memory_mib": 6144
+  },
+  "verification": {
+    "ruff_check": "PASS",
+    "ruff_format_check": "PASS",
+    "mypy_strict": "PASS:10-source-files",
+    "focused_pytest": "PASS:30",
+    "focused_pytest_seconds": 4.26,
+    "exact_cell_and_metadata_deltas": "PASS",
+    "ambiguous_identity_alternatives_visible": "PASS",
+    "translation_rotation_reflection_signatures": "PASS",
+    "palette_permutation_property": "PASS",
+    "controllability_requires_multiple_samples": "PASS",
+    "observation_semantic_label_scan": "PASS:0-matches"
+  },
+  "benchmark": {
+    "schema": "arc3.perception.benchmark.v0.1",
+    "label": "synthetic",
+    "started_at": "2026-08-21T05:50:41.371870Z",
+    "completed_at": "2026-08-21T05:50:42.248074Z",
+    "iterations": 10,
+    "elapsed_seconds": 0.8729380000149831,
+    "milliseconds_per_iteration": 87.29380000149831,
+    "peak_bytes": 501520,
+    "changed_cells_per_iteration": 128,
+    "components_before": 16,
+    "components_after": 16,
+    "before_hash": "sha256:aaabb1c75270ce6729fbae251f831b6a30f539f501810b4c3bc976e611579105",
+    "after_hash": "sha256:83493933aaf2c06ea1f93f02a706c6aa5730a8b6aa42e88ca2b79785ff788770",
+    "frame_dimensions": [64, 64],
+    "acceptance_limits": {
+      "single_iteration_seconds_max": 5.0,
+      "peak_bytes_max": 67108864
+    }
+  },
+  "commands": [
+    "python -m uv run ruff check src/arc3/perception scripts/benchmark_perception.py",
+    "python -m uv run ruff format --check src/arc3/perception scripts/benchmark_perception.py",
+    "python -m uv run mypy src/arc3/perception scripts/benchmark_perception.py",
+    "python -m uv run pytest -q --basetemp %TEMP%\\arc3-stage04-final-pytest tests/unit/test_perception_frame.py tests/unit/test_perception_delta.py tests/unit/test_perception_components.py tests/unit/test_perception_tracking.py tests/unit/test_perception_salience_render.py tests/property/test_perception_invariance.py tests/integration/test_perception_pipeline.py",
+    "python -m uv run python scripts/benchmark_perception.py --iterations 10",
+    "rg -ni \"\\b(player|goal)\\b\" src/arc3/perception"
+  ],
+  "claim_limits": [
+    "Component correspondence is a ranked geometric heuristic and may remain ambiguous.",
+    "A controllability candidate is not an accepted object identity or causal rule.",
+    "The benchmark is a local synthetic measurement, not a competition-runtime guarantee."
+  ]
+}

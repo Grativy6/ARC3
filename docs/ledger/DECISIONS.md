@@ -175,3 +175,17 @@ This file records material decisions made during the autonomous build. It is app
 - **Consequences:** Every integrated action path must emit validated concise receipts; replacement derived state must cite immutable event IDs; runtime/storage cost remains measurable and reopenable.
 - **Reopening condition:** Integrated profiling exceeds a current evaluator bound, or a fault test demonstrates that the same source-trace invariants require a narrower representation.
 - **Supersedes / superseded by:** implements D-20260820-002; superseded by none.
+
+## D-20260821-012 — Keep perception geometric and correspondence explicitly plural
+
+- **Status:** ADOPTED
+- **Stage:** 04
+- **Date:** 2026-08-21
+- **Commit:** pending
+- **Decision:** Restrict the observation-derived perception layer to grid, color, geometry, delta, relation, and action-correlation measurements; represent close temporal matches as multiple correspondence alternatives and defer role, causal-rule, and goal promotion to typed hypothesis machinery.
+- **Alternatives:** Label a player/goal directly from visual heuristics; greedily choose one best temporal identity; make palette values semantic by default.
+- **Evidence:** `docs/reports/004-perception-and-frame-differencing.md`; 30 focused tests; deterministic 64×64 benchmark and permutation properties in `docs/evidence/004-perception-acceptance.json`.
+- **Why:** A measurement layer must not turn a plausible interpretation into an observation or hide equally supported identity assignments.
+- **Consequences:** Downstream world models consume explicit alternatives and generic structural features; they must supply evidence before promoting identity or goal claims.
+- **Reopening condition:** Measured downstream failures show that additional generic measurements are needed while preserving the same observation/interpretation boundary.
+- **Supersedes / superseded by:** none.
