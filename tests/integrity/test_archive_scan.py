@@ -80,3 +80,29 @@ def test_archived_first_party_network_call_is_blocked(
         and finding.rule_id == "network-capable-call"
         for finding in findings
     )
+
+
+@pytest.mark.competition
+def test_archived_runtime_launcher_gateway_import_exception_is_exact(
+    integrity_repo: tuple[Path, str, str],
+) -> None:
+    root, _, _ = integrity_repo
+    archive = root / "launcher.zip"
+    launcher_path = "src/arc3/packaging/runtime_launcher.py"
+    with zipfile.ZipFile(archive, "w") as handle:
+        handle.writestr(
+            launcher_path,
+            "from urllib.request import ProxyHandler, Request, build_opener\n",
+        )
+    allowed = scan_archive_files(root=root, archives=(archive,), public_identifiers=())
+    assert not any(
+        finding.category is FindingCategory.FORBIDDEN_NETWORK_CLIENT for finding in allowed
+    )
+
+    with zipfile.ZipFile(archive, "w") as handle:
+        handle.writestr(
+            launcher_path,
+            "from urllib.request import ProxyHandler, Request, build_opener, urlopen\n",
+        )
+    blocked = scan_archive_files(root=root, archives=(archive,), public_identifiers=())
+    assert any(finding.category is FindingCategory.FORBIDDEN_NETWORK_CLIENT for finding in blocked)

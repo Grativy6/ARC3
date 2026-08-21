@@ -17,6 +17,7 @@ from packaging.utils import parse_wheel_filename
 
 from arc3.packaging import builder as packaging_builder
 from arc3.packaging import runtime_launcher as launcher_module
+from arc3.packaging import sandbox as sandbox_module
 from arc3.packaging import sbom as sbom_module
 from arc3.packaging import submission as submission_module
 from arc3.packaging.builder import build_kaggle_candidate, scan_payload_for_secrets
@@ -39,6 +40,14 @@ from arc3.packaging.submission import SUBMISSION_COLUMNS, validate_submission_pa
 from arc3.packaging.util import deterministic_zip_bytes, sha256_bytes
 
 REPOSITORY = Path(__file__).resolve().parents[2]
+
+
+@pytest.mark.competition
+def test_stage17_offline_runner_canonicalizes_argv_roots_before_path_checks() -> None:
+    assert "notebook_path = Path(sys.argv[1]).resolve()" in sandbox_module._RUNNER
+    assert "working_root = Path(sys.argv[2]).resolve()" in sandbox_module._RUNNER
+    assert "input_root = Path(sys.argv[3]).resolve()" in sandbox_module._RUNNER
+    assert "requirements_path = Path(sys.argv[4]).resolve()" in sandbox_module._RUNNER
 
 
 @pytest.mark.competition

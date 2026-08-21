@@ -41,10 +41,10 @@ import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-notebook_path = Path(sys.argv[1])
-working_root = Path(sys.argv[2])
-input_root = Path(sys.argv[3])
-requirements_path = Path(sys.argv[4])
+notebook_path = Path(sys.argv[1]).resolve()
+working_root = Path(sys.argv[2]).resolve()
+input_root = Path(sys.argv[3]).resolve()
+requirements_path = Path(sys.argv[4]).resolve()
 rehearsal_authority = sys.argv[5]
 gateway_connections = []
 blocked_attempts = []

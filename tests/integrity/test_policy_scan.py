@@ -65,6 +65,53 @@ def test_forbidden_from_import_is_blocked(
 
 
 @pytest.mark.competition
+def test_runtime_launcher_allows_only_competition_local_gateway_import_members(
+    integrity_repo: tuple[Path, str, str],
+) -> None:
+    root, _, _ = integrity_repo
+    launcher = root / "src" / "arc3" / "packaging" / "runtime_launcher.py"
+    launcher.parent.mkdir(parents=True)
+    launcher.write_text(
+        "from urllib.request import ProxyHandler, Request, build_opener\n",
+        encoding="utf-8",
+    )
+
+    findings = scan_policy_files(root=root, files=(launcher,), public_identifiers=())
+
+    assert not any(
+        finding.category is FindingCategory.FORBIDDEN_NETWORK_CLIENT for finding in findings
+    )
+
+
+@pytest.mark.competition
+@pytest.mark.parametrize(
+    ("relative_path", "source"),
+    [
+        (
+            "src/arc3/packaging/runtime_launcher.py",
+            "from urllib.request import ProxyHandler, Request, build_opener, urlopen\n",
+        ),
+        ("src/arc3/packaging/runtime_launcher.py", "import urllib.request\n"),
+        (
+            "policy/candidate.py",
+            "from urllib.request import ProxyHandler, Request, build_opener\n",
+        ),
+    ],
+)
+def test_runtime_launcher_gateway_import_exception_is_exact_and_path_scoped(
+    integrity_repo: tuple[Path, str, str], relative_path: str, source: str
+) -> None:
+    root, _, _ = integrity_repo
+    candidate = root / relative_path
+    candidate.parent.mkdir(parents=True, exist_ok=True)
+    candidate.write_text(source, encoding="utf-8")
+
+    findings = scan_policy_files(root=root, files=(candidate,), public_identifiers=())
+
+    assert any(finding.category is FindingCategory.FORBIDDEN_NETWORK_CLIENT for finding in findings)
+
+
+@pytest.mark.competition
 def test_pure_normalization_boundary_import_is_allowed(
     integrity_repo: tuple[Path, str, str],
 ) -> None:

@@ -79,6 +79,15 @@ _FORBIDDEN_MODULES: tuple[str, ...] = (
     "xmlrpc.client",
 )
 _SAFE_IMPORT_MEMBERS = frozenset({("arc3.adapters.arc_agi", "normalize_frame_data")})
+_PATH_SCOPED_SAFE_IMPORT_MEMBERS = {
+    "src/arc3/packaging/runtime_launcher.py": frozenset(
+        {
+            ("urllib.request", "ProxyHandler"),
+            ("urllib.request", "Request"),
+            ("urllib.request", "build_opener"),
+        }
+    )
+}
 _NETWORK_CAPABLE_CALLS = frozenset(
     {
         "asyncio.create_subprocess_exec",
@@ -571,13 +580,21 @@ class _PolicyVisitor(ast.NodeVisitor):
         path: Path,
         source: str,
         path_label: str | None = None,
+        policy_path: str | None = None,
     ) -> None:
         self.root = root
         self.path = path
         self.source = source
         self.path_label = path_label or _relative_path(root, path)
+        self.policy_path = policy_path or self.path_label
         self.findings: list[IntegrityFinding] = []
         self.aliases: dict[str, str] = {}
+
+    def _safe_import_member(self, module: str, member: str) -> bool:
+        imported = (module, member)
+        return imported in _SAFE_IMPORT_MEMBERS or imported in (
+            _PATH_SCOPED_SAFE_IMPORT_MEMBERS.get(self.policy_path, frozenset())
+        )
 
     def _resolved_name(self, node: ast.AST) -> str | None:
         qualified = _qualified_name(node)
@@ -632,7 +649,7 @@ class _PolicyVisitor(ast.NodeVisitor):
                     f"{module}.{alias.name}" if module else alias.name
                 )
         unsafe_aliases = tuple(
-            alias for alias in node.names if (module, alias.name) not in _SAFE_IMPORT_MEMBERS
+            alias for alias in node.names if not self._safe_import_member(module, alias.name)
         )
         candidates = (
             ()
@@ -1122,6 +1139,9 @@ def scan_archive_files(
                                     path=archive,
                                     source=text,
                                     path_label=member_label,
+                                    policy_path=PurePosixPath(
+                                        member.filename.replace("\\", "/")
+                                    ).as_posix(),
                                 )
                                 visitor.visit(tree)
                                 findings.extend(visitor.findings)
