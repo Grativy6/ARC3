@@ -185,6 +185,28 @@ def test_all_required_synthetic_robustness_axes_are_measured(tmp_path: Path) -> 
 
 
 @pytest.mark.integration
+def test_early_completion_is_operational_when_planning_has_no_opportunity(
+    tmp_path: Path,
+) -> None:
+    result = run_robustness_suite(
+        tmp_path / "early-completion",
+        seeds=(11,),
+        max_actions=16,
+        git_commit="stage16-early-completion",
+        preset=ControllerPreset.COMPETITION,
+    )
+    cases = {
+        cast(str, case["variant"]): case
+        for case in cast(list[dict[str, JSONValue]], result["cases"])
+    }
+    assert cases["base"]["final_phase"] == "complete"
+    assert cases["base"]["operational_verified"] is True
+    assert cases["base"]["status"] == "PASS"
+    assert cases["rule-change"]["behavior_exercised"] is False
+    assert cases["rule-change"]["status"] == "NOT_EXERCISED"
+
+
+@pytest.mark.integration
 def test_fault_matrix_receipts_every_malformed_input_boundary(tmp_path: Path) -> None:
     result = run_fault_matrix(tmp_path / "faults", git_commit="stage16-faults")
     cases = {

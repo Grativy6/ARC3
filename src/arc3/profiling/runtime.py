@@ -590,10 +590,26 @@ def run_robustness_suite(
                 "resets": result["resets"],
                 "score": result["score"],
                 "seed": seed,
+                "planner": result["planner"],
                 "trace_event_count": result["trace_event_count"],
                 "variant": variant.value,
             }
-            operational_verified = result["verified"] is True
+            budgets = cast(dict[str, JSONValue], result["budget_assessment"])
+            predicates = cast(dict[str, JSONValue], result["required_predicates"])
+            planner = cast(dict[str, JSONValue], result["planner"])
+            # Robustness cases may complete before enough evidence exists to
+            # invoke planning.  Planner exercise is measured by the forced
+            # component profile; here require all operational predicates plus
+            # bounded expansion whenever planning occurs.
+            operational_verified = (
+                all(value is True for value in budgets.values())
+                and all(
+                    value is True
+                    for name, value in predicates.items()
+                    if name != "planner_exercised_and_bounded"
+                )
+                and cast(int, planner["maximum_expanded_nodes"]) <= 2_048
+            )
             behavior_exercised = True
             behavior_verified = True
             behavior_predicate = "reference run"
