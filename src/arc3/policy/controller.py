@@ -637,7 +637,8 @@ class ARC3Controller:
             if existing_id is not None:
                 seeded[action] = existing_id
                 continue
-            hypothesis_id = f"H-DIRECTIONAL-L{self._level_index}-{action.value}"
+            receipt_identity = receipt.observation_event_hash.removeprefix("sha256:")[:12]
+            hypothesis_id = f"H-DIRECTIONAL-L{self._level_index}-{action.value}-{receipt_identity}"
             record = self._hypotheses.create(
                 statement=ActionSemanticsStatement(
                     action=action.value,
@@ -713,6 +714,7 @@ class ARC3Controller:
                     "level": self._level_index,
                     "mover_kind": mover.kind if mover is not None else "unknown",
                     "target_kind": target.kind,
+                    "source_observation_event_id": receipt.observation_event_id,
                 }
             ).removeprefix("sha256:")[:24]
         )
@@ -1661,14 +1663,24 @@ class ARC3Controller:
         """Close one level's derived claims and seed a separate next-level scope."""
 
         sources = (consequence_event_id, receipt.observation_event_id)
+        transition_event_type = (
+            "consequence.level_completed"
+            if self._level_index > previous_level
+            else "observation.metadata_changed"
+        )
         self._append(
             str(observation.game_id),
-            "consequence.level_completed",
+            transition_event_type,
             {
                 "source_consequence_event_id": consequence_event_id,
                 "source_observation_event_id": receipt.observation_event_id,
                 "previous_level_index": previous_level,
                 "new_level_index": self._level_index,
+                "transition_kind": (
+                    "level-progressed"
+                    if self._level_index > previous_level
+                    else "level-index-reopened-or-reset"
+                ),
                 "history_policy": "retain prior scope; do not apply it to the new level",
             },
         )

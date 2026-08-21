@@ -204,3 +204,42 @@ def test_level_transition_closes_old_scope_and_reseeds_collision_free_history(
     assert retired
     assert all(event.payload["evidence_event_ids"] for event in superseded)
     assert all(event.payload["source_event_ids"] for event in retired)
+
+    second = controller.choose_action()
+    controller.apply_consequence(
+        Observation(
+            game_id=before.game_id,
+            frames=before.frames,
+            state=GameStateName.NOT_FINISHED,
+            levels_completed=0,
+            win_levels=2,
+            available_actions=before.available_actions,
+            full_reset=True,
+            returned_action=second.action,
+        )
+    )
+    revisited_level_ids = {
+        record.hypothesis_id
+        for record in controller._hypotheses.all()
+        if record.scope_ref == "level:0" and record.status is not HypothesisStatus.SUPERSEDED
+    }
+    assert len(revisited_level_ids) == len(old_hypothesis_ids)
+    assert revisited_level_ids.isdisjoint(old_hypothesis_ids)
+    assert all(
+        controller._hypotheses.get(identifier).status is HypothesisStatus.SUPERSEDED
+        for identifier in new_hypothesis_ids
+    )
+    live_revisited_goals = {
+        record.candidate.goal_id
+        for record in controller._goals.records(include_retired=False)
+        if record.candidate.scope_ref == "level:0"
+    }
+    assert live_revisited_goals
+    assert live_revisited_goals.isdisjoint(old_goal_ids)
+    reset_transition = [
+        event
+        for event in controller.journal.verify_manifest()
+        if event.event_type == "observation.metadata_changed"
+        and event.payload.get("transition_kind") == "level-index-reopened-or-reset"
+    ]
+    assert len(reset_transition) == 1
