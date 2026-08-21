@@ -314,8 +314,36 @@ This file preserves unresolved technical, evidential, legal, and external burden
 
 ### B-20260821-015 — Remote CI and true clean-clone execution are not yet receipts
 
-- **Status update:** REOPENED for the Stage 02 checkpoint.
+- **Status update:** RESOLVED for the Stage 02 correction; Stage 18 clean-clone work remains.
 - **Last updated:** 2026-08-21
 - **Current evidence:** Stage 02 Actions runs `32451110070` and `32451112828` failed one stale Stage 01 assertion after the `evaluate` command became real; all preceding sync/lint/format/type steps passed. The test now targets the still-reserved `compare` command.
-- **Remaining burden:** Observe the correcting Linux/Windows run, then retain Stage 18 true clean-clone verification as a separate boundary.
-- **Resolution receipt:** pending correcting run.
+- **Remaining burden:** Retain Stage 18 true clean-clone verification as a separate boundary.
+- **Resolution receipt:** Correcting Actions runs `32451273583` and `32451275935` passed both Ubuntu and Windows jobs at commit `9ee31a453cfa1b52c1cb99b6cf0a2bc7ac52e61a`.
+
+---
+
+## 2026-08-21 Stage 03 updates
+
+### B-20260820-006 — Trace-ledger overhead is unmeasured
+
+- **Status update:** NARROWED for the isolated Stage 03 implementation; integrated competition-scale profiling remains open.
+- **Last updated:** 2026-08-21
+- **Current evidence:** `docs/evidence/003-trace-acceptance.json` records 500-event append/retrieval, 64×64 frame deduplication, storage, checkpoint size, and peak traced allocation on the pinned Windows/Python host. Append measured 0.623596 ms/event and retrieval 0.0877939 seconds for 500 events.
+- **Remaining burden:** Profile trace growth, compaction, and decision latency with the Stage 12 controller across long procedural and public-game runs under the Stage 16 envelope.
+- **Resolution receipt:** Stage 03 report `docs/reports/003-immutable-trace-replay-checkpoint.md`; checkpoint commit pending.
+
+### B-20260820-008 — The value of PAL-inspired trace discipline is an empirical question
+
+- **Status update:** OPEN; implementation is now ablatable but no performance value is inferred.
+- **Last updated:** 2026-08-21
+- **Current evidence:** Immutable receipts, replay, rejected-state preservation, and checkpoint/reopen mechanics pass 29 focused tests. This is mechanism evidence only.
+- **Remaining burden:** Stage 14 must compare the integrated controller with and without trace-derived memory under identical seeds, budgets, and scorers.
+- **Resolution receipt:** none.
+
+### B-20260821-016 — Stage 02 timestamps are incomplete evaluation receipts
+
+- **Status update:** NARROWED; the trace event clock is implemented, while the general evaluation envelope remains Stage 13 work.
+- **Last updated:** 2026-08-21
+- **Current evidence:** Every Stage 03 event validates an explicit UTC timestamp and the benchmark preserves exact start/completion times in `docs/evidence/003-trace-acceptance.json`.
+- **Remaining burden:** Stage 13 must emit start/completion timestamps for every scorecard and tie them to an immutable run manifest.
+- **Resolution receipt:** Stage 03 trace schema and acceptance suite; not fully resolved.

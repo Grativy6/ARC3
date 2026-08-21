@@ -17,6 +17,30 @@ class BaselinePolicy(Protocol):
         """Select one valid action from the current observation."""
 
 
+class BaselineReceiptSink(Protocol):
+    """Optional immutable-trace instrumentation boundary."""
+
+    def record_observation(self, observation: Observation) -> None:
+        """Persist an observation before it informs action selection."""
+
+    def record_candidates(self, observation: Observation) -> None:
+        """Persist the alternatives available before selection."""
+
+    def record_selected(self, observation: Observation, action: ActionRequest) -> None:
+        """Persist the selected action and concise rationale."""
+
+    def record_submitted(self, observation: Observation, action: ActionRequest) -> None:
+        """Persist intent immediately before the environment call."""
+
+    def record_consequence(
+        self,
+        before: Observation,
+        action: ActionRequest,
+        after: Observation,
+    ) -> None:
+        """Persist the returned consequence."""
+
+
 class StopReason(StrEnum):
     """Why a bounded baseline episode stopped."""
 
@@ -59,6 +83,7 @@ def run_baseline_episode(
     *,
     max_actions: int,
     max_resets: int,
+    receipt_sink: BaselineReceiptSink | None = None,
 ) -> BaselineEpisodeResult:
     """Run one policy under explicit action/reset budgets.
 
@@ -77,19 +102,27 @@ def run_baseline_episode(
     resets = 0
     receipts: list[BaselineActionReceipt] = []
     stop_reason = StopReason.ACTION_BUDGET
+    if receipt_sink is not None:
+        receipt_sink.record_observation(observation)
 
     while environment_actions < max_actions:
         if observation.state is GameStateName.WIN:
             stop_reason = StopReason.WIN
             break
 
+        if receipt_sink is not None:
+            receipt_sink.record_candidates(observation)
         action = policy.select(observation)
+        if receipt_sink is not None:
+            receipt_sink.record_selected(observation, action)
         is_reset = action.name.value == "RESET"
         if is_reset and resets >= max_resets:
             stop_reason = StopReason.RESET_BUDGET
             break
 
         before = observation
+        if receipt_sink is not None:
+            receipt_sink.record_submitted(before, action)
         observation = session.step(
             action,
             reasoning={
@@ -101,6 +134,9 @@ def run_baseline_episode(
             resets += 1
         else:
             environment_actions += 1
+        if receipt_sink is not None:
+            receipt_sink.record_consequence(before, action, observation)
+            receipt_sink.record_observation(observation)
         receipts.append(
             BaselineActionReceipt(
                 ordinal=len(receipts),
@@ -129,6 +165,7 @@ __all__ = [
     "BaselineActionReceipt",
     "BaselineEpisodeResult",
     "BaselinePolicy",
+    "BaselineReceiptSink",
     "StopReason",
     "run_baseline_episode",
 ]

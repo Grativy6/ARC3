@@ -161,3 +161,17 @@ This file records material decisions made during the autonomous build. It is app
 - **Consequences:** `ls20` is permanently development for Build 000 even though its original hash rank was holdout; 10 public holdout games remain unopened at the gameplay level.
 - **Reopening condition:** A versioned upstream game-set change requires a new manifest and salt while preserving this manifest and all opened-game receipts.
 - **Supersedes / superseded by:** none.
+
+## D-20260821-011 — Bind immutable receipts with canonical event hashes
+
+- **Status:** ADOPTED
+- **Stage:** 03
+- **Date:** 2026-08-21
+- **Commit:** pending
+- **Decision:** Store raw environment receipts as canonical JSON events in a SHA-256 previous-event chain, keep frame bodies in a content-addressed write-once blob store, and make summaries, indices, checkpoints, and migrations explicitly derived artifacts.
+- **Alternatives:** Mutable controller logs; a database without exportable canonical identities; full frame duplication in every event; storing unrestricted policy reasoning.
+- **Evidence:** `docs/reports/003-immutable-trace-replay-checkpoint.md`; 29 focused tests; the benchmark and fault matrix in `docs/evidence/003-trace-acceptance.json`.
+- **Why:** Stable source identities allow deterministic replay, contradiction audit, and non-destructive reinterpretation while avoiding duplicate large frames and hidden chain-of-thought storage.
+- **Consequences:** Every integrated action path must emit validated concise receipts; replacement derived state must cite immutable event IDs; runtime/storage cost remains measurable and reopenable.
+- **Reopening condition:** Integrated profiling exceeds a current evaluator bound, or a fault test demonstrates that the same source-trace invariants require a narrower representation.
+- **Supersedes / superseded by:** implements D-20260820-002; superseded by none.

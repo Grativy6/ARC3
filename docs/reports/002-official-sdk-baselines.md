@@ -114,7 +114,8 @@ and strict mypy on both operating systems, then failed the full test suite: the 
 test still asserted that `arc3 evaluate` was a reserved future command after Stage 02 had
 implemented it. The test was corrected to exercise the still-reserved `arc3 compare` command.
 This is preserved as an integration-test maintenance failure; the correcting CI receipt is
-recorded in the run ledger when complete.
+recorded in Actions runs `32451273583` and `32451275935`, where both Ubuntu and Windows jobs
+passed.
 
 ## Public partition integrity
 

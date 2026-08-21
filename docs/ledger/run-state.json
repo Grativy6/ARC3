@@ -5,8 +5,8 @@
   "repository": "Grativy6/ARC3",
   "owner": "Christopher D. Pang",
   "status": "IN_PROGRESS",
-  "current_stage": "03",
-  "current_task": "stage-03-immutable-trace-replay-checkpoint",
+  "current_stage": "04",
+  "current_task": "stage-04-object-and-event-perception",
   "implementation_branch": "build/000-arc3-end-to-end",
   "pull_request": {
     "number": 3,
@@ -14,20 +14,21 @@
     "draft": true
   },
   "started_at": "2026-08-21T04:46:19Z",
-  "last_checkpoint_at": "2026-08-21T05:35:09Z",
-  "last_checkpoint_commit": "63ee8a6069d7af4fe39d92277b6702ff253d7aa1",
+  "last_checkpoint_at": "2026-08-21T05:47:16Z",
+  "last_checkpoint_commit": "9ee31a453cfa1b52c1cb99b6cf0a2bc7ac52e61a",
   "resume_generation": 0,
   "completed_stages": [
     "00",
     "01",
-    "02"
+    "02",
+    "03"
   ],
   "stage_status": {
     "00": "PASS",
     "01": "PASS",
     "02": "PASS",
-    "03": "IN_PROGRESS",
-    "04": "PENDING",
+    "03": "PASS",
+    "04": "IN_PROGRESS",
     "05": "PENDING",
     "06": "PENDING",
     "07": "PENDING",
@@ -93,7 +94,7 @@
         "local-public"
       ],
       "report": "docs/reports/002-official-sdk-baselines.md",
-      "report_sha256": "sha256:5063a3c0d3732268297c89f0333ddb1ca44e8df03b51a2968941b42f43b81378",
+      "report_sha256": "sha256:ed63e4c5981be1b8d66cab33965b1cfc579d882e637f5f99ee6dffc1679153b7",
       "scorecard_evidence": "docs/evidence/002-baseline-scorecards.json",
       "scorecard_evidence_sha256": "sha256:64e635c5575c1e357c4cda41134461d489b5d98f34be8b08ce382c6a619132bc",
       "public_partition_manifest": "docs/evaluation/public-game-partitions.v0.1.json",
@@ -111,8 +112,29 @@
         "determinism": "PASS",
         "production_public_id_scan": "PASS:0-matches",
         "remote_ci_initial": "FAILED_MECHANISM:stale-reserved-command-test:runs-32451110070,32451112828",
-        "remote_ci_correction": "PENDING",
+        "remote_ci_correction": "PASS:ubuntu+windows:runs-32451273583,32451275935",
         "evidence_json": "PASS"
+      }
+    },
+    "stage_03": {
+      "status": "PASS",
+      "label": "synthetic",
+      "report": "docs/reports/003-immutable-trace-replay-checkpoint.md",
+      "report_sha256": "sha256:c982a7b8c3d1535d3d42c537c6cb8420f26092fde4898025434857abffebe090",
+      "acceptance_evidence": "docs/evidence/003-trace-acceptance.json",
+      "acceptance_evidence_sha256": "sha256:6cf57f00fa032617a04a00dac91de7d9f653887105381c1be7ea1bb5e9a3fcab",
+      "checkpoint_commit": "pending",
+      "verification": {
+        "ruff_lint": "PASS",
+        "ruff_format": "PASS",
+        "mypy_strict": "PASS:11-source-files",
+        "pytest": "PASS:29",
+        "immutable_receipts": "PASS",
+        "replay": "PASS",
+        "checkpoint_resume": "PASS",
+        "fault_injections": "PASS:6-required",
+        "baseline_instrumentation": "PASS",
+        "trace_benchmark": "PASS:500-events"
       }
     }
   },
@@ -160,6 +182,12 @@
       "label": "local-public",
       "result": "deterministic cycle score 0.0; 0 levels; 20 actions; 0 resets; one development game",
       "report": "docs/reports/002-official-sdk-baselines.md"
+    },
+    {
+      "stage": "03",
+      "label": "synthetic",
+      "result": "29 focused tests passed; 500-event append 0.623596 ms/event; deterministic replay, six required fault injections, and checkpoint resume passed",
+      "report": "docs/reports/003-immutable-trace-replay-checkpoint.md"
     }
   ],
   "artifacts": {
@@ -181,7 +209,7 @@
     },
     "stage_02_report": {
       "path": "docs/reports/002-official-sdk-baselines.md",
-      "sha256": "5063a3c0d3732268297c89f0333ddb1ca44e8df03b51a2968941b42f43b81378"
+      "sha256": "ed63e4c5981be1b8d66cab33965b1cfc579d882e637f5f99ee6dffc1679153b7"
     },
     "stage_02_scorecards": {
       "path": "docs/evidence/002-baseline-scorecards.json",
@@ -190,9 +218,17 @@
     "public_game_partitions_v0_1": {
       "path": "docs/evaluation/public-game-partitions.v0.1.json",
       "sha256": "682d5891c2aface54803d9bd1173c55ed21e89856e13b8a478fb9276ee963f2f"
+    },
+    "stage_03_report": {
+      "path": "docs/reports/003-immutable-trace-replay-checkpoint.md",
+      "sha256": "c982a7b8c3d1535d3d42c537c6cb8420f26092fde4898025434857abffebe090"
+    },
+    "stage_03_trace_acceptance": {
+      "path": "docs/evidence/003-trace-acceptance.json",
+      "sha256": "6cf57f00fa032617a04a00dac91de7d9f653887105381c1be7ea1bb5e9a3fcab"
     }
   },
-  "next_action": "Complete Stage 03 immutable hash-linked trace, replay, interruption recovery, and checkpoint acceptance suite.",
+  "next_action": "Complete Stage 04 object, delta, relation, temporal-correspondence, salience, and sparse rendering acceptance suite.",
   "notes": [
     "Initial READY state was validated against the repository at b1948e9d02ad7b1321cbc57f3538047813e01e98 before this run began.",
     "No prior completed stages, checkpoint commit, or evidence artifacts were recorded; bootstrap PR 1 and its merge commit were independently verified.",

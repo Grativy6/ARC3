@@ -1,0 +1,101 @@
+{
+  "schema": "arc3.stage-evidence.v0.1",
+  "stage": "03",
+  "status": "PASS",
+  "label": "synthetic",
+  "repository": "Grativy6/ARC3",
+  "implementation_branch": "build/000-arc3-end-to-end",
+  "measured_repository_commit": "9ee31a453cfa1b52c1cb99b6cf0a2bc7ac52e61a",
+  "measurement_note": "Stage 03 files were uncommitted and are individually verified by the stage checkpoint diff.",
+  "runtime": {
+    "operating_system": "Windows 10.0.19045",
+    "python": "3.12.14",
+    "uv": "0.12.5",
+    "cpu": "AMD Ryzen 5 2600 Six-Core Processor",
+    "memory_bytes": 17124503552,
+    "gpu": "NVIDIA GeForce GTX 1660",
+    "gpu_memory_mib": 6144
+  },
+  "verification": {
+    "ruff_check": "PASS",
+    "ruff_format_check": "PASS",
+    "mypy_strict": "PASS:11-source-files",
+    "focused_pytest": "PASS:29",
+    "focused_pytest_seconds": 9.14,
+    "baseline_instrumentation": "PASS",
+    "immutable_raw_receipts": "PASS",
+    "deterministic_replay": "PASS",
+    "checkpoint_resume": "PASS",
+    "migration_source_hash_preservation": "PASS",
+    "concise_rationale_validation": "PASS"
+  },
+  "fault_injections": [
+    {
+      "fault": "process termination during append",
+      "expected": "discard only the partial trailing line and preserve prior valid events",
+      "result": "PASS"
+    },
+    {
+      "fault": "corrupted sealed chunk byte",
+      "expected": "reject hash mismatch",
+      "result": "PASS"
+    },
+    {
+      "fault": "missing content-addressed frame blob",
+      "expected": "reject replay with an integrity error",
+      "result": "PASS"
+    },
+    {
+      "fault": "checkpoint configuration or code identity mismatch",
+      "expected": "reject resume and append a rejection receipt",
+      "result": "PASS"
+    },
+    {
+      "fault": "duplicate event identifier",
+      "expected": "reject append or load",
+      "result": "PASS"
+    },
+    {
+      "fault": "broken previous-event hash",
+      "expected": "reject the event chain",
+      "result": "PASS"
+    }
+  ],
+  "benchmark": {
+    "schema": "arc3.trace.benchmark.v0.1",
+    "label": "synthetic",
+    "started_at": "2026-08-21T05:46:16.247906Z",
+    "completed_at": "2026-08-21T05:46:16.957065Z",
+    "event_count": 500,
+    "append_seconds": 0.3117981000104919,
+    "append_ms_per_event": 0.6235962000209838,
+    "retrieval_seconds": 0.08779390004929155,
+    "peak_traced_bytes": 77106,
+    "trace_disk_bytes": 381211,
+    "frame_dimensions": [64, 64],
+    "frame_canonical_bytes": 8321,
+    "first_frame_created": true,
+    "duplicate_frame_writes": 100,
+    "duplicate_blob_creations": 0,
+    "dedup_seconds": 0.28537189995404333,
+    "checkpoint_bytes": 7259,
+    "checkpoint_hash": "sha256:38f2e4681a7bf71a57a9a9b6c715a423f18a3b96ed163feb720ff2fac1ac02fb",
+    "limits": {
+      "append_ms_per_event_max": 20.0,
+      "retrieval_seconds_max": 2.0,
+      "peak_traced_bytes_max": 33554432
+    }
+  },
+  "commands": [
+    "python -m uv run ruff check src/arc3/baseline_runner.py src/arc3/trace scripts/benchmark_trace.py tests/unit/test_trace_schema.py tests/unit/test_trace_journal.py tests/unit/test_trace_checkpoint.py tests/unit/test_trace_performance.py tests/property/test_trace_properties.py tests/replay/test_trace_replay.py tests/integration/test_trace_episode.py tests/integration/test_traced_baseline.py",
+    "python -m uv run ruff format --check src/arc3/baseline_runner.py src/arc3/trace scripts/benchmark_trace.py tests/unit/test_trace_schema.py tests/unit/test_trace_journal.py tests/unit/test_trace_checkpoint.py tests/unit/test_trace_performance.py tests/property/test_trace_properties.py tests/replay/test_trace_replay.py tests/integration/test_trace_episode.py tests/integration/test_traced_baseline.py",
+    "python -m uv run mypy src/arc3/baseline_runner.py src/arc3/trace",
+    "python -m uv run pytest -q --basetemp %TEMP%\\arc3-root-stage03-pytest tests/unit/test_trace_schema.py tests/unit/test_trace_journal.py tests/unit/test_trace_checkpoint.py tests/unit/test_trace_performance.py tests/property/test_trace_properties.py tests/replay/test_trace_replay.py tests/integration/test_trace_episode.py tests/integration/test_traced_baseline.py",
+    "python -m uv run python scripts/benchmark_trace.py --git-commit 9ee31a453cfa1b52c1cb99b6cf0a2bc7ac52e61a --events 500 --frame-repeats 100"
+  ],
+  "claim_limits": [
+    "The benchmark is one local synthetic run, not a competition-runtime guarantee.",
+    "Replay reproduces recorded environment frames and decisions; it does not prove policy correctness.",
+    "Trace discipline has not yet been shown to improve scores; that remains an ablation question."
+  ]
+}
