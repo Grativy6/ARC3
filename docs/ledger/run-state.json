@@ -5,8 +5,8 @@
   "repository": "Grativy6/ARC3",
   "owner": "Christopher D. Pang",
   "status": "IN_PROGRESS",
-  "current_stage": "05",
-  "current_task": "stage-05-typed-hypothesis-registry",
+  "current_stage": "06",
+  "current_task": "stage-06-synthetic-environment-laboratory",
   "implementation_branch": "build/000-arc3-end-to-end",
   "pull_request": {
     "number": 3,
@@ -22,7 +22,8 @@
     "01",
     "02",
     "03",
-    "04"
+    "04",
+    "05"
   ],
   "stage_status": {
     "00": "PASS",
@@ -30,8 +31,8 @@
     "02": "PASS",
     "03": "PASS",
     "04": "PASS",
-    "05": "IN_PROGRESS",
-    "06": "PENDING",
+    "05": "PASS",
+    "06": "IN_PROGRESS",
     "07": "PENDING",
     "08": "PENDING",
     "09": "PENDING",
@@ -157,6 +158,27 @@
         "semantic_label_scan": "PASS:0-matches",
         "maximum_frame_benchmark": "PASS:10-iterations"
       }
+    },
+    "stage_05": {
+      "status": "PASS",
+      "label": "synthetic",
+      "report": "docs/reports/005-typed-hypothesis-registry.md",
+      "report_sha256": "sha256:d51a356d221cd5260f6207986802214d2933930b48b2d4564c5773ffa0b3a0bf",
+      "acceptance_evidence": "docs/evidence/005-hypothesis-acceptance.json",
+      "acceptance_evidence_sha256": "sha256:880a6496a5179b7ccf86852d322888b53592ddcd45752928375f86a093c35df1",
+      "checkpoint_commit": "pending",
+      "verification": {
+        "ruff_lint": "PASS",
+        "ruff_format": "PASS",
+        "mypy_strict": "PASS:10-source-files",
+        "pytest": "PASS:20",
+        "typed_families": "PASS:9",
+        "event_fold_rebuild": "PASS",
+        "complete_lifecycle": "PASS",
+        "rejected_history": "PASS",
+        "reopen_plan_invalidation": "PASS",
+        "trace_index_integration": "PASS"
+      }
     }
   },
   "blocked_items": [
@@ -215,6 +237,12 @@
       "label": "synthetic",
       "result": "30 focused tests passed; 64x64 delta/component/correspondence pipeline measured 87.2938 ms/iteration and 501520 peak traced bytes across 10 iterations",
       "report": "docs/reports/004-perception-and-frame-differencing.md"
+    },
+    {
+      "stage": "05",
+      "label": "synthetic",
+      "result": "20 focused tests passed; all 9 typed families and the create-support-contradict-narrow-reject-reopen lineage with plan invalidation passed",
+      "report": "docs/reports/005-typed-hypothesis-registry.md"
     }
   ],
   "artifacts": {
@@ -261,9 +289,17 @@
     "stage_04_perception_acceptance": {
       "path": "docs/evidence/004-perception-acceptance.json",
       "sha256": "dd5c7bbb06c1c9be968fd5af570678a3b30eab31f2dee956867a1ac85f0e902a"
+    },
+    "stage_05_report": {
+      "path": "docs/reports/005-typed-hypothesis-registry.md",
+      "sha256": "d51a356d221cd5260f6207986802214d2933930b48b2d4564c5773ffa0b3a0bf"
+    },
+    "stage_05_hypothesis_acceptance": {
+      "path": "docs/evidence/005-hypothesis-acceptance.json",
+      "sha256": "880a6496a5179b7ccf86852d322888b53592ddcd45752928375f86a093c35df1"
     }
   },
-  "next_action": "Complete Stage 05 typed hypothesis creation, evidence lineage, contradiction, rejection, and reopening acceptance suite.",
+  "next_action": "Complete Stage 06 procedural ARC-compatible environment, held-out rule families, evaluator-only ground truth, leakage checks, and baseline measurements.",
   "notes": [
     "Initial READY state was validated against the repository at b1948e9d02ad7b1321cbc57f3538047813e01e98 before this run began.",
     "No prior completed stages, checkpoint commit, or evidence artifacts were recorded; bootstrap PR 1 and its merge commit were independently verified.",

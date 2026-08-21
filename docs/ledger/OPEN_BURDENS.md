@@ -361,3 +361,17 @@ This file preserves unresolved technical, evidential, legal, and external burden
 - **Next discriminating action:** Carry alternative segmentations/matches into Stage 08 retrodiction, measure contradiction/recovery behavior in Stage 14, and profile any stronger assignment method in Stage 16.
 - **Resolution condition:** Held-out procedural and public evidence demonstrates calibrated/robust matching or downstream recovery makes the remaining error rate an accepted bounded limit.
 - **Resolution receipt:** none.
+
+## B-20260821-019 — Hypothesis ranks have no predictive calibration evidence
+
+- **Status:** OPEN
+- **Stage:** 05, 08, 13, 14
+- **Opened:** 2026-08-21
+- **Last updated:** 2026-08-21
+- **Owner:** Codex
+- **Burden:** Deterministic integer ranks and conflict tie-breaks order typed hypotheses, but their scale has not been calibrated and lifecycle fixture success does not establish predictive accuracy or planning value.
+- **Why it matters:** Treating an ordering aid as probability, truth, or expected utility could overstate evidence and bias probes or plans.
+- **Current evidence:** Every Stage 05 serialization/report labels weights `uncalibrated_rank`; 20 mechanism tests pass on synthetic lifecycle fixtures.
+- **Next discriminating action:** Measure retrodictive accuracy, contradiction rate, rule survival, and downstream score/action effects on held-out procedural episodes in Stages 08, 13, and 14.
+- **Resolution condition:** Calibration evidence supports a revised meaning, or the final system retains rank-only semantics with measured limits.
+- **Resolution receipt:** none.

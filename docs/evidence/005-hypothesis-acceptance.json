@@ -1,0 +1,71 @@
+{
+  "schema": "arc3.stage-evidence.v0.1",
+  "stage": "05",
+  "status": "PASS",
+  "label": "synthetic",
+  "repository": "Grativy6/ARC3",
+  "implementation_branch": "build/000-arc3-end-to-end",
+  "measured_repository_commit": "3fe666e300650d870cbfe0ef7c56be52126ff714",
+  "measurement_note": "Stage 05 files were uncommitted and are individually verified by the stage checkpoint diff.",
+  "runtime": {
+    "operating_system": "Windows 10.0.19045",
+    "python": "3.12.14",
+    "uv": "0.12.5"
+  },
+  "families": [
+    "action_semantics",
+    "controllable_object_identity",
+    "collision_traversability",
+    "interaction_toggle",
+    "coordinate_action_target",
+    "state_transition",
+    "progress_terminal",
+    "candidate_goal",
+    "level_invariant"
+  ],
+  "verification": {
+    "ruff_check": "PASS",
+    "ruff_format_check": "PASS",
+    "mypy_strict": "PASS:10-source-files",
+    "focused_pytest": "PASS:20",
+    "focused_pytest_seconds": 2.34,
+    "typed_family_round_trips": "PASS:9-families",
+    "immutable_event_fold_rebuild": "PASS",
+    "evidence_source_pointer_validation": "PASS",
+    "deterministic_rank_and_conflict_resolution": "PASS",
+    "rejected_history_retrieval": "PASS",
+    "plan_invalidation_on_reopen": "PASS",
+    "trace_chain_and_index_integration": "PASS",
+    "structured_and_markdown_reports": "PASS"
+  },
+  "synthetic_sequence": {
+    "source": "tests/integration/test_hypothesis_lifecycle.py",
+    "events": [
+      "hypothesis.created:H-BROAD",
+      "hypothesis.supported:H-BROAD",
+      "hypothesis.contradicted:H-BROAD",
+      "hypothesis.created:H-CONTACT",
+      "hypothesis.narrowed:H-BROAD->H-CONTACT",
+      "hypothesis.rejected:H-CONTACT",
+      "hypothesis.reopened:H-CONTACT"
+    ],
+    "final_broad_status": "narrowed",
+    "final_child_status": "candidate",
+    "preserved_parent_ids": ["H-BROAD"],
+    "preserved_rejected_identity": "H-CONTACT",
+    "invalidated_plan_ids": ["PLAN-7"],
+    "trace_event_chain": "PASS",
+    "derived_trace_index_final_status": "candidate"
+  },
+  "commands": [
+    "python -m uv run ruff check src/arc3/hypotheses tests/unit/test_hypotheses_families.py tests/unit/test_hypotheses_registry.py tests/property/test_hypotheses_properties.py tests/integration/test_hypothesis_lifecycle.py",
+    "python -m uv run ruff format --check src/arc3/hypotheses tests/unit/test_hypotheses_families.py tests/unit/test_hypotheses_registry.py tests/property/test_hypotheses_properties.py tests/integration/test_hypothesis_lifecycle.py",
+    "python -m uv run mypy src/arc3/hypotheses",
+    "python -m uv run pytest -q --basetemp %TEMP%\\arc3-stage05-final-pytest tests/unit/test_hypotheses_families.py tests/unit/test_hypotheses_registry.py tests/property/test_hypotheses_properties.py tests/integration/test_hypothesis_lifecycle.py"
+  ],
+  "claim_limits": [
+    "Rank weights are deterministic uncalibrated ordering aids, not probabilities or proof.",
+    "A synthetically correct lifecycle does not establish predictive utility on public or hidden games.",
+    "Reopening invalidates dependent plans but does not by itself select a replacement rule."
+  ]
+}

@@ -189,3 +189,17 @@ This file records material decisions made during the autonomous build. It is app
 - **Consequences:** Downstream world models consume explicit alternatives and generic structural features; they must supply evidence before promoting identity or goal claims.
 - **Reopening condition:** Measured downstream failures show that additional generic measurements are needed while preserving the same observation/interpretation boundary.
 - **Supersedes / superseded by:** none.
+
+## D-20260821-013 — Derive hypothesis state from immutable typed lifecycle events
+
+- **Status:** ADOPTED
+- **Stage:** 05
+- **Date:** 2026-08-21
+- **Commit:** pending
+- **Decision:** Represent each candidate rule as one of nine typed families and derive its current status, evidence, lineage, rank, conflicts, and plan dependencies by folding immutable lifecycle events. Keep every rejected form retrievable and make reopening emit explicit dependent-plan invalidation.
+- **Alternatives:** Mutable best-guess dictionaries; delete rejected explanations; treat numeric ranks as probabilities; silently repair dependent plans after belief changes.
+- **Evidence:** `docs/reports/005-typed-hypothesis-registry.md`; 20 focused tests and the complete synthetic lifecycle in `docs/evidence/005-hypothesis-acceptance.json`.
+- **Why:** Later success must not rewrite what a prior hypothesis claimed, what evidence existed, or when dependent plans became unsupported.
+- **Consequences:** World-model and planning stages can consume typed, rebuildable candidates and must respond to reopening signals; rank values remain explicitly uncalibrated.
+- **Reopening condition:** Held-out evidence demonstrates that the vocabulary cannot express a needed generic rule or that a deterministic transition loses source lineage.
+- **Supersedes / superseded by:** none.
