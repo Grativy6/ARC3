@@ -251,7 +251,7 @@ This file records material decisions made during the autonomous build. It is app
 - **Status:** ADOPTED
 - **Stage:** 09
 - **Date:** 2026-08-21
-- **Commit:** pending Stage 09 implementation checkpoint
+- **Commit:** b712e0bc2fffb592dbf0f6f287045a60aaefc65c
 - **Decision:** Represent externally evidenced progress, intermediate subgoals, and terminal hypotheses as typed, source-linked, reopenable goal records, while keeping novelty, information gain, and reversibility in a separate intrinsic exploration value. Once explicit external progress clears the declared rank threshold, suppress novelty but retain information and reversibility terms.
 - **Alternatives:** Optimize one combined novelty/progress score; infer terminal goals directly from geometry; permanently discard contradicted goals; treat structural affordances as accepted objectives.
 - **Evidence:** `docs/reports/009-typed-goal-acquisition.md`; 19 focused tests; the 64-case delayed/proxy comparison in `docs/evidence/009-goal-acceptance.json`.
