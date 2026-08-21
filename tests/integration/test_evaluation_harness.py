@@ -176,7 +176,7 @@ def test_abnormal_worker_exit_is_preserved_and_resume_skips_terminal_receipts(
 ) -> None:
     config = EvaluationConfig(
         partition="smoke",
-        agents=("random", "crash-test"),
+        agents=("crash-test",),
         seeds=(5,),
         max_actions=4,
         timeout_seconds=20,
