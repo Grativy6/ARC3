@@ -1,0 +1,97 @@
+{
+  "schema": "arc3.stage-02.evidence.v0.1",
+  "created_at": "2026-08-21T05:28:59Z",
+  "repository": {
+    "base_commit": "e91a1bb50e67fe3ad6b1636345a120613eb640e3",
+    "dirty_worktree": true,
+    "upstream_lock_hash": "sha256:67e1d937e213bbcc25783784d04c4fa349b85dc09b94855256916ca6b96e808a"
+  },
+  "runtime": {
+    "python_version": "3.12.14",
+    "uv_version": "0.12.5",
+    "platform": "Windows-10-10.0.19045-SP0",
+    "hardware": {
+      "cpu": "AMD Ryzen 5 2600 Six-Core Processor",
+      "gpu": "NVIDIA GeForce GTX 1660 6144 MiB",
+      "ram_bytes": 17124503552
+    }
+  },
+  "source_hashes": {
+    "src/arc3/adapters/__init__.py": "sha256:5376f806ff3534ad0c887868668093d06f5164f07ecb0e8f55f95aa3f8600678",
+    "src/arc3/adapters/arc_agi.py": "sha256:539f48626f84e76ded3dab59295c2106537ee0d2f71d9ee8f3915dfad648ddd2",
+    "src/arc3/adapters/synthetic.py": "sha256:5c3f514f0fae4d81e5db259ca45960683ea8bc6541d9e660398453e40a79dcc8",
+    "src/arc3/policy/baselines.py": "sha256:7ae8313a2eb756152261a25a417253eff336877d88d0edf836b1ef4519487ae0",
+    "src/arc3/baseline_runner.py": "sha256:8480ee468862620c19b74719efc01814c0389740b38cfb187c4ddb5f4016e145",
+    "src/arc3/cli.py": "sha256:d0e242190138732fa641cfa26328f6965855e450b8fd768c65efbbd0ce010245"
+  },
+  "evaluations": [
+    {
+      "evaluation_id": "stage02-synthetic-random-seeds-0-3",
+      "surface": "synthetic",
+      "verified": true,
+      "scorer": "arc3.synthetic.v1",
+      "single_run": false,
+      "uses_public_game_derived_memory": false,
+      "agent_config": {"policy":"random-valid","seed_per_episode":true},
+      "config_hash": "sha256:aa0fef520cf0f52fcad29e4ecf86ea3b61e0e96905f788abb73e8f6a86af9383",
+      "games": ["synthetic-grid-v1"],
+      "seeds": [0,1,2,3],
+      "action_budget": 100,
+      "wall_clock_budget_seconds": null,
+      "network_mode": "offline",
+      "started_at": null,
+      "completed_at": null,
+      "timestamp_limit_note": "The Stage 02 CLI did not yet emit event timestamps; exact timestamp receipts are introduced by Stage 03/13.",
+      "result": {
+        "mean_score": 0.5,
+        "completed": 2,
+        "episodes": 4,
+        "environment_actions": [12,100,100,83],
+        "resets": [0,1,1,1],
+        "scores": [1.0,0.0,0.0,1.0]
+      },
+      "command": "python -m uv run arc3 evaluate --agent random --partition smoke --seeds 0,1,2,3 --max-actions 100"
+    },
+    {
+      "evaluation_id": "stage02-local-public-ls20-cycle-seed-7",
+      "surface": "local-public",
+      "verified": true,
+      "scorer": "arc-agi==0.9.9 local ScorecardManager",
+      "single_run": true,
+      "uses_public_game_derived_memory": false,
+      "agent_config": {"policy":"deterministic-cycle","seed":7},
+      "config_hash": "sha256:5373a62a3523ee3750aa54d4489e9ed027b1c156d8e47a8e0a5351dcb065b494",
+      "games": ["ls20-9607627b"],
+      "seeds": [7],
+      "action_budget": 20,
+      "wall_clock_budget_seconds": null,
+      "network_mode": "offline",
+      "started_at": null,
+      "completed_at": null,
+      "timestamp_limit_note": "The combined Stage 02 CLI invocation did not emit event timestamps; exact timestamp receipts are introduced by Stage 03/13.",
+      "result": {
+        "score": 0.0,
+        "completed": false,
+        "levels_completed": 0,
+        "environment_actions": 20,
+        "resets": 0,
+        "final_state": "NOT_FINISHED",
+        "stop_reason": "action_budget"
+      },
+      "environment_artifacts": {
+        "source_sha256": "sha256:67cc85888eeef68f125cbb5f5fb158e9ca455d6bca46b171790f556fcabf934e",
+        "metadata_sha256": "sha256:9b5c1ce9294eb808adafa8056a1305a44821dfcc85f100338bd9d22b2be4c744",
+        "source_semantically_inspected": false,
+        "source_hashed": true,
+        "committed": false
+      },
+      "command": "python -m uv run arc3 play --mode local --agent cycle --game ls20-9607627b --seed 7 --max-actions 20 --max-resets 2 --environments-dir <temporary-cached-public-environments> --recordings-dir <temporary-recordings>"
+    }
+  ],
+  "failures_and_limits": [
+    "The strongest Stage 02 score is on a deliberately small synthetic path and is not evidence of public-game or hidden-game generalization.",
+    "The local-public deterministic cycle baseline scored exactly zero and is preserved as such.",
+    "This stage used a dirty worktree before its atomic checkpoint; source hashes bind the executed implementation and the checkpoint commit binds them after commit.",
+    "No hosted model API or game source was read by the policy; developer tooling computed the cached source file hash without semantic inspection."
+  ]
+}

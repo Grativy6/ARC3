@@ -263,3 +263,51 @@ This file preserves unresolved technical, evidential, legal, and external burden
 - **Next discriminating action:** Observe the pushed Stage 01 Actions run, then perform the Stage 18 fresh-clone locked bootstrap and artifact verification.
 - **Resolution condition:** Linux and Windows CI plus the declared Stage 18 clean-clone checks pass, or failures are preserved with exact outputs.
 - **Resolution receipt:** Remote CI portion resolved by Actions runs `32450257835` and `32450260123`; true clean-clone verification remains open for Stage 18.
+
+---
+
+## 2026-08-21 Stage 02 updates
+
+### B-20260821-013 — Official package, docs, and example identities disagree
+
+- **Status update:** NARROWED for the Stage 02 execution path; documentation/scoring and future-version conflicts remain open.
+- **Last updated:** 2026-08-21
+- **Current evidence:** Exact wheels import; adapter compatibility tests bind frame extraction, automatic reset, action validation, terminal behavior, recording limitations, mode precedence, and scorecard normalization to `arc-agi==0.9.9` / `arcengine==0.9.3`.
+- **Remaining burden:** Preserve the 100%/115% score-cap conflict until Stage 13 validates the chosen official-facing scorer; re-run compatibility tests on any upstream change.
+- **Resolution receipt:** `docs/reports/002-official-sdk-baselines.md`.
+
+### B-20260821-014 — Upstream examples and anonymous logging violate ARC3 production constraints
+
+- **Status update:** NARROWED for Stage 02 production paths; final static/package scans remain open.
+- **Last updated:** 2026-08-21
+- **Current evidence:** Deterministic first-party baselines use local seeded PRNG state, advertised-action filtering, no game-ID branches, injected silent SDK loggers, and sanitized exception text. Sentinel tests and a production-ID scan pass.
+- **Remaining burden:** Turn these scans into durable Stage 16/17 CI checks and prove the final packaged controller has the same properties.
+- **Resolution receipt:** `docs/reports/002-official-sdk-baselines.md`.
+
+## B-20260821-016 — Stage 02 timestamps are incomplete evaluation receipts
+
+- **Status:** OPEN
+- **Stage:** 02, 03, 13
+- **Opened:** 2026-08-21
+- **Last updated:** 2026-08-21
+- **Owner:** Codex
+- **Burden:** The Stage 02 CLI scorecards preserve configuration, source identities, seeds, budgets, and results, but the combined command did not emit exact evaluation start/end timestamps.
+- **Why it matters:** Inferred timestamps would weaken provenance; missing fields must be explicit.
+- **Current evidence:** Both fields are `null` with an explanation in `docs/evidence/002-baseline-scorecards.json`.
+- **Next discriminating action:** Use the immutable Stage 03 event clock and Stage 13 evaluation manifest to record exact start/completion timestamps.
+- **Resolution condition:** The general evaluation harness emits and hashes both timestamps without relying on shell history.
+- **Resolution receipt:** none.
+
+## B-20260821-017 — One would-be public holdout was exposed before manifest freeze
+
+- **Status:** ACCEPTED_LIMIT
+- **Stage:** 02, 15
+- **Opened:** 2026-08-21
+- **Last updated:** 2026-08-21
+- **Owner:** shared
+- **Burden:** `ls20-9607627b` was opened for SDK contract work before deterministic public partitions were committed; its hash rank would otherwise have placed it in public holdout.
+- **Why it matters:** Treating it as unseen later would be false even though no game source was inspected and no solution was encoded.
+- **Current evidence:** The manifest records original assignment, exposure date/type, and an override to development.
+- **Next discriminating action:** Keep it in development/regression only and run Stage 15 public holdout solely on the 10 unexposed manifest entries.
+- **Resolution condition:** Permanent process constraint for Build 000; never erase the exposure record.
+- **Resolution receipt:** `docs/evaluation/public-game-partitions.v0.1.json`.

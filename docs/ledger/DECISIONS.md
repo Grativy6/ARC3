@@ -133,3 +133,31 @@ This file records material decisions made during the autonomous build. It is app
 - **Consequences:** Adapters must translate explicitly between SDK and first-party values; missing optional dependencies produce typed boundary errors rather than import failures.
 - **Reopening condition:** A measured packaging constraint requires the official wheel in the minimal competition runtime, while retaining the same typed boundary and offline behavior.
 - **Supersedes / superseded by:** none.
+
+## D-20260821-009 — Enforce stricter first-party SDK semantics
+
+- **Status:** ADOPTED
+- **Stage:** 02
+- **Date:** 2026-08-21
+- **Commit:** pending
+- **Decision:** Treat the pinned SDK as an environment transport/scorer boundary, but validate exact coordinates, advertised-action membership, terminal lifecycle, mode precedence, and credential-safe logging in first-party code before any upstream call.
+- **Alternatives:** Trust upstream Pydantic coercion and wrapper lifecycle; fork or vendor the SDK.
+- **Evidence:** `docs/reports/002-official-sdk-baselines.md`; 27 focused tests; executable probes preserved in `docs/evidence/002-baseline-scorecards.json` and the Stage 00 discrepancy ledger.
+- **Why:** Measured upstream behavior is intentionally permissive in several places and the inherited competition operation mode is networked. ARC3's offline/integrity contract is stricter.
+- **Consequences:** Invalid or ambiguous upstream values become typed adapter failures; production paths suppress upstream details that may contain credentials; official scoring behavior remains untouched.
+- **Reopening condition:** A pinned upstream release supplies equivalent strict semantics and passes the same first-party compatibility tests.
+- **Supersedes / superseded by:** none.
+
+## D-20260821-010 — Freeze public partitions by deterministic hash with visible exposure overrides
+
+- **Status:** ADOPTED
+- **Stage:** 02, 13, 15
+- **Date:** 2026-08-21
+- **Commit:** pending
+- **Decision:** Assign current public names by sorted `SHA-256(salt + NUL + stable_name)` into fixed-size smoke/development/holdout partitions. Move any already-opened game to development without erasing its original assignment.
+- **Alternatives:** Curate favorable partitions; treat every public game as development; claim a previously opened game remains held out.
+- **Evidence:** `docs/evaluation/public-game-partitions.v0.1.json`; the pre-manifest `ls20` SDK probe.
+- **Why:** Deterministic assignment reduces selection bias, while an explicit exposure override preserves honest provenance.
+- **Consequences:** `ls20` is permanently development for Build 000 even though its original hash rank was holdout; 10 public holdout games remain unopened at the gameplay level.
+- **Reopening condition:** A versioned upstream game-set change requires a new manifest and salt while preserving this manifest and all opened-game receipts.
+- **Supersedes / superseded by:** none.

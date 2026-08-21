@@ -1,0 +1,49 @@
+{
+  "schema": "arc3.public-game-partitions.v0.1",
+  "created_at": "2026-08-21T05:28:59Z",
+  "discovery": {
+    "command": "python -m uv run arc3 games list --mode online --seed 0",
+    "surface": "online-public",
+    "toolkit": "arc-agi==0.9.9",
+    "count": 25,
+    "access": "anonymous",
+    "gameplay_observed": false
+  },
+  "assignment": {
+    "salt": "arc3-build-000-v0.1",
+    "algorithm": "sha256(UTF-8(salt + NUL + stable_game_name)); ascending full digest; ranks 0..2 smoke, 3..13 development, 14..24 public-holdout",
+    "override_rule": "Any game opened before manifest freeze is moved to development and the original assignment remains recorded.",
+    "counts_after_override": {
+      "smoke": 3,
+      "development": 12,
+      "public-holdout": 10
+    }
+  },
+  "games": [
+    {"game_id":"cn04-2fe56bfb","stable_name":"cn04","assignment_hash":"0decd7d3271019434618693e5182c2ea7ca382de83521d63a200fc795895ab6b","partition":"smoke","exposure":"discovery-metadata-only"},
+    {"game_id":"bp35-0a0ad940","stable_name":"bp35","assignment_hash":"1861f200695ed5cd33f7ddc4467ba2309f13a76f425b35a3056f741a6a6dad10","partition":"smoke","exposure":"discovery-metadata-only"},
+    {"game_id":"s5i5-18d95033","stable_name":"s5i5","assignment_hash":"1e9e1f92e6c63192163067b7da5c4726a762771404f6bd9d90da5846b2719c5e","partition":"smoke","exposure":"discovery-metadata-only"},
+    {"game_id":"tr87-cd924810","stable_name":"tr87","assignment_hash":"2e5084369e6ca97042dfa4ffb6952df84e592f507bd32b61cfe8dfd2ee7ec9af","partition":"development","exposure":"discovery-metadata-only"},
+    {"game_id":"r11l-495a7899","stable_name":"r11l","assignment_hash":"4a713213684214057d6bb8dffe5c312309a58891c35bcc27e0551ac409b0e149","partition":"development","exposure":"discovery-metadata-only"},
+    {"game_id":"cd82-fb555c5d","stable_name":"cd82","assignment_hash":"5cff850555acd9a17dc834b9aa91d17ea1c75d5b649d15dc39f15b084f3b3d7a","partition":"development","exposure":"discovery-metadata-only"},
+    {"game_id":"sk48-d8078629","stable_name":"sk48","assignment_hash":"5e1a4909c5083370f72d9d0fdc3d05a6b3123c31c936f3664a8812b022f17a0b","partition":"development","exposure":"discovery-metadata-only"},
+    {"game_id":"m0r0-492f87ba","stable_name":"m0r0","assignment_hash":"6c79aefefb10a064d1716b610f015eddc1eab593faff7733611b7c25566be0f3","partition":"development","exposure":"discovery-metadata-only"},
+    {"game_id":"ka59-38d34dbb","stable_name":"ka59","assignment_hash":"6d09cb7f48f721fe666af9c65b94c77f1111bd348ec499aaa7b23c59bd9d2b9c","partition":"development","exposure":"discovery-metadata-only"},
+    {"game_id":"tu93-0768757b","stable_name":"tu93","assignment_hash":"74a88e229f7643de476b5b9e3cf5c7e73f18b78f308b95ff451c2c885d9843db","partition":"development","exposure":"discovery-metadata-only"},
+    {"game_id":"lf52-271a04aa","stable_name":"lf52","assignment_hash":"79dfc65a78eda5683b3529a201e41bcf31a465a84079f0d9608ddde0644c7be1","partition":"development","exposure":"discovery-metadata-only"},
+    {"game_id":"g50t-5849a774","stable_name":"g50t","assignment_hash":"83a7fefa0c92d80a898794b21be31f7e3c4d9dbbdd94dae37b23ba65cc21e015","partition":"development","exposure":"discovery-metadata-only"},
+    {"game_id":"lp85-305b61c3","stable_name":"lp85","assignment_hash":"8a0e9dc403f5c2013a41d32772adcb2917d74dae690219bc2f5160362eb98edb","partition":"development","exposure":"discovery-metadata-only"},
+    {"game_id":"ar25-0c556536","stable_name":"ar25","assignment_hash":"90423451e4cc21a85da6aed98ef9359685517addec73ab8e71a8b351d4940cda","partition":"development","exposure":"discovery-metadata-only"},
+    {"game_id":"sp80-589a99af","stable_name":"sp80","assignment_hash":"9c3b43453a724306316e6ddf2872803f65757655a0c402e84e719faf1401a249","partition":"public-holdout","exposure":"discovery-metadata-only"},
+    {"game_id":"sc25-635fd71a","stable_name":"sc25","assignment_hash":"bc03302134c8958b7f2d64deb0cfbe050208cec0a41d795b8832144a419e02f4","partition":"public-holdout","exposure":"discovery-metadata-only"},
+    {"game_id":"ls20-9607627b","stable_name":"ls20","assignment_hash":"c34e2c9138eff0f0cbabb6d49b342e6dcef04b80439ffd92ebed052591625d78","partition":"development","original_partition":"public-holdout","exposure":"opened-for-sdk-contract-and-baseline","exposure_at":"2026-08-21","override_reason":"Opened before the partition manifest was frozen; it cannot honestly remain held out."},
+    {"game_id":"sb26-7fbdac44","stable_name":"sb26","assignment_hash":"d5355c90033a2c72183288d1a70a4480e20b2a2027ba8883aa5c0cd25b698596","partition":"public-holdout","exposure":"discovery-metadata-only"},
+    {"game_id":"su15-1944f8ab","stable_name":"su15","assignment_hash":"e3c69a2b39b919413b3aea9dd4ae985e3192b07b50b4baae01b51994110cf13c","partition":"public-holdout","exposure":"discovery-metadata-only"},
+    {"game_id":"ft09-0d8bbf25","stable_name":"ft09","assignment_hash":"e512cac245739b9de1013f7ad51dee1f33218e6ddaeed58b0678fbb0757cb3e2","partition":"public-holdout","exposure":"discovery-metadata-only"},
+    {"game_id":"re86-8af5384d","stable_name":"re86","assignment_hash":"e5637cf08b8603b0072ecb658b4572553557c4401f227a196835353c58baf9a8","partition":"public-holdout","exposure":"discovery-metadata-only"},
+    {"game_id":"wa30-ee6fef47","stable_name":"wa30","assignment_hash":"e917811ee5819c092059d4456ba217279d8d9ec8453acfcc22312bb59dce3951","partition":"public-holdout","exposure":"discovery-metadata-only"},
+    {"game_id":"dc22-fdcac232","stable_name":"dc22","assignment_hash":"eb2d112228ad53b871026815ac547f7eb6cd31a2bd9edb4df19d910fb524b0b6","partition":"public-holdout","exposure":"discovery-metadata-only"},
+    {"game_id":"vc33-5430563c","stable_name":"vc33","assignment_hash":"ed4dd66ed3252ba63fc10ddaeb46a99eab7ce01425b39d96f490d45b57f8c0b0","partition":"public-holdout","exposure":"discovery-metadata-only"},
+    {"game_id":"tn36-ef4dde99","stable_name":"tn36","assignment_hash":"f3773bea2a24bdcc15f14cbfaae843c7182e2db050aca5bcf79b132b5739791b","partition":"public-holdout","exposure":"discovery-metadata-only"}
+  ]
+}

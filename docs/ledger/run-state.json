@@ -5,8 +5,8 @@
   "repository": "Grativy6/ARC3",
   "owner": "Christopher D. Pang",
   "status": "IN_PROGRESS",
-  "current_stage": "02",
-  "current_task": "stage-02-official-sdk-and-baseline-loop",
+  "current_stage": "03",
+  "current_task": "stage-03-immutable-trace-replay-checkpoint",
   "implementation_branch": "build/000-arc3-end-to-end",
   "pull_request": {
     "number": 3,
@@ -19,13 +19,14 @@
   "resume_generation": 0,
   "completed_stages": [
     "00",
-    "01"
+    "01",
+    "02"
   ],
   "stage_status": {
     "00": "PASS",
     "01": "PASS",
-    "02": "IN_PROGRESS",
-    "03": "PENDING",
+    "02": "PASS",
+    "03": "IN_PROGRESS",
     "04": "PENDING",
     "05": "PENDING",
     "06": "PENDING",
@@ -84,6 +85,33 @@
         "remote_ci_correction": "PASS:ubuntu+windows:runs-32450257835,32450260123",
         "git_diff_check": "PASS"
       }
+    },
+    "stage_02": {
+      "status": "PASS",
+      "labels": [
+        "synthetic",
+        "local-public"
+      ],
+      "report": "docs/reports/002-official-sdk-baselines.md",
+      "report_sha256": "sha256:65e321d09ea5988f509b67bc8215b2cc4cd72291290d438fdda997f9893b37f1",
+      "scorecard_evidence": "docs/evidence/002-baseline-scorecards.json",
+      "scorecard_evidence_sha256": "sha256:64e635c5575c1e357c4cda41134461d489b5d98f34be8b08ce382c6a619132bc",
+      "public_partition_manifest": "docs/evaluation/public-game-partitions.v0.1.json",
+      "public_partition_manifest_sha256": "sha256:682d5891c2aface54803d9bd1173c55ed21e89856e13b8a478fb9276ee963f2f",
+      "checkpoint_commit": "pending-stage-02-commit",
+      "verification": {
+        "ruff_lint": "PASS",
+        "ruff_format": "PASS",
+        "mypy_strict": "PASS:7-source-files",
+        "pytest": "PASS:27",
+        "synthetic_loop": "PASS",
+        "official_sdk_import": "PASS:arc-agi-0.9.9+arcengine-0.9.3",
+        "official_local_smoke": "PASS:score-0.0",
+        "invalid_action_prevention": "PASS",
+        "determinism": "PASS",
+        "production_public_id_scan": "PASS:0-matches",
+        "evidence_json": "PASS"
+      }
     }
   },
   "blocked_items": [
@@ -118,6 +146,18 @@
       "label": "synthetic",
       "result": "49 focused tests passed; strict type, lint, format, doctor, and Windows bootstrap checks passed",
       "report": "docs/reports/001-repository-foundation.md"
+    },
+    {
+      "stage": "02",
+      "label": "synthetic",
+      "result": "random-valid mean score 0.5; 2/4 completed; seeds 0,1,2,3; 100-action budget",
+      "report": "docs/reports/002-official-sdk-baselines.md"
+    },
+    {
+      "stage": "02",
+      "label": "local-public",
+      "result": "deterministic cycle score 0.0; 0 levels; 20 actions; 0 resets; one development game",
+      "report": "docs/reports/002-official-sdk-baselines.md"
     }
   ],
   "artifacts": {
@@ -136,9 +176,21 @@
     "uv_lock": {
       "path": "uv.lock",
       "sha256": "c2c8fac365e0e93dd7743c8797f0d2b00a64183b4f7063546c17cabd3fd08a6a"
+    },
+    "stage_02_report": {
+      "path": "docs/reports/002-official-sdk-baselines.md",
+      "sha256": "65e321d09ea5988f509b67bc8215b2cc4cd72291290d438fdda997f9893b37f1"
+    },
+    "stage_02_scorecards": {
+      "path": "docs/evidence/002-baseline-scorecards.json",
+      "sha256": "64e635c5575c1e357c4cda41134461d489b5d98f34be8b08ce382c6a619132bc"
+    },
+    "public_game_partitions_v0_1": {
+      "path": "docs/evaluation/public-game-partitions.v0.1.json",
+      "sha256": "682d5891c2aface54803d9bd1173c55ed21e89856e13b8a478fb9276ee963f2f"
     }
   },
-  "next_action": "Complete Stage 02 official SDK adapter, deterministic baselines, synthetic loop, and measured baseline report.",
+  "next_action": "Complete Stage 03 immutable hash-linked trace, replay, interruption recovery, and checkpoint acceptance suite.",
   "notes": [
     "Initial READY state was validated against the repository at b1948e9d02ad7b1321cbc57f3538047813e01e98 before this run began.",
     "No prior completed stages, checkpoint commit, or evidence artifacts were recorded; bootstrap PR 1 and its merge commit were independently verified.",
