@@ -14,8 +14,8 @@
     "draft": true
   },
   "started_at": "2026-08-21T04:46:19Z",
-  "last_checkpoint_at": "2026-08-21T05:53:29Z",
-  "last_checkpoint_commit": "ed49b841f3e9f6f5c9a4a6a965e2a60f1c4c3fa5",
+  "last_checkpoint_at": "2026-08-21T05:56:31Z",
+  "last_checkpoint_commit": "5ee32263b5345bcbcb2b5a2f490b08c7f602b1e2",
   "resume_generation": 0,
   "completed_stages": [
     "00",
@@ -166,7 +166,7 @@
       "report_sha256": "sha256:d51a356d221cd5260f6207986802214d2933930b48b2d4564c5773ffa0b3a0bf",
       "acceptance_evidence": "docs/evidence/005-hypothesis-acceptance.json",
       "acceptance_evidence_sha256": "sha256:880a6496a5179b7ccf86852d322888b53592ddcd45752928375f86a093c35df1",
-      "checkpoint_commit": "pending",
+      "checkpoint_commit": "5ee32263b5345bcbcb2b5a2f490b08c7f602b1e2",
       "verification": {
         "ruff_lint": "PASS",
         "ruff_format": "PASS",

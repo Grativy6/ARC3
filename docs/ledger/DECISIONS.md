@@ -195,7 +195,7 @@ This file records material decisions made during the autonomous build. It is app
 - **Status:** ADOPTED
 - **Stage:** 05
 - **Date:** 2026-08-21
-- **Commit:** pending
+- **Commit:** 5ee32263b5345bcbcb2b5a2f490b08c7f602b1e2
 - **Decision:** Represent each candidate rule as one of nine typed families and derive its current status, evidence, lineage, rank, conflicts, and plan dependencies by folding immutable lifecycle events. Keep every rejected form retrievable and make reopening emit explicit dependent-plan invalidation.
 - **Alternatives:** Mutable best-guess dictionaries; delete rejected explanations; treat numeric ranks as probabilities; silently repair dependent plans after belief changes.
 - **Evidence:** `docs/reports/005-typed-hypothesis-registry.md`; 20 focused tests and the complete synthetic lifecycle in `docs/evidence/005-hypothesis-acceptance.json`.
