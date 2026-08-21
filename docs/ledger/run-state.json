@@ -5,8 +5,8 @@
   "repository": "Grativy6/ARC3",
   "owner": "Christopher D. Pang",
   "status": "IN_PROGRESS",
-  "current_stage": "16",
-  "current_task": "stage-16-optimization-robustness-integrity",
+  "current_stage": "17",
+  "current_task": "stage-17-offline-kaggle-package",
   "implementation_branch": "build/000-arc3-end-to-end",
   "pull_request": {
     "number": 3,
@@ -14,8 +14,8 @@
     "draft": true
   },
   "started_at": "2026-08-21T04:46:19Z",
-  "last_checkpoint_at": "2026-08-21T10:49:34Z",
-  "last_checkpoint_commit": "6a0f6e5b9cf076f7d755675ece0fa46379202161",
+  "last_checkpoint_at": "2026-08-21T11:49:56Z",
+  "last_checkpoint_commit": "cd3e3aa9cc2c2fa8fbe514b7950862dfe1188783",
   "resume_generation": 0,
   "completed_stages": [
     "00",
@@ -33,7 +33,8 @@
     "12",
     "13",
     "14",
-    "15"
+    "15",
+    "16"
   ],
   "stage_status": {
     "00": "PASS",
@@ -52,8 +53,8 @@
     "13": "PASS",
     "14": "PASS",
     "15": "PASS",
-    "16": "IN_PROGRESS",
-    "17": "PENDING",
+    "16": "FAILED_MECHANISM",
+    "17": "IN_PROGRESS",
     "18": "PENDING",
     "19": "PENDING",
     "20": "PENDING"
@@ -417,6 +418,31 @@
         "holdout_gate": "PASS:rejected-before-gameplay+0-events",
         "holdout_result": "NOT_MEASURED",
         "frozen_commit_ci": "PASS:ubuntu+windows:runs-32471135774,32471131148"
+      }
+    },
+    "stage_16": {
+      "status": "FAILED_MECHANISM",
+      "label": "synthetic",
+      "claim": "NO_GENERALIZATION_CLAIM",
+      "runtime_profile_status": "PASS",
+      "robustness_status": "FAILED_MECHANISM",
+      "report": "docs/reports/016-optimization-robustness-integrity.md",
+      "report_sha256": "sha256:87c06d3b210154048b599784e90e4d39c4d73c10010cdbee146942c2c92a5174",
+      "acceptance_evidence": "docs/evidence/016-competition-profile-acceptance.json",
+      "acceptance_evidence_sha256": "sha256:8127acc6441bcba4f4e9b0a02b9950880c3231f7a0b4cef91c95dd089af0f595",
+      "measured_commit": "cd3e3aa9cc2c2fa8fbe514b7950862dfe1188783",
+      "measured_tree": "11e2c1ba93a3801dc894cc9c0895c636a31f4b63",
+      "raw_receipt_file_sha256": "sha256:125290f571860cdc2a66a99f8e0bea0f421af1c7d891c488908ebe85cef91bc2",
+      "raw_receipt_self_sha256": "sha256:3c7d407f2b0f1c9705648ac8c5e06adba951567c755e1bbca6ea194a1e668758",
+      "verification": {
+        "runtime_budgets": "PASS:9-of-9+80-actions+116.26474110002164-seconds",
+        "peak_rss": "PASS:175210496-bytes",
+        "replay": "PASS:81-frames+80-deltas",
+        "fault_matrix": "PASS:11-of-11",
+        "robustness": "FAILED_MECHANISM:7-pass+4-failed+1-not-exercised",
+        "static_integrity": "PASS:0-findings+runtime-socket-denial-out-of-scope",
+        "stage13_regression": "PASS:8-of-8",
+        "accelerator": "CPU_SELECTED:GTX1660-available+no-measured-GPU-mechanism"
       }
     }
   },

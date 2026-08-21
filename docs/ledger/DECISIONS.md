@@ -343,3 +343,17 @@ This file records material decisions made during the autonomous build. It is app
 - **Consequences:** Stage 15 remains bound to commit `6a0f6e5`; later generic optimizations require a new identity and cannot rewrite this result. Stage 16 must bound controller latency and persistence cost. The public holdout remains available for a future independently frozen milestone that passes development.
 - **Reopening condition:** A generic policy at a new frozen commit produces a passing sealed development result under a declared protocol; opening the holdout would still require a new milestone identity and the existing one-shot gate.
 - **Supersedes / superseded by:** none.
+
+## D-20260821-024 — Batch derived receipts while preserving raw durability boundaries
+
+- **Status:** ADOPTED
+- **Stage:** 16
+- **Date:** 2026-08-21
+- **Commit:** `cd3e3aa9cc2c2fa8fbe514b7950862dfe1188783`
+- **Decision:** Keep raw observation, submitted-action, and returned-consequence receipts durable at their authority boundaries; batch derived journal events in groups of 128 with a mandatory flush before each authority boundary; use a verified live event/tail cache for checkpoint binding and restore lookup; and keep Windows kernel peak RSS as the authoritative memory measure in the timed profile. Preserve the frozen competition budgets and FULL/COMPETITION feature preset even though palette and action-remap robustness failed.
+- **Alternatives:** Force an `fsync` after every derived event; weaken or disable raw trace/checkpoint receipts; increase the frozen runtime or memory budgets after seeing the result; require a GPU without measured benefit; add public-game identifiers or action tables; report allocator-traced timing despite measured instrumentation distortion.
+- **Evidence:** `docs/reports/016-optimization-robustness-integrity.md`; clean-commit runtime, fault, robustness, integrity, and regression receipt summarized in `docs/evidence/016-competition-profile-acceptance.json`.
+- **Why:** Profiling isolated repeated durable derived-event writes and complete-ledger reparsing as generic persistence costs. Batching derived evidence preserves raw authority-boundary durability while the clean controller completes 80 actions in 116.26474110002164 seconds, within every frozen resource check. Kernel RSS captures the whole process without the large timing distortion observed with allocator tracing.
+- **Consequences:** Stage 16 runtime acceptance passes without relaxing budgets, but the stage is `FAILED_MECHANISM` because four robustness cases fail. The optimized policy remains eligible only as a failed-mechanism packaging candidate; no public rerun or holdout exposure is implied.
+- **Reopening condition:** A fault test shows loss of a raw authority-boundary receipt, a crash exposes an unverified cached tail, a clean equal-workload profile violates the frozen envelope, or a broader measured profile justifies a different batching/cache boundary.
+- **Supersedes / superseded by:** none.

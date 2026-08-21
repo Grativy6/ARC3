@@ -807,3 +807,51 @@ This file preserves unresolved technical, evidential, legal, and external burden
 - **Next discriminating action:** Preserve the partition until a future generic frozen milestone passes a sealed development gate. Do not acquire or inspect it during Build 000 packaging or release verification.
 - **Resolution condition:** A future predeclared milestone legitimately passes development and consumes the holdout once, or the project permanently retires the holdout without exposure.
 - **Resolution receipt:** none.
+
+---
+
+## 2026-08-21 Stage 16 updates
+
+### B-20260821-032 — Whole-process RSS and sustained synthetic runtime are now measured
+
+- **Status update:** RESOLVED_FOR_STAGE_16_RUNTIME; public effectiveness remains open.
+- **Last updated:** 2026-08-21
+- **Current evidence:** The clean `cd3e3aa` profile completed 80 forced actions in 116.26474110002164 seconds with 175,210,496 bytes peak whole-process RSS, 6,837,834 trace bytes, and 149,129,938 checkpoint bytes. All nine frozen runtime-budget checks passed.
+- **Remaining burden:** The optimized controller was not rerun on the Stage 15 `local-public` development partition, so no public score or transfer claim changed. Palette and action-remap robustness also fail.
+- **Resolution receipt:** `docs/evidence/016-competition-profile-acceptance.json`; measured commit `cd3e3aa9cc2c2fa8fbe514b7950862dfe1188783`.
+
+### B-20260821-038 — The synthetic runtime bottleneck is repaired but public viability is unmeasured
+
+- **Status update:** NARROWED; the Stage 16 runtime sub-burden is resolved.
+- **Last updated:** 2026-08-21
+- **Current evidence:** The integrated policy now completes the declared 80-action component-stress workload in 116.26474110002164 seconds inside the 240-second competition envelope. The pinned Stage 13 regression, replay, fault matrix, and static integrity checks pass. This is `synthetic` evidence.
+- **Remaining burden:** Stage 15's 30/30 FULL timeouts remain the only `local-public` evidence. Build 000 does not reopen or rerun the public development matrix, and the public holdout remains sealed. The final candidate must carry both the runtime repair and the negative public result.
+- **Resolution receipt:** `docs/evidence/016-competition-profile-acceptance.json`; prior negative receipt `docs/evidence/015-public-development-acceptance.json`.
+
+## B-20260821-040 — Palette and action-remap robustness mechanisms fail
+
+- **Status:** OPEN
+- **Stage:** 16, 17, 18, 19
+- **Opened:** 2026-08-21
+- **Last updated:** 2026-08-21
+- **Owner:** shared
+- **Burden:** Both palette-permuted cases and both action-remapped cases remained operational but scored 0.0 instead of matching their same-seed base score of 1.0. All four are `FAILED_MECHANISM`.
+- **Why it matters:** Competition integrity requires generic behavior derived from observations and learned structure. Sensitivity to presentation colors or action encoding can cause unseen games to fail even when trace, replay, and fault handling remain correct.
+- **Current evidence:** Twelve clean-commit robustness cases at seeds 7 and 11 produced seven PASS, four `FAILED_MECHANISM`, and one `NOT_EXERCISED`. The four failures preserved complete action chains and zero controller faults, isolating behavior rather than infrastructure.
+- **Next discriminating action:** Design a predeclared generic equivariance mechanism and paired suite that learns or normalizes palette/action correspondences without public-game identities, then compare exact same-seed terminal phase, score, and action count.
+- **Resolution condition:** Repeated clean equal-budget paired tests preserve base behavior under palette and action remapping without game-specific tables and without regressing the pinned synthetic milestone.
+- **Resolution receipt:** none.
+
+## B-20260821-041 — Rule-change seed 11 ends before the changed rule
+
+- **Status:** OPEN
+- **Stage:** 16, 19
+- **Opened:** 2026-08-21
+- **Last updated:** 2026-08-21
+- **Owner:** shared
+- **Burden:** Rule-change seed 11 completes after one action, before the scheduled change can supply adaptation evidence; its result is `NOT_EXERCISED`, not PASS or failure.
+- **Why it matters:** Counting an episode that never reaches the intervention would overstate recovery from changed mechanics.
+- **Current evidence:** Seed 7 reaches the change, emits 14 contradiction or prediction-mismatch signals, and passes. Seed 11 has one signal associated with the pre-change terminal episode and no exposed changed-rule behavior.
+- **Next discriminating action:** Predeclare a non-terminal seed or intervention boundary that guarantees exposure while preserving the same generic rule family and budget.
+- **Resolution condition:** At least two clean deterministic cases reach the rule change and retain explicit confirmation, contradiction, or reopening receipts after the intervention.
+- **Resolution receipt:** none.
