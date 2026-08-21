@@ -319,20 +319,20 @@ def _redact_generated_log(content: bytes) -> tuple[bytes, int]:
     return redacted, replacements
 
 
-def _sanitized_environment(output_root: Path, check_id: str) -> tuple[dict[str, str], int]:
+def _sanitized_environment(transient_root: Path, check_id: str) -> tuple[dict[str, str], int]:
     environment = {
         name: value
         for name, value in os.environ.items()
         if name.upper() in _PASSTHROUGH_ENVIRONMENT
     }
     removed = len(os.environ) - len(environment)
-    temporary = output_root / "tmp" / check_id
-    coverage = output_root / "coverage"
-    hypothesis = output_root / "hypothesis" / check_id
-    mypy_cache = output_root / "cache" / "mypy" / check_id
-    ruff_cache = output_root / "cache" / "ruff" / check_id
-    isolated_home = output_root / "home" / check_id
-    uv_cache = output_root / "cache" / "uv" / check_id
+    temporary = transient_root / "tmp" / check_id
+    coverage = transient_root / "coverage"
+    hypothesis = transient_root / "hypothesis" / check_id
+    mypy_cache = transient_root / "cache" / "mypy" / check_id
+    ruff_cache = transient_root / "cache" / "ruff" / check_id
+    isolated_home = transient_root / "home" / check_id
+    uv_cache = transient_root / "cache" / "uv" / check_id
     for directory in (
         temporary,
         coverage,
@@ -359,7 +359,7 @@ def _sanitized_environment(output_root: Path, check_id: str) -> tuple[dict[str, 
             "USERPROFILE": str(isolated_home),
             "UV_CACHE_DIR": str(uv_cache),
             "UV_OFFLINE": "1",
-            "XDG_CACHE_HOME": str(output_root / "cache" / "xdg" / check_id),
+            "XDG_CACHE_HOME": str(transient_root / "cache" / "xdg" / check_id),
         }
     )
     return environment, removed
@@ -391,6 +391,7 @@ def run_command(
     *,
     repository: Path,
     output_root: Path,
+    transient_root: Path,
     prior: Mapping[str, CheckResult],
 ) -> CheckResult:
     """Run one command without a shell and seal both byte streams."""
@@ -407,7 +408,7 @@ def run_command(
             status=spec.failure_status,
         )
 
-    environment, removed_sensitive_variables = _sanitized_environment(output_root, spec.check_id)
+    environment, removed_sensitive_variables = _sanitized_environment(transient_root, spec.check_id)
     log_root = output_root / "logs"
     stdout_path = log_root / f"{spec.check_id}.stdout.log"
     stderr_path = log_root / f"{spec.check_id}.stderr.log"
@@ -577,7 +578,30 @@ def prepare_fresh_output_root(repository: Path, output_root: Path) -> None:
     output_root.mkdir(parents=True, exist_ok=False)
 
 
-def interpreter_source_identity(repository: Path, output_root: Path) -> dict[str, object]:
+def prepare_fresh_transient_root(repository: Path, output_root: Path, transient_root: Path) -> None:
+    """Create fresh unsealed state outside both the clone and evidence tree."""
+
+    repository = repository.resolve()
+    output_root = output_root.resolve()
+    transient_root = transient_root.resolve()
+    if transient_root.exists():
+        raise ValueError(f"--transient-root must not already exist: {transient_root}")
+    if (
+        transient_root == repository
+        or repository in transient_root.parents
+        or transient_root in repository.parents
+    ):
+        raise ValueError("--transient-root must be strictly outside the repository")
+    if (
+        transient_root == output_root
+        or output_root in transient_root.parents
+        or transient_root in output_root.parents
+    ):
+        raise ValueError("--transient-root must not overlap --output-root")
+    transient_root.mkdir(parents=True, exist_ok=False)
+
+
+def interpreter_source_identity(repository: Path, transient_root: Path) -> dict[str, object]:
     """Prove the verifier and its isolated subprocess import ARC3 from this clone."""
 
     repository = repository.resolve()
@@ -595,7 +619,7 @@ def interpreter_source_identity(repository: Path, output_root: Path) -> dict[str
     in_process_origin = Path(spec.origin).resolve()
     if in_process_origin != expected_origin:
         raise ValueError(f"arc3 import origin is outside the candidate source: {in_process_origin}")
-    environment, removed = _sanitized_environment(output_root, "interpreter-origin")
+    environment, removed = _sanitized_environment(transient_root, "interpreter-origin")
     probe = subprocess.run(
         (
             str(executable),
@@ -785,6 +809,7 @@ def build_plan(
     *,
     repository: Path,
     output_root: Path,
+    transient_root: Path,
     expectation: Mapping[str, Any],
     uv_command: tuple[str, ...],
     official_environments: Path,
@@ -793,6 +818,7 @@ def build_plan(
 
     repository = repository.resolve()
     output_root = output_root.resolve()
+    transient_root = transient_root.resolve()
     official_environments = official_environments.resolve()
     python = sys.executable
     configuration = _expectation_configuration(expectation)
@@ -836,7 +862,7 @@ def build_plan(
                 "mypy",
                 "--strict",
                 "--cache-dir",
-                str(output_root / "cache" / "mypy" / "full"),
+                str(transient_root / "cache" / "mypy" / "full"),
                 "src",
                 "agent",
                 "scripts",
@@ -852,7 +878,7 @@ def build_plan(
                 "pytest",
                 "-q",
                 "--basetemp",
-                str(output_root / "tmp" / "pytest-full"),
+                str(transient_root / "tmp" / "pytest-full"),
             ),
             2400.0,
             nondeterminism=("test durations and coverage percentages may vary by host",),
@@ -867,7 +893,7 @@ def build_plan(
                 "-q",
                 "--no-cov",
                 "--basetemp",
-                str(output_root / "tmp" / "pytest-replay"),
+                str(transient_root / "tmp" / "pytest-replay"),
                 "tests/replay",
                 "tests/property/test_trace_properties.py",
             ),
@@ -1865,6 +1891,7 @@ def run_release_verification(
     *,
     repository: Path,
     output_root: Path,
+    transient_root: Path,
     expected_commit: str,
     expectation_path: Path,
     uv_command: tuple[str, ...],
@@ -1874,17 +1901,20 @@ def run_release_verification(
 
     repository = repository.resolve()
     output_root = output_root.resolve()
+    transient_root = transient_root.resolve()
     expectation_path = expectation_path.resolve()
     started_at = _utc_now()
     identity = repository_identity(repository, expected_commit)
     prepare_fresh_output_root(repository, output_root)
-    interpreter_identity = interpreter_source_identity(repository, output_root)
+    prepare_fresh_transient_root(repository, output_root, transient_root)
+    interpreter_identity = interpreter_source_identity(repository, transient_root)
     identity["interpreter"] = interpreter_identity
     expectation = load_benchmark_expectation(expectation_path)
     benchmark_basis = benchmark_basis_identity(expectation, repository, expected_commit)
     raw_specs = build_plan(
         repository=repository,
         output_root=output_root,
+        transient_root=transient_root,
         expectation=expectation,
         uv_command=uv_command,
         official_environments=official_environments,
@@ -1923,7 +1953,11 @@ def run_release_verification(
     )
     for check_id in core_ids:
         result = run_command(
-            by_id[check_id], repository=repository, output_root=output_root, prior=prior
+            by_id[check_id],
+            repository=repository,
+            output_root=output_root,
+            transient_root=transient_root,
+            prior=prior,
         )
         results.append(result)
         prior[check_id] = result
@@ -2051,6 +2085,7 @@ def run_release_verification(
             replace(by_id["official-smoke"], required=True),
             repository=repository,
             output_root=output_root,
+            transient_root=transient_root,
             prior=prior,
         )
         results.append(official_result)
@@ -2059,6 +2094,7 @@ def run_release_verification(
             replace(by_id["official-artifact-verification"], required=True),
             repository=repository,
             output_root=output_root,
+            transient_root=transient_root,
             prior=prior,
         )
         results.append(official_verify)
@@ -2142,6 +2178,11 @@ def run_release_verification(
             "status": prior["official-smoke"].status,
         },
         "output_root": str(output_root),
+        "transient_root": {
+            "path": str(transient_root),
+            "role": "unsealed isolated temporary, cache, home, and test state",
+            "sealed": False,
+        },
         "plan": plan,
         "result_labels": result_labels,
         "runtime": _runtime_identity(),
@@ -2151,7 +2192,8 @@ def run_release_verification(
         "status": status,
         "verification_boundary": {
             "command_environment": (
-                "strict host-variable allowlist; isolated HOME, USERPROFILE, temporary, and caches"
+                "strict host-variable allowlist; isolated out-of-tree HOME, USERPROFILE, "
+                "temporary, and caches"
             ),
             "dependency_resolution": "uv lock check uses offline mode",
             "game_source_inspected": False,
@@ -2181,6 +2223,14 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--root", type=Path, default=REPOSITORY)
     parser.add_argument("--output-root", type=Path, default=Path("artifacts/stage18/rc"))
+    parser.add_argument(
+        "--transient-root",
+        type=Path,
+        help=(
+            "fresh absolute out-of-tree directory for unsealed temporary and cache state; "
+            "defaults to a commit-named sibling of the clone"
+        ),
+    )
     parser.add_argument("--expected-commit", required=True)
     parser.add_argument("--expectation", type=Path, default=DEFAULT_EXPECTATION)
     uv_group = parser.add_mutually_exclusive_group()
@@ -2205,6 +2255,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     output_root = (
         args.output_root if args.output_root.is_absolute() else repository / args.output_root
     ).resolve()
+    transient_root = (
+        args.transient_root.resolve()
+        if args.transient_root is not None
+        else repository.parent / f".arc3-stage18-{args.expected_commit[:12]}-transient"
+    ).resolve()
     expectation_path = (
         args.expectation if args.expectation.is_absolute() else repository / args.expectation
     ).resolve()
@@ -2226,6 +2281,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             for spec in build_plan(
                 repository=repository,
                 output_root=output_root,
+                transient_root=transient_root,
                 expectation=expectation,
                 uv_command=uv_command,
                 official_environments=official_environments,
@@ -2237,6 +2293,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         body = run_release_verification(
             repository=repository,
             output_root=output_root,
+            transient_root=transient_root,
             expected_commit=args.expected_commit,
             expectation_path=expectation_path,
             uv_command=uv_command,

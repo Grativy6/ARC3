@@ -11,6 +11,7 @@ import zipfile
 from pathlib import Path
 
 import pytest
+import scripts.release_candidate_verifier as verifier
 from scripts.release_candidate_verifier import (
     EXPECTATION_HASH_FIELD,
     EXPECTATION_SCHEMA,
@@ -29,6 +30,7 @@ from scripts.release_candidate_verifier import (
     official_smoke_available,
     package_projection,
     prepare_fresh_output_root,
+    prepare_fresh_transient_root,
     run_command,
     scan_generated_logs,
     sha256_bytes,
@@ -476,6 +478,7 @@ def test_plan_declares_every_release_boundary_without_hosted_inference(tmp_path:
     specs = build_plan(
         repository=repository,
         output_root=tmp_path,
+        transient_root=tmp_path.parent / "transient",
         expectation=_expectation(),
         uv_command=("uv",),
         official_environments=tmp_path / "official",
@@ -499,12 +502,33 @@ def test_plan_declares_every_release_boundary_without_hosted_inference(tmp_path:
     } == set(by_id)
     assert "--offline" in by_id["dependency-lock"].argv
     assert "--acquire-missing" not in by_id["official-smoke"].argv
+    transient = (tmp_path.parent / "transient").resolve()
+    assert str(transient / "tmp" / "pytest-full") in by_id["full-test-suite"].argv
+    assert str(transient / "cache" / "mypy" / "full") in by_id["mypy-strict"].argv
+    assert str(tmp_path / "package-a") in by_id["offline-package-a"].argv
     rendered = canonical_json_bytes([spec.to_dict() for spec in specs]).lower()
     assert b"openai" not in rendered
     assert b"anthropic" not in rendered
 
 
-def test_discovered_uv_command_survives_release_environment(tmp_path: Path) -> None:
+def test_discovered_uv_command_survives_release_environment(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    fake_uv = tmp_path / "fake_uv.py"
+    fake_uv.write_text(
+        "import os, sys\n"
+        "if sys.argv[1:] != ['--version'] or os.environ.get('PYTHONNOUSERSITE') != '1':\n"
+        "    raise SystemExit(2)\n"
+        "print('uv 0.0.0-fixture')\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(verifier.shutil, "which", lambda _name: None)
+    monkeypatch.setattr(verifier, "_python_command_candidates", lambda: ((sys.executable,),))
+    monkeypatch.setattr(
+        verifier,
+        "_installed_uv_entrypoints",
+        lambda _python_command: ((sys.executable, str(fake_uv)),),
+    )
     command = discover_uv_command()
     environment, _removed = _sanitized_environment(tmp_path / "out", "uv-contract")
 
@@ -545,7 +569,13 @@ def test_command_runner_allowlists_environment_and_redacts_logs(
         30.0,
     )
     output = tmp_path / "out"
-    result = run_command(spec, repository=tmp_path, output_root=output, prior={})
+    result = run_command(
+        spec,
+        repository=tmp_path,
+        output_root=output,
+        transient_root=tmp_path / "transient",
+        prior={},
+    )
     log = (output / "logs" / "tiny-command.stdout.log").read_text()
     assert result.status == "PASS"
     assert "False False" in log
@@ -566,6 +596,22 @@ def test_fresh_output_root_refuses_reuse_and_unignored_repository_path(
         prepare_fresh_output_root(repository, existing)
     with pytest.raises(ValueError, match=r"covered by \.gitignore"):
         prepare_fresh_output_root(repository, repository / "stage18-unignored-output")
+
+
+def test_fresh_transient_root_refuses_reuse_repository_and_output_overlap(
+    tmp_path: Path,
+) -> None:
+    repository = tmp_path / "repo"
+    repository.mkdir()
+    output = tmp_path / "output"
+    existing = tmp_path / "existing"
+    existing.mkdir()
+    with pytest.raises(ValueError, match="must not already exist"):
+        prepare_fresh_transient_root(repository, output, existing)
+    with pytest.raises(ValueError, match="strictly outside"):
+        prepare_fresh_transient_root(repository, output, repository / "transient")
+    with pytest.raises(ValueError, match="must not overlap"):
+        prepare_fresh_transient_root(repository, output, output / "transient")
 
 
 def test_release_receipt_seals_complete_artifacts_and_detects_tamper(tmp_path: Path) -> None:
