@@ -330,7 +330,7 @@ This file preserves unresolved technical, evidential, legal, and external burden
 - **Last updated:** 2026-08-21
 - **Current evidence:** `docs/evidence/003-trace-acceptance.json` records 500-event append/retrieval, 64×64 frame deduplication, storage, checkpoint size, and peak traced allocation on the pinned Windows/Python host. Append measured 0.623596 ms/event and retrieval 0.0877939 seconds for 500 events.
 - **Remaining burden:** Profile trace growth, compaction, and decision latency with the Stage 12 controller across long procedural and public-game runs under the Stage 16 envelope.
-- **Resolution receipt:** Stage 03 report `docs/reports/003-immutable-trace-replay-checkpoint.md`; checkpoint commit pending.
+- **Resolution receipt:** Stage 03 report `docs/reports/003-immutable-trace-replay-checkpoint.md`; implementation checkpoint `8fd5a056a71ae52fa37f83f3c3614ae1f0a4f7c3`.
 
 ### B-20260820-008 — The value of PAL-inspired trace discipline is an empirical question
 

@@ -167,7 +167,7 @@ This file records material decisions made during the autonomous build. It is app
 - **Status:** ADOPTED
 - **Stage:** 03
 - **Date:** 2026-08-21
-- **Commit:** pending
+- **Commit:** 8fd5a056a71ae52fa37f83f3c3614ae1f0a4f7c3
 - **Decision:** Store raw environment receipts as canonical JSON events in a SHA-256 previous-event chain, keep frame bodies in a content-addressed write-once blob store, and make summaries, indices, checkpoints, and migrations explicitly derived artifacts.
 - **Alternatives:** Mutable controller logs; a database without exportable canonical identities; full frame duplication in every event; storing unrestricted policy reasoning.
 - **Evidence:** `docs/reports/003-immutable-trace-replay-checkpoint.md`; 29 focused tests; the benchmark and fault matrix in `docs/evidence/003-trace-acceptance.json`.

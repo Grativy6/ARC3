@@ -14,8 +14,8 @@
     "draft": true
   },
   "started_at": "2026-08-21T04:46:19Z",
-  "last_checkpoint_at": "2026-08-21T05:47:16Z",
-  "last_checkpoint_commit": "9ee31a453cfa1b52c1cb99b6cf0a2bc7ac52e61a",
+  "last_checkpoint_at": "2026-08-21T05:49:07Z",
+  "last_checkpoint_commit": "8fd5a056a71ae52fa37f83f3c3614ae1f0a4f7c3",
   "resume_generation": 0,
   "completed_stages": [
     "00",
@@ -123,7 +123,7 @@
       "report_sha256": "sha256:c982a7b8c3d1535d3d42c537c6cb8420f26092fde4898025434857abffebe090",
       "acceptance_evidence": "docs/evidence/003-trace-acceptance.json",
       "acceptance_evidence_sha256": "sha256:6cf57f00fa032617a04a00dac91de7d9f653887105381c1be7ea1bb5e9a3fcab",
-      "checkpoint_commit": "pending",
+      "checkpoint_commit": "8fd5a056a71ae52fa37f83f3c3614ae1f0a4f7c3",
       "verification": {
         "ruff_lint": "PASS",
         "ruff_format": "PASS",
