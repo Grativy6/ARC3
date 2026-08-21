@@ -21,11 +21,45 @@ from arc3.policy.baselines import (  # noqa: E402
     RandomValidPolicy,
     make_baseline,
 )
+from arc3.policy.controller import ARC3Controller  # noqa: E402
+from arc3.policy.models import (  # noqa: E402
+    ActionDecision,
+    CandidateAction,
+    ConsequenceReceipt,
+    ControllerCheckpoint,
+    ControllerPhase,
+    ControllerPreset,
+    ControllerSnapshot,
+    ObservationReceipt,
+    PresetFeatures,
+    RunContext,
+    preset_features,
+)
+from arc3.policy.proposal import (  # noqa: E402
+    LocalProposal,
+    LocalProposalProvider,
+    ProposalContext,
+)
 
 __all__ = [
+    "ARC3Controller",
     "ActionCyclePolicy",
+    "ActionDecision",
+    "CandidateAction",
+    "ConsequenceReceipt",
+    "ControllerCheckpoint",
+    "ControllerPhase",
+    "ControllerPreset",
+    "ControllerSnapshot",
     "CoordinateSweepPolicy",
+    "LocalProposal",
+    "LocalProposalProvider",
+    "ObservationReceipt",
     "Policy",
+    "PresetFeatures",
+    "ProposalContext",
     "RandomValidPolicy",
+    "RunContext",
     "make_baseline",
+    "preset_features",
 ]

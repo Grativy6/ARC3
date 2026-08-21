@@ -229,6 +229,34 @@ class GoalRegistry:
         )
         return updated
 
+    def retire(
+        self,
+        goal_id: str,
+        *,
+        source_event_ids: tuple[str, ...],
+        summary: str,
+    ) -> GoalRecord:
+        """Close a bounded goal scope without manufacturing contradictory evidence."""
+
+        sources = tuple(sorted(set(source_event_ids)))
+        if not sources or any(not item.strip() for item in sources):
+            raise ValueError("goal retirement requires source event IDs")
+        if not summary.strip() or len(summary) > 256:
+            raise ValueError("goal retirement summary must contain 1..256 characters")
+        record = self.get(goal_id)
+        if record.status is GoalStatus.RETIRED:
+            return record
+        updated = replace(record, status=GoalStatus.RETIRED)
+        self._records[goal_id] = updated
+        self._append(
+            GoalEventType.RETIRED,
+            updated,
+            source_event_ids=sources,
+            previous_status=record.status,
+            summary=summary,
+        )
+        return updated
+
     def selected(self, goal_id: str) -> GoalLifecycleEvent:
         record = self.get(goal_id)
         if record.status is GoalStatus.RETIRED:

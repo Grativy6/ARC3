@@ -1,20 +1,26 @@
-"""First-party compatibility wrapper for the official ARC-AGI-3 Agent API.
+"""Thin official ARC-AGI-3 wrapper around :class:`arc3.policy.ARC3Controller`.
 
-The evaluated policy remains generic and offline.  This wrapper deliberately
-contains no environment-name branches and uses only a deterministic, local
-fallback until the integrated controller is available.
+This module owns only framework normalization and action translation. All
+selection, trace, model, goal, planning, recovery, and checkpoint behavior is
+implemented once in ``src/arc3/policy``.
 """
 
 from __future__ import annotations
 
 import os
-import random
+import tempfile
+from dataclasses import replace
 from enum import StrEnum
 from importlib import import_module
+from pathlib import Path
 from typing import ClassVar
 
-from arc3.config import derive_seed
+from arc3.adapters.arc_agi import normalize_frame_data
+from arc3.config import ARC3Config, BudgetConfig, derive_seed
 from arc3.errors import ConfigurationError
+from arc3.policy import ARC3Controller, ControllerPhase, ControllerPreset, RunContext
+from arc3.trace.canonical import sha256_json
+from arc3.types import ActionRequest, EnvironmentMode
 
 
 class _FallbackGameState(StrEnum):
@@ -42,7 +48,7 @@ class _FallbackGameAction(StrEnum):
 
 
 class _FallbackAgent:
-    """Import-only stand-in used when the optional official framework is absent."""
+    """Import-only stand-in used when the optional framework is unavailable."""
 
     MAX_ACTIONS: ClassVar[int] = 80
 
@@ -96,65 +102,89 @@ def _parse_root_seed(raw_seed: object) -> int:
     return seed
 
 
+def _translate_action(action: ActionRequest) -> object:
+    translated = _enum_member(GameAction, action.name.value)
+    if action.coordinate is not None:
+        setter = getattr(translated, "set_data", None)
+        if not callable(setter):
+            raise RuntimeError("official ACTION6 member cannot carry coordinate data")
+        setter({"x": action.coordinate.x, "y": action.coordinate.y})
+    return translated
+
+
 class MyAgent(_AgentBase):  # type: ignore[misc,valid-type]
-    """Thin deterministic compatibility policy for the pinned framework surface."""
+    """Official wrapper using the exact production controller implementation."""
 
     MAX_ACTIONS = 80
 
     def __init__(self, *args: object, **kwargs: object) -> None:
         forwarded = dict(kwargs)
-        root_seed = _parse_root_seed(forwarded.pop("seed", forwarded.pop("root_seed", None)))
+        self._root_seed = _parse_root_seed(forwarded.pop("seed", forwarded.pop("root_seed", None)))
         super().__init__(*args, **forwarded)
-        self._rng = random.Random(derive_seed(root_seed, "compatibility-policy"))
+        self._controller: ARC3Controller | None = None
 
     @property
     def name(self) -> str:
         base_name = getattr(super(), "name", type(self).__name__.lower())
-        return f"{base_name}.deterministic-v1"
+        return f"{base_name}.arc3-controller-v1"
 
     def is_done(self, frames: list[object], latest_frame: object) -> bool:
         del frames
         return _enum_name(getattr(latest_frame, "state", "UNKNOWN")) == "WIN"
 
-    def choose_action(self, frames: list[object], latest_frame: object) -> object:
-        """Choose deterministically from the advertised actions.
+    def _start_controller(self, observation_game_id: str) -> ARC3Controller:
+        # derive_seed is an unsigned 64-bit component seed while ARC3Config's
+        # portable contract is signed 64-bit. Preserve determinism inside the
+        # accepted non-negative half of that range.
+        derived_seed = derive_seed(self._root_seed, "official-wrapper") & ((1 << 63) - 1)
+        identity = sha256_json({"seed": derived_seed, "scope": "official-wrapper"}).removeprefix(
+            "sha256:"
+        )[:16]
+        runtime_root = Path(tempfile.mkdtemp(prefix=f"arc3-agent-{identity}-"))
+        config = ARC3Config(
+            mode=EnvironmentMode.COMPETITION,
+            seed=derived_seed,
+            network_enabled=False,
+            profile="competition",
+            trace_root=str(runtime_root / "trace"),
+            artifact_root=str(runtime_root / "artifacts"),
+            budgets=BudgetConfig(max_actions=self.MAX_ACTIONS),
+        )
+        controller = ARC3Controller(ControllerPreset.COMPETITION)
+        controller.reset(
+            RunContext(
+                run_id=f"agent-run-{identity}",
+                episode_id=f"agent-episode-{identity}",
+                game_id=observation_game_id,
+                trace_root=runtime_root / "trace",
+                checkpoint_root=runtime_root / "checkpoints",
+                config=config,
+                git_commit=os.environ.get("ARC3_GIT_COMMIT", "packaged-source"),
+                source_kind="official-agent-wrapper",
+                source_version="0.1",
+            )
+        )
+        return controller
 
-        ``RESET`` is mandatory before play and after game over.  No state is
-        keyed by environment identity, and no network or hosted inference path
-        is reachable here.
-        """
+    def choose_action(self, frames: list[object], latest_frame: object) -> object:
+        """Translate one controller decision to the pinned framework vocabulary."""
 
         del frames
-        state_name = _enum_name(getattr(latest_frame, "state", "NOT_PLAYED"))
-        if state_name in {"NOT_PLAYED", "GAME_OVER"}:
-            return _enum_member(GameAction, "RESET")
-
-        advertised = getattr(latest_frame, "available_actions", None)
-        if advertised:
-            raw_candidates = list(advertised)
-        else:
-            try:
-                raw_candidates = list(GameAction)  # type: ignore[call-overload]
-            except TypeError:
-                raw_candidates = []
-
-        candidates: list[object] = []
-        for raw_candidate in raw_candidates:
-            candidate = raw_candidate
-            if isinstance(raw_candidate, str):
-                candidate = getattr(GameAction, raw_candidate.upper(), raw_candidate)
-            if _enum_name(candidate) != "RESET":
-                candidates.append(candidate)
-        candidates.sort(key=_enum_name)
-
-        if not candidates:
-            return _enum_member(GameAction, "RESET")
-        action = candidates[self._rng.randrange(len(candidates))]
-        if _enum_name(action) == "ACTION6":
-            setter = getattr(action, "set_data", None)
-            if callable(setter):
-                setter({"x": self._rng.randrange(64), "y": self._rng.randrange(64)})
-        return action
+        # The pinned Agents runner reconstructs FrameData without carrying the
+        # environment's action_input.  Pydantic then supplies a RESET default,
+        # which is not an acknowledgement of the action just submitted.  This
+        # wrapper boundary therefore marks action identity unavailable; direct
+        # adapters retain the controller's strict returned-action validation.
+        observation = replace(normalize_frame_data(latest_frame), returned_action=None)
+        if self._controller is None:
+            self._controller = self._start_controller(str(observation.game_id))
+            self._controller.observe(observation)
+        elif self._controller.phase is ControllerPhase.AWAITING_CONSEQUENCE:
+            self._controller.apply_consequence(observation)
+        elif self._controller.phase is ControllerPhase.NEW:
+            self._controller.observe(observation)
+        decision = self._controller.choose_action()
+        return _translate_action(decision.action)
 
 
 __all__ = ["MyAgent"]
