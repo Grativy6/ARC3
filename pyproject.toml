@@ -1,0 +1,130 @@
+[build-system]
+requires = ["hatchling>=1.27,<2"]
+build-backend = "hatchling.build"
+
+[project]
+name = "arc3"
+version = "0.1.0"
+description = "Offline-first ARC-AGI-3 agent with reproducible trace and evaluation tooling"
+readme = "README.md"
+requires-python = ">=3.12,<3.13"
+authors = [
+  { name = "Christopher D. Pang" },
+]
+dependencies = [
+  "numpy>=2.2,<3",
+  "pydantic>=2.10,<3",
+]
+
+[project.optional-dependencies]
+official = [
+  "arc-agi==0.9.9",
+]
+
+[project.scripts]
+arc3 = "arc3.cli:main"
+
+[dependency-groups]
+dev = [
+  "coverage[toml]>=7.6,<8",
+  "hypothesis>=6.120,<7",
+  "mypy>=1.14,<2",
+  "pre-commit>=4,<5",
+  "pytest>=8.3,<9",
+  "pytest-cov>=6,<7",
+  "ruff>=0.11,<1",
+  "types-requests>=2.32,<3",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/arc3"]
+
+[tool.uv]
+package = true
+required-version = ">=0.12.5"
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+src = ["src", "agent", "scripts", "tests"]
+extend-exclude = [
+  "artifacts",
+  "docs",
+  "notebooks/generated",
+  "recordings",
+]
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F", "I", "B", "UP", "RUF"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["arc3"]
+
+[tool.ruff.format]
+docstring-code-format = true
+line-ending = "lf"
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+mypy_path = "src"
+files = ["src", "agent", "scripts"]
+exclude = [
+  "^artifacts/",
+  "^recordings/",
+]
+show_error_codes = true
+show_column_numbers = true
+pretty = true
+warn_unreachable = true
+
+[[tool.mypy.overrides]]
+module = [
+  "arc_agi.*",
+  "arcengine.*",
+  "matplotlib.*",
+]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+minversion = "8.3"
+addopts = [
+  "-ra",
+  "--strict-config",
+  "--strict-markers",
+  "--cov=arc3",
+  "--cov-branch",
+  "--cov-report=term-missing:skip-covered",
+]
+testpaths = ["tests"]
+xfail_strict = true
+markers = [
+  "competition: offline competition-contract tests",
+  "integration: component integration tests",
+  "property: property-based tests",
+  "replay: trace replay and tamper-detection tests",
+  "slow: tests excluded from the fastest smoke loop",
+]
+
+[tool.coverage.run]
+branch = true
+source = ["arc3"]
+parallel = true
+
+[tool.coverage.paths]
+source = [
+  "src/arc3",
+  "*/site-packages/arc3",
+  "*\\site-packages\\arc3",
+]
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = true
+exclude_also = [
+  "if TYPE_CHECKING:",
+  "if typing.TYPE_CHECKING:",
+  "raise AssertionError",
+  "raise NotImplementedError",
+  "if __name__ == .__main__.:",
+]

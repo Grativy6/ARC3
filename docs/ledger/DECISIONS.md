@@ -119,3 +119,17 @@ This file records material decisions made during the autonomous build. It is app
 - **Consequences:** Bootstrap scripts must locate `python -m uv` or the uv-managed interpreter explicitly and remain cross-platform.
 - **Reopening condition:** CI or packaging demonstrates incompatibility with this managed runtime.
 - **Supersedes / superseded by:** none.
+
+## D-20260821-008 — Keep the official SDK optional at the typed core boundary
+
+- **Status:** ADOPTED
+- **Stage:** 01–02
+- **Date:** 2026-08-21
+- **Commit:** pending
+- **Decision:** Keep deterministic configuration, trace vocabulary, logging, and the thin starter-compatible agent importable without the official SDK, while locking `arc-agi==0.9.9` as the `official` project extra and in the committed all-extras resolution.
+- **Alternatives:** Import the SDK from every core module; omit it from the lock; vendor upstream source.
+- **Evidence:** The Stage 01 suite imports and exercises the first-party core with optional dependencies absent; `uv sync --all-extras --dev` installs the pinned official package; `arc3 doctor` reports optional dependency presence without making network calls.
+- **Why:** This preserves an offline, testable core and prevents SDK objects or import-time behavior from crossing architectural boundaries, without weakening reproducibility of official integration.
+- **Consequences:** Adapters must translate explicitly between SDK and first-party values; missing optional dependencies produce typed boundary errors rather than import failures.
+- **Reopening condition:** A measured packaging constraint requires the official wheel in the minimal competition runtime, while retaining the same typed boundary and offline behavior.
+- **Supersedes / superseded by:** none.

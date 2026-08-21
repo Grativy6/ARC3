@@ -237,3 +237,29 @@ This file preserves unresolved technical, evidential, legal, and external burden
 - **Next discriminating action:** Implement first-party deterministic baselines, authoritative available-action validation, redacted logging, and static game-ID/secret scans.
 - **Resolution condition:** Stage 02/16 tests prove those properties on ARC3 production paths; the upstream observations remain historical evidence.
 - **Resolution receipt:** none.
+
+---
+
+## 2026-08-21 Stage 01 updates
+
+### B-20260821-011 — Pinned Kaggle starter has no detected source license
+
+- **Status update:** NARROWED; packaging verification remains open through Stage 17.
+- **Last updated:** 2026-08-21
+- **Current evidence:** A first-party `agent/my_agent.py` compatibility wrapper and interface tests were implemented without copying starter source. `docs/reports/001-repository-foundation.md` records the boundary.
+- **Remaining burden:** Prove the independently implemented wrapper inside the generated offline Kaggle package and re-check upstream licensing before any future source adaptation.
+- **Resolution receipt:** Stage 01 implementation checkpoint, recorded in `docs/ledger/run-state.json` after commit.
+
+## B-20260821-015 — Remote CI and true clean-clone execution are not yet receipts
+
+- **Status:** OPEN
+- **Stage:** 01, 18
+- **Opened:** 2026-08-21
+- **Last updated:** 2026-08-21
+- **Owner:** Codex
+- **Burden:** CI configuration and local bootstrap contracts can pass while a pushed Linux/Windows job or an isolated clone still fails.
+- **Why it matters:** Repository-local success is not evidence of cross-platform or clean-clone reproducibility.
+- **Current evidence:** Local Windows `scripts/bootstrap.ps1 -Check` passed; CI YAML and bootstrap contents have executable contract tests. No remote Actions result or true clean-clone receipt is claimed yet.
+- **Next discriminating action:** Observe the pushed Stage 01 Actions run, then perform the Stage 18 fresh-clone locked bootstrap and artifact verification.
+- **Resolution condition:** Linux and Windows CI plus the declared Stage 18 clean-clone checks pass, or failures are preserved with exact outputs.
+- **Resolution receipt:** none.
