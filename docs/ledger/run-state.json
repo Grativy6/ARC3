@@ -5,8 +5,8 @@
   "repository": "Grativy6/ARC3",
   "owner": "Christopher D. Pang",
   "status": "IN_PROGRESS",
-  "current_stage": "14",
-  "current_task": "stage-14-ablations-and-mechanism-tests",
+  "current_stage": "15",
+  "current_task": "stage-15-public-game-development",
   "implementation_branch": "build/000-arc3-end-to-end",
   "pull_request": {
     "number": 3,
@@ -14,8 +14,8 @@
     "draft": true
   },
   "started_at": "2026-08-21T04:46:19Z",
-  "last_checkpoint_at": "2026-08-21T08:10:03Z",
-  "last_checkpoint_commit": "01f7a12e42f50e2899db9d430bcf4d125a81d49f",
+  "last_checkpoint_at": "2026-08-21T08:45:17Z",
+  "last_checkpoint_commit": "565712fe6fb1e62f704f40a7693d3d3fb1de3ada",
   "resume_generation": 0,
   "completed_stages": [
     "00",
@@ -31,7 +31,8 @@
     "10",
     "11",
     "12",
-    "13"
+    "13",
+    "14"
   ],
   "stage_status": {
     "00": "PASS",
@@ -48,8 +49,8 @@
     "11": "PASS",
     "12": "PASS",
     "13": "PASS",
-    "14": "IN_PROGRESS",
-    "15": "PENDING",
+    "14": "PASS",
+    "15": "IN_PROGRESS",
     "16": "PENDING",
     "17": "PENDING",
     "18": "PENDING",
@@ -369,6 +370,32 @@
         "official_rhae": "UNMEASURED:null",
         "public_environment_opened": "PASS:false"
       }
+    },
+    "stage_14": {
+      "status": "PASS",
+      "label": "synthetic",
+      "claim": "NO_GENERALIZATION_CLAIM",
+      "report": "docs/reports/014-ablations-and-mechanism-tests.md",
+      "report_sha256": "sha256:ad7b6caa67b2f5a079af32a4ddf9ea701fee556b32ee66cb6a92409e48af1a0b",
+      "acceptance_evidence": "docs/evidence/014-ablation-acceptance.json",
+      "acceptance_evidence_sha256": "sha256:56e7c23bea479cd64fb4433e369bda28177ca76e94e4ba18ee756dab3a8ab82c",
+      "infrastructure_failure_evidence": "docs/evidence/014-ablation-infrastructure-failure.json",
+      "infrastructure_failure_evidence_sha256": "sha256:04a0e470e63f41a8dd3b5a51bfca4748321111f7b97926f4549b77044567975f",
+      "checkpoint_commit": "565712fe6fb1e62f704f40a7693d3d3fb1de3ada",
+      "verification": {
+        "ruff_lint": "PASS",
+        "ruff_format": "PASS:8-files",
+        "mypy_strict": "PASS:6-source-files",
+        "pytest": "PASS:48",
+        "paired_matrix": "PASS:154-of-154+0-faults",
+        "full": "PASS:8-of-14+150-actions",
+        "world_model_simulation": "MECHANISM_OBSERVED:full-8-of-14-vs-A4-1-of-14",
+        "goal_inference": "MECHANISM_OBSERVED:full-8-of-14-vs-A5-0-of-14",
+        "retrodiction_gate": "CONFLICTING_EVIDENCE:A3-same-completion-9-fewer-actions",
+        "protocol_and_case_identity": "PASS",
+        "exact_semantic_reproduction": "PASS",
+        "initial_workspace_run": "FAILED_INFRASTRUCTURE:WinError-5-preserved"
+      }
     }
   },
   "blocked_items": [
@@ -487,6 +514,12 @@
       "label": "synthetic",
       "result": "clean process-isolated B0-B4 comparison passed 10/10: full 2/2 in 8 actions, cycle and trace 1/2 in 19, random and novelty 0/2 in 32; exact 10-run reproduction and 8/8 threshold gate passed",
       "report": "docs/reports/013-evaluation-harness-and-baselines.md"
+    },
+    {
+      "stage": "14",
+      "label": "synthetic",
+      "result": "clean paired A1-A10 matrix passed 154/154 with zero faults: FULL 8/14 in 150 actions; no-simulation A4 1/14 in 211; no-goal A5 0/14 in 224; A3 tied completion with 9 fewer actions and remains conflicting evidence",
+      "report": "docs/reports/014-ablations-and-mechanism-tests.md"
     }
   ],
   "artifacts": {
@@ -605,9 +638,21 @@
     "stage_13_harness_acceptance": {
       "path": "docs/evidence/013-evaluation-harness-acceptance.json",
       "sha256": "ab354deec3ef4f7a84d285a8e7603dbe357afcf6c6bbff7862fe94979b94780e"
+    },
+    "stage_14_report": {
+      "path": "docs/reports/014-ablations-and-mechanism-tests.md",
+      "sha256": "ad7b6caa67b2f5a079af32a4ddf9ea701fee556b32ee66cb6a92409e48af1a0b"
+    },
+    "stage_14_ablation_acceptance": {
+      "path": "docs/evidence/014-ablation-acceptance.json",
+      "sha256": "56e7c23bea479cd64fb4433e369bda28177ca76e94e4ba18ee756dab3a8ab82c"
+    },
+    "stage_14_infrastructure_failure": {
+      "path": "docs/evidence/014-ablation-infrastructure-failure.json",
+      "sha256": "04a0e470e63f41a8dd3b5a51bfca4748321111f7b97926f4549b77044567975f"
     }
   },
-  "next_action": "Complete predeclared equal-budget A1-A10 ablations on frozen synthetic holdouts, preserve raw paired effects and failed mechanisms, and select the simplest strongest measured competition preset.",
+  "next_action": "Evaluate the frozen FULL competition policy on official public smoke and development partitions, preserve exposure identities, then open the predeclared public holdout at most once if anonymous assets are available.",
   "notes": [
     "Initial READY state was validated against the repository at b1948e9d02ad7b1321cbc57f3538047813e01e98 before this run began.",
     "No prior completed stages, checkpoint commit, or evidence artifacts were recorded; bootstrap PR 1 and its merge commit were independently verified.",

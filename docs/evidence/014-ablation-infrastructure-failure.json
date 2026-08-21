@@ -1,0 +1,30 @@
+{
+  "schema": "arc3.ablations.failure.v0.1",
+  "status": "FAILED_INFRASTRUCTURE",
+  "label": "synthetic",
+  "claim": "NO_GENERALIZATION_CLAIM",
+  "stage": "14",
+  "repository_commit_before_stage14": "5695744f8b79be4fcc52cbdca929e268b0a64a62",
+  "command": ".venv\\Scripts\\python.exe scripts/measure_ablations.py --output artifacts/stage14/paired-ablation-final.json --work-root artifacts/stage14/paired-ablation-final-data",
+  "exit_code": 1,
+  "elapsed_seconds": 14.0,
+  "exception": "PermissionError: [WinError 5] Access is denied: 'artifacts\\stage14\\paired-ablation-final-data\\full\\0008\\checkpoint\\.latest.json.0db116bf86364f06816c38c1344d8acb.tmp' -> 'artifacts\\stage14\\paired-ablation-final-data\\full\\0008\\checkpoint\\latest.json'",
+  "failure_boundary": "OneDrive-backed workspace denied an atomic checkpoint replacement during FULL case 9 of 14; the comparison stopped before any ablation result existed.",
+  "partial_artifact": {
+    "local_path": "artifacts/stage14/paired-ablation-final-data",
+    "committed": false,
+    "variant": "FULL",
+    "episode_directories": 9,
+    "episode_range": "0000-0008",
+    "files": 225,
+    "bytes": 9231903,
+    "sorted_relative_path_length_file_sha256_manifest": "sha256:2feadb1e455887fd87bc2904366069efd566daa24629fdfd2e80d52cc5f55a4f"
+  },
+  "resolution": {
+    "status": "RESOLVED_FOR_STAGE_14",
+    "action": "Rerun with a unique short C:\\a work root, then repeat from a clean detached worktree at the committed Stage 14 implementation.",
+    "authoritative_commit": "565712fe6fb1e62f704f40a7693d3d3fb1de3ada",
+    "authoritative_evidence": "docs/evidence/014-ablation-acceptance.json",
+    "authoritative_status": "PASS"
+  }
+}

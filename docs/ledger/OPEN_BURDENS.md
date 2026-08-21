@@ -641,3 +641,97 @@ This file preserves unresolved technical, evidential, legal, and external burden
 - **Next discriminating action:** Use frozen commits or isolated worktrees for all final evaluator receipts.
 - **Resolution condition:** Stable-tree rerun passes and authoritative evidence is bound to an isolated committed source tree.
 - **Resolution receipt:** `docs/evidence/013-evaluation-harness-acceptance.json`.
+
+---
+
+## 2026-08-21 Stage 14 updates
+
+### B-20260821-021 — Exploration improvement is isolated from game completion
+
+- **Status update:** NARROWED but unresolved across mechanisms.
+- **Last updated:** 2026-08-21
+- **Current evidence:** On the 14-case frozen integrated suite, A6 coordinate-salience removal reached 31 FULL coordinate actions but produced the same 8/14 completions and 150 actions. A9 had no positive-information candidate and was `NOT_EXERCISED`.
+- **Remaining burden:** The integrated suite does not reproduce Stage 07's semantic-identification benefit or exercise information disagreement. Public development and a broader generic synthetic surface must separate action semantics from world-model/goal interactions.
+- **Resolution receipt:** `docs/evidence/014-ablation-acceptance.json`; commit `565712fe6fb1e62f704f40a7693d3d3fb1de3ada`.
+
+### B-20260821-022 — World-model comparison supplies symbolic states and plans
+
+- **Status update:** NARROWED with an integrated mechanism result; official value remains open.
+- **Last updated:** 2026-08-21
+- **Current evidence:** FULL completed 8/14 in 150 actions; A4 without world-model simulation completed 1/14 in 211 actions under identical cases and budgets. FULL therefore had a seven-completion and seven-score advantage on this synthetic suite.
+- **Remaining burden:** All six procedural holdouts still failed under FULL, and no official-public improvement has been measured.
+- **Resolution receipt:** `docs/evidence/014-ablation-acceptance.json`.
+
+### B-20260821-023 — Goal comparison begins from supplied evidence and action estimates
+
+- **Status update:** NARROWED with an integrated mechanism result; official goal acquisition remains open.
+- **Last updated:** 2026-08-21
+- **Current evidence:** A5 without goal inference completed 0/14 in 224 actions versus FULL 8/14 in 150; 144 FULL goal-candidate receipts establish exposure.
+- **Remaining burden:** The result is confined to deterministic navigation successes; FULL did not solve the six procedural holdouts or an official public game.
+- **Resolution receipt:** `docs/evidence/014-ablation-acceptance.json`.
+
+### B-20260821-024 — Planning comparison is compact and evaluator specified
+
+- **Status update:** NARROWED with contradictory distribution evidence for recovery.
+- **Last updated:** 2026-08-21
+- **Current evidence:** A7 reached ten planned prediction mismatches but had the same completion, score, and action count as FULL. Stage 10 previously measured 24/24 recovery successes versus 0/24 without recovery on a more targeted held-out symbolic suite.
+- **Remaining burden:** Recovery benefit is not reproduced in this integrated case set. Preserve both results and design a broader predeclared interaction test before changing the competition preset.
+- **Resolution receipt:** `docs/evidence/014-ablation-acceptance.json`; prior receipt `docs/evidence/010-planning-acceptance.json`.
+
+### B-20260821-027 — Integrated controller success is synthetic while the public smoke scored zero
+
+- **Status update:** OPEN; the synthetic boundary is now broader but unchanged in kind.
+- **Last updated:** 2026-08-21
+- **Current evidence:** The clean Stage 14 matrix reproduced FULL 8/14 on eight navigation and six procedural cases; all eight completions were navigation cases. The earlier official local development smoke remains score 0.0 with zero levels.
+- **Remaining burden:** Stage 15 must evaluate the frozen policy on the official public smoke/development surfaces and open the declared holdout at most once, if assets can be acquired without a human gate.
+- **Resolution receipt:** `docs/evidence/014-ablation-acceptance.json`; `docs/evidence/012-controller-acceptance.json`.
+
+### B-20260821-031 — B0–B4 comparison is a two-seed single-synthetic-environment result
+
+- **Status update:** NARROWED by a 14-case A1–A10 matrix, not resolved.
+- **Last updated:** 2026-08-21
+- **Current evidence:** Stage 14 adds eight frozen navigation seeds and six procedural holdouts with 154 paired episodes, exact semantic reproduction, and zero faults. FULL completed 8/14 but none of the six procedural holdouts.
+- **Remaining burden:** More synthetic cases cannot establish official-public or hidden-game generalization; Stage 15 must remain separately labeled.
+- **Resolution receipt:** `docs/evidence/014-ablation-acceptance.json`.
+
+## B-20260821-035 — Retrodiction gate has conflicting measured effects
+
+- **Status:** OPEN
+- **Stage:** 08, 14, 15, 19
+- **Opened:** 2026-08-21
+- **Last updated:** 2026-08-21
+- **Owner:** shared
+- **Burden:** Stage 14 A3 preserved the same 8/14 completions while using 141 actions versus FULL's 150, classifying the gate as `FULL_COMPONENT_REGRESSION`; Stage 08's targeted held-out comparison instead completed 4/4 with the gate and 0/4 without it.
+- **Why it matters:** Selecting either result as universal would erase distribution dependence. Ungated promotion also changes the accepted-rule integrity boundary, not only runtime cost.
+- **Current evidence:** A3 exercised 156 retrodiction receipts and had a nine-action advantage on eight equally completed pairs; Stage 08 used four supplied planned-action symbolic combinations.
+- **Next discriminating action:** Predeclare a broader integrated suite containing both false-high-rank and ordinary navigation cases, then compare accepted predictions, completion, and actions under one scorer and budget.
+- **Resolution condition:** Repeated equal-budget evidence identifies a stable gate rule or a bounded conditional gate without losing contradiction visibility.
+- **Resolution receipt:** none.
+
+## B-20260821-036 — Six ablations have null, partial, trace-only, or unexercised evidence
+
+- **Status:** OPEN
+- **Stage:** 14, 15, 16, 19
+- **Opened:** 2026-08-21
+- **Last updated:** 2026-08-21
+- **Owner:** shared
+- **Burden:** A1 was only a checkpoint-persistence proxy; A2, A6, and A7 were exposed but behaviorally null; A8 changed trace receipts without policy coupling; A9 was not exercised; A10 was runtime-only and behaviorally identical.
+- **Why it matters:** A null score delta cannot distinguish a useless component from an underpowered or wrongly exposed test, and trace/restart requirements have value not captured by completion alone.
+- **Current evidence:** Exact exposure counts, paired raw rows, bytes, events, latencies, and boundaries are committed in `docs/evidence/014-ablation-acceptance.json`.
+- **Next discriminating action:** Use Stage 15 public traces and Stage 16 controlled fault/runtime/robustness fixtures to test each relevant surface without retrofitting game-specific rules.
+- **Resolution condition:** Each component has a genuinely exercised paired test or is explicitly disabled as cost-only while required integrity behavior remains covered.
+- **Resolution receipt:** none.
+
+## B-20260821-037 — OneDrive denied an atomic checkpoint replacement
+
+- **Status:** RESOLVED_FOR_STAGE_14
+- **Stage:** 14
+- **Opened:** 2026-08-21
+- **Last updated:** 2026-08-21
+- **Owner:** Codex
+- **Burden:** The first full matrix stopped at FULL case 9/14 when Windows returned error 5 while replacing `latest.json` in the OneDrive-backed artifact tree.
+- **Why it matters:** Discarding the partial run would hide a reproducible filesystem hazard; calling it a policy failure would misclassify infrastructure evidence.
+- **Current evidence:** Nine episode directories, 225 files, 9,231,903 bytes, exact exception text, command, and tree-manifest hash are preserved in `docs/evidence/014-ablation-infrastructure-failure.json`.
+- **Next discriminating action:** Continue generated high-churn checkpoint/evaluation trees under a unique short `C:\a` root; retain atomic replacement tests on ordinary repository paths.
+- **Resolution condition:** The same frozen protocol completes from a clean committed worktree with exact semantic reproduction and no checkpoint fault.
+- **Resolution receipt:** `docs/evidence/014-ablation-acceptance.json`; commit `565712fe6fb1e62f704f40a7693d3d3fb1de3ada`.

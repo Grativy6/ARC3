@@ -315,3 +315,17 @@ This file records material decisions made during the autonomous build. It is app
 - **Consequences:** Any first-party source edit requires a new evaluation identity. Hash seals are described as tamper-evident, not signed. Compact thresholds apply only to their exact declaration; Stage 16 must measure whole-process and integrated B4 costs separately.
 - **Reopening condition:** A replacement preserves every failure and identity boundary while measurably reducing evaluator cost or broadening supported official scoring without weakening verification.
 - **Supersedes / superseded by:** none.
+
+## D-20260821-022 — Retain the full competition preset after paired integrated ablations
+
+- **Status:** ADOPTED
+- **Stage:** 14
+- **Date:** 2026-08-21
+- **Commit:** 565712fe6fb1e62f704f40a7693d3d3fb1de3ada
+- **Decision:** Keep the declared FULL feature set as the competition preset. Treat A4 world-model simulation and A5 goal inference as observed integrated benefits on the frozen synthetic suite; retain the retrodiction gate because A3's nine-action regression conflicts with Stage 08's opposite held-out mechanism result and because ungated promotion weakens the accepted-rule boundary. Preserve all A1–A10 switches for experiments, while forbidding feature overrides through the production COMPETITION preset.
+- **Alternatives:** Promote ungated A3 because it used fewer actions on this suite; disable every component with zero paired score effect; treat unexercised components as disproven; select a preset from public-game identities or manual action sequences.
+- **Evidence:** `docs/reports/014-ablations-and-mechanism-tests.md`; 154/154 authoritative paired episodes, zero faults, and exact semantic reproduction in `docs/evidence/014-ablation-acceptance.json`; the initial OneDrive failure in `docs/evidence/014-ablation-infrastructure-failure.json`.
+- **Why:** A4 and A5 contribute seven and eight completions respectively, while A3 is distribution-dependent and the remaining null results include partial proxies, trace-only behavior, runtime-only behavior, and an unexercised information-gain surface. One narrow matrix does not justify deleting required restart/trace machinery or relaxing model acceptance.
+- **Consequences:** Stage 15 evaluates the frozen FULL/COMPETITION policy without game-specific changes. A3, A1, A8, A9, and the null A2/A6/A7/A10 results remain explicit burdens; runtime costs move to Stage 16 rather than being inferred from sequential ablation wall times.
+- **Reopening condition:** A broader predeclared equal-budget comparison, separately labeled official-public evidence, or controlled Stage 16 profiling shows that a simpler preset preserves completion while improving action/runtime efficiency without weakening trace, restart, or accepted-rule integrity.
+- **Supersedes / superseded by:** none.
