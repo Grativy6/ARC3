@@ -287,3 +287,17 @@ This file records material decisions made during the autonomous build. It is app
 - **Consequences:** Stage 12 must supply typed live-state adapters around the canonical checkpoint fields and reconcile a pending consequence through the adapter. Raw trace remains immutable outside derived-memory eviction.
 - **Reopening condition:** Integrated equal-budget evidence shows different scope, retrieval, or retention policies improve completion/action efficiency without weakening source identity or competition integrity.
 - **Supersedes / superseded by:** none.
+
+## D-20260821-020 — One controller owns policy, receipts, faults, and exact restart
+
+- **Status:** ADOPTED
+- **Stage:** 12
+- **Date:** 2026-08-21
+- **Commit:** 3fee19d9f82210ba5010af94feac170164a30f3c
+- **Decision:** Use `ARC3Controller` as the single policy implementation behind synthetic and official-shaped boundaries; keep `agent/my_agent.py` thin; preserve every returned consequence before faulting; separate action and reset budgets; restore exact typed phase and pending state; and scope level-derived identities to source receipts so revisited indices cannot collide.
+- **Alternatives:** Duplicate policy inside the competition wrapper; infer missing official acknowledgements in every adapter; continue after a returned-action mismatch; reconstruct only a lossy summary after restart; identify level state solely by the visible level integer.
+- **Evidence:** `docs/reports/012-full-controller-integration.md`; 21 focused tests; the 32-seed comparison and adapter matrix in `docs/evidence/012-controller-acceptance.json`.
+- **Why:** A single controller makes offline competition behavior auditable, while strict receipt-before-fault ordering and exact restoration prevent a wrapper quirk or process boundary from silently rewriting the action history.
+- **Consequences:** Wrapper-specific normalization is limited to the pinned official `FrameData` default-action ambiguity. Direct adapters remain strict. Submitted actions require consequence reconciliation and may never be resubmitted. Later ablations must use explicit feature switches without changing the default full-controller semantics.
+- **Reopening condition:** Pinned upstream behavior, replay evidence, or equal-budget evaluation shows the boundary rule loses a real consequence, duplicates an action, or prevents a stronger generic policy under the same integrity constraints.
+- **Supersedes / superseded by:** none.

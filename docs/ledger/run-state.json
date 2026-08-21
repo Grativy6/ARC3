@@ -5,8 +5,8 @@
   "repository": "Grativy6/ARC3",
   "owner": "Christopher D. Pang",
   "status": "IN_PROGRESS",
-  "current_stage": "12",
-  "current_task": "stage-12-full-controller-integration",
+  "current_stage": "13",
+  "current_task": "stage-13-evaluation-harness-partitions-and-baselines",
   "implementation_branch": "build/000-arc3-end-to-end",
   "pull_request": {
     "number": 3,
@@ -14,8 +14,8 @@
     "draft": true
   },
   "started_at": "2026-08-21T04:46:19Z",
-  "last_checkpoint_at": "2026-08-21T06:40:31Z",
-  "last_checkpoint_commit": "54064d412ca01ce078ae693d4f9fb0e071d853f3",
+  "last_checkpoint_at": "2026-08-21T08:00:52Z",
+  "last_checkpoint_commit": "3fee19d9f82210ba5010af94feac170164a30f3c",
   "resume_generation": 0,
   "completed_stages": [
     "00",
@@ -29,7 +29,8 @@
     "08",
     "09",
     "10",
-    "11"
+    "11",
+    "12"
   ],
   "stage_status": {
     "00": "PASS",
@@ -44,8 +45,8 @@
     "09": "PASS",
     "10": "PASS",
     "11": "PASS",
-    "12": "IN_PROGRESS",
-    "13": "PENDING",
+    "12": "PASS",
+    "13": "IN_PROGRESS",
     "14": "PENDING",
     "15": "PENDING",
     "16": "PENDING",
@@ -317,6 +318,33 @@
         "public_id_network_hosted_scan": "PASS:0-matches",
         "cross_level_comparison": "PASS:1-probe-vs-3-probes"
       }
+    },
+    "stage_12": {
+      "status": "PASS",
+      "labels": [
+        "synthetic",
+        "local-public"
+      ],
+      "mechanism_status": "MECHANISM_OBSERVED",
+      "report": "docs/reports/012-full-controller-integration.md",
+      "report_sha256": "sha256:32d9e3c389d554dd9ef0d1f01bbabfdeae94914a2de43a38d3ce415ed1b3476d",
+      "acceptance_evidence": "docs/evidence/012-controller-acceptance.json",
+      "acceptance_evidence_sha256": "sha256:f4363109262b2f06b64e92ffe7234403d0daaaea36157db65ac4c32508a47772",
+      "checkpoint_commit": "3fee19d9f82210ba5010af94feac170164a30f3c",
+      "verification": {
+        "ruff_lint": "PASS",
+        "ruff_format": "PASS",
+        "mypy_strict": "PASS:8-source-files",
+        "pytest": "PASS:21",
+        "synthetic_comparison": "PASS:32-of-32-vs-4-of-32-cycle",
+        "complete_receipt_chains": "PASS:190-of-190",
+        "checkpoint_restore": "PASS:32-of-32+0-duplicates",
+        "controller_faults": "PASS:0",
+        "competition_offline_smoke": "PASS:network-disabled",
+        "official_local_preacceptance_smoke": "PASS:8-actions+score-0.0",
+        "official_online_api": "BLOCKED_EXTERNAL:no-credentials",
+        "public_id_hosted_network_scan": "PASS:0-matches"
+      }
     }
   },
   "blocked_items": [
@@ -341,8 +369,8 @@
     {
       "id": "CREDENTIALS-OPTIONAL",
       "kind": "external_resource",
-      "status": "UNKNOWN",
-      "description": "ARC_API_KEY and Kaggle credentials may not be present. Use anonymous/local modes and prepare tested adapters if absent."
+      "status": "BLOCKED_EXTERNAL",
+      "description": "ARC_API_KEY, KAGGLE_USERNAME, and KAGGLE_KEY were absent at the Stage 12 checkpoint. Anonymous/local/offline work continues; credentials are not required for independent stages."
     }
   ],
   "latest_results": [
@@ -417,6 +445,18 @@
       "label": "synthetic",
       "result": "MECHANISM_OBSERVED on one cross-level directional fixture: source-linked game memory required 1 validation probe versus 3 without memory; 5000-insert bound retained 128 records in 179180 bytes",
       "report": "docs/reports/011-scoped-persistent-memory.md"
+    },
+    {
+      "stage": "12",
+      "label": "synthetic",
+      "result": "MECHANISM_OBSERVED on synthetic-grid-v1: full controller completed 32/32 in 190 actions versus cycle 4/32 in 463 under equal 16-action budgets; 190 complete chains, 32 verified restores, 0 duplicate events, 0 faults",
+      "report": "docs/reports/012-full-controller-integration.md"
+    },
+    {
+      "stage": "12",
+      "label": "local-public",
+      "result": "preacceptance official local smoke on one exposed development game: score 0.0, 0 levels, 8 actions, 8 consequence chains, 0 faults; not a benchmark",
+      "report": "docs/reports/012-full-controller-integration.md"
     }
   ],
   "artifacts": {
@@ -519,9 +559,17 @@
     "stage_11_memory_acceptance": {
       "path": "docs/evidence/011-memory-acceptance.json",
       "sha256": "b3ff4557312949233ea4d420c90389045265c684236de115c8a034df1faa498e"
+    },
+    "stage_12_report": {
+      "path": "docs/reports/012-full-controller-integration.md",
+      "sha256": "32d9e3c389d554dd9ef0d1f01bbabfdeae94914a2de43a38d3ce415ed1b3476d"
+    },
+    "stage_12_controller_acceptance": {
+      "path": "docs/evidence/012-controller-acceptance.json",
+      "sha256": "f4363109262b2f06b64e92ffe7234403d0daaaea36157db65ac4c32508a47772"
     }
   },
-  "next_action": "Complete Stage 12 typed observe-model-plan-act controller integration, adapter parity, receipt chains, presets, and offline smoke tests.",
+  "next_action": "Validate and checkpoint the Stage 13 process-isolated evaluation harness, B0-B4 baselines, sealed reproduction envelopes, comparisons, reports, and regression thresholds.",
   "notes": [
     "Initial READY state was validated against the repository at b1948e9d02ad7b1321cbc57f3538047813e01e98 before this run began.",
     "No prior completed stages, checkpoint commit, or evidence artifacts were recorded; bootstrap PR 1 and its merge commit were independently verified.",

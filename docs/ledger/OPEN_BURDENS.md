@@ -473,3 +473,103 @@ This file preserves unresolved technical, evidential, legal, and external burden
 - **Next discriminating action:** Implement typed Stage 12 reconstruction and adapter-level pending-consequence tests; exercise partial checkpoint recovery and long-run restart behavior again in Stage 16.
 - **Resolution condition:** Synthetic and official-shaped adapter tests resume the same controller state/action stream across process death without duplicated actions; incompatible checkpoints remain preserved for diagnosis.
 - **Resolution receipt:** none.
+
+---
+
+## 2026-08-21 Stage 12 updates
+
+### B-20260821-021 — Exploration improvement is isolated from game completion
+
+- **Status update:** NARROWED on one integrated synthetic grid family; public and broader procedural value remain open.
+- **Last updated:** 2026-08-21
+- **Current evidence:** The full controller completed 32/32 `synthetic-grid-v1` episodes in 190 actions versus 4/32 in 463 actions for the equal-budget cycle baseline. Action alternatives, selection, prediction, and consequence were all receipt-linked.
+- **Remaining burden:** Stage 14 must isolate exploration from planning/model/goal interactions on frozen procedural holdouts; Stage 15 must keep the zero-score public smoke separate.
+- **Resolution receipt:** `docs/evidence/012-controller-acceptance.json`; controller commit `3fee19d9f82210ba5010af94feac170164a30f3c`.
+
+### B-20260821-022 — World-model comparison supplies symbolic states and plans
+
+- **Status update:** NARROWED for raw synthetic observation integration; model value remains entangled and public behavior unmeasured.
+- **Last updated:** 2026-08-21
+- **Current evidence:** The Stage 12 controller now derives perception, candidate models, predictions, and plans from raw synthetic frames and records every prediction/consequence chain. The full bundle completed 32/32 versus 4/32 for cycle.
+- **Remaining burden:** Stage 14 must compare model/retrodiction removal under identical seeds and budgets. Compact first-party grid behavior cannot establish official-game fidelity.
+- **Resolution receipt:** `docs/evidence/012-controller-acceptance.json`.
+
+### B-20260821-023 — Goal comparison begins from supplied evidence and action estimates
+
+- **Status update:** NARROWED for integrated candidate acquisition; independent goal contribution remains open.
+- **Last updated:** 2026-08-21
+- **Current evidence:** Stage 12 creates, ranks, retires, and reopens source-linked goal candidates from controller observations, including level transitions and revisits. The full integrated bundle succeeds on the synthetic grid comparison.
+- **Remaining burden:** Stage 14 must isolate goal scoring/acquisition; Stage 15 must preserve the public zero and avoid treating synthetic goal success as public evidence.
+- **Resolution receipt:** `docs/evidence/012-controller-acceptance.json`.
+
+### B-20260821-024 — Planning comparison is compact and evaluator specified
+
+- **Status update:** NARROWED for live one-action-at-a-time synthetic integration; complexity and official-game benefit remain open.
+- **Last updated:** 2026-08-21
+- **Current evidence:** Plans are now derived inside the integrated controller, only one action is emitted before validating its returned consequence, and 190/190 actions have complete chains. The full bundle completed 32/32 synthetic episodes.
+- **Remaining burden:** Stage 14 must isolate planning and recovery effects on procedural holdouts; Stage 16 must profile search latency/memory; Stage 15 must measure official public behavior without game-specific changes.
+- **Resolution receipt:** `docs/evidence/012-controller-acceptance.json`.
+
+### B-20260821-026 — Live typed checkpoint reconstruction and consequence reconciliation remain open
+
+- **Status update:** RESOLVED for Stage 12 typed reconstruction and official-shaped consequence reconciliation; Stage 16 long-run robustness remains a separate burden.
+- **Last updated:** 2026-08-21
+- **Current evidence:** All 32 synthetic checkpoint artifacts restored exactly with zero event duplication. Focused tests restore complete and faulted phases, pending plan/prediction state, counters, explored coordinates, hypotheses, models, goals, and memory; pending submissions cannot be resent, and mismatched returned actions preserve the actual consequence before faulting.
+- **Remaining burden:** Profile repeated restart and partial-checkpoint behavior under the Stage 16 long-run envelope.
+- **Resolution receipt:** `docs/evidence/012-controller-acceptance.json`; controller commit `3fee19d9f82210ba5010af94feac170164a30f3c`.
+
+## B-20260821-027 — Integrated controller success is synthetic while the public smoke scored zero
+
+- **Status:** OPEN
+- **Stage:** 12, 14, 15, 19
+- **Opened:** 2026-08-21
+- **Last updated:** 2026-08-21
+- **Owner:** shared
+- **Burden:** The full controller completed 32/32 compact synthetic grid episodes, but its only Stage 12 official local smoke used an exposed development game for eight actions and returned score 0.0 with zero levels completed.
+- **Why it matters:** Promoting a strong first-party mechanism result into a public or hidden-game claim would erase the measured distribution boundary.
+- **Current evidence:** `docs/evidence/012-controller-acceptance.json` preserves both results under separate exact labels.
+- **Next discriminating action:** Run Stage 14 on frozen synthetic holdouts, then Stage 15 smoke/development and one frozen public holdout under the declared manifest without adding game-specific rules.
+- **Resolution condition:** Never resolved by synthetic evidence alone; narrow only with separately labeled official public receipts.
+- **Resolution receipt:** none.
+
+## B-20260821-028 — Pinned official FrameData may expose a default RESET-shaped action input
+
+- **Status:** ACCEPTED_LIMIT
+- **Stage:** 12, 15, 16
+- **Opened:** 2026-08-21
+- **Last updated:** 2026-08-21
+- **Owner:** Codex
+- **Burden:** The pinned toolkit can materialize `FrameData.action_input` as `RESET` even where no action acknowledgement is semantically present.
+- **Why it matters:** Treating that default as the returned consequence action can falsely fault a correct controller; ignoring real mismatches would weaken receipt integrity.
+- **Current evidence:** The official wrapper alone normalizes the absent/default case to no acknowledgement. Direct adapters retain exact mismatch validation, and the pinned wrapper regression passes.
+- **Next discriminating action:** Revalidate this boundary against any pinned SDK upgrade and preserve real returned-action mismatch tests.
+- **Resolution condition:** Upstream provides an unambiguous presence contract or the compatibility rule remains pinned and covered.
+- **Resolution receipt:** `tests/competition/test_controller_offline_integrity.py`; commit `3fee19d9f82210ba5010af94feac170164a30f3c`.
+
+## B-20260821-029 — Stage 12 preacceptance exposed restart, seed, and revisit defects
+
+- **Status:** RESOLVED
+- **Stage:** 12
+- **Opened:** 2026-08-21
+- **Last updated:** 2026-08-21
+- **Owner:** Codex
+- **Burden:** Fresh workers initially failed an enum import and one reconstruction field; wrapper-derived seeds could exceed the signed 64-bit contract; audit tests mishandled a closed journal; revisiting a level could collide derived identities; and decreasing level indices could emit a false completion event.
+- **Why it matters:** In-process happy paths would have hidden restart and lifecycle defects at exactly the boundaries the controller is meant to preserve.
+- **Current evidence:** The final 21-test focused suite passes in fresh processes; strict mypy and Ruff pass; the final 32-seed measurement completes with 32 verified restores, zero duplicate events, and zero faults.
+- **Next discriminating action:** Retain regressions and repeat them in clean-clone and long-run Stage 16/18 verification.
+- **Resolution condition:** Named defects are corrected and covered without erasing their failure history.
+- **Resolution receipt:** commits `fb383c0` and `3fee19d`; `docs/evidence/012-controller-acceptance.json`.
+
+## B-20260821-030 — Official online API controller execution lacks credentials
+
+- **Status:** BLOCKED_EXTERNAL
+- **Stage:** 12, 15
+- **Opened:** 2026-08-21
+- **Last updated:** 2026-08-21
+- **Owner:** Christopher D. Pang
+- **Burden:** No official online ARC3 credential was available, so the final Stage 12 controller was not measured through the online API surface.
+- **Why it matters:** Offline adapter contracts and local public execution do not prove authentication, transport, quota, or server behavior.
+- **Current evidence:** Synthetic, pinned official-shaped wrapper, and official local execution are available; no hosted inference or optional credential was used.
+- **Next discriminating action:** Continue all offline work. If an online run is later desired, the smallest owner-only action is to make an already-authorized competition credential available through the documented local secret mechanism; do not transmit it in chat.
+- **Resolution condition:** A separately labeled `online-public` receipt passes with credential provenance kept out of repository artifacts.
+- **Resolution receipt:** none.
