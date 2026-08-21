@@ -161,3 +161,829 @@ This file preserves unresolved technical, evidential, legal, and external burden
 - **Next discriminating action:** Finish the draft PR with evidence and one clear review decision.
 - **Resolution condition:** Christopher explicitly directs or performs the merge.
 - **Resolution receipt:** none.
+
+---
+
+## 2026-08-21 Stage 00 updates
+
+### B-20260820-002 — Current competition rules and limits are mutable
+
+- **Status update:** NARROWED for Build 000, never permanently closed.
+- **Last updated:** 2026-08-21
+- **Current evidence:** `upstream.lock.json`; `docs/reports/000-source-identity.md` pin stable documentation bodies, official repository commits, package artifacts, and access times. Kaggle client-rendered HTML is deliberately identified by URL/access time rather than treated as stable content.
+- **Remaining burden:** Revalidate immediately before any public holdout, package freeze, or owner-authorized submission.
+- **Resolution receipt:** Stage 00 source-identity checkpoint `9e17c9d20334f8e52be2eafcc8f84a1d2f0973b2`.
+
+### B-20260820-003 — ARC and Kaggle credentials may be unavailable
+
+- **Status update:** NARROWED / BLOCKED_EXTERNAL for authenticated surfaces.
+- **Last updated:** 2026-08-21
+- **Current evidence:** Presence-only checks found no `ARC_API_KEY`, Kaggle token environment variable, Kaggle CLI, or Kaggle credential file. Network, local toolkit, anonymous, synthetic, and offline packaging routes remain available.
+- **Remaining burden:** Authenticated online-public scorecards and authenticated Kaggle upload/status checks cannot run without an owner-provided credential; this does not block independent work.
+- **Resolution receipt:** `docs/reports/000-source-identity.md`.
+
+## B-20260821-011 — Pinned Kaggle starter has no detected source license
+
+- **Status:** NARROWED
+- **Stage:** 00, 01, 17
+- **Opened:** 2026-08-21
+- **Last updated:** 2026-08-21
+- **Owner:** upstream
+- **Burden:** `arcprize/ARC-AGI-3-Kaggle-Starter@eeb1535404f321d280a8f9194bbc1d7aca5f05fc` has no `LICENSE`, `COPYING`, or `NOTICE` file and no GitHub-detected license, so copying/adapting its source would assume permission not established by the repository.
+- **Why it matters:** Deployment compatibility does not itself grant copyright permission.
+- **Current evidence:** `upstream.lock.json`; `THIRD_PARTY_NOTICES.md`; D-20260821-006.
+- **Next discriminating action:** Implement and test an equivalent first-party wrapper from the documented interface; re-check upstream licensing before any later adaptation.
+- **Resolution condition:** Packaging passes without copied source, or upstream publishes a compatible license/permission whose exact identity is recorded.
+- **Resolution receipt:** none; first-party wrapper not yet implemented.
+
+## B-20260821-012 — Docker is unavailable on the measured host
+
+- **Status:** ACCEPTED_LIMIT
+- **Stage:** 00, 17, 18
+- **Opened:** 2026-08-21
+- **Last updated:** 2026-08-21
+- **Owner:** shared
+- **Burden:** Docker is not installed, so container-based parity checks are unavailable.
+- **Why it matters:** A container could provide an additional Linux/offline packaging check, but it is not required by the controlling workflow.
+- **Current evidence:** `docker --version` was unavailable; Python 3.12, uv, Git, local network access, and a Windows clean-clone path are available.
+- **Next discriminating action:** Use process-level network denial and a fresh clone for Stage 17/18; rely on Linux CI for the second OS surface.
+- **Resolution condition:** Those checks pass, or a container becomes available without paid/system-changing prerequisites.
+- **Resolution receipt:** none.
+
+## B-20260821-013 — Official package, docs, and example identities disagree
+
+- **Status:** OPEN
+- **Stage:** 00, 02, 03, 13, 15
+- **Opened:** 2026-08-21
+- **Last updated:** 2026-08-21
+- **Owner:** upstream
+- **Burden:** The pinned sources contain several contradictions: ARC-AGI declares/tags 0.9.9 while its lock records root 0.9.8; Agents declares 0.1.0 while using v0.9.x tags and toolkit 0.9.1; docs call ACTION7 undo while the engine types it generically; docs' action-count wording differs from the executable non-RESET counter; methodology/toolkit use a 115% level cap while the Kaggle data formula describes a 100% cap; docs say local play has no recordings while toolkit source can save local JSONL; toolkit/Agents surfaces disagree on the default API host; and ARC Prize/Kaggle pages disagree on some milestone prize splits.
+- **Why it matters:** Silently choosing whichever statement is convenient would weaken reproducibility and could invalidate scoring, action validation, or replay claims.
+- **Current evidence:** `upstream.lock.json` `observed_discrepancies`; `docs/reports/000-source-identity.md`; immutable upstream commits pinned there.
+- **Next discriminating action:** Regenerate ARC3's lock, install exact wheels, execute contract probes against the local toolkit, and use the pinned executable behavior for implementation while retaining documentation conflicts.
+- **Resolution condition:** Each behavior used by ARC3 has an executable compatibility test and any remaining doc conflict is labeled in reports.
+- **Resolution receipt:** none.
+
+## B-20260821-014 — Upstream examples and anonymous logging violate ARC3 production constraints
+
+- **Status:** OPEN
+- **Stage:** 02, 12, 16
+- **Opened:** 2026-08-21
+- **Last updated:** 2026-08-21
+- **Owner:** shared
+- **Burden:** Pinned sample policy uses wall-clock/Python-hash seeding, can ignore advertised available actions, and contains a public-game-ID conditional. The toolkit's anonymous-key path can log the fetched key at INFO.
+- **Why it matters:** Copying these patterns would violate determinism, action validity, competition-integrity, and credential hygiene.
+- **Current evidence:** Immutable starter/Agents/toolkit sources identified in `docs/reports/000-source-identity.md`.
+- **Next discriminating action:** Implement first-party deterministic baselines, authoritative available-action validation, redacted logging, and static game-ID/secret scans.
+- **Resolution condition:** Stage 02/16 tests prove those properties on ARC3 production paths; the upstream observations remain historical evidence.
+- **Resolution receipt:** none.
+
+---
+
+## 2026-08-21 Stage 01 updates
+
+### B-20260821-011 — Pinned Kaggle starter has no detected source license
+
+- **Status update:** NARROWED; packaging verification remains open through Stage 17.
+- **Last updated:** 2026-08-21
+- **Current evidence:** A first-party `agent/my_agent.py` compatibility wrapper and interface tests were implemented without copying starter source. `docs/reports/001-repository-foundation.md` records the boundary.
+- **Remaining burden:** Prove the independently implemented wrapper inside the generated offline Kaggle package and re-check upstream licensing before any future source adaptation.
+- **Resolution receipt:** Stage 01 implementation checkpoint `311110299444f71d7e0f0ff0e3b1f8d9c174a01b`.
+
+## B-20260821-015 — Remote CI and true clean-clone execution are not yet receipts
+
+- **Status:** NARROWED
+- **Stage:** 01, 18
+- **Opened:** 2026-08-21
+- **Last updated:** 2026-08-21
+- **Owner:** Codex
+- **Burden:** CI configuration and local bootstrap contracts can pass while a pushed Linux/Windows job or an isolated clone still fails.
+- **Why it matters:** Repository-local success is not evidence of cross-platform or clean-clone reproducibility.
+- **Current evidence:** Local Windows `scripts/bootstrap.ps1 -Check` passed. Initial Actions runs `32450125300` and `32450125762` passed on Ubuntu but failed Windows formatting because checkout converted LF to CRLF. `.gitattributes` made source line endings invariant; correcting runs `32450257835` and `32450260123` passed both Ubuntu and Windows jobs.
+- **Next discriminating action:** Observe the pushed Stage 01 Actions run, then perform the Stage 18 fresh-clone locked bootstrap and artifact verification.
+- **Resolution condition:** Linux and Windows CI plus the declared Stage 18 clean-clone checks pass, or failures are preserved with exact outputs.
+- **Resolution receipt:** Remote CI portion resolved by Actions runs `32450257835` and `32450260123`; true clean-clone verification remains open for Stage 18.
+
+---
+
+## 2026-08-21 Stage 02 updates
+
+### B-20260821-013 — Official package, docs, and example identities disagree
+
+- **Status update:** NARROWED for the Stage 02 execution path; documentation/scoring and future-version conflicts remain open.
+- **Last updated:** 2026-08-21
+- **Current evidence:** Exact wheels import; adapter compatibility tests bind frame extraction, automatic reset, action validation, terminal behavior, recording limitations, mode precedence, and scorecard normalization to `arc-agi==0.9.9` / `arcengine==0.9.3`.
+- **Remaining burden:** Preserve the 100%/115% score-cap conflict until Stage 13 validates the chosen official-facing scorer; re-run compatibility tests on any upstream change.
+- **Resolution receipt:** `docs/reports/002-official-sdk-baselines.md`.
+
+### B-20260821-014 — Upstream examples and anonymous logging violate ARC3 production constraints
+
+- **Status update:** NARROWED for Stage 02 production paths; final static/package scans remain open.
+- **Last updated:** 2026-08-21
+- **Current evidence:** Deterministic first-party baselines use local seeded PRNG state, advertised-action filtering, no game-ID branches, injected silent SDK loggers, and sanitized exception text. Sentinel tests and a production-ID scan pass.
+- **Remaining burden:** Turn these scans into durable Stage 16/17 CI checks and prove the final packaged controller has the same properties.
+- **Resolution receipt:** `docs/reports/002-official-sdk-baselines.md`.
+
+## B-20260821-016 — Stage 02 timestamps are incomplete evaluation receipts
+
+- **Status:** OPEN
+- **Stage:** 02, 03, 13
+- **Opened:** 2026-08-21
+- **Last updated:** 2026-08-21
+- **Owner:** Codex
+- **Burden:** The Stage 02 CLI scorecards preserve configuration, source identities, seeds, budgets, and results, but the combined command did not emit exact evaluation start/end timestamps.
+- **Why it matters:** Inferred timestamps would weaken provenance; missing fields must be explicit.
+- **Current evidence:** Both fields are `null` with an explanation in `docs/evidence/002-baseline-scorecards.json`.
+- **Next discriminating action:** Use the immutable Stage 03 event clock and Stage 13 evaluation manifest to record exact start/completion timestamps.
+- **Resolution condition:** The general evaluation harness emits and hashes both timestamps without relying on shell history.
+- **Resolution receipt:** none.
+
+## B-20260821-017 — One would-be public holdout was exposed before manifest freeze
+
+- **Status:** ACCEPTED_LIMIT
+- **Stage:** 02, 15
+- **Opened:** 2026-08-21
+- **Last updated:** 2026-08-21
+- **Owner:** shared
+- **Burden:** `ls20-9607627b` was opened for SDK contract work before deterministic public partitions were committed; its hash rank would otherwise have placed it in public holdout.
+- **Why it matters:** Treating it as unseen later would be false even though no game source was inspected and no solution was encoded.
+- **Current evidence:** The manifest records original assignment, exposure date/type, and an override to development.
+- **Next discriminating action:** Keep it in development/regression only and run Stage 15 public holdout solely on the 10 unexposed manifest entries.
+- **Resolution condition:** Permanent process constraint for Build 000; never erase the exposure record.
+- **Resolution receipt:** `docs/evaluation/public-game-partitions.v0.1.json`.
+
+### B-20260821-015 — Remote CI and true clean-clone execution are not yet receipts
+
+- **Status update:** RESOLVED for the Stage 02 correction; Stage 18 clean-clone work remains.
+- **Last updated:** 2026-08-21
+- **Current evidence:** Stage 02 Actions runs `32451110070` and `32451112828` failed one stale Stage 01 assertion after the `evaluate` command became real; all preceding sync/lint/format/type steps passed. The test now targets the still-reserved `compare` command.
+- **Remaining burden:** Retain Stage 18 true clean-clone verification as a separate boundary.
+- **Resolution receipt:** Correcting Actions runs `32451273583` and `32451275935` passed both Ubuntu and Windows jobs at commit `9ee31a453cfa1b52c1cb99b6cf0a2bc7ac52e61a`.
+
+---
+
+## 2026-08-21 Stage 03 updates
+
+### B-20260820-006 — Trace-ledger overhead is unmeasured
+
+- **Status update:** NARROWED for the isolated Stage 03 implementation; integrated competition-scale profiling remains open.
+- **Last updated:** 2026-08-21
+- **Current evidence:** `docs/evidence/003-trace-acceptance.json` records 500-event append/retrieval, 64×64 frame deduplication, storage, checkpoint size, and peak traced allocation on the pinned Windows/Python host. Append measured 0.623596 ms/event and retrieval 0.0877939 seconds for 500 events.
+- **Remaining burden:** Profile trace growth, compaction, and decision latency with the Stage 12 controller across long procedural and public-game runs under the Stage 16 envelope.
+- **Resolution receipt:** Stage 03 report `docs/reports/003-immutable-trace-replay-checkpoint.md`; implementation checkpoint `8fd5a056a71ae52fa37f83f3c3614ae1f0a4f7c3`.
+
+### B-20260820-008 — The value of PAL-inspired trace discipline is an empirical question
+
+- **Status update:** OPEN; implementation is now ablatable but no performance value is inferred.
+- **Last updated:** 2026-08-21
+- **Current evidence:** Immutable receipts, replay, rejected-state preservation, and checkpoint/reopen mechanics pass their focused suites. Stage 11 additionally measures one source-linked cross-level rule at one validation probe versus three without memory; this remains isolated synthetic mechanism evidence.
+- **Remaining burden:** Stage 14 must compare the integrated controller with and without trace-derived memory and rejected-hypothesis retention under identical seeds, budgets, and scorers.
+- **Resolution receipt:** none.
+
+### B-20260821-016 — Stage 02 timestamps are incomplete evaluation receipts
+
+- **Status update:** NARROWED; the trace event clock is implemented, while the general evaluation envelope remains Stage 13 work.
+- **Last updated:** 2026-08-21
+- **Current evidence:** Every Stage 03 event validates an explicit UTC timestamp and the benchmark preserves exact start/completion times in `docs/evidence/003-trace-acceptance.json`.
+- **Remaining burden:** Stage 13 must emit start/completion timestamps for every scorecard and tie them to an immutable run manifest.
+- **Resolution receipt:** Stage 03 trace schema and acceptance suite; not fully resolved.
+
+## B-20260821-018 — Perception correspondence is heuristic and uncalibrated
+
+- **Status:** OPEN
+- **Stage:** 04, 08, 14, 16
+- **Opened:** 2026-08-21
+- **Last updated:** 2026-08-21
+- **Owner:** Codex
+- **Burden:** Component extraction depends on background/connectivity choices, and cross-frame correspondence uses generic hand-weighted geometry scores rather than calibrated probabilities or globally optimal multi-object assignments.
+- **Why it matters:** A plausible but wrong match could contaminate later mechanics, world models, and plans if downstream code treats it as accepted identity.
+- **Current evidence:** `docs/reports/004-perception-and-frame-differencing.md`; ambiguity retention and palette/position permutation tests pass, but only on synthetic fixtures.
+- **Next discriminating action:** Carry alternative segmentations/matches into Stage 08 retrodiction, measure contradiction/recovery behavior in Stage 14, and profile any stronger assignment method in Stage 16.
+- **Resolution condition:** Held-out procedural and public evidence demonstrates calibrated/robust matching or downstream recovery makes the remaining error rate an accepted bounded limit.
+- **Resolution receipt:** none.
+
+## B-20260821-019 — Hypothesis ranks have no predictive calibration evidence
+
+- **Status:** OPEN
+- **Stage:** 05, 08, 13, 14
+- **Opened:** 2026-08-21
+- **Last updated:** 2026-08-21
+- **Owner:** Codex
+- **Burden:** Deterministic integer ranks and conflict tie-breaks order typed hypotheses, but their scale has not been calibrated and lifecycle fixture success does not establish predictive accuracy or planning value.
+- **Why it matters:** Treating an ordering aid as probability, truth, or expected utility could overstate evidence and bias probes or plans.
+- **Current evidence:** Every Stage 05 serialization/report labels weights `uncalibrated_rank`; 20 mechanism tests pass on synthetic lifecycle fixtures.
+- **Next discriminating action:** Measure retrodictive accuracy, contradiction rate, rule survival, and downstream score/action effects on held-out procedural episodes in Stages 08, 13, and 14.
+- **Resolution condition:** Calibration evidence supports a revised meaning, or the final system retains rank-only semantics with measured limits.
+- **Resolution receipt:** none.
+
+## B-20260821-020 — Procedural laboratory fidelity is bounded
+
+- **Status:** OPEN
+- **Stage:** 06, 13, 14, 19
+- **Opened:** 2026-08-21
+- **Last updated:** 2026-08-21
+- **Owner:** shared
+- **Burden:** The 15 executable procedural families exercise declared mechanics but remain compact first-party abstractions; their distribution and difficulty are not evidence that they represent the current public or private ARC-AGI-3 game distribution.
+- **Why it matters:** A controller can overfit the laboratory generator or improve synthetic completion without improving official gameplay.
+- **Current evidence:** `docs/evidence/006-lab-acceptance.json` records deterministic splits, 630 solvable episodes, and random baselines; no official score is inferred.
+- **Next discriminating action:** Keep generator ground truth away from production code, evaluate mechanisms on frozen held-out combinations/families in Stage 14, and separately measure the untouched public partition in Stage 15.
+- **Resolution condition:** Never fully closed by synthetic results; narrow only with independent public/official receipts while preserving surface labels.
+- **Resolution receipt:** none.
+
+## B-20260821-021 — Exploration improvement is isolated from game completion
+
+- **Status:** OPEN
+- **Stage:** 07, 12, 14, 15
+- **Opened:** 2026-08-21
+- **Last updated:** 2026-08-21
+- **Owner:** Codex
+- **Burden:** Information-directed probes reduced median actions in a held-out typed semantic-identification fixture, but the fixture isolates one discriminating action and does not measure complete procedural or official games.
+- **Why it matters:** A probe policy can identify a local mapping efficiently yet spend too many actions, misclassify effects, or fail to translate knowledge into a successful plan.
+- **Current evidence:** `docs/evidence/007-exploration-acceptance.json` records median 1 versus random 4 and cycle 3 over 101 synthetic cases; all claims are limited to that surface.
+- **Next discriminating action:** Integrate exploration with retrodictive models, goals, and planning in Stage 12, then run equal-budget full-game ablations in Stage 14 and untouched public evaluation in Stage 15.
+- **Resolution condition:** Full-game evidence shows action/completion benefit, or the mechanism is retained only as an isolated capability with an honest negative integrated result.
+- **Resolution receipt:** none.
+
+## B-20260821-022 — World-model comparison supplies symbolic states and plans
+
+- **Status:** OPEN
+- **Stage:** 08, 10, 12, 14
+- **Opened:** 2026-08-21
+- **Last updated:** 2026-08-21
+- **Owner:** Codex
+- **Burden:** Retrodiction selected the correct model on four unseen symbolic parameter combinations, but symbolic states and right-action plans were supplied by the fixture rather than acquired from raw observations and controller search.
+- **Why it matters:** Model-selection success can fail to survive perception ambiguity, incomplete hypothesis compilation, goal uncertainty, or planning errors in live episodes.
+- **Current evidence:** `docs/evidence/008-world-model-acceptance.json` records 4/4 gated versus 0/4 ungated simulated final states under the same 16 supplied actions. `docs/evidence/010-planning-acceptance.json` adds 24/24 bounded-planning versus 0/24 cycle completions, but still starts from evaluator-supplied symbolic states, models, and targets.
+- **Next discriminating action:** Build perception-to-symbolic-state controller integration in Stage 12, then run equal-budget full-game ablations in Stage 14.
+- **Resolution condition:** Integrated traces demonstrate successful state construction, pre-action prediction, live consequence matching, and completion benefit; otherwise retain the isolated result only.
+- **Resolution receipt:** none.
+
+## B-20260821-023 — Goal comparison begins from supplied evidence and action estimates
+
+- **Status:** OPEN
+- **Stage:** 09, 10, 12, 14, 15
+- **Opened:** 2026-08-21
+- **Last updated:** 2026-08-21
+- **Owner:** Codex
+- **Burden:** The delayed/proxy comparison supplies strong external-progress evidence and per-action goal-advance estimates before selection; it does not measure whether raw observations yield the right goal, reachability estimate, or multi-step plan.
+- **Why it matters:** A selector can reject a novelty trap when given correct estimates yet still fail in an integrated episode because the candidate goal, model, or plan is wrong.
+- **Current evidence:** `docs/evidence/009-goal-acceptance.json` records 64/64 goal-aware versus 0/64 novelty-only synthetic completions under equal five-action budgets; the claim is limited to isolated selection.
+- **Next discriminating action:** Connect goal candidates to bounded search and live consequence receipts in Stages 10–12, then compare equal-budget integrated variants in Stage 14 and preserve a separately labeled public result in Stage 15.
+- **Resolution condition:** Integrated traces show that acquired goals improve completion or action efficiency without hidden fixture estimates, or the mechanism is retained only as an isolated capability with the negative integrated result preserved.
+- **Resolution receipt:** none.
+
+## B-20260821-024 — Planning comparison is compact and evaluator specified
+
+- **Status:** OPEN
+- **Stage:** 10, 12, 14, 15, 16
+- **Opened:** 2026-08-21
+- **Last updated:** 2026-08-21
+- **Owner:** Codex
+- **Burden:** The planning comparison uses obstacle-free symbolic navigation, evaluator-supplied targets and deterministic models, a simple cyclic exploration baseline, and one injected first-action no-op for recovery.
+- **Why it matters:** A bounded search implementation can dominate this fixture yet fail when perception is ambiguous, models branch, goals are wrong, obstacles change mechanics, or search cost approaches the competition envelope.
+- **Current evidence:** `docs/evidence/010-planning-acceptance.json` records 24/24 planning versus 0/24 exploration-only and 24/24 recovery versus 0/24 no-recovery under equal 24-action budgets; the task manifest is hashed.
+- **Next discriminating action:** Integrate raw-observation state construction and persisted model/goal state in Stage 12, compare component ablations on full procedural episodes in Stage 14, and profile expansions/latency/memory in Stage 16.
+- **Resolution condition:** Integrated held-out and separately labeled public receipts demonstrate bounded planning value or preserve an honest negative result with the isolated mechanism claim unchanged.
+- **Resolution receipt:** none.
+
+## B-20260821-025 — Trace round-trip property generated schema-forbidden keys
+
+- **Status:** RESOLVED
+- **Stage:** 03, 07, corrective checkpoint after 10
+- **Opened:** 2026-08-21
+- **Last updated:** 2026-08-21
+- **Owner:** Codex
+- **Burden:** Windows CI runs `32453259223` and `32453261970` minimized the purportedly valid arbitrary receipt payload to `{"CREDENTIALS": null}`; the schema correctly rejected it, so the generator's domain contradicted the test name.
+- **Why it matters:** Unseeded platform/example variation made CI flaky and a later pass without a strategy correction could mask the invalid property domain.
+- **Current evidence:** `docs/evidence/007-trace-property-ci-failure.json`; both Ubuntu jobs passed and both Windows jobs failed at commit `64408e35bea561f3959791adc94d11885270eca4`. The corrected strategy plus explicit schema rejection suite passed four seeds locally, then push run `32454918883` and pull-request run `32454922333` passed on both Ubuntu and Windows.
+- **Next discriminating action:** None for this failure; retain the explicit schema rejection tests and the preserved failure receipt.
+- **Resolution condition:** Corrective commit passes the full CI matrix while explicit nested credential/reasoning rejection tests remain enabled.
+- **Resolution receipt:** corrective commit `686f13ae2601b1215571db921f60335f1153c576`; Actions runs `32454918883` and `32454922333`.
+
+## B-20260821-026 — Live typed checkpoint reconstruction and consequence reconciliation remain open
+
+- **Status:** OPEN
+- **Stage:** 11, 12, 16
+- **Opened:** 2026-08-21
+- **Last updated:** 2026-08-21
+- **Owner:** Codex
+- **Burden:** Stage 11 validates canonical snapshots for every declared derived subsystem and safely restores a pending action, but it does not itself reconstruct all Stage 12 live typed objects or prove that each official adapter can redeliver/reconcile an already-submitted consequence.
+- **Why it matters:** Correct JSON and RNG restoration can still leave a live controller unable to continue, or an adapter might make action outcome state ambiguous after process death.
+- **Current evidence:** The child-process exit-23 test restored every canonical field, returned `AWAIT_CONSEQUENCE`, refused resubmission, and matched 20/20 later RNG choices. The cross-level comparison is only a supplied abstract-rule fixture.
+- **Next discriminating action:** Implement typed Stage 12 reconstruction and adapter-level pending-consequence tests; exercise partial checkpoint recovery and long-run restart behavior again in Stage 16.
+- **Resolution condition:** Synthetic and official-shaped adapter tests resume the same controller state/action stream across process death without duplicated actions; incompatible checkpoints remain preserved for diagnosis.
+- **Resolution receipt:** none.
+
+---
+
+## 2026-08-21 Stage 12 updates
+
+### B-20260821-021 — Exploration improvement is isolated from game completion
+
+- **Status update:** NARROWED on one integrated synthetic grid family; public and broader procedural value remain open.
+- **Last updated:** 2026-08-21
+- **Current evidence:** The full controller completed 32/32 `synthetic-grid-v1` episodes in 190 actions versus 4/32 in 463 actions for the equal-budget cycle baseline. Action alternatives, selection, prediction, and consequence were all receipt-linked.
+- **Remaining burden:** Stage 14 must isolate exploration from planning/model/goal interactions on frozen procedural holdouts; Stage 15 must keep the zero-score public smoke separate.
+- **Resolution receipt:** `docs/evidence/012-controller-acceptance.json`; controller commit `3fee19d9f82210ba5010af94feac170164a30f3c`.
+
+### B-20260821-022 — World-model comparison supplies symbolic states and plans
+
+- **Status update:** NARROWED for raw synthetic observation integration; model value remains entangled and public behavior unmeasured.
+- **Last updated:** 2026-08-21
+- **Current evidence:** The Stage 12 controller now derives perception, candidate models, predictions, and plans from raw synthetic frames and records every prediction/consequence chain. The full bundle completed 32/32 versus 4/32 for cycle.
+- **Remaining burden:** Stage 14 must compare model/retrodiction removal under identical seeds and budgets. Compact first-party grid behavior cannot establish official-game fidelity.
+- **Resolution receipt:** `docs/evidence/012-controller-acceptance.json`.
+
+### B-20260821-023 — Goal comparison begins from supplied evidence and action estimates
+
+- **Status update:** NARROWED for integrated candidate acquisition; independent goal contribution remains open.
+- **Last updated:** 2026-08-21
+- **Current evidence:** Stage 12 creates, ranks, retires, and reopens source-linked goal candidates from controller observations, including level transitions and revisits. The full integrated bundle succeeds on the synthetic grid comparison.
+- **Remaining burden:** Stage 14 must isolate goal scoring/acquisition; Stage 15 must preserve the public zero and avoid treating synthetic goal success as public evidence.
+- **Resolution receipt:** `docs/evidence/012-controller-acceptance.json`.
+
+### B-20260821-024 — Planning comparison is compact and evaluator specified
+
+- **Status update:** NARROWED for live one-action-at-a-time synthetic integration; complexity and official-game benefit remain open.
+- **Last updated:** 2026-08-21
+- **Current evidence:** Plans are now derived inside the integrated controller, only one action is emitted before validating its returned consequence, and 190/190 actions have complete chains. The full bundle completed 32/32 synthetic episodes.
+- **Remaining burden:** Stage 14 must isolate planning and recovery effects on procedural holdouts; Stage 16 must profile search latency/memory; Stage 15 must measure official public behavior without game-specific changes.
+- **Resolution receipt:** `docs/evidence/012-controller-acceptance.json`.
+
+### B-20260821-026 — Live typed checkpoint reconstruction and consequence reconciliation remain open
+
+- **Status update:** RESOLVED for Stage 12 typed reconstruction and official-shaped consequence reconciliation; Stage 16 long-run robustness remains a separate burden.
+- **Last updated:** 2026-08-21
+- **Current evidence:** All 32 synthetic checkpoint artifacts restored exactly with zero event duplication. Focused tests restore complete and faulted phases, pending plan/prediction state, counters, explored coordinates, hypotheses, models, goals, and memory; pending submissions cannot be resent, and mismatched returned actions preserve the actual consequence before faulting.
+- **Remaining burden:** Profile repeated restart and partial-checkpoint behavior under the Stage 16 long-run envelope.
+- **Resolution receipt:** `docs/evidence/012-controller-acceptance.json`; controller commit `3fee19d9f82210ba5010af94feac170164a30f3c`.
+
+## B-20260821-027 — Integrated controller success is synthetic while the public smoke scored zero
+
+- **Status:** OPEN
+- **Stage:** 12, 14, 15, 19
+- **Opened:** 2026-08-21
+- **Last updated:** 2026-08-21
+- **Owner:** shared
+- **Burden:** The full controller completed 32/32 compact synthetic grid episodes, but its only Stage 12 official local smoke used an exposed development game for eight actions and returned score 0.0 with zero levels completed.
+- **Why it matters:** Promoting a strong first-party mechanism result into a public or hidden-game claim would erase the measured distribution boundary.
+- **Current evidence:** `docs/evidence/012-controller-acceptance.json` preserves both results under separate exact labels.
+- **Next discriminating action:** Run Stage 14 on frozen synthetic holdouts, then Stage 15 smoke/development and one frozen public holdout under the declared manifest without adding game-specific rules.
+- **Resolution condition:** Never resolved by synthetic evidence alone; narrow only with separately labeled official public receipts.
+- **Resolution receipt:** none.
+
+## B-20260821-028 — Pinned official FrameData may expose a default RESET-shaped action input
+
+- **Status:** ACCEPTED_LIMIT
+- **Stage:** 12, 15, 16
+- **Opened:** 2026-08-21
+- **Last updated:** 2026-08-21
+- **Owner:** Codex
+- **Burden:** The pinned toolkit can materialize `FrameData.action_input` as `RESET` even where no action acknowledgement is semantically present.
+- **Why it matters:** Treating that default as the returned consequence action can falsely fault a correct controller; ignoring real mismatches would weaken receipt integrity.
+- **Current evidence:** The official wrapper alone normalizes the absent/default case to no acknowledgement. Direct adapters retain exact mismatch validation, and the pinned wrapper regression passes.
+- **Next discriminating action:** Revalidate this boundary against any pinned SDK upgrade and preserve real returned-action mismatch tests.
+- **Resolution condition:** Upstream provides an unambiguous presence contract or the compatibility rule remains pinned and covered.
+- **Resolution receipt:** `tests/competition/test_controller_offline_integrity.py`; commit `3fee19d9f82210ba5010af94feac170164a30f3c`.
+
+## B-20260821-029 — Stage 12 preacceptance exposed restart, seed, and revisit defects
+
+- **Status:** RESOLVED
+- **Stage:** 12
+- **Opened:** 2026-08-21
+- **Last updated:** 2026-08-21
+- **Owner:** Codex
+- **Burden:** Fresh workers initially failed an enum import and one reconstruction field; wrapper-derived seeds could exceed the signed 64-bit contract; audit tests mishandled a closed journal; revisiting a level could collide derived identities; and decreasing level indices could emit a false completion event.
+- **Why it matters:** In-process happy paths would have hidden restart and lifecycle defects at exactly the boundaries the controller is meant to preserve.
+- **Current evidence:** The final 21-test focused suite passes in fresh processes; strict mypy and Ruff pass; the final 32-seed measurement completes with 32 verified restores, zero duplicate events, and zero faults.
+- **Next discriminating action:** Retain regressions and repeat them in clean-clone and long-run Stage 16/18 verification.
+- **Resolution condition:** Named defects are corrected and covered without erasing their failure history.
+- **Resolution receipt:** commits `fb383c0` and `3fee19d`; `docs/evidence/012-controller-acceptance.json`.
+
+## B-20260821-030 — Official online API controller execution lacks credentials
+
+- **Status:** BLOCKED_EXTERNAL
+- **Stage:** 12, 15
+- **Opened:** 2026-08-21
+- **Last updated:** 2026-08-21
+- **Owner:** Christopher D. Pang
+- **Burden:** No official online ARC3 credential was available, so the final Stage 12 controller was not measured through the online API surface.
+- **Why it matters:** Offline adapter contracts and local public execution do not prove authentication, transport, quota, or server behavior.
+- **Current evidence:** Synthetic, pinned official-shaped wrapper, and official local execution are available; no hosted inference or optional credential was used.
+- **Next discriminating action:** Continue all offline work. If an online run is later desired, the smallest owner-only action is to make an already-authorized competition credential available through the documented local secret mechanism; do not transmit it in chat.
+- **Resolution condition:** A separately labeled `online-public` receipt passes with credential provenance kept out of repository artifacts.
+- **Resolution receipt:** none.
+
+---
+
+## 2026-08-21 Stage 13 updates
+
+### B-20260821-016 — Stage 02 timestamps are incomplete evaluation receipts
+
+- **Status update:** RESOLVED for the Stage 13 evaluation envelope.
+- **Last updated:** 2026-08-21
+- **Current evidence:** Every evaluation manifest and report binds exact UTC start/completion timestamps to its code/config/upstream/runtime identity. The clean B0–B4 receipt spans `2026-08-21T08:04:57.093703Z` through `2026-08-21T08:05:13.239118Z`.
+- **Remaining burden:** None for general harness timestamps; official/public runs must use the same envelope in Stage 15.
+- **Resolution receipt:** `docs/evidence/013-evaluation-harness-acceptance.json`; commit `01f7a12e42f50e2899db9d430bcf4d125a81d49f`.
+
+## B-20260821-031 — B0–B4 comparison is a two-seed single-synthetic-environment result
+
+- **Status:** OPEN
+- **Stage:** 13, 14, 15, 19
+- **Opened:** 2026-08-21
+- **Last updated:** 2026-08-21
+- **Owner:** shared
+- **Burden:** The clean harness comparison covers seeds 7 and 11 of `synthetic-grid-v1`; B4 completed 2/2 while B1/B3 completed 1/2 and B0/B2 completed 0/2.
+- **Why it matters:** Exact reproduction cannot turn a narrow distribution into evidence about procedural-family breadth, public games, or hidden evaluation.
+- **Current evidence:** Ten sealed successful run receipts and an exact 10-run reproduction in `docs/evidence/013-evaluation-harness-acceptance.json`; official RHAE is null.
+- **Next discriminating action:** Run frozen Stage 14 procedural ablations, then separately labeled Stage 15 official public partitions without game-specific policy edits.
+- **Resolution condition:** Never fully resolved by more runs of the same environment; narrow only with predeclared broader surfaces.
+- **Resolution receipt:** none.
+
+## B-20260821-032 — Compact performance thresholds exclude RSS, spawn startup, and B4
+
+- **Status:** OPEN
+- **Stage:** 13, 16
+- **Opened:** 2026-08-21
+- **Last updated:** 2026-08-21
+- **Owner:** Codex
+- **Burden:** The pinned threshold passes B0–B3 using Python `tracemalloc` and in-worker wall time, but does not measure whole-process resident memory, spawn startup, or the integrated B4 controller.
+- **Why it matters:** A passing compact-worker gate could coexist with unacceptable competition package startup, memory, or decision latency.
+- **Current evidence:** Clean 8/8 threshold receipt: peak 1,445,249 bytes, decision p95 0.000189000 seconds, worker wall 0.734858 seconds, invalid-action rate 0.0.
+- **Next discriminating action:** Measure full-controller process RSS, startup, long-run trace growth, decision latency, and package sandbox cost in Stage 16/17.
+- **Resolution condition:** Integrated envelopes pass explicit competition-compatible limits or the final package records the failing constraint.
+- **Resolution receipt:** none.
+
+## B-20260821-033 — Artifact seals are not external signatures
+
+- **Status:** ACCEPTED_LIMIT
+- **Stage:** 13, 18, 19
+- **Opened:** 2026-08-21
+- **Last updated:** 2026-08-21
+- **Owner:** shared
+- **Burden:** Closed-set hashes detect artifact mutation relative to the manifest, but the manifest is not signed by an independent authority.
+- **Why it matters:** Tamper evidence supports reproducibility and local integrity; it must not be described as third-party authenticity or official verification.
+- **Current evidence:** Terminal and reproduction artifact sets verify their hashes and recomputed semantics; tamper tests are rejected.
+- **Next discriminating action:** Preserve commit/CI/PR provenance and clean-clone reproduction; add external signing only if a future owner-authorized release requires it.
+- **Resolution condition:** Permanent claim boundary unless an owner-authorized signing/release process is added.
+- **Resolution receipt:** `docs/evidence/013-evaluation-harness-acceptance.json`.
+
+## B-20260821-034 — Concurrent source edits invalidated one terminal-resume test identity
+
+- **Status:** RESOLVED
+- **Stage:** 13
+- **Opened:** 2026-08-21
+- **Last updated:** 2026-08-21
+- **Owner:** Codex
+- **Burden:** A root verification run produced 25 passes and one identity-mismatch failure because a parallel Stage 14 worker modified first-party policy source between the test's initial terminal evaluation and its same-ID resume.
+- **Why it matters:** Treating the failure as random would hide both a real orchestration race and the evaluator's intended refusal to reuse stale-identity artifacts.
+- **Current evidence:** After filesystem writes paused, the same focused suite passed 26/26 in 24.04 seconds. Final evaluation and threshold evidence came from a clean detached worktree at `01f7a12`.
+- **Next discriminating action:** Use frozen commits or isolated worktrees for all final evaluator receipts.
+- **Resolution condition:** Stable-tree rerun passes and authoritative evidence is bound to an isolated committed source tree.
+- **Resolution receipt:** `docs/evidence/013-evaluation-harness-acceptance.json`.
+
+---
+
+## 2026-08-21 Stage 14 updates
+
+### B-20260821-021 — Exploration improvement is isolated from game completion
+
+- **Status update:** NARROWED but unresolved across mechanisms.
+- **Last updated:** 2026-08-21
+- **Current evidence:** On the 14-case frozen integrated suite, A6 coordinate-salience removal reached 31 FULL coordinate actions but produced the same 8/14 completions and 150 actions. A9 had no positive-information candidate and was `NOT_EXERCISED`.
+- **Remaining burden:** The integrated suite does not reproduce Stage 07's semantic-identification benefit or exercise information disagreement. Public development and a broader generic synthetic surface must separate action semantics from world-model/goal interactions.
+- **Resolution receipt:** `docs/evidence/014-ablation-acceptance.json`; commit `565712fe6fb1e62f704f40a7693d3d3fb1de3ada`.
+
+### B-20260821-022 — World-model comparison supplies symbolic states and plans
+
+- **Status update:** NARROWED with an integrated mechanism result; official value remains open.
+- **Last updated:** 2026-08-21
+- **Current evidence:** FULL completed 8/14 in 150 actions; A4 without world-model simulation completed 1/14 in 211 actions under identical cases and budgets. FULL therefore had a seven-completion and seven-score advantage on this synthetic suite.
+- **Remaining burden:** All six procedural holdouts still failed under FULL, and no official-public improvement has been measured.
+- **Resolution receipt:** `docs/evidence/014-ablation-acceptance.json`.
+
+### B-20260821-023 — Goal comparison begins from supplied evidence and action estimates
+
+- **Status update:** NARROWED with an integrated mechanism result; official goal acquisition remains open.
+- **Last updated:** 2026-08-21
+- **Current evidence:** A5 without goal inference completed 0/14 in 224 actions versus FULL 8/14 in 150; 144 FULL goal-candidate receipts establish exposure.
+- **Remaining burden:** The result is confined to deterministic navigation successes; FULL did not solve the six procedural holdouts or an official public game.
+- **Resolution receipt:** `docs/evidence/014-ablation-acceptance.json`.
+
+### B-20260821-024 — Planning comparison is compact and evaluator specified
+
+- **Status update:** NARROWED with contradictory distribution evidence for recovery.
+- **Last updated:** 2026-08-21
+- **Current evidence:** A7 reached ten planned prediction mismatches but had the same completion, score, and action count as FULL. Stage 10 previously measured 24/24 recovery successes versus 0/24 without recovery on a more targeted held-out symbolic suite.
+- **Remaining burden:** Recovery benefit is not reproduced in this integrated case set. Preserve both results and design a broader predeclared interaction test before changing the competition preset.
+- **Resolution receipt:** `docs/evidence/014-ablation-acceptance.json`; prior receipt `docs/evidence/010-planning-acceptance.json`.
+
+### B-20260821-027 — Integrated controller success is synthetic while the public smoke scored zero
+
+- **Status update:** OPEN; the synthetic boundary is now broader but unchanged in kind.
+- **Last updated:** 2026-08-21
+- **Current evidence:** The clean Stage 14 matrix reproduced FULL 8/14 on eight navigation and six procedural cases; all eight completions were navigation cases. The earlier official local development smoke remains score 0.0 with zero levels.
+- **Remaining burden:** Stage 15 must evaluate the frozen policy on the official public smoke/development surfaces and open the declared holdout at most once, if assets can be acquired without a human gate.
+- **Resolution receipt:** `docs/evidence/014-ablation-acceptance.json`; `docs/evidence/012-controller-acceptance.json`.
+
+### B-20260821-031 — B0–B4 comparison is a two-seed single-synthetic-environment result
+
+- **Status update:** NARROWED by a 14-case A1–A10 matrix, not resolved.
+- **Last updated:** 2026-08-21
+- **Current evidence:** Stage 14 adds eight frozen navigation seeds and six procedural holdouts with 154 paired episodes, exact semantic reproduction, and zero faults. FULL completed 8/14 but none of the six procedural holdouts.
+- **Remaining burden:** More synthetic cases cannot establish official-public or hidden-game generalization; Stage 15 must remain separately labeled.
+- **Resolution receipt:** `docs/evidence/014-ablation-acceptance.json`.
+
+## B-20260821-035 — Retrodiction gate has conflicting measured effects
+
+- **Status:** OPEN
+- **Stage:** 08, 14, 15, 19
+- **Opened:** 2026-08-21
+- **Last updated:** 2026-08-21
+- **Owner:** shared
+- **Burden:** Stage 14 A3 preserved the same 8/14 completions while using 141 actions versus FULL's 150, classifying the gate as `FULL_COMPONENT_REGRESSION`; Stage 08's targeted held-out comparison instead completed 4/4 with the gate and 0/4 without it.
+- **Why it matters:** Selecting either result as universal would erase distribution dependence. Ungated promotion also changes the accepted-rule integrity boundary, not only runtime cost.
+- **Current evidence:** A3 exercised 156 retrodiction receipts and had a nine-action advantage on eight equally completed pairs; Stage 08 used four supplied planned-action symbolic combinations.
+- **Next discriminating action:** Predeclare a broader integrated suite containing both false-high-rank and ordinary navigation cases, then compare accepted predictions, completion, and actions under one scorer and budget.
+- **Resolution condition:** Repeated equal-budget evidence identifies a stable gate rule or a bounded conditional gate without losing contradiction visibility.
+- **Resolution receipt:** none.
+
+## B-20260821-036 — Six ablations have null, partial, trace-only, or unexercised evidence
+
+- **Status:** OPEN
+- **Stage:** 14, 15, 16, 19
+- **Opened:** 2026-08-21
+- **Last updated:** 2026-08-21
+- **Owner:** shared
+- **Burden:** A1 was only a checkpoint-persistence proxy; A2, A6, and A7 were exposed but behaviorally null; A8 changed trace receipts without policy coupling; A9 was not exercised; A10 was runtime-only and behaviorally identical.
+- **Why it matters:** A null score delta cannot distinguish a useless component from an underpowered or wrongly exposed test, and trace/restart requirements have value not captured by completion alone.
+- **Current evidence:** Exact exposure counts, paired raw rows, bytes, events, latencies, and boundaries are committed in `docs/evidence/014-ablation-acceptance.json`.
+- **Next discriminating action:** Use Stage 15 public traces and Stage 16 controlled fault/runtime/robustness fixtures to test each relevant surface without retrofitting game-specific rules.
+- **Resolution condition:** Each component has a genuinely exercised paired test or is explicitly disabled as cost-only while required integrity behavior remains covered.
+- **Resolution receipt:** none.
+
+## B-20260821-037 — OneDrive denied an atomic checkpoint replacement
+
+- **Status:** RESOLVED_FOR_STAGE_14
+- **Stage:** 14
+- **Opened:** 2026-08-21
+- **Last updated:** 2026-08-21
+- **Owner:** Codex
+- **Burden:** The first full matrix stopped at FULL case 9/14 when Windows returned error 5 while replacing `latest.json` in the OneDrive-backed artifact tree.
+- **Why it matters:** Discarding the partial run would hide a reproducible filesystem hazard; calling it a policy failure would misclassify infrastructure evidence.
+- **Current evidence:** Nine episode directories, 225 files, 9,231,903 bytes, exact exception text, command, and tree-manifest hash are preserved in `docs/evidence/014-ablation-infrastructure-failure.json`.
+- **Next discriminating action:** Continue generated high-churn checkpoint/evaluation trees under a unique short `C:\a` root; retain atomic replacement tests on ordinary repository paths.
+- **Resolution condition:** The same frozen protocol completes from a clean committed worktree with exact semantic reproduction and no checkpoint fault.
+- **Resolution receipt:** `docs/evidence/014-ablation-acceptance.json`; commit `565712fe6fb1e62f704f40a7693d3d3fb1de3ada`.
+
+---
+
+## 2026-08-21 Stage 15 updates
+
+### B-20260820-008 — The public matrix did not show benefit from the trace/world-model bundle
+
+- **Status update:** OPEN with negative local-public evidence.
+- **Last updated:** 2026-08-21
+- **Current evidence:** FULL retained the required trace, hypothesis, model, goal, plan, action, consequence, and replay receipts, but timed out in all 30 public runs and completed zero levels. B0 random completed the sole level.
+- **Remaining burden:** The current result confounds mechanism quality with excessive integrated runtime and persistence cost. It cannot establish that trace discipline is useless, nor that the synthetic benefit transfers to official or hidden games.
+- **Resolution receipt:** `docs/evidence/015-public-development-acceptance.json`.
+
+### B-20260821-027 — Integrated controller success is synthetic while official public evaluation remains negative
+
+- **Status update:** NARROWED with complete negative local-public evidence; unresolved for future generic policies and hidden evaluation.
+- **Last updated:** 2026-08-21
+- **Current evidence:** On three smoke and 12 development games, seeds 7 and 11, FULL completed zero levels and timed out in all 30 runs after 460 total actions. B0 random completed the only level and had development mean score `0.016196954972465177`; B1–B4 had mean score 0.0. All 150 run outcomes and 13,927 sealed artifacts verify.
+- **Remaining burden:** FULL's synthetic mechanism result did not transfer to the measured public surface. No public holdout, online-public, Kaggle-public, semi-private, or official-private evidence exists.
+- **Resolution receipt:** `docs/evidence/015-public-development-acceptance.json`; measured commit `6a0f6e5b9cf076f7d755675ece0fa46379202161`.
+
+### B-20260821-031 — B0–B4 comparison now includes public development but remains non-generalizing
+
+- **Status update:** NARROWED by 150 separately labeled local-public runs; hidden-game generalization remains unresolved.
+- **Last updated:** 2026-08-21
+- **Current evidence:** The public matrix covers 15 predeclared smoke/development games with two seeds and equal 80-action, eight-reset, 120-second budgets. B0's sole level was an isolated random event; FULL timed out in every run. The public holdout remains unconsumed.
+- **Remaining burden:** Neither a larger public matrix nor a future holdout can establish official-private performance. The current policy also lacks a passing public development result.
+- **Resolution receipt:** `docs/evidence/015-public-development-acceptance.json`.
+
+### B-20260821-032 — B4 public wall time is now measured while RSS remains open
+
+- **Status update:** NARROWED; the compact threshold omission materially manifested on the public surface.
+- **Last updated:** 2026-08-21
+- **Current evidence:** B4 timed out after 120 seconds in all 30 public runs and completed only 8–20 actions per development run, while B0–B3 each returned 80 actions. Representative B4 trace cost was 88,417.9 bytes/action; whole-process RSS remains unmeasured.
+- **Remaining burden:** Stage 16 must separately measure startup, RSS, phase latency, planner expansion, checkpoint growth, and sustained 80-action execution under an explicit competition envelope.
+- **Resolution receipt:** `docs/evidence/015-public-development-acceptance.json`.
+
+### B-20260821-036 — Public traces expose cost but do not isolate all component value
+
+- **Status update:** NARROWED by official-shaped trace exposure; component effects remain confounded by runtime.
+- **Last updated:** 2026-08-21
+- **Current evidence:** Representative FULL public traces include observation, hypothesis, retrodiction, goal, model-promotion, simulation, action, and returned-consequence receipts. A 19-action run retained 759 events and 1,679,940 trace bytes before its 120-second timeout.
+- **Remaining burden:** Because every FULL public run timed out, Stage 15 cannot attribute failure to any one A1–A10 component or distinguish compute from checkpoint/trace I/O. Controlled Stage 16 profiling remains required.
+- **Resolution receipt:** `docs/evidence/015-public-development-acceptance.json`.
+
+## B-20260821-038 — FULL exceeds the public per-run wall envelope
+
+- **Status:** OPEN
+- **Stage:** 15, 16, 17, 18, 19
+- **Opened:** 2026-08-21
+- **Last updated:** 2026-08-21
+- **Owner:** Codex
+- **Burden:** FULL timed out in all six smoke and all 24 development runs at 120 seconds, after only 8–20 actions per development run. The simple baselines returned all 80 actions in each run.
+- **Why it matters:** A trace-correct policy that cannot act within competition-compatible runtime and memory limits is not a viable offline submission candidate.
+- **Current evidence:** FULL produced 460 total actions across 30 timeouts, zero levels, and zero returned official scorecards. The representative 19-action failure used 1,679,940 trace bytes and 759 events. Timeout receipts replay and all evaluation seals verify.
+- **Next discriminating action:** Stage 16 must profile whole-process RSS, per-phase latency, planner expansion, trace/checkpoint growth, restart, and malformed-input recovery under the frozen competition envelope; optimize only measured generic bottlenecks.
+- **Resolution condition:** The integrated policy completes its declared action workload within conservative competition wall/RAM/trace limits without material regression against the pinned synthetic milestone, or the final candidate is explicitly classified as failing that constraint.
+- **Resolution receipt:** none.
+
+## B-20260821-039 — Public holdout remains deliberately unconsumed
+
+- **Status:** OPEN
+- **Stage:** 15, 19
+- **Opened:** 2026-08-21
+- **Last updated:** 2026-08-21
+- **Owner:** shared
+- **Burden:** The one-shot holdout command rejected the PARTIAL development manifest before acquisition or gameplay. There are zero holdout exposure events and zero locally acquired holdout assets.
+- **Why it matters:** Opening the holdout after a failed development gate would weaken the predeclared protocol; leaving it closed means there is no holdout result.
+- **Current evidence:** Exact rejection: `sealed development evidence is not a passing development run`; the requested evaluation directory does not exist; exposure-ledger hash is `sha256:cd9af42ed3a5ef9fa0dc201ddb10e32d2bcccee9df729aa0c7d53077c04c9ad4`.
+- **Next discriminating action:** Preserve the partition until a future generic frozen milestone passes a sealed development gate. Do not acquire or inspect it during Build 000 packaging or release verification.
+- **Resolution condition:** A future predeclared milestone legitimately passes development and consumes the holdout once, or the project permanently retires the holdout without exposure.
+- **Resolution receipt:** none.
+
+---
+
+## 2026-08-21 Stage 16 updates
+
+### B-20260821-032 — Whole-process RSS and sustained synthetic runtime are now measured
+
+- **Status update:** RESOLVED_FOR_STAGE_16_RUNTIME; public effectiveness remains open.
+- **Last updated:** 2026-08-21
+- **Current evidence:** The clean `cd3e3aa` profile completed 80 forced actions in 116.26474110002164 seconds with 175,210,496 bytes peak whole-process RSS, 6,837,834 trace bytes, and 149,129,938 checkpoint bytes. All nine frozen runtime-budget checks passed.
+- **Remaining burden:** The optimized controller was not rerun on the Stage 15 `local-public` development partition, so no public score or transfer claim changed. Palette and action-remap robustness also fail.
+- **Resolution receipt:** `docs/evidence/016-competition-profile-acceptance.json`; measured commit `cd3e3aa9cc2c2fa8fbe514b7950862dfe1188783`.
+
+### B-20260821-038 — The synthetic runtime bottleneck is repaired but public viability is unmeasured
+
+- **Status update:** NARROWED; the Stage 16 runtime sub-burden is resolved.
+- **Last updated:** 2026-08-21
+- **Current evidence:** The integrated policy now completes the declared 80-action component-stress workload in 116.26474110002164 seconds inside the 240-second competition envelope. The pinned Stage 13 regression, replay, fault matrix, and static integrity checks pass. This is `synthetic` evidence.
+- **Remaining burden:** Stage 15's 30/30 FULL timeouts remain the only `local-public` evidence. Build 000 does not reopen or rerun the public development matrix, and the public holdout remains sealed. The final candidate must carry both the runtime repair and the negative public result.
+- **Resolution receipt:** `docs/evidence/016-competition-profile-acceptance.json`; prior negative receipt `docs/evidence/015-public-development-acceptance.json`.
+
+## B-20260821-040 — Palette and action-remap robustness mechanisms fail
+
+- **Status:** OPEN
+- **Stage:** 16, 17, 18, 19
+- **Opened:** 2026-08-21
+- **Last updated:** 2026-08-21
+- **Owner:** shared
+- **Burden:** Both palette-permuted cases and both action-remapped cases remained operational but scored 0.0 instead of matching their same-seed base score of 1.0. All four are `FAILED_MECHANISM`.
+- **Why it matters:** Competition integrity requires generic behavior derived from observations and learned structure. Sensitivity to presentation colors or action encoding can cause unseen games to fail even when trace, replay, and fault handling remain correct.
+- **Current evidence:** Twelve clean-commit robustness cases at seeds 7 and 11 produced seven PASS, four `FAILED_MECHANISM`, and one `NOT_EXERCISED`. The four failures preserved complete action chains and zero controller faults, isolating behavior rather than infrastructure.
+- **Next discriminating action:** Design a predeclared generic equivariance mechanism and paired suite that learns or normalizes palette/action correspondences without public-game identities, then compare exact same-seed terminal phase, score, and action count.
+- **Resolution condition:** Repeated clean equal-budget paired tests preserve base behavior under palette and action remapping without game-specific tables and without regressing the pinned synthetic milestone.
+- **Resolution receipt:** none.
+
+## B-20260821-041 — Rule-change seed 11 ends before the changed rule
+
+- **Status:** OPEN
+- **Stage:** 16, 19
+- **Opened:** 2026-08-21
+- **Last updated:** 2026-08-21
+- **Owner:** shared
+- **Burden:** Rule-change seed 11 completes after one action, before the scheduled change can supply adaptation evidence; its result is `NOT_EXERCISED`, not PASS or failure.
+- **Why it matters:** Counting an episode that never reaches the intervention would overstate recovery from changed mechanics.
+- **Current evidence:** Seed 7 reaches the change, emits 14 contradiction or prediction-mismatch signals, and passes. Seed 11 has one signal associated with the pre-change terminal episode and no exposed changed-rule behavior.
+- **Next discriminating action:** Predeclare a non-terminal seed or intervention boundary that guarantees exposure while preserving the same generic rule family and budget.
+- **Resolution condition:** At least two clean deterministic cases reach the rule change and retain explicit confirmation, contradiction, or reopening receipts after the intervention.
+- **Resolution receipt:** none.
+
+---
+
+## 2026-08-21 Stage 17 updates
+
+### B-20260821-038 — Synthetic runtime repair is packaged but public viability is still unmeasured
+
+- **Status update:** NARROWED by a deterministic offline package; not resolved.
+- **Last updated:** 2026-08-21
+- **Current evidence:** The clean `e5f2919` candidate runs one controller at a time and the Stage 17 safe sandbox returns `PACKAGING_PASS`. This is `synthetic` evidence. Stage 15's 30/30 FULL timeouts remain the only `local-public` result.
+- **Remaining burden:** Neither package correctness nor the Stage 16 synthetic envelope establishes that the optimized policy improves on public games. Build 000 keeps the public holdout sealed and does not revise the negative public score.
+- **Resolution receipt:** `docs/evidence/017-kaggle-package-acceptance.json`; prior receipts `docs/evidence/016-competition-profile-acceptance.json` and `docs/evidence/015-public-development-acceptance.json`.
+
+### B-20260821-040 — Packaging does not resolve palette or action-remap failure
+
+- **Status update:** OPEN and unchanged in mechanism status.
+- **Last updated:** 2026-08-21
+- **Current evidence:** The offline package preserves the generic static-integrity boundary and contains no game-specific tables, but Stage 17 performs no new paired equivariance experiment. Both palette cases and both action-remap cases from Stage 16 remain `FAILED_MECHANISM`.
+- **Remaining burden:** A future generic learned or symbolic correspondence mechanism needs a predeclared paired test before the competition preset can claim robustness to either transformation.
+- **Resolution receipt:** none; current failure receipt `docs/evidence/016-competition-profile-acceptance.json`.
+
+## B-20260821-042 — Private Kaggle runtime surfaces are unavailable locally
+
+- **Status:** BLOCKED_EXTERNAL
+- **Stage:** 17, 18, 19
+- **Opened:** 2026-08-21
+- **Last updated:** 2026-08-21
+- **Owner:** shared
+- **Burden:** The private Kaggle wheel inventory, exact platform-supplied Agents input, gateway sidecar, and scorer were not available. The sandbox used a distinct safe framework/gateway fixture and a Windows-compatible dependency-install canary.
+- **Why it matters:** A public exact-wheel download and a local loopback rehearsal cannot prove compatibility with unpublished platform inventory or private evaluator behavior.
+- **Current evidence:** The candidate validates raw LF and exact CRLF forms of the pinned public Agents commit, verifies 31 exact public wheels, executes the production rerun branch offline, and validates the pinned-public output schema. Each unavailable private surface is identified in the receipt.
+- **Next discriminating action:** After the owner accepts applicable terms and supplies the official competition inputs without submitting, run the unchanged candidate through the platform validation surface and preserve the exact input identities and receipt.
+- **Resolution condition:** The unchanged sealed candidate executes against the exact official inputs and private gateway through output validation, or an upstream identity change is recorded and rebuilt before validation.
+- **Resolution receipt:** none.
+
+## B-20260821-043 — Full 110-game sequential runtime is estimated, not measured
+
+- **Status:** OPEN
+- **Stage:** 17, 18, 19
+- **Opened:** 2026-08-21
+- **Last updated:** 2026-08-21
+- **Owner:** Codex
+- **Burden:** The sequential launcher is justified from Stage 16's measured single-controller envelope and tested on a three-game fixture, but the complete 110-game competition workload was not locally available or executed.
+- **Why it matters:** The conservative approximately 3.55-hour CPU estimate leaves margin inside nine hours, but framework, gateway, scoring, and game-dependent controller costs may differ from the synthetic profile.
+- **Current evidence:** Stage 16 measured 116.26474110002164 seconds for 80 actions and 175,210,496 bytes peak RSS; Stage 17 measured `max_concurrency=1`, one worker, exact game order, and successful one- and three-game fixture flows.
+- **Next discriminating action:** Run a no-submit platform rehearsal across the exact supplied game list with wall/RSS/worker receipts, retaining partial completion if the nine-hour or memory boundary is approached.
+- **Resolution condition:** A complete exact-input rehearsal finishes inside the platform wall/RAM budget, or a failed receipt identifies the bounded scheduling/runtime mechanism that must change.
+- **Resolution receipt:** none.
+
+## B-20260821-044 — Private output validation remains gateway-authoritative
+
+- **Status:** BLOCKED_EXTERNAL
+- **Stage:** 17, 18, 19
+- **Opened:** 2026-08-21
+- **Last updated:** 2026-08-21
+- **Owner:** shared
+- **Burden:** The pinned public starter exposes a four-column Parquet example but no standalone private submission validator or scorer.
+- **Why it matters:** Local schema, type, and Parquet checks can catch malformed output but cannot establish that the private gateway accepts or scores it.
+- **Current evidence:** The sandbox artifact has one row, four exact public columns, and passes `pyarrow==21.0.0` validation at level `pinned-public-schema`; the receipt explicitly marks the official gateway authoritative.
+- **Next discriminating action:** Execute the sealed output handoff against the official no-submit validation surface after any required owner legal gate.
+- **Resolution condition:** The official gateway accepts the unchanged candidate output contract or returns a preserved incompatibility receipt that can be repaired generically.
+- **Resolution receipt:** none.
+
+## B-20260821-045 — Windows-derived framework hashes would have rejected genuine Linux input
+
+- **Status:** RESOLVED_FOR_STAGE_17
+- **Stage:** 17
+- **Opened:** 2026-08-21
+- **Last updated:** 2026-08-21
+- **Owner:** Codex
+- **Burden:** The first pushed package source at `e903c88` pinned SHA-256 values from a Windows CRLF checkout. A genuine Linux/Kaggle LF checkout at the same Git commit would therefore fail closed before launch.
+- **Why it matters:** The defect invalidated the first candidate as production packaging evidence despite its local sandbox pass.
+- **Current evidence:** Raw Git object bytes for all four files were independently hashed; each old value was reproduced only by the LF-to-CRLF transform. Commit `e5f2919` pins the raw LF identities and accepts only the exact reversible all-CRLF checkout form. Genuine LF, actual Windows CRLF, mixed-ending rejection, mutation rejection, and two clean deterministic builds pass.
+- **Next discriminating action:** Preserve both the superseded and repaired candidate identities; Stage 18 must rebuild from `e5f2919` or a descendant and compare complete package artifacts.
+- **Resolution condition:** Satisfied for Stage 17 by clean-source `PACKAGING_PASS` at `e5f2919`; any later upstream commit requires new raw-Git pins.
+- **Resolution receipt:** `docs/evidence/017-kaggle-package-acceptance.json`; repair commit `e5f291912726e6139d1dda682707eada657cb5ce`.
+
+---
+
+## 2026-08-21 Stage 18 updates
+
+## B-20260821-046 — Initial clean-clone verifier was not hermetic on Windows
+
+- **Status:** RESOLVED_FOR_STAGE_18_INFRASTRUCTURE
+- **Stage:** 18
+- **Opened:** 2026-08-21
+- **Last updated:** 2026-08-21
+- **Owner:** Codex
+- **Burden:** The first exact-candidate verifier run passed most release checks but the full suite ended 417 passed / five failed. Two paths reached 261 and 263 characters, two integrity fixtures inherited the evidence root's Git ignore scope, and a nested sanitized process assumed ambient uv discovery. Remote shallow CI also lacked the frozen benchmark commit needed for the required ancestry proof.
+- **Why it matters:** A release receipt that changes test semantics because of its output directory, user environment, or shallow history does not establish clean-clone reproducibility.
+- **Current evidence:** The failed run remains summarized in `docs/evidence/018-release-candidate-initial-failure.json`. Commits `70ed0f3`, `90ecf72`, and `67e4b0e` isolated all transient state, made the uv dependency explicit, preserved partial public artifacts, and fetched full CI history. The repaired clean-clone run passed all 423 tests, 13 replay/tamper tests, and every release-infrastructure check; corrected push and PR Actions passed Ubuntu and Windows.
+- **Next discriminating action:** Retain both failed and repaired receipts and rerun the same hermetic verifier after any release-affecting source change.
+- **Resolution condition:** Satisfied for the Stage 18 candidate; a later release candidate must establish its own clean-clone receipt.
+- **Resolution receipt:** `docs/evidence/018-release-candidate-initial-failure.json`; `docs/evidence/018-release-candidate-acceptance.json`.
+
+### B-20260821-038 — Repaired release infrastructure does not repair public policy effectiveness
+
+- **Status update:** OPEN; independently reproduced at the Stage 18 candidate.
+- **Last updated:** 2026-08-21
+- **Current evidence:** On the three-game `local-public` smoke partition at seeds 7 and 11, B4 FULL timed out in all six runs after 146 total environment actions, completed zero levels, and returned a `PARTIAL` evaluation. B0 random and B1 cycle each returned their full 480 actions and also completed zero levels. All partial artifacts verify. Official RHAE remains unmeasured/null.
+- **Remaining burden:** The Stage 16 synthetic runtime repair has not produced a passing sealed public development result. The public holdout therefore remains unconsumed, and no hidden-game or official-private generalization claim is available.
+- **Resolution receipt:** Current failure receipt `docs/evidence/018-release-candidate-acceptance.json`; prior negative receipt `docs/evidence/015-public-development-acceptance.json`.
+
+---
+
+## 2026-08-21 Stage 19 updates
+
+### B-20260820-004 — License evidence is complete; the grant remains owner-blocked
+
+- **Status update:** BLOCKED_EXTERNAL; narrowed to one explicit owner decision.
+- **Last updated:** 2026-08-21
+- **Current evidence:** All 61 `uv.lock` records are reconciled in `THIRD_PARTY_NOTICES.md` and `docs/evidence/019-dependency-license-inventory.json`: one first-party owner-decision record and 60 third-party records, with zero unknown third-party records. `docs/legal/candidates/MIT-0-CANDIDATE.md` preserves sourced MIT-0 text under `CANDIDATE ONLY — NO LICENSE GRANTED`; no root `LICENSE` exists.
+- **Remaining burden:** Only Christopher D. Pang may approve or reject a public license for ARC3 first-party source. Candidate preparation does not grant one.
+- **Resolution receipt:** none; owner action remains required.
+
+---
+
+## 2026-08-21 Stage 20 updates
+
+## B-20260821-047 — Initial final-verification paths changed test and scan reachability
+
+- **Status:** RESOLVED_FOR_STAGE_20_INFRASTRUCTURE
+- **Stage:** 20
+- **Opened:** 2026-08-21
+- **Last updated:** 2026-08-21
+- **Owner:** Codex
+- **Burden:** The first exact full-suite invocation reached 411 passes but produced 12 setup errors because the declared external pytest base-temp parent did not exist. Separately, the first combined integrity invocation correctly refused to scan the Stage 18 candidate archive outside the current repository root.
+- **Why it matters:** Neither an absent temporary parent nor a cross-repository path refusal is evidence about agent behavior, but silently changing commands or weakening root containment would make the final receipt less reproducible.
+- **Current evidence:** Creating only `C:/a/s20-dd212a1` and rerunning the identical pytest command produced 423 passes in 445.83 seconds at 80% coverage. The integrity check was split at the source-identity boundary: the clean preseal source scan and the exact Stage 18 release-candidate archive scan each passed with zero findings and canonical receipts.
+- **Next discriminating action:** None for Build 000. A later finalization should precreate its declared external temp parent and scan each package from its producing checkout.
+- **Resolution condition:** Satisfied for Stage 20; both corrected commands passed without repository-source or scanner-policy changes, and both initial failures remain in the final receipt.
+- **Resolution receipt:** `docs/evidence/020-final-verification.json`; `C:/a/s20-dd212a1/integrity-source-receipt.json`; `C:/a/s20-dd212a1/integrity-archive-receipt.json`.

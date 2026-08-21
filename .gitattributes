@@ -1,0 +1,16 @@
+# Preserve formatter-stable source identities on every checkout, including Windows CI.
+* text=auto eol=lf
+
+# Generated or visual artifacts must never receive line-ending conversion.
+*.gif binary
+*.ico binary
+*.jpg binary
+*.jpeg binary
+*.npy binary
+*.npz binary
+*.parquet binary
+*.pdf binary
+*.png binary
+*.pyc binary
+*.whl binary
+*.zip binary

@@ -1,0 +1,161 @@
+{
+  "schema": "arc3.stage17.kaggle-package-acceptance.v0.1",
+  "stage": "17",
+  "stage_status": "PASS",
+  "packaging_status": "PACKAGING_PASS",
+  "surface": "synthetic",
+  "claim": "NO_GENERALIZATION_CLAIM",
+  "source_identity": {
+    "repository": "https://github.com/Grativy6/ARC3",
+    "branch": "build/000-arc3-end-to-end",
+    "commit": "e5f291912726e6139d1dda682707eada657cb5ce",
+    "tree": "c25a4d98bb34f785e1b5ded79ed72a990359e114",
+    "clean_clone": "C:/a/arc3-s17-e5f2919",
+    "clean": true
+  },
+  "upstream_identity": {
+    "agents_commit": "4743e7d0aaae0ded0d98a89a7e282e63564cd58b",
+    "starter_commit": "eeb1535404f321d280a8f9194bbc1d7aca5f05fc",
+    "arc_agi_commit": "f12822c4d550121c35a275008d964afbbed47d2f",
+    "arcengine_commit": "b495c6acaf253c9681cd7b75c4299d352e9ce6f8"
+  },
+  "framework_validation": {
+    "status": "PASS",
+    "raw_git_line_endings": "LF",
+    "accepted_checkout_forms": ["exact-raw-LF", "exact-all-CRLF-transform"],
+    "rejects": ["mixed-line-endings", "lone-carriage-return", "missing-file", "content-mutation"],
+    "genuine_lf_fixture": "C:/a/s17-genuine-lf-framework-e903c88",
+    "genuine_lf_validation": "PASS",
+    "windows_crlf_checkout_validation": "PASS",
+    "files": {
+      "LICENSE": "sha256:75c4276c506fd93082b38ad39f67ee97aa859574401ef978e701710c7a40af04",
+      "agents/agent.py": "sha256:49f1a349cd5e2123fceb266aec4a3a758d18ef5520e0212e808f695905d9e073",
+      "agents/recorder.py": "sha256:0a08d89f4067a760012767c05d4406bd2bf409f426e29a1193106abfcbb696c8",
+      "agents/swarm.py": "sha256:d9dc48f710f1b90a6552db0921293c7e89c8a925ed00a3faefa07ae19998ad39"
+    }
+  },
+  "builds": {
+    "commands_identical_except_output": true,
+    "build_a": "C:/a/s17-candidate-e5f2919-a",
+    "build_b": "C:/a/s17-candidate-e5f2919-b",
+    "status_a": "PACKAGING_PASS",
+    "status_b": "PACKAGING_PASS",
+    "top_level_artifacts_compared": 10,
+    "sandbox_artifacts_compared": 1,
+    "byte_identical": true,
+    "official_submission_performed": false
+  },
+  "artifacts": {
+    "candidate": {"path": "C:/a/s17-candidate-e5f2919-a/arc3-kaggle-candidate.zip", "bytes": 550068, "sha256": "sha256:06d688d0ceadc832147e3e2993dd8ba64523bad05ffa53004cf349ee861aceaa"},
+    "payload": {"path": "C:/a/s17-candidate-e5f2919-a/arc3-first-party.zip", "bytes": 257140, "sha256": "sha256:ebcb5ae0137c8e76209287b0ac9b2a4b8db821cf00f836d8e7d82cac919b9227"},
+    "notebook": {"path": "C:/a/s17-candidate-e5f2919-a/arc3-submission.ipynb", "bytes": 356603, "sha256": "sha256:c4637cea1037755f056bf6dc0e1ac7006348570f2b93b1afab966bd118bb7f0d"},
+    "kernel_metadata": {"path": "C:/a/s17-candidate-e5f2919-a/kernel-metadata.json", "bytes": 410, "sha256": "sha256:c80c48d07a611119f58e33ee24e25821623a6218494ac03cad1c1eb4ad77d4b7"},
+    "manifest": {"path": "C:/a/s17-candidate-e5f2919-a/package-manifest.json", "bytes": 22037, "sha256": "sha256:f4ff228e38ba0a161aeacfea4b4ba2f731bb7993e5c3c120e2ffb81671925730"},
+    "requirements": {"path": "C:/a/s17-candidate-e5f2919-a/runtime-requirements-linux-cp312.txt", "bytes": 3128, "sha256": "sha256:d71522e36a1d39bd4bcc8c0a0d65d07886e7360658d1b4794add94de02ff2056"},
+    "wheel_manifest": {"path": "C:/a/s17-candidate-e5f2919-a/runtime-wheels-linux-cp312.json", "bytes": 11955, "sha256": "sha256:04a8774e252511d4b3e1c1f5ac7dab507f98ebb4e5a57c80a1415e50380df90e"},
+    "sbom": {"path": "C:/a/s17-candidate-e5f2919-a/sbom.spdx.json", "bytes": 102333, "sha256": "sha256:46a2c2ee81f787675f3c35856c1d5dba998cbde51514c071d2dfafa26b3616b5"},
+    "submission_schema": {"path": "C:/a/s17-candidate-e5f2919-a/submission-schema.v0.1.json", "bytes": 931, "sha256": "sha256:2966db762a4c328ee8854cb7ba6b78194bd2fab6cca278f8411ffaab6780bd56"},
+    "build_receipt": {"path": "C:/a/s17-candidate-e5f2919-a/build-receipt.json", "bytes": 3679, "sha256": "sha256:7a737fad6faef335aaff6847c7baac864e43d4809a177e3b30d2f4994f6f1835", "self_sha256": "sha256:691e04ac25f404b968bdef9a9fbd45f1968e433d27c9ac33291c7947f9f7e845"},
+    "sandbox_output": {"path": "C:/a/s17-candidate-e5f2919-a/offline-sandbox/submission.parquet", "bytes": 856, "sha256": "sha256:f601196d5298e525e04c22185acb3668c3a9f74c6f371040164169fcc17279c9"}
+  },
+  "archive_validation": {
+    "status": "PASS",
+    "candidate_member_count": 8,
+    "payload_member_count": 93
+  },
+  "offline_sandbox": {
+    "status": "PASS",
+    "production_rerun_exercised": true,
+    "internet_enabled": false,
+    "network_attempts": 0,
+    "gateway_connections": 5,
+    "gateway_scope": "loopback-fixture",
+    "credentials_present": [],
+    "secret_scan_status": "PASS",
+    "dependency_install_status": "PASS",
+    "framework_fixture": true,
+    "framework_identity": "arc3.stage17.safe-framework.v0.1",
+    "orchestration": "arc3.sequential-pinned-swarm.v1",
+    "game_count_fixture_max": 3,
+    "agent_count": 1,
+    "worker_count": 1,
+    "max_concurrency": 1,
+    "agent_cycle_actions": ["RESET", "ACTION5"],
+    "agent_action_cycle_status": "PASS",
+    "agent_consequence_state": "NOT_FINISHED",
+    "imported_agent_path": "arc3_submission/agent/my_agent.py",
+    "imported_arc3_path": "arc3_submission/src/arc3/__init__.py"
+  },
+  "submission_validation": {
+    "status": "PASS",
+    "validation_level": "pinned-public-schema",
+    "parquet_engine": "pyarrow==21.0.0",
+    "rows": 1,
+    "columns": ["row_id", "game_id", "end_of_game", "score"],
+    "official_gateway_authoritative": true,
+    "artifact_sha256": "sha256:f601196d5298e525e04c22185acb3668c3a9f74c6f371040164169fcc17279c9"
+  },
+  "runtime_wheelhouse": {
+    "status": "PASS",
+    "target": "CPython 3.12 / Linux x86_64 / manylinux_2_28 compatibility ladder",
+    "path": "C:/a/s17-wheelhouse-compat-20260821a",
+    "file_count": 31,
+    "bytes": 45073152,
+    "exact_filename_and_hash_matches": 31,
+    "offline_cross_target_install": "PASS",
+    "offline_install_path": "C:/a/s17-install-compat-20260821a",
+    "installed_distribution_count": 31
+  },
+  "competition_integrity": {
+    "status": "PASS",
+    "offline_policy": true,
+    "hosted_model_api_calls": false,
+    "game_id_specific_solutions": false,
+    "manual_public_action_sequences": false,
+    "hidden_or_private_evaluation_information": false,
+    "runtime_game_source_reads": false,
+    "public_game_id_scan": "PASS:0-matches",
+    "hosted_client_scan": "PASS:0-findings",
+    "immutable_instance_local_action_payloads": true,
+    "sequential_controller_bound": 1
+  },
+  "verification": {
+    "offline_clean_sync": "PASS:61-packages",
+    "ruff_lint": "PASS",
+    "ruff_format": "PASS",
+    "mypy_strict": "PASS",
+    "competition_pytest": "PASS:31",
+    "package_determinism": "PASS",
+    "genuine_lf_framework": "PASS",
+    "crlf_equivalence": "PASS",
+    "wheelhouse": "PASS:31-of-31",
+    "cross_target_install": "PASS:31-distributions",
+    "candidate_determinism": "PASS:11-of-11",
+    "secret_scan": "PASS:0-findings",
+    "sandbox_network": "PASS:0-non-loopback-attempts",
+    "output_schema": "PASS:pinned-public-schema"
+  },
+  "limitations": [
+    "The private Kaggle wheel inventory, Agents input tree, gateway sidecar, and scorer were unavailable and were not executed locally.",
+    "The Windows sandbox used a pure-Python canary plus host-installed pinned dependencies instead of loading the Linux wheel set; exact Linux wheels were separately downloaded, verified, and installed cross-target offline.",
+    "The full 110-game sequential workload was not executed; a three-game scheduler fixture and the Stage 16 single-controller envelope are the measured basis.",
+    "The output schema is pinned-public evidence; the private competition gateway remains authoritative.",
+    "Stage 15 remains the only local-public policy evaluation and remains negative; the public holdout remains unconsumed.",
+    "Palette and action-remap robustness remain failed mechanisms."
+  ],
+  "owner_boundaries": {
+    "kaggle_authentication_used": false,
+    "terms_accepted": false,
+    "candidate_uploaded": false,
+    "official_submission_performed": false,
+    "license_granted": false,
+    "release_published": false,
+    "pull_request_merged": false
+  },
+  "superseded_candidate": {
+    "commit": "e903c887eb2ee22165840ab9df0071f3f5cb9e0e",
+    "path": "C:/a/s17-candidate-e903c88",
+    "status": "SUPERSEDED_BY_CROSS_PLATFORM_SOURCE_IDENTITY_REPAIR",
+    "preserved": true
+  }
+}

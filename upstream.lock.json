@@ -1,0 +1,212 @@
+{
+  "schema": "arc3.upstream-lock.v0.1",
+  "generated_at": "2026-08-21T04:50:00Z",
+  "accessed_at": "2026-08-21T04:47:48Z/2026-08-21T04:50:00Z",
+  "project": {
+    "repository": "https://github.com/Grativy6/ARC3",
+    "branch_base": "main",
+    "base_commit": "b1948e9d02ad7b1321cbc57f3538047813e01e98",
+    "implementation_branch": "build/000-arc3-end-to-end"
+  },
+  "controlling_files": {
+    "AGENTS.md": "sha256:5949d5db179016cf161d504f64a6b1f2c3d4c4e839394de604f2086fc3df1292",
+    "docs/workflows/000-arc3-autonomous-end-to-end.md": "sha256:fc205f770198a63386fe3505dbb7735e51842d15cfdd1d5623a646cb8a86183a",
+    "docs/specs/target-architecture.md": "sha256:f10f4a335efda4f2a41b228f57b67b15583da4337ef4cd0cdc7cb945dffbea1e",
+    "docs/specs/trace-ledger-contract.md": "sha256:82ec2d6cb0dedcaee1793d8c74151ff5a30ef0a71ab864f0575e2c102b7d5a4f",
+    "docs/specs/evaluation-protocol.md": "sha256:cd7703d3b9f729c1a7a3c359509ae088fa805996d22c79f7ba38d428b82ba797",
+    "docs/reference/AGENTS.arc3-bootstrap.v0.1.md": "sha256:927b41db195e79d0f83fe807ed491e7217c2a2ca28e5362a0475161557649079"
+  },
+  "repositories": [
+    {
+      "name": "arcprize/ARC-AGI",
+      "url": "https://github.com/arcprize/ARC-AGI",
+      "ref": "refs/heads/main",
+      "commit": "f12822c4d550121c35a275008d964afbbed47d2f",
+      "tree": "9ee140e4183df0df109cec50b7cd0d2531c47168",
+      "committed_at": "2026-06-10T21:29:53Z",
+      "license": "MIT",
+      "license_blob": "80216ed3bbd1749bf73b6ab13188db27178b4578"
+    },
+    {
+      "name": "arcprize/ARCEngine",
+      "url": "https://github.com/arcprize/ARCEngine",
+      "ref": "refs/heads/main",
+      "commit": "b495c6acaf253c9681cd7b75c4299d352e9ce6f8",
+      "tree": "6677025cc6afbb74b5da332f6808015b903d73ee",
+      "committed_at": "2026-01-29T03:34:01Z",
+      "license": "MIT"
+    },
+    {
+      "name": "arcprize/ARC-AGI-3-Agents",
+      "url": "https://github.com/arcprize/ARC-AGI-3-Agents",
+      "ref": "refs/heads/main",
+      "commit": "4743e7d0aaae0ded0d98a89a7e282e63564cd58b",
+      "tree": "6878fdfdd0156059323b541fc229b6329ad4fd28",
+      "committed_at": "2026-08-03T20:35:02Z",
+      "license": "MIT",
+      "license_blob": "d8e1cd42ac40338c6c76a8a6ac18eea0eaf95fbe"
+    },
+    {
+      "name": "arcprize/ARC-AGI-3-Kaggle-Starter",
+      "url": "https://github.com/arcprize/ARC-AGI-3-Kaggle-Starter",
+      "ref": "refs/heads/main",
+      "commit": "eeb1535404f321d280a8f9194bbc1d7aca5f05fc",
+      "tree": "332ff438d9b092c95e58a07eace6194379de06b4",
+      "committed_at": "2026-05-27T16:50:53Z",
+      "license": "NOASSERTION",
+      "license_note": "No LICENSE/COPYING/NOTICE file or GitHub-detected license was present at the pinned commit; inspect-only, no source copied."
+    },
+    {
+      "name": "arcprize/docs",
+      "url": "https://github.com/arcprize/docs",
+      "ref": "refs/heads/main",
+      "commit": "a5dfc0b64c625fb4a19cf074af845ebe0bb88ff8",
+      "license": "NOASSERTION",
+      "license_note": "Documentation source identity only; no repository license was detected."
+    }
+  ],
+  "packages": {
+    "python": {
+      "required": ">=3.12",
+      "selected": "3.12.14",
+      "distribution": "uv-managed cpython-3.12.14-windows-x86_64-none"
+    },
+    "uv": {
+      "version": "0.12.5",
+      "invocation": "python -m uv"
+    },
+    "arc-agi": {
+      "version": "0.9.9",
+      "requires_python": ">=3.12",
+      "index": "https://pypi.org/project/arc-agi/0.9.9/",
+      "wheel": "arc_agi-0.9.9-py3-none-any.whl",
+      "wheel_sha256": "a0536df47b5ab93af16ba708083f74261cd1b7801bb2e0802824623c04d59e50",
+      "sdist": "arc_agi-0.9.9.tar.gz",
+      "sdist_sha256": "ee822d83f4ea4ccb96377ecbc81ffe1e9e7ded15300aedf88150b7f4743a2bc8",
+      "license": "MIT",
+      "declared_dependencies": [
+        "arcengine>=0.9.3",
+        "flask>=3.1.0",
+        "matplotlib>=3.7.0",
+        "pydantic>=2.0.0",
+        "python-dotenv>=1.0.0",
+        "pillow>=12.1.1",
+        "requests>=2.31.0"
+      ]
+    },
+    "arcengine": {
+      "version": "0.9.3",
+      "requires_python": ">=3.12",
+      "index": "https://pypi.org/project/arcengine/0.9.3/",
+      "wheel_sha256": "5f9739d6d0055780a4581fd6fe09066bb08775c4c8212c9adcca2eb008aef59c",
+      "sdist_sha256": "76441c15fde092a071ca95edce5e643385ab270304f59c1172b460048fffcdfe",
+      "license": "MIT"
+    },
+    "resolution": {
+      "command": "'arc-agi==0.9.9' | python -m uv pip compile - --python 3.12 --resolution highest --no-header",
+      "platform": "windows-x86_64",
+      "python_version": "3.12",
+      "packages": [
+        "annotated-types==0.8.0",
+        "arc-agi==0.9.9",
+        "arcengine==0.9.3",
+        "blinker==1.9.0",
+        "certifi==2026.7.22",
+        "charset-normalizer==3.5.1",
+        "click==8.4.2",
+        "colorama==0.4.6",
+        "contourpy==1.3.3",
+        "cycler==0.12.1",
+        "flask==3.1.3",
+        "fonttools==4.63.0",
+        "idna==3.19",
+        "itsdangerous==2.2.0",
+        "jinja2==3.1.6",
+        "kiwisolver==1.5.0",
+        "markupsafe==3.0.3",
+        "matplotlib==3.11.1",
+        "numpy==2.5.2",
+        "packaging==26.3",
+        "pillow==12.3.0",
+        "pydantic==2.13.4",
+        "pydantic-core==2.46.4",
+        "pyparsing==3.3.2",
+        "python-dateutil==2.9.0.post0",
+        "python-dotenv==1.2.3",
+        "requests==2.34.2",
+        "six==1.17.0",
+        "typing-extensions==4.16.0",
+        "typing-inspection==0.4.4",
+        "urllib3==2.7.0",
+        "werkzeug==3.1.8"
+      ]
+    }
+  },
+  "documents": [
+    {"url": "https://docs.arcprize.org/llms.txt", "status": 200, "sha256": "b5f98092ae94824aa01d1f95a2ef946b6cf9b836b37e1038a55e7e3f8ee99036"},
+    {"url": "https://docs.arcprize.org/game-schema.md", "status": 200, "sha256": "13a8e47155ee386c31ac26210b696f5aa78f5f11e4021b77decbadd078982c7e"},
+    {"url": "https://docs.arcprize.org/actions.md", "status": 200, "sha256": "ddab3ae48e7ea27729c3295f0469f9cc957b47869cff2ea3a8a1902f18d52563"},
+    {"url": "https://docs.arcprize.org/methodology.md", "status": 200, "sha256": "c780fe45e1910767c5dd525d3c061d7e1d458db40717e883f9f9a2088d806c30"},
+    {"url": "https://docs.arcprize.org/recordings.md", "status": 200, "sha256": "261248386e976e235fb015ae7b76d97e8a26b3e11d96d7676342ca83447dfbbe"},
+    {"url": "https://docs.arcprize.org/local-vs-online.md", "status": 200, "sha256": "eba9e92d28b5023837c52783965aa38191c8dc4b04a7aeb86d0dcc7d6f43810a"},
+    {"url": "https://docs.arcprize.org/toolkit/competition_mode.md", "status": 200, "sha256": "bee35f6c8ac2768d33fe557ec3b986e467251a65580c2f83d6fd9e78875d226c"},
+    {"url": "https://docs.arcprize.org/arc-prize-2026.md", "status": 200, "sha256": "55895aea138488cee05faae4e419063636033f0b29a20d07a71416c28591a046"},
+    {"url": "https://arcprize.org/competitions/2026/arc-agi-3", "status": 200, "sha256": "06ba7dde82da5b9d8bd370646727f036ce3a7bba62e2d2af3c3ffa53952eeaf2"},
+    {"url": "https://arcprize.org/competitions/2026", "status": 200, "sha256": "59061f6142b7a59bedfba9227cb15d22068566d94437f7ce800a37b10fdbcd33"},
+    {"url": "https://www.kaggle.com/competitions/arc-prize-2026-arc-agi-3/overview/rules", "status": 200, "identity_note": "Client-rendered HTML is dynamic; URL and access time are authoritative, fetched body hash is not treated as semantic identity."},
+    {"url": "https://www.kaggle.com/competitions/arc-prize-2026-arc-agi-3/overview/timeline", "status": 200, "identity_note": "Client-rendered HTML is dynamic; URL and access time are authoritative, fetched body hash is not treated as semantic identity."}
+  ],
+  "observed_discrepancies": [
+    {
+      "id": "UPSTREAM-LOCK-VERSION",
+      "observation": "ARC-AGI pyproject/tag/PyPI identify 0.9.9 while its committed uv.lock records the root package as 0.9.8.",
+      "policy": "Regenerate and verify ARC3's own lock; do not copy the upstream lock blindly."
+    },
+    {
+      "id": "ACTION7-SEMANTICS",
+      "observation": "Documentation names ACTION7 as undo, but arcengine 0.9.3 types it only as a generic simple action.",
+      "policy": "Treat undo as a defeasible observation-derived semantic, never as an unconditional production rule."
+    },
+    {
+      "id": "ACTION-COUNT-SEMANTICS",
+      "observation": "Documentation describes state-affecting commands as actions; pinned executable scoring counts every non-RESET submitted action, including no-ops.",
+      "policy": "Use the pinned executable scorer for local measurement and preserve the documentation conflict."
+    },
+    {
+      "id": "SCORE-CAP-SEMANTICS",
+      "observation": "Methodology and ARC-AGI 0.9.9 code cap a completed level at 115%, while the current Kaggle data-page formula describes a 100% ratio cap before squaring.",
+      "policy": "Label local toolkit scoring by exact scorer identity; treat any returned Kaggle score as authoritative for that surface."
+    },
+    {
+      "id": "API-BASE-URL",
+      "observation": "ARC-AGI 0.9.9 defaults to https://three.arcprize.org while current Agents/docs surfaces point to arcprize.org platform/gateway routes.",
+      "policy": "Probe anonymously without logging credentials; prefer executable configuration and record any live failure."
+    },
+    {
+      "id": "UPSTREAM-RECORDER",
+      "observation": "Documentation says local toolkit play has no recordings, while ARC-AGI 0.9.9 source can save local JSONL; official JSONL is not sealed/hash-linked, and the Agents conversion path appears not to preserve action_input for playback.",
+      "policy": "Use ARC3's first-party immutable ledger as the authoritative trace."
+    }
+  ],
+  "competition_snapshot": {
+    "surface": "https://www.kaggle.com/competitions/arc-prize-2026-arc-agi-3",
+    "accessed_at": "2026-08-21T04:51:00Z",
+    "submission_type": "notebook",
+    "internet_enabled": false,
+    "cpu_runtime_limit_hours": 9,
+    "gpu_runtime_limit_hours": 9,
+    "submission_artifact": "submission.parquet",
+    "reported_evaluation_games": 110,
+    "reported_public_private_split": "half public / half private",
+    "entry_deadline": "2026-10-26T23:59:00Z",
+    "final_submission_deadline": "2026-11-02T23:59:00Z",
+    "daily_submission_limit_reported_by_starter": 5,
+    "legal_terms_access": "human-gated; anonymous rules API returned HTTP 401; no terms accepted"
+  },
+  "external_access": {
+    "arc_api_key_present": false,
+    "kaggle_credentials_present": false,
+    "anonymous_kaggle_api_metadata": "HTTP 401 for list endpoint; no terms were accepted",
+    "network_reachable": true
+  }
+}

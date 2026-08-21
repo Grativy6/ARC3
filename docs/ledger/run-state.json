@@ -4,39 +4,579 @@
   "workflow_version": "0.1",
   "repository": "Grativy6/ARC3",
   "owner": "Christopher D. Pang",
-  "status": "READY",
-  "current_stage": "00",
-  "current_task": "preflight-not-started",
-  "implementation_branch": null,
-  "started_at": null,
-  "last_checkpoint_at": "2026-08-20T00:00:00Z",
-  "last_checkpoint_commit": null,
-  "resume_generation": 0,
-  "completed_stages": [],
-  "stage_status": {
-    "00": "PENDING",
-    "01": "PENDING",
-    "02": "PENDING",
-    "03": "PENDING",
-    "04": "PENDING",
-    "05": "PENDING",
-    "06": "PENDING",
-    "07": "PENDING",
-    "08": "PENDING",
-    "09": "PENDING",
-    "10": "PENDING",
-    "11": "PENDING",
-    "12": "PENDING",
-    "13": "PENDING",
-    "14": "PENDING",
-    "15": "PENDING",
-    "16": "PENDING",
-    "17": "PENDING",
-    "18": "PENDING",
-    "19": "PENDING",
-    "20": "PENDING"
+  "build_status": "PARTIAL",
+  "status": "COMPLETE",
+  "current_stage": "20",
+  "current_task": "complete",
+  "implementation_branch": "build/000-arc3-end-to-end",
+  "pull_request": {
+    "number": 3,
+    "url": "https://github.com/Grativy6/ARC3/pull/3",
+    "draft": true
   },
-  "evidence": {},
+  "started_at": "2026-08-21T04:46:19Z",
+  "last_checkpoint_at": "2026-08-21T14:06:18Z",
+  "last_checkpoint_commit": "dd212a1ee26482c298f038f5b8af6f42b0233d05",
+  "resume_generation": 0,
+  "completed_stages": [
+    "00",
+    "01",
+    "02",
+    "03",
+    "04",
+    "05",
+    "06",
+    "07",
+    "08",
+    "09",
+    "10",
+    "11",
+    "12",
+    "13",
+    "14",
+    "15",
+    "16",
+    "17",
+    "18",
+    "19",
+    "20"
+  ],
+  "stage_status": {
+    "00": "PASS",
+    "01": "PASS",
+    "02": "PASS",
+    "03": "PASS",
+    "04": "PASS",
+    "05": "PASS",
+    "06": "PASS",
+    "07": "PASS",
+    "08": "PASS",
+    "09": "PASS",
+    "10": "PASS",
+    "11": "PASS",
+    "12": "PASS",
+    "13": "PASS",
+    "14": "PASS",
+    "15": "PASS",
+    "16": "FAILED_MECHANISM",
+    "17": "PASS",
+    "18": "FAILED_MECHANISM",
+    "19": "PASS",
+    "20": "PASS"
+  },
+  "evidence": {
+    "stage_00": {
+      "status": "PASS",
+      "report": "docs/reports/000-source-identity.md",
+      "report_sha256": "sha256:e85e19027d3920da090afa91d7895b0bcaeaed2c57cdb66aeb1084b2acee7658",
+      "upstream_lock": "upstream.lock.json",
+      "upstream_lock_sha256": "sha256:67e1d937e213bbcc25783784d04c4fa349b85dc09b94855256916ca6b96e808a",
+      "third_party_notices_sha256": "sha256:779702eb89a744f9dcccb68d9f536d413975388162c20136e37aaef37d045f53",
+      "verified_base_commit": "b1948e9d02ad7b1321cbc57f3538047813e01e98",
+      "checkpoint_commit": "9e17c9d20334f8e52be2eafcc8f84a1d2f0973b2",
+      "draft_pull_request": "https://github.com/Grativy6/ARC3/pull/3",
+      "verification": {
+        "git_fsck": "PASS",
+        "run_state_json": "PASS",
+        "upstream_lock_json": "PASS",
+        "secret_pattern_scan": "PASS:0-matches",
+        "implementation_branch": "PASS"
+      }
+    },
+    "stage_01": {
+      "status": "PASS",
+      "label": "synthetic",
+      "report": "docs/reports/001-repository-foundation.md",
+      "report_sha256": "sha256:c3ca9db0307807afd43dd626c9b229e7daf2990528dfebaafe75433a91646cca",
+      "uv_lock_sha256": "sha256:c2c8fac365e0e93dd7743c8797f0d2b00a64183b4f7063546c17cabd3fd08a6a",
+      "pyproject_sha256": "sha256:7d3d033e50dfcf156f9788dc8135d96ef593aa6e364c8de508a326713a75e821",
+      "compatibility_agent_sha256": "sha256:b6f3653e5cca910a69690c9412b4a8d8ec86977c387b1259192d5d62f779d013",
+      "checkpoint_commit": "311110299444f71d7e0f0ff0e3b1f8d9c174a01b",
+      "verification": {
+        "uv_sync": "PASS:57-packages",
+        "ruff_lint": "PASS",
+        "ruff_format": "PASS",
+        "mypy_strict": "PASS",
+        "pytest": "PASS:49",
+        "doctor": "PASS",
+        "powershell_bootstrap": "PASS",
+        "remote_ci_initial": "FAILED_INFRASTRUCTURE:windows-crlf-formatting:runs-32450125300,32450125762",
+        "remote_ci_correction": "PASS:ubuntu+windows:runs-32450257835,32450260123",
+        "git_diff_check": "PASS"
+      }
+    },
+    "stage_02": {
+      "status": "PASS",
+      "labels": [
+        "synthetic",
+        "local-public"
+      ],
+      "report": "docs/reports/002-official-sdk-baselines.md",
+      "report_sha256": "sha256:ed63e4c5981be1b8d66cab33965b1cfc579d882e637f5f99ee6dffc1679153b7",
+      "scorecard_evidence": "docs/evidence/002-baseline-scorecards.json",
+      "scorecard_evidence_sha256": "sha256:64e635c5575c1e357c4cda41134461d489b5d98f34be8b08ce382c6a619132bc",
+      "public_partition_manifest": "docs/evaluation/public-game-partitions.v0.1.json",
+      "public_partition_manifest_sha256": "sha256:682d5891c2aface54803d9bd1173c55ed21e89856e13b8a478fb9276ee963f2f",
+      "checkpoint_commit": "63ee8a6069d7af4fe39d92277b6702ff253d7aa1",
+      "verification": {
+        "ruff_lint": "PASS",
+        "ruff_format": "PASS",
+        "mypy_strict": "PASS:7-source-files",
+        "pytest": "PASS:27",
+        "synthetic_loop": "PASS",
+        "official_sdk_import": "PASS:arc-agi-0.9.9+arcengine-0.9.3",
+        "official_local_smoke": "PASS:score-0.0",
+        "invalid_action_prevention": "PASS",
+        "determinism": "PASS",
+        "production_public_id_scan": "PASS:0-matches",
+        "remote_ci_initial": "FAILED_MECHANISM:stale-reserved-command-test:runs-32451110070,32451112828",
+        "remote_ci_correction": "PASS:ubuntu+windows:runs-32451273583,32451275935",
+        "evidence_json": "PASS"
+      }
+    },
+    "stage_03": {
+      "status": "PASS",
+      "label": "synthetic",
+      "report": "docs/reports/003-immutable-trace-replay-checkpoint.md",
+      "report_sha256": "sha256:c982a7b8c3d1535d3d42c537c6cb8420f26092fde4898025434857abffebe090",
+      "acceptance_evidence": "docs/evidence/003-trace-acceptance.json",
+      "acceptance_evidence_sha256": "sha256:6cf57f00fa032617a04a00dac91de7d9f653887105381c1be7ea1bb5e9a3fcab",
+      "checkpoint_commit": "8fd5a056a71ae52fa37f83f3c3614ae1f0a4f7c3",
+      "verification": {
+        "ruff_lint": "PASS",
+        "ruff_format": "PASS",
+        "mypy_strict": "PASS:11-source-files",
+        "pytest": "PASS:29",
+        "immutable_receipts": "PASS",
+        "replay": "PASS",
+        "checkpoint_resume": "PASS",
+        "fault_injections": "PASS:6-required",
+        "baseline_instrumentation": "PASS",
+        "trace_benchmark": "PASS:500-events"
+      }
+    },
+    "stage_04": {
+      "status": "PASS",
+      "label": "synthetic",
+      "report": "docs/reports/004-perception-and-frame-differencing.md",
+      "report_sha256": "sha256:084735c693e0fefc90d263f7eeedb0d31de7dd3146432f771cc172fa4e99e78b",
+      "acceptance_evidence": "docs/evidence/004-perception-acceptance.json",
+      "acceptance_evidence_sha256": "sha256:dd5c7bbb06c1c9be968fd5af570678a3b30eab31f2dee956867a1ac85f0e902a",
+      "checkpoint_commit": "ed49b841f3e9f6f5c9a4a6a965e2a60f1c4c3fa5",
+      "verification": {
+        "ruff_lint": "PASS",
+        "ruff_format": "PASS",
+        "mypy_strict": "PASS:10-source-files",
+        "pytest": "PASS:30",
+        "exact_deltas": "PASS",
+        "ambiguous_correspondence": "PASS",
+        "palette_permutation_properties": "PASS",
+        "semantic_label_scan": "PASS:0-matches",
+        "maximum_frame_benchmark": "PASS:10-iterations"
+      }
+    },
+    "stage_05": {
+      "status": "PASS",
+      "label": "synthetic",
+      "report": "docs/reports/005-typed-hypothesis-registry.md",
+      "report_sha256": "sha256:d51a356d221cd5260f6207986802214d2933930b48b2d4564c5773ffa0b3a0bf",
+      "acceptance_evidence": "docs/evidence/005-hypothesis-acceptance.json",
+      "acceptance_evidence_sha256": "sha256:880a6496a5179b7ccf86852d322888b53592ddcd45752928375f86a093c35df1",
+      "checkpoint_commit": "5ee32263b5345bcbcb2b5a2f490b08c7f602b1e2",
+      "verification": {
+        "ruff_lint": "PASS",
+        "ruff_format": "PASS",
+        "mypy_strict": "PASS:10-source-files",
+        "pytest": "PASS:20",
+        "typed_families": "PASS:9",
+        "event_fold_rebuild": "PASS",
+        "complete_lifecycle": "PASS",
+        "rejected_history": "PASS",
+        "reopen_plan_invalidation": "PASS",
+        "trace_index_integration": "PASS"
+      }
+    },
+    "stage_06": {
+      "status": "PASS",
+      "label": "synthetic",
+      "report": "docs/reports/006-synthetic-environment-laboratory.md",
+      "report_sha256": "sha256:70eeaf147630697d99a4252df8cec256572a85ba102a80d5a0467b3405b0fea2",
+      "acceptance_evidence": "docs/evidence/006-lab-acceptance.json",
+      "acceptance_evidence_sha256": "sha256:21f239e91f471e9e8d3dbebb01c7c69e3dbc6dc2df03e9fa81cc28ff9e77051c",
+      "checkpoint_commit": "7282c99286aa48bad310d22f138766d117d3e367",
+      "verification": {
+        "ruff_lint": "PASS",
+        "ruff_format": "PASS",
+        "mypy_strict": "PASS:6-source-files",
+        "pytest": "PASS:16",
+        "rule_families": "PASS:15",
+        "deterministic_partitions": "PASS",
+        "oracle_solvability": "PASS:630-episodes",
+        "observation_leakage": "PASS:0-detected-fields",
+        "false_lead_contradiction": "PASS",
+        "random_baselines": "PASS:3-partitions"
+      }
+    },
+    "stage_07": {
+      "status": "PASS",
+      "label": "synthetic",
+      "mechanism_status": "MECHANISM_OBSERVED",
+      "report": "docs/reports/007-action-semantics-and-exploration.md",
+      "report_sha256": "sha256:db10db37e99891ecdc0e5ba984528525f6181dd873cb8fc048068483e292487e",
+      "acceptance_evidence": "docs/evidence/007-exploration-acceptance.json",
+      "acceptance_evidence_sha256": "sha256:83a637c1ea1032cbd87a440c73a08ca8f601918b000dd8880848588be4c1e0c4",
+      "checkpoint_commit": "a699ef8edb0befac5fadc9906e6b1fb10d86ac1b",
+      "verification": {
+        "ruff_lint": "PASS",
+        "ruff_format": "PASS",
+        "mypy_strict": "PASS:8-source-files",
+        "pytest": "PASS:14",
+        "effect_classes": "PASS:7",
+        "action6_coordinate_sources": "PASS:6",
+        "probe_discrimination": "PASS",
+        "repetition_undo_reset_budget": "PASS",
+        "public_game_id_scan": "PASS:0-matches",
+        "held_out_comparison": "PASS:median-1-vs-4-random-vs-3-cycle"
+      }
+    },
+    "stage_08": {
+      "status": "PASS",
+      "label": "synthetic",
+      "mechanism_status": "MECHANISM_OBSERVED",
+      "report": "docs/reports/008-retrodictive-executable-world-model.md",
+      "report_sha256": "sha256:576528ffdae6dc5424151fda3a1c7f7705337827cfa403e9001eb44027402bda",
+      "acceptance_evidence": "docs/evidence/008-world-model-acceptance.json",
+      "acceptance_evidence_sha256": "sha256:b055d417ab699a1957a590050f42d0e93ffefcd40b98eecd45a8ed6ca20583ac",
+      "checkpoint_commit": "3f48ab4ca62ec032e52dc875d9f7c8e5810a0262",
+      "verification": {
+        "ruff_lint": "PASS",
+        "ruff_format": "PASS",
+        "mypy_strict": "PASS:10-source-files",
+        "pytest": "PASS:12",
+        "rule_primitives": "PASS:9",
+        "retrodiction_gate": "PASS",
+        "contradiction_visibility": "PASS",
+        "deterministic_simulator": "PASS",
+        "prediction_mismatch_reopening": "PASS",
+        "public_id_network_hosted_scan": "PASS:0-matches",
+        "held_out_comparison": "PASS:4-of-4-vs-0-of-4-ablation"
+      }
+    },
+    "stage_09": {
+      "status": "PASS",
+      "label": "synthetic",
+      "mechanism_status": "MECHANISM_OBSERVED",
+      "report": "docs/reports/009-typed-goal-acquisition.md",
+      "report_sha256": "sha256:233b95df7bfac56c0d07d9c1133a66eda4dbb7eb7ee557a1b56c2be481e69e0d",
+      "acceptance_evidence": "docs/evidence/009-goal-acceptance.json",
+      "acceptance_evidence_sha256": "sha256:59d7fbb60ec3fdfef6435a59e4f351b1f078075e00100e14bd73ebc8d2487ce9",
+      "checkpoint_commit": "b712e0bc2fffb592dbf0f6f287045a60aaefc65c",
+      "verification": {
+        "ruff_lint": "PASS",
+        "ruff_format": "PASS",
+        "mypy_strict": "PASS:10-source-files",
+        "pytest": "PASS:19",
+        "explicit_progress_signals": "PASS:6",
+        "structural_goal_kinds": "PASS:5",
+        "role_and_utility_separation": "PASS",
+        "retire_reopen_lineage": "PASS",
+        "public_id_network_hosted_scan": "PASS:0-matches",
+        "held_out_comparison": "PASS:64-of-64-vs-0-of-64"
+      }
+    },
+    "stage_10": {
+      "status": "PASS",
+      "label": "synthetic",
+      "mechanism_status": "MECHANISM_OBSERVED",
+      "report": "docs/reports/010-bounded-planning-and-recovery.md",
+      "report_sha256": "sha256:e51eb151d14f05c219c1435b58645c8a05dc366c5bf19568036a842018a5c5eb",
+      "acceptance_evidence": "docs/evidence/010-planning-acceptance.json",
+      "acceptance_evidence_sha256": "sha256:42a57eb4f0d52ba785e5e57a9447a03c7f27ca99ba5ae16c9457a05db0159592",
+      "checkpoint_commit": "50e8bd2732dc195f268658a015d9b4c01efd0ed5",
+      "verification": {
+        "ruff_lint": "PASS",
+        "ruff_format": "PASS",
+        "mypy_strict": "PASS:7-source-files",
+        "pytest": "PASS:10",
+        "bounded_search": "PASS:3-algorithms",
+        "one_action_consequence_gate": "PASS",
+        "stale_plan_invalidation": "PASS",
+        "recovery_modes": "PASS:5",
+        "public_id_network_hosted_scan": "PASS:0-matches",
+        "held_out_comparison": "PASS:24-of-24-vs-0-of-24"
+      }
+    },
+    "stage_11": {
+      "status": "PASS",
+      "label": "synthetic",
+      "mechanism_status": "MECHANISM_OBSERVED",
+      "report": "docs/reports/011-scoped-persistent-memory.md",
+      "report_sha256": "sha256:ee17c9e90aaa7e30ae0b7fb9c21b97177b2bacb79bc1beadf6b20e9db6114e10",
+      "acceptance_evidence": "docs/evidence/011-memory-acceptance.json",
+      "acceptance_evidence_sha256": "sha256:b3ff4557312949233ea4d420c90389045265c684236de115c8a034df1faa498e",
+      "checkpoint_commit": "54064d412ca01ce078ae693d4f9fb0e071d853f3",
+      "verification": {
+        "ruff_lint": "PASS",
+        "ruff_format": "PASS",
+        "mypy_strict": "PASS:10-source-files",
+        "pytest": "PASS:12",
+        "scoped_source_linked_retrieval": "PASS",
+        "bounded_memory": "PASS:5000-inserts+128-retained",
+        "process_death_resume": "PASS:exit-23+20-actions",
+        "no_resubmission": "PASS",
+        "public_id_network_hosted_scan": "PASS:0-matches",
+        "cross_level_comparison": "PASS:1-probe-vs-3-probes"
+      }
+    },
+    "stage_12": {
+      "status": "PASS",
+      "labels": [
+        "synthetic",
+        "local-public"
+      ],
+      "mechanism_status": "MECHANISM_OBSERVED",
+      "report": "docs/reports/012-full-controller-integration.md",
+      "report_sha256": "sha256:32d9e3c389d554dd9ef0d1f01bbabfdeae94914a2de43a38d3ce415ed1b3476d",
+      "acceptance_evidence": "docs/evidence/012-controller-acceptance.json",
+      "acceptance_evidence_sha256": "sha256:f4363109262b2f06b64e92ffe7234403d0daaaea36157db65ac4c32508a47772",
+      "checkpoint_commit": "3fee19d9f82210ba5010af94feac170164a30f3c",
+      "verification": {
+        "ruff_lint": "PASS",
+        "ruff_format": "PASS",
+        "mypy_strict": "PASS:8-source-files",
+        "pytest": "PASS:21",
+        "synthetic_comparison": "PASS:32-of-32-vs-4-of-32-cycle",
+        "complete_receipt_chains": "PASS:190-of-190",
+        "checkpoint_restore": "PASS:32-of-32+0-duplicates",
+        "controller_faults": "PASS:0",
+        "competition_offline_smoke": "PASS:network-disabled",
+        "official_local_preacceptance_smoke": "PASS:8-actions+score-0.0",
+        "official_online_api": "BLOCKED_EXTERNAL:no-credentials",
+        "public_id_hosted_network_scan": "PASS:0-matches"
+      }
+    },
+    "stage_13": {
+      "status": "PASS",
+      "label": "synthetic",
+      "claim": "NO_GENERALIZATION_CLAIM",
+      "report": "docs/reports/013-evaluation-harness-and-baselines.md",
+      "report_sha256": "sha256:50f59919d6a92ecad5ccb3ff5975a7fb56e1f651259914f32078abbc36298626",
+      "acceptance_evidence": "docs/evidence/013-evaluation-harness-acceptance.json",
+      "acceptance_evidence_sha256": "sha256:ab354deec3ef4f7a84d285a8e7603dbe357afcf6c6bbff7862fe94979b94780e",
+      "checkpoint_commit": "01f7a12e42f50e2899db9d430bcf4d125a81d49f",
+      "verification": {
+        "ruff_lint": "PASS",
+        "ruff_format": "PASS:13-files",
+        "mypy_strict": "PASS:8-source-files",
+        "pytest": "PASS:26",
+        "controlled_baselines": "PASS:10-of-10+B0-B4",
+        "artifact_verification": "PASS",
+        "exact_reproduction": "PASS:10-of-10+5-of-5-same-policy",
+        "performance_thresholds": "PASS:8-of-8",
+        "failure_and_tamper_retention": "PASS",
+        "official_rhae": "UNMEASURED:null",
+        "public_environment_opened": "PASS:false"
+      }
+    },
+    "stage_14": {
+      "status": "PASS",
+      "label": "synthetic",
+      "claim": "NO_GENERALIZATION_CLAIM",
+      "report": "docs/reports/014-ablations-and-mechanism-tests.md",
+      "report_sha256": "sha256:ad7b6caa67b2f5a079af32a4ddf9ea701fee556b32ee66cb6a92409e48af1a0b",
+      "acceptance_evidence": "docs/evidence/014-ablation-acceptance.json",
+      "acceptance_evidence_sha256": "sha256:56e7c23bea479cd64fb4433e369bda28177ca76e94e4ba18ee756dab3a8ab82c",
+      "infrastructure_failure_evidence": "docs/evidence/014-ablation-infrastructure-failure.json",
+      "infrastructure_failure_evidence_sha256": "sha256:04a0e470e63f41a8dd3b5a51bfca4748321111f7b97926f4549b77044567975f",
+      "checkpoint_commit": "565712fe6fb1e62f704f40a7693d3d3fb1de3ada",
+      "verification": {
+        "ruff_lint": "PASS",
+        "ruff_format": "PASS:8-files",
+        "mypy_strict": "PASS:6-source-files",
+        "pytest": "PASS:48",
+        "paired_matrix": "PASS:154-of-154+0-faults",
+        "full": "PASS:8-of-14+150-actions",
+        "world_model_simulation": "MECHANISM_OBSERVED:full-8-of-14-vs-A4-1-of-14",
+        "goal_inference": "MECHANISM_OBSERVED:full-8-of-14-vs-A5-0-of-14",
+        "retrodiction_gate": "CONFLICTING_EVIDENCE:A3-same-completion-9-fewer-actions",
+        "protocol_and_case_identity": "PASS",
+        "exact_semantic_reproduction": "PASS",
+        "initial_workspace_run": "FAILED_INFRASTRUCTURE:WinError-5-preserved"
+      }
+    },
+    "stage_15": {
+      "status": "PASS",
+      "label": "local-public",
+      "evaluation_status": "PARTIAL",
+      "claim": "MECHANISM_NOT_OBSERVED",
+      "claim_boundary": "NO_GENERALIZATION_CLAIM",
+      "report": "docs/reports/015-public-development.md",
+      "report_sha256": "sha256:c2b8a7c84b9164bc0859497a650fb3d4c5968ce600d701be1669bf0643efdff9",
+      "acceptance_evidence": "docs/evidence/015-public-development-acceptance.json",
+      "acceptance_evidence_sha256": "sha256:43d9b116448668626a27874f138f38f22011fb08fe7d38b8e335333cd0063815",
+      "checkpoint_commit": "6a0f6e5b9cf076f7d755675ece0fa46379202161",
+      "verification": {
+        "smoke": "PARTIAL:30-runs+6-full-timeouts+0-levels",
+        "development": "PARTIAL:120-runs+24-full-timeouts+B0-1-level",
+        "artifact_verification": "PASS:13927-artifacts+0-errors",
+        "official_metadata_identity": "PASS:25-of-25",
+        "holdout_gate": "PASS:rejected-before-gameplay+0-events",
+        "holdout_result": "NOT_MEASURED",
+        "frozen_commit_ci": "PASS:ubuntu+windows:runs-32471135774,32471131148"
+      }
+    },
+    "stage_16": {
+      "status": "FAILED_MECHANISM",
+      "label": "synthetic",
+      "claim": "NO_GENERALIZATION_CLAIM",
+      "runtime_profile_status": "PASS",
+      "robustness_status": "FAILED_MECHANISM",
+      "report": "docs/reports/016-optimization-robustness-integrity.md",
+      "report_sha256": "sha256:87c06d3b210154048b599784e90e4d39c4d73c10010cdbee146942c2c92a5174",
+      "acceptance_evidence": "docs/evidence/016-competition-profile-acceptance.json",
+      "acceptance_evidence_sha256": "sha256:8127acc6441bcba4f4e9b0a02b9950880c3231f7a0b4cef91c95dd089af0f595",
+      "measured_commit": "cd3e3aa9cc2c2fa8fbe514b7950862dfe1188783",
+      "measured_tree": "11e2c1ba93a3801dc894cc9c0895c636a31f4b63",
+      "raw_receipt_file_sha256": "sha256:125290f571860cdc2a66a99f8e0bea0f421af1c7d891c488908ebe85cef91bc2",
+      "raw_receipt_self_sha256": "sha256:3c7d407f2b0f1c9705648ac8c5e06adba951567c755e1bbca6ea194a1e668758",
+      "verification": {
+        "runtime_budgets": "PASS:9-of-9+80-actions+116.26474110002164-seconds",
+        "peak_rss": "PASS:175210496-bytes",
+        "replay": "PASS:81-frames+80-deltas",
+        "fault_matrix": "PASS:11-of-11",
+        "robustness": "FAILED_MECHANISM:7-pass+4-failed+1-not-exercised",
+        "static_integrity": "PASS:0-findings+runtime-socket-denial-out-of-scope",
+        "stage13_regression": "PASS:8-of-8",
+        "accelerator": "CPU_SELECTED:GTX1660-available+no-measured-GPU-mechanism"
+      }
+    },
+    "stage_17": {
+      "status": "PASS",
+      "label": "synthetic",
+      "packaging_status": "PACKAGING_PASS",
+      "claim": "NO_GENERALIZATION_CLAIM",
+      "report": "docs/reports/017-offline-kaggle-package.md",
+      "report_sha256": "sha256:a9b112a51e2e3ed8a316eeb82a9a26bfbe41b65ce8942f118dfb75c490e08b88",
+      "acceptance_evidence": "docs/evidence/017-kaggle-package-acceptance.json",
+      "acceptance_evidence_sha256": "sha256:aac45a86092a7c83bdf26a2e12fbd396381f37257f9e3b5294850f65152583fa",
+      "candidate_commit": "e5f291912726e6139d1dda682707eada657cb5ce",
+      "candidate_tree": "c25a4d98bb34f785e1b5ded79ed72a990359e114",
+      "candidate_sha256": "sha256:06d688d0ceadc832147e3e2993dd8ba64523bad05ffa53004cf349ee861aceaa",
+      "verification": {
+        "clean_clone_offline_sync": "PASS:61-packages",
+        "competition_pytest": "PASS:31",
+        "candidate_determinism": "PASS:11-of-11",
+        "sandbox": "PASS:offline+0-non-loopback-attempts",
+        "output_schema": "PASS:pinned-public-schema",
+        "secret_scan": "PASS:0-findings",
+        "framework_identity": "PASS:raw-LF+exact-CRLF",
+        "wheelhouse": "PASS:31-of-31",
+        "cross_target_install": "PASS:31-distributions",
+        "official_submission": "NOT_PERFORMED"
+      }
+    },
+    "stage_18": {
+      "status": "FAILED_MECHANISM",
+      "labels": [
+        "synthetic",
+        "local-public"
+      ],
+      "release_infrastructure_status": "PASS",
+      "official_smoke_status": "PARTIAL",
+      "claim": "NO_GENERALIZATION_CLAIM",
+      "report": "docs/reports/018-release-candidate-verification.md",
+      "report_sha256": "sha256:68e061ec22ab52b2f04c8baa58f37e4e7b2eb59da8f4878506539b14ec7ee96c",
+      "acceptance_evidence": "docs/evidence/018-release-candidate-acceptance.json",
+      "acceptance_evidence_sha256": "sha256:92d37027c50889a979b1c57487ed490f52e4c7d742c14fe35b63f06af0a0966c",
+      "initial_failure_evidence": "docs/evidence/018-release-candidate-initial-failure.json",
+      "initial_failure_evidence_sha256": "sha256:f494f48c7711260785362ffd86e0e3d5d62d093cfdbec36d6f1aaaf4d31d908b",
+      "candidate_commit": "90ecf7267d5bb23d751d6f7ce3e8aa75f2f1a130",
+      "candidate_tree": "0cf6e00b2fcc399e7a99a62c20e91bb84d485f13",
+      "ci_repair_descendant": "67e4b0ed4be8dbe4e3ea5a0dbc7c20ef9b934c4e",
+      "raw_receipt_file_sha256": "sha256:ae571ae99b2746bfe17f3e8ea790707810522f2f462d983a9c2726bb57dcc7a5",
+      "raw_receipt_self_sha256": "sha256:31ca85d0fa11de07372b740fc73dd3d9976e71808f9c84cb454710eaa92d6e91",
+      "sealed_artifact_set_sha256": "sha256:00e343694d460b5a751fd3812ace699825967622d52cd18cf91ba994156969e0",
+      "verification": {
+        "dependency_lock": "PASS:offline",
+        "ruff_lint": "PASS",
+        "ruff_format": "PASS",
+        "mypy_strict": "PASS:142-source-files",
+        "full_test_suite": "PASS:423+80-percent-coverage",
+        "trace_replay_tamper": "PASS:13",
+        "synthetic_benchmark": "PASS:10-of-10+exact-stage13-projection",
+        "offline_package_determinism": "PASS:byte-identical",
+        "competition_integrity": "PASS",
+        "official_inventory": "PASS:3-of-3",
+        "official_smoke": "FAILED_MECHANISM:full-0-of-6+6-timeouts+0-levels",
+        "official_artifact_verification": "PASS:partial-retained",
+        "secret_scan": "PASS:0-findings",
+        "remote_ci": "PASS:ubuntu+windows:runs-32485636282,32485640575"
+      }
+    },
+    "stage_19": {
+      "status": "PASS",
+      "labels": [
+        "synthetic",
+        "local-public"
+      ],
+      "claim": "NO_GENERALIZATION_CLAIM",
+      "research_report": "docs/research/ARC3-Build-000-report.md",
+      "research_report_sha256": "sha256:1b147249727859f6af3e6292dc8074f38375040af5d49275dc731177c0181ee9",
+      "handoff": "docs/handoffs/000-autonomous-arc3.md",
+      "handoff_sha256": "sha256:93c9e3a340726096875a89359f3fda42b225fb94e4c6702bd92feab33a4b67d3",
+      "dependency_license_inventory": "docs/evidence/019-dependency-license-inventory.json",
+      "dependency_license_inventory_sha256": "sha256:7df3e815648e4c1e69f15c2a1f727c5a43dd37276bb1f9a2c5d6016597ce6c7f",
+      "third_party_notices_sha256": "sha256:86840196ffa2741c54e36251774a8b373cd47ea68a59f321e30170bfd6733b55",
+      "license_candidate": "docs/legal/candidates/MIT-0-CANDIDATE.md",
+      "license_candidate_sha256": "sha256:bb511507879af8dc8f2fcf94d90329f13f73fe3b457e267e6855d4ab52b290e2",
+      "license_granted": false,
+      "root_license_present": false,
+      "verification": {
+        "required_research_sections": "PASS",
+        "lock_inventory": "PASS:61-of-61+60-third-party+1-owner-decision",
+        "unknown_third_party_records": "PASS:0",
+        "development_license_evidence": "PASS:23",
+        "source_hashes": "PASS:uv-lock+notice+sbom-source",
+        "candidate_boundary": "PASS:CANDIDATE-ONLY-NO-LICENSE-GRANTED",
+        "handoff_owner_action": "PASS:exactly-one-smallest-action",
+        "readme": "PASS:description+status+quickstart+limitations"
+      }
+    },
+    "stage_20": {
+      "status": "PASS",
+      "label": "synthetic",
+      "build_status": "PARTIAL",
+      "claim": "NO_GENERALIZATION_CLAIM",
+      "acceptance_evidence": "docs/evidence/020-final-verification.json",
+      "acceptance_evidence_sha256": "sha256:ee52c19903824a9219eafc171389c300efc14ae647b98d4d915f9ac534bc3c9c",
+      "handoff": "docs/handoffs/000-autonomous-arc3.md",
+      "handoff_sha256": "sha256:93c9e3a340726096875a89359f3fda42b225fb94e4c6702bd92feab33a4b67d3",
+      "preseal_commit": "dd212a1ee26482c298f038f5b8af6f42b0233d05",
+      "preseal_tree": "d5a7c2e6a0029eeff365eab9cccb76357af5bbc6",
+      "release_candidate_commit": "90ecf7267d5bb23d751d6f7ce3e8aa75f2f1a130",
+      "final_seal_binding": "draft-PR-3-headRefOid-after-push",
+      "verification": {
+        "branch_and_remote_preseal": "PASS:clean+equal",
+        "dependency_lock": "PASS:offline+61-records",
+        "ruff_lint": "PASS",
+        "ruff_format": "PASS:235-files",
+        "mypy_strict": "PASS:142-source-files",
+        "full_test_suite": "PASS:423-in-445.83-seconds+80-percent-coverage",
+        "trace_replay_tamper": "PASS:13-in-6.37-seconds",
+        "current_source_integrity": "PASS:0-findings",
+        "release_candidate_archive_integrity": "PASS:0-findings+1-archive",
+        "release_receipt": "PASS:RECEIPT_VALID",
+        "package_projection": "PASS:PACKAGE_VALID",
+        "ledger_paths_hashes_objects": "PASS:25-commit-objects",
+        "diff_audit": "PASS:303-files+0-notebooks+0-large-artifacts",
+        "secret_scan": "PASS:0-findings",
+        "remote_ci_preseal": "PASS:ubuntu+windows:runs-32488831998,32488838198",
+        "draft_pull_request": "PASS:open+draft+unmerged",
+        "initial_full_suite": "FAILED_INFRASTRUCTURE:411-passed+12-setup-errors",
+        "initial_cross_root_integrity": "FAILED_INFRASTRUCTURE:refused-outside-root"
+      }
+    }
+  },
   "blocked_items": [
     {
       "id": "HUMAN-LICENSE",
@@ -59,15 +599,350 @@
     {
       "id": "CREDENTIALS-OPTIONAL",
       "kind": "external_resource",
-      "status": "UNKNOWN",
-      "description": "ARC_API_KEY and Kaggle credentials may not be present. Use anonymous/local modes and prepare tested adapters if absent."
+      "status": "BLOCKED_EXTERNAL",
+      "description": "ARC_API_KEY, KAGGLE_USERNAME, and KAGGLE_KEY were absent at the Stage 12 checkpoint. Anonymous/local/offline work continues; credentials are not required for independent stages."
     }
   ],
-  "latest_results": [],
-  "artifacts": {},
-  "next_action": "Read AGENTS.md and execute Stage 00. Validate this file before trusting any status flag.",
+  "latest_results": [
+    {
+      "stage": "01",
+      "label": "synthetic",
+      "result": "49 focused tests passed; strict type, lint, format, doctor, and Windows bootstrap checks passed",
+      "report": "docs/reports/001-repository-foundation.md"
+    },
+    {
+      "stage": "02",
+      "label": "synthetic",
+      "result": "random-valid mean score 0.5; 2/4 completed; seeds 0,1,2,3; 100-action budget",
+      "report": "docs/reports/002-official-sdk-baselines.md"
+    },
+    {
+      "stage": "02",
+      "label": "local-public",
+      "result": "deterministic cycle score 0.0; 0 levels; 20 actions; 0 resets; one development game",
+      "report": "docs/reports/002-official-sdk-baselines.md"
+    },
+    {
+      "stage": "03",
+      "label": "synthetic",
+      "result": "29 focused tests passed; 500-event append 0.623596 ms/event; deterministic replay, six required fault injections, and checkpoint resume passed",
+      "report": "docs/reports/003-immutable-trace-replay-checkpoint.md"
+    },
+    {
+      "stage": "04",
+      "label": "synthetic",
+      "result": "30 focused tests passed; 64x64 delta/component/correspondence pipeline measured 87.2938 ms/iteration and 501520 peak traced bytes across 10 iterations",
+      "report": "docs/reports/004-perception-and-frame-differencing.md"
+    },
+    {
+      "stage": "05",
+      "label": "synthetic",
+      "result": "20 focused tests passed; all 9 typed families and the create-support-contradict-narrow-reject-reopen lineage with plan invalidation passed",
+      "report": "docs/reports/005-typed-hypothesis-registry.md"
+    },
+    {
+      "stage": "06",
+      "label": "synthetic",
+      "result": "15 rule families and 630/630 oracle-solvable leakage-checked episodes; random completion 33.33% development, 30.00% held-out combinations, 6.67% held-out families",
+      "report": "docs/reports/006-synthetic-environment-laboratory.md"
+    },
+    {
+      "stage": "07",
+      "label": "synthetic",
+      "result": "MECHANISM_OBSERVED on 101 semantic-identification cases: median 1 action versus random 4 and cycle 3",
+      "report": "docs/reports/007-action-semantics-and-exploration.md"
+    },
+    {
+      "stage": "08",
+      "label": "synthetic",
+      "result": "MECHANISM_OBSERVED on 4 held-out symbolic combinations: retrodiction-gated 4/4 predicted completions versus retrodiction-off highest-rank 0/4 under 16 supplied planned actions",
+      "report": "docs/reports/008-retrodictive-executable-world-model.md"
+    },
+    {
+      "stage": "09",
+      "label": "synthetic",
+      "result": "MECHANISM_OBSERVED on 64 delayed/proxy cases: goal-aware selection 64/64 completions versus novelty-only 0/64 under equal five-action budgets",
+      "report": "docs/reports/009-typed-goal-acquisition.md"
+    },
+    {
+      "stage": "10",
+      "label": "synthetic",
+      "result": "MECHANISM_OBSERVED on 24 held-out symbolic tasks: bounded planning 24/24 completions in 174 actions versus cycle exploration 0/24 in 576; mismatch recovery 24/24 versus no-recovery 0/24",
+      "report": "docs/reports/010-bounded-planning-and-recovery.md"
+    },
+    {
+      "stage": "11",
+      "label": "synthetic",
+      "result": "MECHANISM_OBSERVED on one cross-level directional fixture: source-linked game memory required 1 validation probe versus 3 without memory; 5000-insert bound retained 128 records in 179180 bytes",
+      "report": "docs/reports/011-scoped-persistent-memory.md"
+    },
+    {
+      "stage": "12",
+      "label": "synthetic",
+      "result": "MECHANISM_OBSERVED on synthetic-grid-v1: full controller completed 32/32 in 190 actions versus cycle 4/32 in 463 under equal 16-action budgets; 190 complete chains, 32 verified restores, 0 duplicate events, 0 faults",
+      "report": "docs/reports/012-full-controller-integration.md"
+    },
+    {
+      "stage": "12",
+      "label": "local-public",
+      "result": "preacceptance official local smoke on one exposed development game: score 0.0, 0 levels, 8 actions, 8 consequence chains, 0 faults; not a benchmark",
+      "report": "docs/reports/012-full-controller-integration.md"
+    },
+    {
+      "stage": "13",
+      "label": "synthetic",
+      "result": "clean process-isolated B0-B4 comparison passed 10/10: full 2/2 in 8 actions, cycle and trace 1/2 in 19, random and novelty 0/2 in 32; exact 10-run reproduction and 8/8 threshold gate passed",
+      "report": "docs/reports/013-evaluation-harness-and-baselines.md"
+    },
+    {
+      "stage": "14",
+      "label": "synthetic",
+      "result": "clean paired A1-A10 matrix passed 154/154 with zero faults: FULL 8/14 in 150 actions; no-simulation A4 1/14 in 211; no-goal A5 0/14 in 224; A3 tied completion with 9 fewer actions and remains conflicting evidence",
+      "report": "docs/reports/014-ablations-and-mechanism-tests.md"
+    },
+    {
+      "stage": "15",
+      "label": "local-public",
+      "result": "MECHANISM_NOT_OBSERVED: FULL timed out in all 30 smoke/development runs and completed zero levels; B0 random completed the sole level with development mean score 0.016196954972465177; 150 terminal outcomes and 13,927 artifacts verify; public holdout unconsumed",
+      "report": "docs/reports/015-public-development.md"
+    },
+    {
+      "stage": "16",
+      "label": "synthetic",
+      "result": "FAILED_MECHANISM overall: the optimized controller passed all 9 runtime checks with 80 actions in 116.26474110002164 seconds and 175210496-byte peak RSS, while 4 palette/action-remap robustness cases failed and 1 rule-change case was not exercised",
+      "report": "docs/reports/016-optimization-robustness-integrity.md"
+    },
+    {
+      "stage": "17",
+      "label": "synthetic",
+      "result": "PACKAGING_PASS: two clean-source offline CPU candidate builds were byte-identical across 11 artifacts; sandbox, pinned-public schema, secret, source-identity, exact 31-wheel, and bounded single-agent checks passed; no official submission",
+      "report": "docs/reports/017-offline-kaggle-package.md"
+    },
+    {
+      "stage": "18",
+      "label": "synthetic",
+      "result": "release infrastructure PASS: clean-clone lock, lint, format, strict typing, 423 tests, 13 replay/tamper tests, exact Stage 13 reproduction, byte-identical package builds, integrity, artifact sealing, and secret scan passed",
+      "report": "docs/reports/018-release-candidate-verification.md"
+    },
+    {
+      "stage": "18",
+      "label": "local-public",
+      "result": "FAILED_MECHANISM: FULL timed out in all 6 smoke runs after 146 environment actions and completed zero levels; B0 and B1 also completed zero levels; all 18 terminal artifacts verify; official RHAE unmeasured; holdout unconsumed",
+      "report": "docs/reports/018-release-candidate-verification.md"
+    },
+    {
+      "stage": "19",
+      "label": "synthetic",
+      "result": "PASS: complete methods/results/limitations report, owner handoff, README, 61-of-61 lock/license reconciliation, and nonoperative MIT-0 owner-review candidate; no license granted",
+      "report": "docs/research/ARC3-Build-000-report.md"
+    },
+    {
+      "stage": "20",
+      "label": "synthetic",
+      "result": "PASS: final branch/draft-PR seal, 423 tests, strict lint/type/replay, clean source and exact package integrity, evidence validation, diff audit, and Ubuntu/Windows CI; BUILD 000 remains PARTIAL from preserved failed mechanisms",
+      "report": "docs/evidence/020-final-verification.json"
+    }
+  ],
+  "artifacts": {
+    "upstream_lock": {
+      "path": "upstream.lock.json",
+      "sha256": "67e1d937e213bbcc25783784d04c4fa349b85dc09b94855256916ca6b96e808a"
+    },
+    "stage_00_report": {
+      "path": "docs/reports/000-source-identity.md",
+      "sha256": "e85e19027d3920da090afa91d7895b0bcaeaed2c57cdb66aeb1084b2acee7658"
+    },
+    "stage_01_report": {
+      "path": "docs/reports/001-repository-foundation.md",
+      "sha256": "c3ca9db0307807afd43dd626c9b229e7daf2990528dfebaafe75433a91646cca"
+    },
+    "uv_lock": {
+      "path": "uv.lock",
+      "sha256": "3bf42dcbe45720f71b7433584f56a5d5982ec1c687c341ad2626222fa5de285b"
+    },
+    "stage_02_report": {
+      "path": "docs/reports/002-official-sdk-baselines.md",
+      "sha256": "ed63e4c5981be1b8d66cab33965b1cfc579d882e637f5f99ee6dffc1679153b7"
+    },
+    "stage_02_scorecards": {
+      "path": "docs/evidence/002-baseline-scorecards.json",
+      "sha256": "64e635c5575c1e357c4cda41134461d489b5d98f34be8b08ce382c6a619132bc"
+    },
+    "public_game_partitions_v0_1": {
+      "path": "docs/evaluation/public-game-partitions.v0.1.json",
+      "sha256": "682d5891c2aface54803d9bd1173c55ed21e89856e13b8a478fb9276ee963f2f"
+    },
+    "stage_03_report": {
+      "path": "docs/reports/003-immutable-trace-replay-checkpoint.md",
+      "sha256": "c982a7b8c3d1535d3d42c537c6cb8420f26092fde4898025434857abffebe090"
+    },
+    "stage_03_trace_acceptance": {
+      "path": "docs/evidence/003-trace-acceptance.json",
+      "sha256": "6cf57f00fa032617a04a00dac91de7d9f653887105381c1be7ea1bb5e9a3fcab"
+    },
+    "stage_04_report": {
+      "path": "docs/reports/004-perception-and-frame-differencing.md",
+      "sha256": "084735c693e0fefc90d263f7eeedb0d31de7dd3146432f771cc172fa4e99e78b"
+    },
+    "stage_04_perception_acceptance": {
+      "path": "docs/evidence/004-perception-acceptance.json",
+      "sha256": "dd5c7bbb06c1c9be968fd5af570678a3b30eab31f2dee956867a1ac85f0e902a"
+    },
+    "stage_05_report": {
+      "path": "docs/reports/005-typed-hypothesis-registry.md",
+      "sha256": "d51a356d221cd5260f6207986802214d2933930b48b2d4564c5773ffa0b3a0bf"
+    },
+    "stage_05_hypothesis_acceptance": {
+      "path": "docs/evidence/005-hypothesis-acceptance.json",
+      "sha256": "880a6496a5179b7ccf86852d322888b53592ddcd45752928375f86a093c35df1"
+    },
+    "stage_06_report": {
+      "path": "docs/reports/006-synthetic-environment-laboratory.md",
+      "sha256": "70eeaf147630697d99a4252df8cec256572a85ba102a80d5a0467b3405b0fea2"
+    },
+    "stage_06_lab_acceptance": {
+      "path": "docs/evidence/006-lab-acceptance.json",
+      "sha256": "21f239e91f471e9e8d3dbebb01c7c69e3dbc6dc2df03e9fa81cc28ff9e77051c"
+    },
+    "stage_07_report": {
+      "path": "docs/reports/007-action-semantics-and-exploration.md",
+      "sha256": "db10db37e99891ecdc0e5ba984528525f6181dd873cb8fc048068483e292487e"
+    },
+    "stage_07_exploration_acceptance": {
+      "path": "docs/evidence/007-exploration-acceptance.json",
+      "sha256": "83a637c1ea1032cbd87a440c73a08ca8f601918b000dd8880848588be4c1e0c4"
+    },
+    "stage_08_report": {
+      "path": "docs/reports/008-retrodictive-executable-world-model.md",
+      "sha256": "576528ffdae6dc5424151fda3a1c7f7705337827cfa403e9001eb44027402bda"
+    },
+    "stage_08_world_model_acceptance": {
+      "path": "docs/evidence/008-world-model-acceptance.json",
+      "sha256": "b055d417ab699a1957a590050f42d0e93ffefcd40b98eecd45a8ed6ca20583ac"
+    },
+    "stage_09_report": {
+      "path": "docs/reports/009-typed-goal-acquisition.md",
+      "sha256": "233b95df7bfac56c0d07d9c1133a66eda4dbb7eb7ee557a1b56c2be481e69e0d"
+    },
+    "stage_09_goal_acceptance": {
+      "path": "docs/evidence/009-goal-acceptance.json",
+      "sha256": "59d7fbb60ec3fdfef6435a59e4f351b1f078075e00100e14bd73ebc8d2487ce9"
+    },
+    "stage_10_report": {
+      "path": "docs/reports/010-bounded-planning-and-recovery.md",
+      "sha256": "e51eb151d14f05c219c1435b58645c8a05dc366c5bf19568036a842018a5c5eb"
+    },
+    "stage_10_planning_acceptance": {
+      "path": "docs/evidence/010-planning-acceptance.json",
+      "sha256": "42a57eb4f0d52ba785e5e57a9447a03c7f27ca99ba5ae16c9457a05db0159592"
+    },
+    "stage_11_report": {
+      "path": "docs/reports/011-scoped-persistent-memory.md",
+      "sha256": "ee17c9e90aaa7e30ae0b7fb9c21b97177b2bacb79bc1beadf6b20e9db6114e10"
+    },
+    "stage_11_memory_acceptance": {
+      "path": "docs/evidence/011-memory-acceptance.json",
+      "sha256": "b3ff4557312949233ea4d420c90389045265c684236de115c8a034df1faa498e"
+    },
+    "stage_12_report": {
+      "path": "docs/reports/012-full-controller-integration.md",
+      "sha256": "32d9e3c389d554dd9ef0d1f01bbabfdeae94914a2de43a38d3ce415ed1b3476d"
+    },
+    "stage_12_controller_acceptance": {
+      "path": "docs/evidence/012-controller-acceptance.json",
+      "sha256": "f4363109262b2f06b64e92ffe7234403d0daaaea36157db65ac4c32508a47772"
+    },
+    "stage_13_report": {
+      "path": "docs/reports/013-evaluation-harness-and-baselines.md",
+      "sha256": "50f59919d6a92ecad5ccb3ff5975a7fb56e1f651259914f32078abbc36298626"
+    },
+    "stage_13_harness_acceptance": {
+      "path": "docs/evidence/013-evaluation-harness-acceptance.json",
+      "sha256": "ab354deec3ef4f7a84d285a8e7603dbe357afcf6c6bbff7862fe94979b94780e"
+    },
+    "stage_14_report": {
+      "path": "docs/reports/014-ablations-and-mechanism-tests.md",
+      "sha256": "ad7b6caa67b2f5a079af32a4ddf9ea701fee556b32ee66cb6a92409e48af1a0b"
+    },
+    "stage_14_ablation_acceptance": {
+      "path": "docs/evidence/014-ablation-acceptance.json",
+      "sha256": "56e7c23bea479cd64fb4433e369bda28177ca76e94e4ba18ee756dab3a8ab82c"
+    },
+    "stage_14_infrastructure_failure": {
+      "path": "docs/evidence/014-ablation-infrastructure-failure.json",
+      "sha256": "04a0e470e63f41a8dd3b5a51bfca4748321111f7b97926f4549b77044567975f"
+    },
+    "stage_15_report": {
+      "path": "docs/reports/015-public-development.md",
+      "sha256": "c2b8a7c84b9164bc0859497a650fb3d4c5968ce600d701be1669bf0643efdff9"
+    },
+    "stage_15_public_development_acceptance": {
+      "path": "docs/evidence/015-public-development-acceptance.json",
+      "sha256": "43d9b116448668626a27874f138f38f22011fb08fe7d38b8e335333cd0063815"
+    },
+    "stage_16_report": {
+      "path": "docs/reports/016-optimization-robustness-integrity.md",
+      "sha256": "87c06d3b210154048b599784e90e4d39c4d73c10010cdbee146942c2c92a5174"
+    },
+    "stage_16_competition_profile_acceptance": {
+      "path": "docs/evidence/016-competition-profile-acceptance.json",
+      "sha256": "8127acc6441bcba4f4e9b0a02b9950880c3231f7a0b4cef91c95dd089af0f595"
+    },
+    "stage_17_report": {
+      "path": "docs/reports/017-offline-kaggle-package.md",
+      "sha256": "a9b112a51e2e3ed8a316eeb82a9a26bfbe41b65ce8942f118dfb75c490e08b88"
+    },
+    "stage_17_kaggle_package_acceptance": {
+      "path": "docs/evidence/017-kaggle-package-acceptance.json",
+      "sha256": "aac45a86092a7c83bdf26a2e12fbd396381f37257f9e3b5294850f65152583fa"
+    },
+    "stage_18_report": {
+      "path": "docs/reports/018-release-candidate-verification.md",
+      "sha256": "68e061ec22ab52b2f04c8baa58f37e4e7b2eb59da8f4878506539b14ec7ee96c"
+    },
+    "stage_18_release_candidate_acceptance": {
+      "path": "docs/evidence/018-release-candidate-acceptance.json",
+      "sha256": "92d37027c50889a979b1c57487ed490f52e4c7d742c14fe35b63f06af0a0966c"
+    },
+    "stage_18_initial_failure": {
+      "path": "docs/evidence/018-release-candidate-initial-failure.json",
+      "sha256": "f494f48c7711260785362ffd86e0e3d5d62d093cfdbec36d6f1aaaf4d31d908b"
+    },
+    "stage_19_research_report": {
+      "path": "docs/research/ARC3-Build-000-report.md",
+      "sha256": "1b147249727859f6af3e6292dc8074f38375040af5d49275dc731177c0181ee9"
+    },
+    "stage_19_handoff": {
+      "path": "docs/handoffs/000-autonomous-arc3.md",
+      "sha256": "93c9e3a340726096875a89359f3fda42b225fb94e4c6702bd92feab33a4b67d3"
+    },
+    "stage_19_dependency_license_inventory": {
+      "path": "docs/evidence/019-dependency-license-inventory.json",
+      "sha256": "7df3e815648e4c1e69f15c2a1f727c5a43dd37276bb1f9a2c5d6016597ce6c7f"
+    },
+    "stage_19_license_candidate": {
+      "path": "docs/legal/candidates/MIT-0-CANDIDATE.md",
+      "sha256": "bb511507879af8dc8f2fcf94d90329f13f73fe3b457e267e6855d4ab52b290e2"
+    },
+    "stage_20_final_verification": {
+      "path": "docs/evidence/020-final-verification.json",
+      "sha256": "ee52c19903824a9219eafc171389c300efc14ae647b98d4d915f9ac534bc3c9c"
+    },
+    "readme": {
+      "path": "README.md",
+      "sha256": "7f9ecb6fcb7a3cfff12297c1d8e837c0909399d8bb654c61e67b82fc2f1b5772"
+    },
+    "third_party_notices": {
+      "path": "THIRD_PARTY_NOTICES.md",
+      "sha256": "86840196ffa2741c54e36251774a8b373cd47ea68a59f321e30170bfd6733b55"
+    }
+  },
+  "next_action": "Review docs/legal/candidates/MIT-0-CANDIDATE.md and explicitly approve or reject MIT-0 for ARC3 first-party source. No license is granted until that instruction.",
   "notes": [
-    "Timestamps and commit identities in this initial file are placeholders until Codex begins the implementation run.",
-    "Update atomically after every meaningful task and verify referenced evidence before marking a stage complete."
+    "Initial READY state was validated against the repository at b1948e9d02ad7b1321cbc57f3538047813e01e98 before this run began.",
+    "No prior completed stages, checkpoint commit, or evidence artifacts were recorded; bootstrap PR 1 and its merge commit were independently verified.",
+    "Update atomically after every meaningful task and verify referenced evidence before marking a stage complete.",
+    "The final seal commit is resolved externally as draft PR #3's pushed headRefOid because a Git commit cannot contain its own SHA.",
+    "Stage 20 adds no benchmark result; BUILD 000 is PARTIAL because Stage 16 and Stage 18 preserve FAILED_MECHANISM outcomes."
   ]
 }

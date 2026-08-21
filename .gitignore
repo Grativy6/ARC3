@@ -1,0 +1,70 @@
+# Local credentials and environment overrides (keep the placeholder contract).
+.env
+.env.*
+!.env.example
+*.pem
+*.p12
+*.pfx
+*.key
+kaggle.json
+.kaggle/
+
+# Python environments, bytecode, and package output.
+.venv/
+venv/
+env/
+__pycache__/
+*.py[cod]
+*.pyd
+*.so
+*.egg-info/
+.eggs/
+build/
+dist/
+
+# Tool and test caches.
+.cache/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+.hypothesis/
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+.uv-cache/
+
+# Local ARC3 runtime state and large/generated evidence.
+.arc3/
+artifacts/**
+!artifacts/.gitkeep
+recordings/**
+!recordings/README.md
+checkpoints/
+runs/
+traces/
+
+# Generated competition/notebook products.
+.ipynb_checkpoints/
+notebooks/generated/**
+submission.parquet
+submission-*.parquet
+submission.ipynb
+submission-*.ipynb
+
+# Editors and operating systems.
+.idea/
+.vscode/
+*.code-workspace
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Local scratch and profiling output.
+*.prof
+*.pstats
+*.trace
+tmp/
+temp/

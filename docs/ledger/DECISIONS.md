@@ -77,3 +77,353 @@ This file records material decisions made during the autonomous build. It is app
 - **Consequences:** Prize eligibility remains an open owner action before official release/evaluation.
 - **Reopening condition:** Christopher explicitly chooses a license.
 - **Supersedes / superseded by:** none.
+
+## D-20260821-005 — Pin Build 000 to measured Stage 00 identities
+
+- **Status:** ADOPTED
+- **Stage:** 00
+- **Date:** 2026-08-21
+- **Commit:** 9e17c9d20334f8e52be2eafcc8f84a1d2f0973b2
+- **Decision:** Pin the three official upstream repository heads, `arc-agi==0.9.9`, its Python 3.12 Windows resolution, and content identities for stable primary documentation in `upstream.lock.json`.
+- **Alternatives:** Floating main branches and dependency ranges; relying on prose memory.
+- **Evidence:** `docs/reports/000-source-identity.md`; `upstream.lock.json`; successful `git ls-remote`, PyPI metadata, documentation fetches, and `uv pip compile`.
+- **Why:** Executable and mutable upstream identities must be distinguishable from project interpretation and later upstream changes.
+- **Consequences:** Build 000 can be reproduced against an explicit snapshot; later compatibility work must preserve this lock and record a superseding decision.
+- **Reopening condition:** A pinned dependency is unusable, unsafe, or incompatible with the current competition surface, supported by a failing executable test.
+- **Supersedes / superseded by:** none.
+
+## D-20260821-006 — Implement an equivalent Kaggle wrapper without copying the starter
+
+- **Status:** ADOPTED
+- **Stage:** 00–01, 17
+- **Date:** 2026-08-21
+- **Commit:** 9e17c9d20334f8e52be2eafcc8f84a1d2f0973b2
+- **Decision:** Preserve the official `MyAgent` interface and deployment behavior in first-party ARC3 code, but do not copy source from the pinned Kaggle starter.
+- **Alternatives:** Copy/adapt the starter; defer all packaging work; use the hosted-model-oriented Agents repository as the runtime.
+- **Evidence:** The GitHub tree and repository metadata for `arcprize/ARC-AGI-3-Kaggle-Starter@eeb1535404f321d280a8f9194bbc1d7aca5f05fc` contained no `LICENSE`, `COPYING`, or `NOTICE` and no detected license. The documented interface is sufficient to implement compatibility independently.
+- **Why:** An equivalent wrapper satisfies the deployment contract without assuming a copyright permission that was not found.
+- **Consequences:** Packaging code must be first-party and tested against the pinned public interface; the starter remains an inspected source with `NOASSERTION` licensing in notices.
+- **Reopening condition:** Upstream adds a compatible license or the owner establishes permission and a measured integration benefit justifies adaptation.
+- **Supersedes / superseded by:** supersedes proposed D-20260820-003.
+
+## D-20260821-007 — Use a uv-managed CPython 3.12 toolchain
+
+- **Status:** ADOPTED
+- **Stage:** 00–01
+- **Date:** 2026-08-21
+- **Commit:** 9e17c9d20334f8e52be2eafcc8f84a1d2f0973b2
+- **Decision:** Use uv-managed CPython 3.12.14 for Build 000. Until the uv executable is on `PATH`, invoke uv reproducibly as `python -m uv` from the installed Python 3.13 launcher.
+- **Alternatives:** Use system Python 3.13; install a machine-wide Python; modify the user's shell profile.
+- **Evidence:** `arc-agi==0.9.9` declares Python `>=3.12`; Stage 00 measured only system Python 3.13 initially, then installed uv 0.12.5 and managed CPython 3.12.14 successfully.
+- **Why:** This meets the official package requirement without an unnecessary system-wide configuration change.
+- **Consequences:** Bootstrap scripts must locate `python -m uv` or the uv-managed interpreter explicitly and remain cross-platform.
+- **Reopening condition:** CI or packaging demonstrates incompatibility with this managed runtime.
+- **Supersedes / superseded by:** none.
+
+## D-20260821-008 — Keep the official SDK optional at the typed core boundary
+
+- **Status:** ADOPTED
+- **Stage:** 01–02
+- **Date:** 2026-08-21
+- **Commit:** 311110299444f71d7e0f0ff0e3b1f8d9c174a01b
+- **Decision:** Keep deterministic configuration, trace vocabulary, logging, and the thin starter-compatible agent importable without the official SDK, while locking `arc-agi==0.9.9` as the `official` project extra and in the committed all-extras resolution.
+- **Alternatives:** Import the SDK from every core module; omit it from the lock; vendor upstream source.
+- **Evidence:** The Stage 01 suite imports and exercises the first-party core with optional dependencies absent; `uv sync --all-extras --dev` installs the pinned official package; `arc3 doctor` reports optional dependency presence without making network calls.
+- **Why:** This preserves an offline, testable core and prevents SDK objects or import-time behavior from crossing architectural boundaries, without weakening reproducibility of official integration.
+- **Consequences:** Adapters must translate explicitly between SDK and first-party values; missing optional dependencies produce typed boundary errors rather than import failures.
+- **Reopening condition:** A measured packaging constraint requires the official wheel in the minimal competition runtime, while retaining the same typed boundary and offline behavior.
+- **Supersedes / superseded by:** none.
+
+## D-20260821-009 — Enforce stricter first-party SDK semantics
+
+- **Status:** ADOPTED
+- **Stage:** 02
+- **Date:** 2026-08-21
+- **Commit:** 63ee8a6069d7af4fe39d92277b6702ff253d7aa1
+- **Decision:** Treat the pinned SDK as an environment transport/scorer boundary, but validate exact coordinates, advertised-action membership, terminal lifecycle, mode precedence, and credential-safe logging in first-party code before any upstream call.
+- **Alternatives:** Trust upstream Pydantic coercion and wrapper lifecycle; fork or vendor the SDK.
+- **Evidence:** `docs/reports/002-official-sdk-baselines.md`; 27 focused tests; executable probes preserved in `docs/evidence/002-baseline-scorecards.json` and the Stage 00 discrepancy ledger.
+- **Why:** Measured upstream behavior is intentionally permissive in several places and the inherited competition operation mode is networked. ARC3's offline/integrity contract is stricter.
+- **Consequences:** Invalid or ambiguous upstream values become typed adapter failures; production paths suppress upstream details that may contain credentials; official scoring behavior remains untouched.
+- **Reopening condition:** A pinned upstream release supplies equivalent strict semantics and passes the same first-party compatibility tests.
+- **Supersedes / superseded by:** none.
+
+## D-20260821-010 — Freeze public partitions by deterministic hash with visible exposure overrides
+
+- **Status:** ADOPTED
+- **Stage:** 02, 13, 15
+- **Date:** 2026-08-21
+- **Commit:** 63ee8a6069d7af4fe39d92277b6702ff253d7aa1
+- **Decision:** Assign current public names by sorted `SHA-256(salt + NUL + stable_name)` into fixed-size smoke/development/holdout partitions. Move any already-opened game to development without erasing its original assignment.
+- **Alternatives:** Curate favorable partitions; treat every public game as development; claim a previously opened game remains held out.
+- **Evidence:** `docs/evaluation/public-game-partitions.v0.1.json`; the pre-manifest `ls20` SDK probe.
+- **Why:** Deterministic assignment reduces selection bias, while an explicit exposure override preserves honest provenance.
+- **Consequences:** `ls20` is permanently development for Build 000 even though its original hash rank was holdout; 10 public holdout games remain unopened at the gameplay level.
+- **Reopening condition:** A versioned upstream game-set change requires a new manifest and salt while preserving this manifest and all opened-game receipts.
+- **Supersedes / superseded by:** none.
+
+## D-20260821-011 — Bind immutable receipts with canonical event hashes
+
+- **Status:** ADOPTED
+- **Stage:** 03
+- **Date:** 2026-08-21
+- **Commit:** 8fd5a056a71ae52fa37f83f3c3614ae1f0a4f7c3
+- **Decision:** Store raw environment receipts as canonical JSON events in a SHA-256 previous-event chain, keep frame bodies in a content-addressed write-once blob store, and make summaries, indices, checkpoints, and migrations explicitly derived artifacts.
+- **Alternatives:** Mutable controller logs; a database without exportable canonical identities; full frame duplication in every event; storing unrestricted policy reasoning.
+- **Evidence:** `docs/reports/003-immutable-trace-replay-checkpoint.md`; 29 focused tests; the benchmark and fault matrix in `docs/evidence/003-trace-acceptance.json`.
+- **Why:** Stable source identities allow deterministic replay, contradiction audit, and non-destructive reinterpretation while avoiding duplicate large frames and hidden chain-of-thought storage.
+- **Consequences:** Every integrated action path must emit validated concise receipts; replacement derived state must cite immutable event IDs; runtime/storage cost remains measurable and reopenable.
+- **Reopening condition:** Integrated profiling exceeds a current evaluator bound, or a fault test demonstrates that the same source-trace invariants require a narrower representation.
+- **Supersedes / superseded by:** implements D-20260820-002; superseded by none.
+
+## D-20260821-012 — Keep perception geometric and correspondence explicitly plural
+
+- **Status:** ADOPTED
+- **Stage:** 04
+- **Date:** 2026-08-21
+- **Commit:** ed49b841f3e9f6f5c9a4a6a965e2a60f1c4c3fa5
+- **Decision:** Restrict the observation-derived perception layer to grid, color, geometry, delta, relation, and action-correlation measurements; represent close temporal matches as multiple correspondence alternatives and defer role, causal-rule, and goal promotion to typed hypothesis machinery.
+- **Alternatives:** Label a player/goal directly from visual heuristics; greedily choose one best temporal identity; make palette values semantic by default.
+- **Evidence:** `docs/reports/004-perception-and-frame-differencing.md`; 30 focused tests; deterministic 64×64 benchmark and permutation properties in `docs/evidence/004-perception-acceptance.json`.
+- **Why:** A measurement layer must not turn a plausible interpretation into an observation or hide equally supported identity assignments.
+- **Consequences:** Downstream world models consume explicit alternatives and generic structural features; they must supply evidence before promoting identity or goal claims.
+- **Reopening condition:** Measured downstream failures show that additional generic measurements are needed while preserving the same observation/interpretation boundary.
+- **Supersedes / superseded by:** none.
+
+## D-20260821-013 — Derive hypothesis state from immutable typed lifecycle events
+
+- **Status:** ADOPTED
+- **Stage:** 05
+- **Date:** 2026-08-21
+- **Commit:** 5ee32263b5345bcbcb2b5a2f490b08c7f602b1e2
+- **Decision:** Represent each candidate rule as one of nine typed families and derive its current status, evidence, lineage, rank, conflicts, and plan dependencies by folding immutable lifecycle events. Keep every rejected form retrievable and make reopening emit explicit dependent-plan invalidation.
+- **Alternatives:** Mutable best-guess dictionaries; delete rejected explanations; treat numeric ranks as probabilities; silently repair dependent plans after belief changes.
+- **Evidence:** `docs/reports/005-typed-hypothesis-registry.md`; 20 focused tests and the complete synthetic lifecycle in `docs/evidence/005-hypothesis-acceptance.json`.
+- **Why:** Later success must not rewrite what a prior hypothesis claimed, what evidence existed, or when dependent plans became unsupported.
+- **Consequences:** World-model and planning stages can consume typed, rebuildable candidates and must respond to reopening signals; rank values remain explicitly uncalibrated.
+- **Reopening condition:** Held-out evidence demonstrates that the vocabulary cannot express a needed generic rule or that a deterministic transition loses source lineage.
+- **Supersedes / superseded by:** none.
+
+## D-20260821-014 — Separate procedural production observations from evaluator truth
+
+- **Status:** ADOPTED
+- **Stage:** 06
+- **Date:** 2026-08-21
+- **Commit:** 7282c99286aa48bad310d22f138766d117d3e367
+- **Decision:** Generate deterministic procedural episodes through an official-shaped production session while keeping exact rules, goals, transition annotations, contradictions, and oracle plans on an evaluator-only object. Freeze development, held-out-combination, and wholly held-out-family generator domains.
+- **Alternatives:** Put rule labels in observations; test only curated public games; expose oracle annotations to simplify controller development; draw every parameter from one shared range.
+- **Evidence:** `docs/reports/006-synthetic-environment-laboratory.md`; 16 focused tests; 630 solvable/leakage-checked episodes and pinned random baselines in `docs/evidence/006-lab-acceptance.json`.
+- **Why:** General mechanisms need repeatable unseen-rule tests whose answers cannot leak through the production interface and whose held-out status is explicit.
+- **Consequences:** Controller code may consume only `LabSession` observations; evaluator ground truth is limited to scoring, diagnostics, and test assertions; synthetic results remain separately labeled.
+- **Reopening condition:** A leakage test fails, a seeded episode is unsolvable, or measured public transition structure demonstrates a missing generic laboratory axis.
+- **Supersedes / superseded by:** none.
+
+## D-20260821-015 — Spend probes on model disagreement under an explicit budget
+
+- **Status:** ADOPTED
+- **Stage:** 07
+- **Date:** 2026-08-21
+- **Commit:** a699ef8edb0befac5fadc9906e6b1fb10d86ac1b
+- **Decision:** Rank legal probes using explicit alternative-discrimination, progress, reversibility, novelty, failure-risk, repetition, and budget-pressure terms; scope ineffective-action suppression to structural conditions; enable undo only after a receipt establishes restoration semantics.
+- **Alternatives:** Fixed action cycling; novelty-only probing; assume conventional directional/undo names are authoritative; permanently blacklist a no-op action across changed states.
+- **Evidence:** `docs/reports/007-action-semantics-and-exploration.md`; 14 focused tests; the 101-case comparison in `docs/evidence/007-exploration-acceptance.json`.
+- **Why:** Environment actions are costly, while internal comparison of active alternatives is cheap; evidence-gated semantics and condition-specific suppression reduce avoidable actions without turning generic priors into rules.
+- **Consequences:** The controller must preserve predicted disagreements and budget state before probe selection; near budget it falls back to progress/risk, and game over mandates reset.
+- **Reopening condition:** Integrated held-out or public results fail to improve action efficiency, or calibrated risk/progress evidence supports revised utility terms.
+- **Supersedes / superseded by:** none.
+
+## D-20260821-016 — Require full-history retrodiction before model promotion
+
+- **Status:** ADOPTED
+- **Stage:** 08
+- **Date:** 2026-08-21
+- **Commit:** 3f48ab4ca62ec032e52dc875d9f7c8e5810a0262
+- **Decision:** Compile compatible typed hypotheses into deterministic executable candidates, but promote a model only through an artifact that retrodicts every preserved compatible transition or records a declared condition-based exclusion. Preserve contradictory candidates/residuals and provide retrodiction-off only as an explicit ablation.
+- **Alternatives:** Select the highest current hypothesis rank; test only the latest transition; silently ignore unsupported rule syntax; collapse disagreeing models to one outcome.
+- **Evidence:** `docs/reports/008-retrodictive-executable-world-model.md`; 12 focused tests; four-combination model-selection comparison in `docs/evidence/008-world-model-acceptance.json`.
+- **Why:** A rule that narrates the latest consequence but contradicts preserved history has not earned executable promotion.
+- **Consequences:** Every promoted model carries a test/exclusion/contradiction receipt; prediction mismatch reopens models and invalidates dependent plans; ensembles preserve underdetermination.
+- **Reopening condition:** Integrated evidence shows the gate is too strict or too permissive, supported by preserved transition artifacts and an alternative that retains contradiction visibility.
+- **Supersedes / superseded by:** none.
+
+## D-20260821-017 — Keep goal desirability separate from exploration utility
+
+- **Status:** ADOPTED
+- **Stage:** 09
+- **Date:** 2026-08-21
+- **Commit:** b712e0bc2fffb592dbf0f6f287045a60aaefc65c
+- **Decision:** Represent externally evidenced progress, intermediate subgoals, and terminal hypotheses as typed, source-linked, reopenable goal records, while keeping novelty, information gain, and reversibility in a separate intrinsic exploration value. Once explicit external progress clears the declared rank threshold, suppress novelty but retain information and reversibility terms.
+- **Alternatives:** Optimize one combined novelty/progress score; infer terminal goals directly from geometry; permanently discard contradicted goals; treat structural affordances as accepted objectives.
+- **Evidence:** `docs/reports/009-typed-goal-acquisition.md`; 19 focused tests; the 64-case delayed/proxy comparison in `docs/evidence/009-goal-acceptance.json`.
+- **Why:** Novel observations are useful probes but are not evidence that the resulting state advances an external objective; preserving the distinction prevents novelty loops from displacing measured progress.
+- **Consequences:** Planning must consume explicit goal records and model estimates, cite source events, and preserve retirement/reopening. Goal ranks remain uncalibrated and do not authorize an environment action by themselves.
+- **Reopening condition:** Integrated held-out evidence shows that the threshold or ranking terms reduce completion/action efficiency, supported by equal-budget traces and an alternative that preserves goal/exploration provenance.
+- **Supersedes / superseded by:** none.
+
+## D-20260821-018 — Search internally, execute one action, then validate
+
+- **Status:** ADOPTED
+- **Stage:** 10
+- **Date:** 2026-08-21
+- **Commit:** 50e8bd2732dc195f268658a015d9b4c01efd0ed5
+- **Decision:** Search deterministic executable models with bounded BFS, uniform-cost, or A*, retain model/goal revisions and predicted states in the plan, emit only one environment action, and require its returned consequence before continuing. Any state, model, goal, or game-state mismatch invalidates blind continuation and selects an explicit bounded recovery mode.
+- **Alternatives:** Continue fixed exploration; emit a complete open-loop action sequence; silently keep a stale plan after mismatch; add belief/MCTS search without measured uncertain-model need.
+- **Evidence:** `docs/reports/010-bounded-planning-and-recovery.md`; 10 focused tests; the 24-task equal-budget comparison in `docs/evidence/010-planning-acceptance.json`.
+- **Why:** Internal search is cheap relative to environment actions, while one-step consequence validation prevents an initially plausible plan from consuming the remaining budget after its assumptions fail.
+- **Consequences:** Integrated execution must preserve pre-action prediction and post-action consequence receipts, deterministic budget/tie-break settings, invalidation causes, and recovery decisions. Belief search remains a reopenable option rather than an unmeasured default.
+- **Reopening condition:** Integrated uncertainty or runtime evidence shows a different bounded search/recovery policy improves completion or action efficiency under the same evaluator envelope.
+- **Supersedes / superseded by:** none.
+
+## D-20260821-019 — Persist only scoped, source-linked, bounded derived memory
+
+- **Status:** ADOPTED
+- **Stage:** 11
+- **Date:** 2026-08-21
+- **Commit:** 54064d412ca01ce078ae693d4f9fb0e071d853f3
+- **Decision:** Keep episode, opaque-game, and generic derived-memory scopes distinct; require immutable event/chunk source links for every summary; gate generic retrieval on current-game structural evidence; enforce deterministic record/byte eviction; and restore a pending submitted action only into an await-consequence state that forbids resubmission.
+- **Alternatives:** One global memory dictionary; retrieval by environment ID; retain summaries without receipt hashes; silently drop old trace; resubmit an action after uncertain process-death timing.
+- **Evidence:** `docs/reports/011-scoped-persistent-memory.md`; 12 focused tests; cross-level and 5,000-insert measurements in `docs/evidence/011-memory-acceptance.json`.
+- **Why:** Useful derived reuse must retain provenance and scope without becoming a game-specific solution cache, while restart continuity must not duplicate an environment action.
+- **Consequences:** Stage 12 must supply typed live-state adapters around the canonical checkpoint fields and reconcile a pending consequence through the adapter. Raw trace remains immutable outside derived-memory eviction.
+- **Reopening condition:** Integrated equal-budget evidence shows different scope, retrieval, or retention policies improve completion/action efficiency without weakening source identity or competition integrity.
+- **Supersedes / superseded by:** none.
+
+## D-20260821-020 — One controller owns policy, receipts, faults, and exact restart
+
+- **Status:** ADOPTED
+- **Stage:** 12
+- **Date:** 2026-08-21
+- **Commit:** 3fee19d9f82210ba5010af94feac170164a30f3c
+- **Decision:** Use `ARC3Controller` as the single policy implementation behind synthetic and official-shaped boundaries; keep `agent/my_agent.py` thin; preserve every returned consequence before faulting; separate action and reset budgets; restore exact typed phase and pending state; and scope level-derived identities to source receipts so revisited indices cannot collide.
+- **Alternatives:** Duplicate policy inside the competition wrapper; infer missing official acknowledgements in every adapter; continue after a returned-action mismatch; reconstruct only a lossy summary after restart; identify level state solely by the visible level integer.
+- **Evidence:** `docs/reports/012-full-controller-integration.md`; 21 focused tests; the 32-seed comparison and adapter matrix in `docs/evidence/012-controller-acceptance.json`.
+- **Why:** A single controller makes offline competition behavior auditable, while strict receipt-before-fault ordering and exact restoration prevent a wrapper quirk or process boundary from silently rewriting the action history.
+- **Consequences:** Wrapper-specific normalization is limited to the pinned official `FrameData` default-action ambiguity. Direct adapters remain strict. Submitted actions require consequence reconciliation and may never be resubmitted. Later ablations must use explicit feature switches without changing the default full-controller semantics.
+- **Reopening condition:** Pinned upstream behavior, replay evidence, or equal-budget evaluation shows the boundary rule loses a real consequence, duplicates an action, or prevents a stronger generic policy under the same integrity constraints.
+- **Supersedes / superseded by:** none.
+
+## D-20260821-021 — Seal process-isolated evaluations to exact source and configuration identity
+
+- **Status:** ADOPTED
+- **Stage:** 13
+- **Date:** 2026-08-21
+- **Commit:** 01f7a12e42f50e2899db9d430bcf4d125a81d49f
+- **Decision:** Run each evaluation case in a spawned worker with explicit budgets; preserve abnormal, timed-out, rejected, and interrupted attempts; seal terminal artifact sets to exact code/config/runtime identity; reject mutation or identity drift; and generate directly executable absolute-interpreter reproduction argv.
+- **Alternatives:** Evaluate in one long-lived process; discard crashed runs; overwrite an evaluation ID after code changes; trust manifest hashes without recomputing semantics; emit a shell command that assumes `uv` is installed globally.
+- **Evidence:** `docs/reports/013-evaluation-harness-and-baselines.md`; 26 focused tests; clean 10-run B0–B4 comparison, 10-run reproduction, and 8-run threshold receipt in `docs/evidence/013-evaluation-harness-acceptance.json`.
+- **Why:** A score without failure retention and exact identity is not a reproducible comparison, and a later pass must not erase an earlier failed mechanism or changed source tree.
+- **Consequences:** Any first-party source edit requires a new evaluation identity. Hash seals are described as tamper-evident, not signed. Compact thresholds apply only to their exact declaration; Stage 16 must measure whole-process and integrated B4 costs separately.
+- **Reopening condition:** A replacement preserves every failure and identity boundary while measurably reducing evaluator cost or broadening supported official scoring without weakening verification.
+- **Supersedes / superseded by:** none.
+
+## D-20260821-022 — Retain the full competition preset after paired integrated ablations
+
+- **Status:** ADOPTED
+- **Stage:** 14
+- **Date:** 2026-08-21
+- **Commit:** 565712fe6fb1e62f704f40a7693d3d3fb1de3ada
+- **Decision:** Keep the declared FULL feature set as the competition preset. Treat A4 world-model simulation and A5 goal inference as observed integrated benefits on the frozen synthetic suite; retain the retrodiction gate because A3's nine-action regression conflicts with Stage 08's opposite held-out mechanism result and because ungated promotion weakens the accepted-rule boundary. Preserve all A1–A10 switches for experiments, while forbidding feature overrides through the production COMPETITION preset.
+- **Alternatives:** Promote ungated A3 because it used fewer actions on this suite; disable every component with zero paired score effect; treat unexercised components as disproven; select a preset from public-game identities or manual action sequences.
+- **Evidence:** `docs/reports/014-ablations-and-mechanism-tests.md`; 154/154 authoritative paired episodes, zero faults, and exact semantic reproduction in `docs/evidence/014-ablation-acceptance.json`; the initial OneDrive failure in `docs/evidence/014-ablation-infrastructure-failure.json`.
+- **Why:** A4 and A5 contribute seven and eight completions respectively, while A3 is distribution-dependent and the remaining null results include partial proxies, trace-only behavior, runtime-only behavior, and an unexercised information-gain surface. One narrow matrix does not justify deleting required restart/trace machinery or relaxing model acceptance.
+- **Consequences:** Stage 15 evaluates the frozen FULL/COMPETITION policy without game-specific changes. A3, A1, A8, A9, and the null A2/A6/A7/A10 results remain explicit burdens; runtime costs move to Stage 16 rather than being inferred from sequential ablation wall times.
+- **Reopening condition:** A broader predeclared equal-budget comparison, separately labeled official-public evidence, or controlled Stage 16 profiling shows that a simpler preset preserves completion while improving action/runtime efficiency without weakening trace, restart, or accepted-rule integrity.
+- **Supersedes / superseded by:** none.
+
+## D-20260821-023 — Keep the public holdout sealed after the frozen development policy fails its gate
+
+- **Status:** ADOPTED
+- **Stage:** 15
+- **Date:** 2026-08-21
+- **Commit:** 6a0f6e5b9cf076f7d755675ece0fa46379202161
+- **Decision:** Evaluate the frozen FULL/COMPETITION policy and B0–B3 baselines on the predeclared smoke and development partitions without public-game-specific changes; preserve every timeout as terminal evidence; and require a passing sealed development manifest before acquiring or opening the public holdout. Because the development manifest is `PARTIAL` with `MECHANISM_NOT_OBSERVED`, leave the holdout unconsumed and move the generic runtime bottleneck to Stage 16.
+- **Alternatives:** Extend only FULL's public timeout; tune policy behavior from individual public identities; discard timed-out receipts; open the holdout despite a failing development gate; treat the random baseline's isolated level as evidence for hidden generalization.
+- **Evidence:** `docs/reports/015-public-development.md`; 150 sealed smoke/development runs and 13,927 verified artifacts summarized in `docs/evidence/015-public-development-acceptance.json`; zero holdout ledger events.
+- **Why:** Equal budgets and immutable negative results preserve a meaningful baseline comparison. The one-shot holdout provides evidence only if its predeclared gate is enforced before exposure.
+- **Consequences:** Stage 15 remains bound to commit `6a0f6e5`; later generic optimizations require a new identity and cannot rewrite this result. Stage 16 must bound controller latency and persistence cost. The public holdout remains available for a future independently frozen milestone that passes development.
+- **Reopening condition:** A generic policy at a new frozen commit produces a passing sealed development result under a declared protocol; opening the holdout would still require a new milestone identity and the existing one-shot gate.
+- **Supersedes / superseded by:** none.
+
+## D-20260821-024 — Batch derived receipts while preserving raw durability boundaries
+
+- **Status:** ADOPTED
+- **Stage:** 16
+- **Date:** 2026-08-21
+- **Commit:** `cd3e3aa9cc2c2fa8fbe514b7950862dfe1188783`
+- **Decision:** Keep raw observation, submitted-action, and returned-consequence receipts durable at their authority boundaries; batch derived journal events in groups of 128 with a mandatory flush before each authority boundary; use a verified live event/tail cache for checkpoint binding and restore lookup; and keep Windows kernel peak RSS as the authoritative memory measure in the timed profile. Preserve the frozen competition budgets and FULL/COMPETITION feature preset even though palette and action-remap robustness failed.
+- **Alternatives:** Force an `fsync` after every derived event; weaken or disable raw trace/checkpoint receipts; increase the frozen runtime or memory budgets after seeing the result; require a GPU without measured benefit; add public-game identifiers or action tables; report allocator-traced timing despite measured instrumentation distortion.
+- **Evidence:** `docs/reports/016-optimization-robustness-integrity.md`; clean-commit runtime, fault, robustness, integrity, and regression receipt summarized in `docs/evidence/016-competition-profile-acceptance.json`.
+- **Why:** Profiling isolated repeated durable derived-event writes and complete-ledger reparsing as generic persistence costs. Batching derived evidence preserves raw authority-boundary durability while the clean controller completes 80 actions in 116.26474110002164 seconds, within every frozen resource check. Kernel RSS captures the whole process without the large timing distortion observed with allocator tracing.
+- **Consequences:** Stage 16 runtime acceptance passes without relaxing budgets, but the stage is `FAILED_MECHANISM` because four robustness cases fail. The optimized policy remains eligible only as a failed-mechanism packaging candidate; no public rerun or holdout exposure is implied.
+- **Reopening condition:** A fault test shows loss of a raw authority-boundary receipt, a crash exposes an unverified cached tail, a clean equal-workload profile violates the frozen envelope, or a broader measured profile justifies a different batching/cache boundary.
+- **Supersedes / superseded by:** none.
+
+## D-20260821-025 — Serialize pinned Swarm games and seal instance-local action payloads
+
+- **Status:** ADOPTED
+- **Stage:** 17
+- **Date:** 2026-08-21
+- **Commit:** `e5f291912726e6139d1dda682707eada657cb5ce`
+- **Decision:** Validate the platform-supplied Agents framework against the raw LF Git identities at pinned commit `4743e7d`, permitting only their exact all-CRLF Windows checkout equivalents; then replace only the validated Swarm module's thread constructor with a reversible sequential worker. Preserve one scorecard and pinned game order, create a fresh immutable action payload for every agent decision, keep the production package CPU-only, and fail closed on any framework, worker, archive, dependency, or wheelhouse identity mismatch.
+- **Alternatives:** Launch the pinned Swarm's 110 CPU-bound controllers concurrently; fork or rewrite the whole upstream framework; use a global lock around mutation of shared action enums; permit unverified framework versions or arbitrary extra wheels; encode public-game identities or action sequences; use a hosted inference service.
+- **Evidence:** `docs/reports/017-offline-kaggle-package.md`; two byte-identical clean-source package builds and offline sandbox receipts summarized in `docs/evidence/017-kaggle-package-acceptance.json`; Stage 16's frozen single-controller resource envelope in `docs/evidence/016-competition-profile-acceptance.json`.
+- **Why:** The pinned Swarm's unbounded thread fan-out conflicts with the measured 240-second/2-GiB sequential controller envelope, and upstream `GameAction` members are shared enum singletons whose mutable coordinate data would cross-contaminate concurrent agents. Exact raw-Git identities keep the narrow runtime adaptation auditable on Linux and Windows without accepting content drift.
+- **Consequences:** The candidate bounds controller concurrency to one, preserves independent per-decision action data, contains no hosted or game-specific runtime dependency, and produces a deterministic `PACKAGING_PASS`. The full 110-game private workload, platform wheel inventory, private gateway, and scorer remain unmeasured; packaging success does not change the negative Stage 15 public result.
+- **Reopening condition:** An exact platform run shows that the sequential substitution breaks the pinned scorecard/gateway contract, a measured bounded concurrency greater than one improves total runtime within RAM and wall limits, or a newer officially pinned framework provides a verified native scheduling/action boundary.
+- **Supersedes / superseded by:** none.
+
+## D-20260821-026 — Isolate release-verification transients from sealed evidence
+
+- **Status:** ADOPTED
+- **Stage:** 18
+- **Date:** 2026-08-21
+- **Commit:** `70ed0f34507870b8f917f89c2c9bcf670b8bd429`
+- **Decision:** Require the clean-clone release verifier to place writable homes, caches, coverage, Hypothesis state, pytest basetemp, and other transient state under a fresh short out-of-tree root while retaining logs and claimed evidence under the declared in-repository output root. Pass the exact uv executable into sanitized nested processes rather than depending on ambient discovery.
+- **Alternatives:** Keep every temporary file below the evidence root; relax failing tests; shorten test names; rely on the caller's PATH or user profile; omit the failed run.
+- **Evidence:** The first run at `468d102ac609e99d85d333ffc642ae2a87463672` ended 417 passed / five failed from 261- and 263-character Windows paths, inherited `artifacts/**` ignore scope, and an ambient-uv assumption. The repaired run at `90ecf7267d5bb23d751d6f7ce3e8aa75f2f1a130` passed 423 tests and 13 replay/tamper tests; both runs are summarized in `docs/evidence/018-release-candidate-initial-failure.json` and `docs/evidence/018-release-candidate-acceptance.json`.
+- **Why:** A release check should exercise repository behavior from a clean clone without allowing its own evidence destination or caller environment to change test semantics.
+- **Consequences:** The sealed evidence and transient trees are distinct, reproduction must name both paths, and transient cache bytes are intentionally excluded from the release artifact-set claim.
+- **Reopening condition:** A supported platform cannot provide a short external transient path, the separation hides evidence needed to reproduce a claimed result, or a cleaner hermetic mechanism preserves the same failure visibility.
+- **Supersedes / superseded by:** none.
+
+## D-20260821-027 — Preserve partial public results and require full history for frozen ancestry
+
+- **Status:** ADOPTED
+- **Stage:** 18
+- **Date:** 2026-08-21
+- **Commits:** `90ecf7267d5bb23d751d6f7ce3e8aa75f2f1a130`, `67e4b0ed4be8dbe4e3ea5a0dbc7c20ef9b934c4e`
+- **Decision:** Verify a structurally complete `PARTIAL` public-evaluation artifact set even when the policy command returns failure, while retaining `FAILED_MECHANISM` as the required check and overall stage result. Require CI to fetch full Git history so frozen benchmark ancestry is proven rather than inferred or weakened.
+- **Alternatives:** Skip artifact verification after policy failure; treat verified artifacts as a policy pass; accept shallow-history uncertainty; auto-fetch history inside the offline verifier; delete or overwrite the negative run.
+- **Evidence:** Stage 18 FULL timed out in all six `local-public` smoke runs and completed zero levels, while the resulting manifest, traces, results, and hashes independently verified. Initial shallow CI correctly rejected the absent ancestry; push run `32485636282` and PR run `32485640575` passed Ubuntu and Windows after full-history checkout. See `docs/reports/018-release-candidate-verification.md` and `docs/evidence/018-release-candidate-acceptance.json`.
+- **Why:** Failure evidence must remain auditable, and a frozen-result comparison is meaningful only when the measured commit's ancestry is available and checked.
+- **Consequences:** Artifact integrity and policy effectiveness remain separate claims. A partial public result can be reproducibly sealed without becoming PASS, and CI pays the explicit full-history checkout cost.
+- **Reopening condition:** GitHub supplies a trustworthy minimal ancestry proof that retains the exact assertion, or a replacement artifact format verifies negative/partial runs with stronger provenance at lower cost.
+- **Supersedes / superseded by:** none.
+
+## D-20260821-028 — Keep first-party licensing nonoperative pending the owner decision
+
+- **Status:** ADOPTED
+- **Stage:** 19
+- **Date:** 2026-08-21
+- **Commit:** `dd212a1ee26482c298f038f5b8af6f42b0233d05`
+- **Decision:** Leave the repository without a root `LICENSE`, keep first-party `arc3` as `NOASSERTION / OWNER_DECISION_REQUIRED`, and place sourced MIT-0 text only in `docs/legal/candidates/MIT-0-CANDIDATE.md` beneath the explicit boundary `CANDIDATE ONLY — NO LICENSE GRANTED`. Reconcile all 61 `uv.lock` records separately in the third-party inventory.
+- **Alternatives:** Infer a license from competition eligibility; install candidate text as the root license; leave development-only dependencies unaccounted; describe the unlicensed Kaggle Starter as redistributable; block documentation work until the owner decides.
+- **Evidence:** `THIRD_PARTY_NOTICES.md`; `docs/evidence/019-dependency-license-inventory.json`; `docs/legal/candidates/MIT-0-CANDIDATE.md`; SPDX MIT-0 canonical source named in the candidate; absence of a root `LICENSE`.
+- **Why:** A public license is an owner-only legal grant, while preparing an exact review candidate and complete dependency evidence is reversible engineering work that can be completed without manufacturing authority.
+- **Consequences:** The Build 000 source remains unlicensed pending explicit owner direction. Runtime, build, inspected-source, and first-party license treatments remain visibly distinct, and packaging success is not described as prize eligibility.
+- **Reopening condition:** Christopher D. Pang explicitly approves or rejects the candidate, or authoritative competition requirements change before that decision.
+- **Supersedes / superseded by:** none.
+
+## D-20260821-029 — Verify source and package at their exact Git identities
+
+- **Status:** ADOPTED
+- **Stage:** 20
+- **Date:** 2026-08-21
+- **Commit:** resolved externally as draft PR #3 `headRefOid` after the Stage 20 seal is pushed
+- **Decision:** Run the final static source scan against the clean preseal branch tip and run the archive scan separately inside the exact clean Stage 18 release-candidate checkout that contains the sealed package. Bind both canonical receipts in the Stage 20 evidence instead of copying the archive across repository roots or weakening the scanner's root-containment check.
+- **Alternatives:** Copy the sealed candidate into the current checkout; allow an integrity scan to inspect paths outside its declared repository root; scan only current documentation descendants and omit the exact package; rebuild a new candidate from documentation-only commits; discard the refused combined attempt.
+- **Evidence:** `docs/evidence/020-final-verification.json`; current-source receipt `C:/a/s20-dd212a1/integrity-source-receipt.json`; exact-candidate archive receipt `C:/a/s20-dd212a1/integrity-archive-receipt.json`; release identity in `docs/evidence/018-release-candidate-acceptance.json`.
+- **Why:** Source identity and archive provenance are stronger when each scan is rooted at the commit that produced the bytes. The scanner's refusal to cross a repository boundary is a useful integrity constraint, not a condition to bypass.
+- **Consequences:** The final evidence contains two passing zero-finding receipts and preserves the initial cross-root refusal. Stage 20 documentation descendants do not silently become a new production package identity, and the Stage 18 candidate remains byte-for-byte unchanged.
+- **Reopening condition:** A future scanner can cryptographically bind an external archive to a separately declared source identity without weakening path containment, or any production source/package byte changes after `90ecf7267d5bb23d751d6f7ce3e8aa75f2f1a130`.
+- **Supersedes / superseded by:** none.

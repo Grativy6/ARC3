@@ -1,0 +1,239 @@
+{
+  "schema": "arc3.stage16.competition-profile-acceptance.v0.1",
+  "stage": "16",
+  "stage_status": "FAILED_MECHANISM",
+  "surface": "synthetic",
+  "claim": "NO_GENERALIZATION_CLAIM",
+  "measured_commit": "cd3e3aa9cc2c2fa8fbe514b7950862dfe1188783",
+  "measured_tree": "11e2c1ba93a3801dc894cc9c0895c636a31f4b63",
+  "source_identity_verified": true,
+  "runtime_profile": {
+    "status": "PASS",
+    "verified": true,
+    "preset": "competition",
+    "fixture": "component-stress",
+    "seed": 25,
+    "frame_size": 32,
+    "component_count": 64,
+    "actions": 80,
+    "resets": 0,
+    "wall_clock_seconds": 116.26474110002164,
+    "cutoff": false,
+    "whole_process_peak_rss_bytes": 175210496,
+    "trace_bytes": 6837834,
+    "trace_event_count": 1614,
+    "checkpoint_directory_bytes": 149129938,
+    "immutable_checkpoint_count": 162,
+    "largest_checkpoint_bytes": 1792247,
+    "checkpoint_growth_bytes_per_action": 1863368.746835443,
+    "decision_latency_seconds": {
+      "maximum": 0.9290693999500945,
+      "mean": 0.4881364887522068,
+      "p95": 0.9074527199903969
+    },
+    "consequence_latency_seconds": {
+      "maximum": 1.3039952999679372,
+      "mean": 0.6979869099915958,
+      "p95": 1.2553988849627786
+    },
+    "checkpoint_latency_seconds": {
+      "maximum": 0.8572151999687776,
+      "mean": 0.46240710001438856,
+      "p95": 0.8434552349674049
+    },
+    "restart_latency_seconds": {
+      "maximum": 2.6158064999617636,
+      "mean": 1.3377857699990272,
+      "p95": 2.3851385249698063
+    },
+    "total_step_latency_seconds": {
+      "maximum": 5.6917618999723345,
+      "mean": 1.4115309074899414,
+      "p95": 3.359955135005292,
+      "acceptance_limit_for_arithmetic_mean": 2.727272727272727
+    },
+    "planner": {
+      "evaluation_count": 2,
+      "maximum_expanded_nodes": 3,
+      "total_expanded_nodes": 5
+    },
+    "candidate_generation": {
+      "generation_count": 80,
+      "maximum_candidates": 4,
+      "maximum_coordinate_candidates": 0,
+      "total_candidates": 320
+    },
+    "replay": {
+      "verified": true,
+      "frames": 81,
+      "deltas": 80
+    },
+    "complete_action_chains": true,
+    "controller_fault_count": 0,
+    "duplicate_event_ids": 0,
+    "budget_checks": {
+      "wall_clock": true,
+      "peak_rss": true,
+      "trace": true,
+      "checkpoint_bytes": true,
+      "decision_latency": true,
+      "observation_latency": true,
+      "consequence_latency": true,
+      "checkpoint_latency": true,
+      "total_step_average_latency": true
+    },
+    "required_predicates": {
+      "action_chain_complete": true,
+      "candidate_receipt_per_submitted_action": true,
+      "controller_fault_free": true,
+      "coordinate_candidates_bounded": true,
+      "event_chain_verified": true,
+      "forced_length_workload_completed": true,
+      "planner_exercised_and_bounded": true,
+      "replay_frame_count_matches_observations": true
+    }
+  },
+  "frozen_competition_runtime": {
+    "schema": "arc3.competition-runtime.v0.1",
+    "configuration_sha256": "sha256:512d9e399cba76d6d798620f9090b31cc6e0b648db38dd5caf4eaa575e2d020c",
+    "max_actions": 80,
+    "max_resets": 8,
+    "per_game_wall_clock_seconds": 240.0,
+    "decision_seconds": 2.0,
+    "memory_megabytes": 2048,
+    "max_trace_bytes": 268435456,
+    "max_checkpoint_bytes": 268435456,
+    "max_coordinate_candidates": 24,
+    "max_search_nodes": 10000,
+    "max_search_depth": 32,
+    "execution_backend": "cpu",
+    "matches_profile": true
+  },
+  "startup": {
+    "first_party_import_through_ready_seconds": 1.082496999995783,
+    "fresh_process_launch_through_clean_exit_seconds": 1.292819800088182,
+    "controller_initialize_and_first_observe_seconds": 0.03685889998450875,
+    "ready_peak_rss_bytes": 32460800,
+    "first_party_import_identity_verified": true
+  },
+  "robustness": {
+    "status": "FAILED_MECHANISM",
+    "verified": false,
+    "case_count": 12,
+    "passed": 7,
+    "failed_mechanism": 4,
+    "not_exercised": 1,
+    "cases": [
+      {"variant": "base", "seed": 7, "status": "PASS", "actions": 7, "score": 1.0, "operational_verified": true, "behavior_verified": true},
+      {"variant": "base", "seed": 11, "status": "PASS", "actions": 1, "score": 1.0, "operational_verified": true, "behavior_verified": true},
+      {"variant": "palette", "seed": 7, "status": "FAILED_MECHANISM", "actions": 16, "score": 0.0, "operational_verified": true, "behavior_verified": false},
+      {"variant": "palette", "seed": 11, "status": "FAILED_MECHANISM", "actions": 16, "score": 0.0, "operational_verified": true, "behavior_verified": false},
+      {"variant": "translation", "seed": 7, "status": "PASS", "actions": 7, "score": 1.0, "operational_verified": true, "behavior_verified": true},
+      {"variant": "translation", "seed": 11, "status": "PASS", "actions": 1, "score": 1.0, "operational_verified": true, "behavior_verified": true},
+      {"variant": "distractor", "seed": 7, "status": "PASS", "actions": 7, "score": 1.0, "operational_verified": true, "behavior_verified": true},
+      {"variant": "distractor", "seed": 11, "status": "PASS", "actions": 1, "score": 1.0, "operational_verified": true, "behavior_verified": true},
+      {"variant": "action-remap", "seed": 7, "status": "FAILED_MECHANISM", "actions": 16, "score": 0.0, "operational_verified": true, "behavior_verified": false},
+      {"variant": "action-remap", "seed": 11, "status": "FAILED_MECHANISM", "actions": 16, "score": 0.0, "operational_verified": true, "behavior_verified": false},
+      {"variant": "rule-change", "seed": 7, "status": "PASS", "actions": 16, "score": 0.0, "rule_change_signal_count": 14, "operational_verified": true, "behavior_verified": true},
+      {"variant": "rule-change", "seed": 11, "status": "NOT_EXERCISED", "actions": 1, "score": 1.0, "rule_change_signal_count": 1, "operational_verified": true, "behavior_verified": false}
+    ]
+  },
+  "fault_matrix": {
+    "status": "PASS",
+    "verified": true,
+    "case_count": 11,
+    "passed_cases": [
+      "malformed-observation-type",
+      "empty-frame-batch",
+      "non-canonical-metadata",
+      "out-of-range-frame-cell",
+      "duplicate-action-space",
+      "returned-action-mismatch",
+      "action-budget-exhaustion",
+      "game-over-reset-only",
+      "partial-checkpoint",
+      "incompatible-checkpoint",
+      "upstream-error-before-consequence"
+    ]
+  },
+  "integrity": {
+    "status": "PASS",
+    "verified": true,
+    "assurance_scope": "static-only",
+    "runtime_socket_denial": "OUT_OF_SCOPE",
+    "blocking_findings": 0,
+    "total_findings": 0,
+    "policy_static": "PASS",
+    "archive_static": "PASS",
+    "source_identity": "PASS",
+    "secret_scan": "PASS",
+    "supply_chain": "PASS",
+    "dependency_count": 57,
+    "installed_version_mismatch_count": 0,
+    "unknown_or_missing_license_metadata_count": 0,
+    "first_party_license_status": "OWNER_DECISION_REQUIRED",
+    "receipt_sha256": "sha256:734b63e1ef1fad4f173c9bbc60f8c45d48d72ccc6af6e945d00f6c2e95932ef7"
+  },
+  "stage13_regression": {
+    "status": "PASS",
+    "verified": true,
+    "pinned_evidence_sha256": "sha256:ab354deec3ef4f7a84d285a8e7603dbe357afcf6c6bbff7862fe94979b94780e",
+    "pinned_measured_commit": "01f7a12e42f50e2899db9d430bcf4d125a81d49f",
+    "current_evaluation_id": "stage16-regression-cd3e3aa9cc2c",
+    "current_manifest_sha256": "sha256:5f1d68221f99fc9487a6a26d75a64db64c50737a6a3502f909877653f90175eb"
+  },
+  "accelerator": {
+    "available": "NVIDIA GeForce GTX 1660",
+    "driver_version": "560.94",
+    "memory_mib": 6144,
+    "used": false,
+    "execution_backend": "cpu",
+    "disposition": "No measured GPU mechanism justified a mandatory accelerator path for the symbolic controller."
+  },
+  "optimization": {
+    "accepted_changes": [
+      "Batch derived journal events while flushing raw observation, action, and consequence receipts at authority boundaries.",
+      "Cache the verified live event index and tail for checkpoint binding and restore lookup.",
+      "Batch component measurements into one derived perception event.",
+      "Skip duplicate close-time checkpoints when the latest checkpoint already binds the trace tail."
+    ],
+    "timed_memory_source": "windows-GetProcessMemoryInfo-working-set",
+    "python_tracemalloc_peak_bytes": null,
+    "instrumentation_boundary": "Allocator tracing was omitted from the authoritative timed run after measured development-only distortion; kernel peak RSS is authoritative.",
+    "development_probes_are_authoritative": false
+  },
+  "baseline_comparison": {
+    "stage15_surface": "local-public",
+    "stage15_full_runs": 30,
+    "stage15_full_timeouts": 30,
+    "stage15_full_levels_completed": 0,
+    "stage15_actions_before_timeout": 460,
+    "stage15_representative_trace_bytes_after_19_actions": 1679940,
+    "stage16_public_evaluation_rerun": false,
+    "comparison_boundary": "Runtime is repaired on the synthetic stress surface only; public effectiveness was not remeasured."
+  },
+  "raw_artifacts": {
+    "profile_receipt": "C:/a/s16-evidence-cd3e3aa/profile.json",
+    "profile_receipt_file_sha256": "sha256:125290f571860cdc2a66a99f8e0bea0f421af1c7d891c488908ebe85cef91bc2",
+    "profile_receipt_self_sha256": "sha256:3c7d407f2b0f1c9705648ac8c5e06adba951567c755e1bbca6ea194a1e668758",
+    "work_root": "C:/a/s16-data-cd3e3aa",
+    "work_tree_bytes": 173560198,
+    "work_tree_files": 600,
+    "retention_boundary": "Raw high-volume traces and checkpoints remain local and are not committed; this compact receipt preserves their measured hashes and metrics."
+  },
+  "commands": {
+    "profile": "C:\\a\\arc3-s16-cd3e3aa\\.venv\\Scripts\\python.exe scripts\\profile_competition.py --root C:\\a\\arc3-s16-cd3e3aa --output C:\\a\\s16-evidence-cd3e3aa\\profile.json --work-root C:\\a\\s16-data-cd3e3aa --frozen-commit cd3e3aa9cc2c2fa8fbe514b7950862dfe1188783",
+    "profile_exit_code": 1,
+    "profile_exit_interpretation": "Expected fail-closed exit because robustness status is FAILED_MECHANISM; runtime profile is PASS.",
+    "file_hash": "Get-FileHash -Algorithm SHA256 C:\\a\\s16-evidence-cd3e3aa\\profile.json"
+  },
+  "limits": [
+    "Palette and action-remap behavioral robustness failed on both seeds.",
+    "Rule-change seed 11 completed before the changed rule and is NOT_EXERCISED.",
+    "The Stage 15 public evaluation was not rerun; its negative local-public result remains controlling.",
+    "The public holdout remains unconsumed.",
+    "Static reachability assurance does not claim OS-level runtime socket denial.",
+    "No online-public, Kaggle-public, semi-private, or official-private result exists.",
+    "This evidence does not establish hidden-game generalization, PAL, AGI, consciousness, or a general theory of intelligence."
+  ]
+}

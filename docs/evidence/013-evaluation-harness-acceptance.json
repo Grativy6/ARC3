@@ -1,0 +1,200 @@
+{
+  "schema": "arc3.stage-evidence.v0.1",
+  "stage": "13",
+  "status": "PASS",
+  "label": "synthetic",
+  "claim": "NO_GENERALIZATION_CLAIM",
+  "repository": "Grativy6/ARC3",
+  "implementation_branch": "build/000-arc3-end-to-end",
+  "measured_repository_commit": "01f7a12e42f50e2899db9d430bcf4d125a81d49f",
+  "measurement_note": "The final evaluation and threshold receipts were generated from a clean detached worktree at the named commit, with dependencies supplied by the pinned project virtual environment and the clean worktree src directory placed first on PYTHONPATH.",
+  "runtime": {
+    "operating_system": "Windows 10.0.19045",
+    "python": "3.12.14",
+    "logical_cpu_count": 12,
+    "processor": "AMD64 Family 23 Model 8 Stepping 2, AuthenticAMD",
+    "ram_gb": 15.948,
+    "gpu": null,
+    "gpu_reason": "GPU was neither required nor queried by the symbolic synthetic harness",
+    "network_mode": "offline"
+  },
+  "identity": {
+    "git_commit": "01f7a12e42f50e2899db9d430bcf4d125a81d49f",
+    "first_party_source_hash": "sha256:d607a4bc4c68254533153b8a1486cacbda7b03acf0383ed3804aded50c9d15a8",
+    "configuration_hash": "sha256:d99370f32331f078846be4492d4d330098f4ad1981b88347958d71ef8d5f6275",
+    "upstream_lock_hash": "sha256:67e1d937e213bbcc25783784d04c4fa349b85dc09b94855256916ca6b96e808a",
+    "public_partition_manifest_hash": "sha256:682d5891c2aface54803d9bd1173c55ed21e89856e13b8a478fb9276ee963f2f",
+    "performance_threshold_declaration_hash": "sha256:3d3b2638583e58f93ef6fa85420020380809bd7d4618a2485de65a8d0a784f2d"
+  },
+  "controlled_comparison": {
+    "evaluation_id": "stage13-clean-01f7a12",
+    "surface": "synthetic",
+    "partition": "smoke",
+    "scorer_source": "adapter ScoreSummary; arc3.synthetic.v1",
+    "seeds": [7, 11],
+    "action_budget_per_run": 16,
+    "reset_budget_per_run": 2,
+    "wall_clock_budget_seconds": 30.0,
+    "started_at": "2026-08-21T08:04:57.093703Z",
+    "completed_at": "2026-08-21T08:05:13.239118Z",
+    "result_count": 10,
+    "failure_count": 0,
+    "successful_policy_count": 5,
+    "official_rhae": null,
+    "policies": [
+      {
+        "baseline_id": "B0",
+        "agent": "random",
+        "completed": 0,
+        "runs": 2,
+        "environment_actions": 32,
+        "mean_score": 0.0,
+        "per_seed": [
+          {"seed": 7, "completed": 0, "actions": 16, "score": 0.0, "trace_events": 81},
+          {"seed": 11, "completed": 0, "actions": 16, "score": 0.0, "trace_events": 81}
+        ]
+      },
+      {
+        "baseline_id": "B1",
+        "agent": "cycle",
+        "completed": 1,
+        "runs": 2,
+        "environment_actions": 19,
+        "mean_score": 0.5,
+        "per_seed": [
+          {"seed": 7, "completed": 0, "actions": 16, "score": 0.0, "trace_events": 81},
+          {"seed": 11, "completed": 1, "actions": 3, "score": 1.0, "trace_events": 16}
+        ]
+      },
+      {
+        "baseline_id": "B2",
+        "agent": "novelty",
+        "completed": 0,
+        "runs": 2,
+        "environment_actions": 32,
+        "mean_score": 0.0,
+        "per_seed": [
+          {"seed": 7, "completed": 0, "actions": 16, "score": 0.0, "trace_events": 81},
+          {"seed": 11, "completed": 0, "actions": 16, "score": 0.0, "trace_events": 81}
+        ]
+      },
+      {
+        "baseline_id": "B3",
+        "agent": "trace",
+        "completed": 1,
+        "runs": 2,
+        "environment_actions": 19,
+        "mean_score": 0.5,
+        "per_seed": [
+          {"seed": 7, "completed": 0, "actions": 16, "score": 0.0, "trace_events": 81},
+          {"seed": 11, "completed": 1, "actions": 3, "score": 1.0, "trace_events": 16}
+        ]
+      },
+      {
+        "baseline_id": "B4",
+        "agent": "full",
+        "completed": 2,
+        "runs": 2,
+        "environment_actions": 8,
+        "mean_score": 1.0,
+        "per_seed": [
+          {"seed": 7, "completed": 1, "actions": 7, "score": 1.0, "trace_events": 176},
+          {"seed": 11, "completed": 1, "actions": 1, "score": 1.0, "trace_events": 35}
+        ]
+      }
+    ],
+    "sealed_artifacts": {
+      "manifest_sha256": "sha256:dad6c9a7ff00bb8bb60bbd68b204cf4dfd33032a1122bb1b1439b86a59771f73",
+      "summary_sha256": "sha256:9c88dc242d0d50ef5fc0c69506c3474af8089c34ab8306c58d9fec4de2d8c7cd",
+      "results_sha256": "sha256:b8fd1f48e3749726d46078beea7edeff2911302914d4df873d4b00bf97116f1d",
+      "report_sha256": "sha256:add4f07aa27d849ba934335d7d2e2717d9df28ec96aec996ab1d0f023434fd40",
+      "reproduce_sha256": "sha256:e7e11145ff6ec05787fea9a6cb4febd78f60dfa74c82fc921ee68317855eadeb",
+      "verified": true
+    }
+  },
+  "reproduction": {
+    "evaluation_id": "eval-20260821T080648890647Z-d99370f32331",
+    "status": "PASS",
+    "result_count": 10,
+    "failure_count": 0,
+    "manifest_sha256": "sha256:6d8e9bd535a8c106cbb66943f689ef23623d430506ee4c1048bb4f85a856d30b",
+    "verification_receipt_sha256": "sha256:da61edb4fea3b1b0a29065ef1e6bb54621c68757d5bf3833b445806fa7fa1503",
+    "comparison_receipt_sha256": "sha256:796af71e2ef6d1af84b5a1b5601c915d49e4f5b039a2580ae41c5dc31e5d1f2f",
+    "paired_policy_comparisons": 25,
+    "same_policy_pairs": 5,
+    "all_same_policy_score_deltas_zero": true,
+    "all_same_policy_action_deltas_zero": true
+  },
+  "performance_regression": {
+    "evaluation_id": "stage13-threshold-clean-01f7a12",
+    "status": "PASS",
+    "result_count": 8,
+    "failure_count": 0,
+    "policies": ["random", "cycle", "novelty", "trace"],
+    "seeds": [7, 11],
+    "action_budget_per_run": 16,
+    "reset_budget_per_run": 8,
+    "wall_clock_budget_seconds": 30.0,
+    "observed": {
+      "successful_runs": 8,
+      "successful_policies": 4,
+      "maximum_invalid_action_rate": 0.0,
+      "maximum_peak_python_bytes": 1445249,
+      "maximum_decision_p95_seconds": 0.00018900004215538502,
+      "maximum_worker_wall_clock_seconds": 0.7348581000696868
+    },
+    "gates": {
+      "minimum_successful_policy_count": 4,
+      "maximum_invalid_action_rate": 0.0,
+      "maximum_peak_python_bytes": 2097152,
+      "maximum_decision_p95_seconds": 0.01,
+      "maximum_worker_wall_clock_seconds": 2.0
+    },
+    "manifest_sha256": "sha256:d4743c22264be7996999fc1af87da3cde69e7331af6a050a42a9ef0a91b83957",
+    "summary_sha256": "sha256:98f575e742a45b260d3e075869e68dc4ae4754b49147cc03b4b1785d3990f37e",
+    "results_sha256": "sha256:4ee296835f61431616cc74f49e9685ee958e67b7ec3aee2b072633fc8e52f6e5",
+    "verified": true
+  },
+  "verification": {
+    "ruff_check": "PASS",
+    "ruff_format_check": "PASS:13-files",
+    "mypy_strict": "PASS:8-source-files",
+    "focused_pytest": "PASS:26",
+    "focused_pytest_seconds": 24.04,
+    "process_isolation": "PASS:spawn",
+    "timeout_terminate_kill": "PASS",
+    "crash_receipt_retention": "PASS",
+    "resume_terminal_skip": "PASS",
+    "terminal_tamper_rejection": "PASS",
+    "in_progress_tamper_preservation": "PASS",
+    "trace_replay_action_consequence_pairing": "PASS",
+    "closed_artifact_set_verification": "PASS",
+    "exact_reproduction": "PASS:10-of-10",
+    "public_environment_opened": false
+  },
+  "preacceptance_failures": [
+    "The initial 1 MiB peak-allocation threshold failed; its calibration receipt was retained and the reviewed gate was pinned at 2 MiB before the clean threshold run.",
+    "Early fresh B4 workers exposed Stage 12 import and restoration defects that were corrected at controller head 3fee19d.",
+    "A reproduction argv using python -m uv was not executable in the environment; the mechanism was replaced by an absolute interpreter argv for python -m arc3.",
+    "One root focused rerun reported 25 passed and 1 failed because a concurrent Stage 14 source edit changed the identity between a terminal run and its resume; the unchanged-source rerun passed 26/26 and a clean detached worktree was used for final evidence.",
+    "The first clean-worktree setup command supplied an incorrect guessed full commit SHA and failed before creating a target; the SHA was read from Git and the retry succeeded.",
+    "Crash and tamper injections intentionally produced rejected/failure receipts; the harness preserved them rather than silently dropping the attempts."
+  ],
+  "commands": [
+    ".venv\\Scripts\\python.exe -m pytest -q --no-cov --basetemp C:\\a\\s13stable-1787299452 tests/integration/test_evaluation_cli.py tests/integration/test_evaluation_harness.py tests/property/test_evaluation_determinism.py tests/unit/test_evaluation_models.py tests/unit/test_doctor.py",
+    ".venv\\Scripts\\python.exe -m ruff check --no-cache src/arc3/cli.py src/arc3/evaluation tests/integration/test_evaluation_cli.py tests/integration/test_evaluation_harness.py tests/property/test_evaluation_determinism.py tests/unit/test_evaluation_models.py tests/unit/test_doctor.py",
+    ".venv\\Scripts\\python.exe -m ruff format --check --no-cache src/arc3/cli.py src/arc3/evaluation tests/integration/test_evaluation_cli.py tests/integration/test_evaluation_harness.py tests/property/test_evaluation_determinism.py tests/unit/test_evaluation_models.py tests/unit/test_doctor.py",
+    ".venv\\Scripts\\python.exe -m mypy --strict --cache-dir C:\\a\\s13mypy-1787299359924 src/arc3/cli.py src/arc3/evaluation",
+    "python -m arc3 evaluate --partition smoke --agents random,cycle,novelty,trace,full --seeds 7,11 --max-actions 16 --max-resets 2 --timeout-seconds 30 --output-root C:\\a\\s13-evidence-01f7a12 --evaluation-id stage13-clean-01f7a12",
+    "python -m arc3 verify-artifacts --evaluation stage13-clean-01f7a12 --output-root C:\\a\\s13-evidence-01f7a12",
+    "python -m arc3 report --evaluation stage13-clean-01f7a12 --output-root C:\\a\\s13-evidence-01f7a12",
+    "python -m arc3 evaluate --partition smoke --agents random,cycle,novelty,trace --seeds 7,11 --max-actions 16 --max-resets 8 --timeout-seconds 30 --output-root C:\\a\\s13-evidence-01f7a12 --evaluation-id stage13-threshold-clean-01f7a12"
+  ],
+  "claim_limits": [
+    "The comparison covers two seeds of one compact first-party synthetic environment and does not establish public or hidden-game generalization.",
+    "Official RHAE is null because no official scorecard identified raw RHAE semantics.",
+    "Performance memory is Python tracemalloc peak rather than whole-process RSS, and worker wall time excludes process spawn startup.",
+    "The B4 full policy is deliberately outside the compact four-policy performance threshold basis; its measured wall time is still reported in the sealed evaluation.",
+    "Hash seals are tamper-evident closed-set receipts, not externally signed authenticity proofs."
+  ]
+}

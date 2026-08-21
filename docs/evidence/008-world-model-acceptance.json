@@ -1,0 +1,85 @@
+{
+  "schema": "arc3.stage-evidence.v0.1",
+  "stage": "08",
+  "status": "PASS",
+  "label": "synthetic",
+  "mechanism_status": "MECHANISM_OBSERVED",
+  "repository": "Grativy6/ARC3",
+  "implementation_branch": "build/000-arc3-end-to-end",
+  "measured_repository_commit": "64408e35bea561f3959791adc94d11885270eca4",
+  "measurement_note": "Stage 08 files were uncommitted and are individually verified by the stage checkpoint diff.",
+  "runtime": {
+    "operating_system": "Windows 10.0.19045",
+    "python": "3.12.14",
+    "uv": "0.12.5"
+  },
+  "rule_primitives": [
+    "movement",
+    "collision",
+    "toggle",
+    "transformation",
+    "counter",
+    "contact",
+    "selection",
+    "attachment",
+    "coordinate-effect"
+  ],
+  "verification": {
+    "ruff_check": "PASS",
+    "ruff_format_check": "PASS",
+    "mypy_strict": "PASS:10-source-files",
+    "focused_pytest": "PASS:12",
+    "focused_pytest_seconds": 1.25,
+    "typed_rule_execution": "PASS:9-primitives",
+    "compatible_hypothesis_compilation": "PASS",
+    "full_history_retrodiction_gate": "PASS",
+    "contradiction_residual_visibility": "PASS",
+    "underdetermined_ensemble": "PASS",
+    "deterministic_simulation": "PASS",
+    "prediction_before_action_receipt": "PASS",
+    "mismatch_model_plan_reopening": "PASS",
+    "retrodiction_off_ablation": "PASS",
+    "public_id_network_hosted_scan": "PASS:0-matches"
+  },
+  "comparison": {
+    "schema": "arc3.world-model.comparison.v0.1",
+    "label": "synthetic",
+    "status": "MECHANISM_OBSERVED",
+    "started_at": "2026-08-21T06:14:08.828267Z",
+    "completed_at": "2026-08-21T06:14:08.846271Z",
+    "held_out_parameter_combinations": 4,
+    "total_planned_actions": 16,
+    "retrodiction_gated_completed": 4,
+    "retrodiction_off_completed": 0,
+    "retrodiction_gated_actions": 16,
+    "retrodiction_off_actions": 16,
+    "gated_model_ids": [
+      "world-model:15bc46907ce289eff42faf39"
+    ],
+    "ungated_model_ids": [
+      "world-model:641bb215ab784a521dae0c98",
+      "world-model:15bc46907ce289eff42faf39"
+    ],
+    "gated_artifact_ids": [
+      "retrodiction:6b6ec2175699b7131bdf571b",
+      "retrodiction:2d2c3483d9f5e0a4aa7859c6"
+    ],
+    "ungated_artifact_ids": [
+      "retrodiction:875800740f56e770ba89891b",
+      "retrodiction:504ec3936949fb1bb0175f8c"
+    ]
+  },
+  "commands": [
+    "python -m uv run ruff check src/arc3/world_model scripts/measure_world_model.py tests/unit/test_world_model_rules.py tests/unit/test_world_model_retrodiction.py tests/property/test_world_model_retrodiction_gate.py tests/integration/test_world_model_held_out.py",
+    "python -m uv run ruff format --check src/arc3/world_model scripts/measure_world_model.py tests/unit/test_world_model_rules.py tests/unit/test_world_model_retrodiction.py tests/property/test_world_model_retrodiction_gate.py tests/integration/test_world_model_held_out.py",
+    "python -m uv run mypy src/arc3/world_model scripts/measure_world_model.py",
+    "python -m uv run pytest -q --no-cov --basetemp %TEMP%\\arc3-stage08-final-pytest-2 tests/unit/test_world_model_rules.py tests/unit/test_world_model_retrodiction.py tests/property/test_world_model_retrodiction_gate.py tests/integration/test_world_model_held_out.py",
+    "python -m uv run python scripts/measure_world_model.py",
+    "rg -ni \"https?://|\\b(requests|urllib|socket|httpx|openai|anthropic|google\\.generativeai)\\b\" src/arc3/world_model"
+  ],
+  "claim_limits": [
+    "The comparison uses project-authored symbolic states and supplied plans, not live environment actions.",
+    "It demonstrates retrodictive model selection on four unseen parameter combinations, not game-level planning or public performance.",
+    "Model rank weights are uncalibrated ordering aids, not probabilities."
+  ]
+}

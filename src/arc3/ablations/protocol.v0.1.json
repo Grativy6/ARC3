@@ -1,0 +1,104 @@
+{
+  "ablations": [
+    {
+      "ablation_id": "A1",
+      "component": "persistent game memory",
+      "disabled_feature": "use_memory",
+      "expected_effect_surface": "behavior-and-runtime",
+      "question": "Does cross-level trace help?"
+    },
+    {
+      "ablation_id": "A2",
+      "component": "rejected-hypothesis retention",
+      "disabled_feature": "retain_rejected_hypotheses",
+      "expected_effect_surface": "behavior",
+      "question": "Does preserving failures reduce repeated mistakes?"
+    },
+    {
+      "ablation_id": "A3",
+      "component": "retrodiction gate",
+      "disabled_feature": "use_retrodiction_gate",
+      "expected_effect_surface": "behavior-and-trace",
+      "question": "Does history consistency improve action efficiency?"
+    },
+    {
+      "ablation_id": "A4",
+      "component": "world-model simulation",
+      "disabled_feature": "use_world_model_simulation",
+      "expected_effect_surface": "behavior-and-runtime",
+      "question": "Does internal planning save environment actions?"
+    },
+    {
+      "ablation_id": "A5",
+      "component": "goal inference",
+      "disabled_feature": "use_goals",
+      "expected_effect_surface": "behavior-and-trace",
+      "question": "Is progress coming only from novelty or exploration?"
+    },
+    {
+      "ablation_id": "A6",
+      "component": "coordinate salience",
+      "disabled_feature": "use_coordinate_salience",
+      "expected_effect_surface": "behavior",
+      "question": "Does structured coordinate targeting beat uniform search?"
+    },
+    {
+      "ablation_id": "A7",
+      "component": "planner recovery",
+      "disabled_feature": "use_planner_recovery",
+      "expected_effect_surface": "behavior",
+      "question": "Does mismatch-triggered replanning matter?"
+    },
+    {
+      "ablation_id": "A8",
+      "component": "object tracking",
+      "disabled_feature": "use_object_tracking",
+      "expected_effect_surface": "behavior-and-trace",
+      "question": "Are temporal identities useful beyond raw deltas?"
+    },
+    {
+      "ablation_id": "A9",
+      "component": "information-gain term",
+      "disabled_feature": "use_information_gain",
+      "expected_effect_surface": "behavior",
+      "question": "Does discriminating action choice beat heuristic order?"
+    },
+    {
+      "ablation_id": "A10",
+      "component": "trace summaries",
+      "disabled_feature": "use_trace_summaries",
+      "expected_effect_surface": "runtime-only",
+      "question": "Do derived transition summaries help runtime without losing evidence?"
+    }
+  ],
+  "claim": "NO_GENERALIZATION_CLAIM",
+  "label": "synthetic",
+  "protocol": {
+    "action_budget": 16,
+    "grid_size": 8,
+    "lab_cases_per_partition": 3,
+    "lab_partitions": [
+      "held-out-combinations",
+      "held-out-families"
+    ],
+    "lab_root_seed": 20260821,
+    "max_search_nodes": 2048,
+    "navigation_seeds": [
+      101,
+      211,
+      307,
+      401,
+      503,
+      601,
+      701,
+      809
+    ],
+    "reset_budget": 2,
+    "scorer": "arc3.stage14.exact-synthetic-completion.v1",
+    "synthetic_max_steps": 32,
+    "wall_clock_seconds": 120.0
+  },
+  "schema": "arc3.ablation-protocol.v0.1",
+  "surface": "synthetic",
+  "verified": true
+}

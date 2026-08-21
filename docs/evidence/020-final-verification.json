@@ -1,0 +1,156 @@
+{
+  "schema": "arc3.stage20.final-verification.v0.1",
+  "stage": "20",
+  "stage_status": "PASS",
+  "build_status": "PARTIAL",
+  "evaluation_label": "synthetic",
+  "claim": "NO_GENERALIZATION_CLAIM",
+  "recorded_at": "2026-08-21T14:06:18.3662168Z",
+  "source_identity": {
+    "repository": "https://github.com/Grativy6/ARC3",
+    "branch": "build/000-arc3-end-to-end",
+    "preseal_commit": "dd212a1ee26482c298f038f5b8af6f42b0233d05",
+    "preseal_tree": "d5a7c2e6a0029eeff365eab9cccb76357af5bbc6",
+    "release_candidate_commit": "90ecf7267d5bb23d751d6f7ce3e8aa75f2f1a130",
+    "release_candidate_tree": "0cf6e00b2fcc399e7a99a62c20e91bb84d485f13",
+    "production_source_diff_release_candidate_to_preseal": "PASS:empty-for-src+agent+scripts+pyproject.toml+uv.lock",
+    "repository_clean_before_seal": true,
+    "remote_branch_equal_before_seal": true,
+    "final_seal_binding": "The final seal commit is the pushed PR #3 headRefOid. It cannot be embedded in its own tree without changing the commit; resolve it externally after push."
+  },
+  "runtime": {
+    "python": "CPython 3.12.14",
+    "uv": "0.12.5",
+    "platform": "Windows-10-10.0.19045-SP0 AMD64",
+    "processor": "AMD64 Family 23 Model 8 Stepping 2, AuthenticAMD",
+    "logical_cpu_count": 12,
+    "gpu_queried": false
+  },
+  "verification": {
+    "branch_and_remote": "PASS:clean+local-equals-remote+main-ancestor",
+    "git_fsck": "PASS:exit-0+11-dangling-blobs-nonblocking",
+    "dependency_lock": "PASS:offline+61-records",
+    "ruff_lint": "PASS",
+    "ruff_format": "PASS:235-files",
+    "mypy_strict": "PASS:142-source-files",
+    "full_test_suite": "PASS:423-in-445.83-seconds+80-percent-coverage",
+    "trace_replay_tamper": "PASS:13-in-6.37-seconds",
+    "doctor": "PASS:required-capabilities+optional-agents-absent",
+    "release_receipt_validation": "PASS:RECEIPT_VALID",
+    "package_projection_validation": "PASS:PACKAGE_VALID",
+    "current_source_integrity": "PASS:0-findings",
+    "release_candidate_archive_integrity": "PASS:0-findings+1-archive",
+    "ledger_artifact_paths_and_hashes": "PASS",
+    "ledger_commit_objects": "PASS:25-of-25",
+    "markdown_links": "PASS:4-files+0-missing",
+    "diff_audit": "PASS:303-files+0-notebooks+0-tracked-files-over-10MiB+git-diff-check",
+    "secret_scan": "PASS:0-findings-current-source+release-archive",
+    "offline_package": "PASS:550068-bytes+sha256-5d64883392f8b1506314e64442702f51ecf0b52e54e190277dad52f07e6cd3f7",
+    "remote_ci": "PASS:ubuntu+windows:push-32488831998+pr-32488838198",
+    "pull_request": "PASS:open+draft+base-main+head-build-000+unmerged",
+    "root_license_absent": "PASS",
+    "license_candidate_nonoperative": "PASS:CANDIDATE-ONLY-NO-LICENSE-GRANTED"
+  },
+  "full_test_suite": {
+    "command": ".venv\\Scripts\\python.exe -m pytest -q --basetemp C:\\a\\s20-dd212a1\\pytest-full",
+    "exit_code": 0,
+    "passed": 423,
+    "failed": 0,
+    "errors": 0,
+    "seconds": 445.83,
+    "coverage": {
+      "statements": 16275,
+      "missed": 2614,
+      "branches": 5210,
+      "partial": 1364,
+      "percent": 80
+    }
+  },
+  "integrity_receipts": {
+    "current_source": {
+      "path": "C:/a/s20-dd212a1/integrity-source-receipt.json",
+      "git_commit": "dd212a1ee26482c298f038f5b8af6f42b0233d05",
+      "archive_count": 0,
+      "file_sha256": "sha256:a24a5462e5c7dfb8774054fc5285a3b5b42dc005040e7de7e1263b0bacfa4b4e",
+      "canonical_self_sha256": "sha256:ccb0cb62c06452ffe6ff3af444ef893941dcacfae6a8b19088713ca4d1980a0b",
+      "finding_counts": {
+        "blocking": 0,
+        "warnings": 0,
+        "total": 0
+      }
+    },
+    "release_candidate_archive": {
+      "path": "C:/a/s20-dd212a1/integrity-archive-receipt.json",
+      "git_commit": "90ecf7267d5bb23d751d6f7ce3e8aa75f2f1a130",
+      "archive": "artifacts/stage18/rc-90ecf72/package-a/arc3-kaggle-candidate.zip",
+      "archive_count": 1,
+      "file_sha256": "sha256:f2f41863cc412b2667176a08a2f6c7e9731a68b6287484d01339a85a9e6c22ca",
+      "canonical_self_sha256": "sha256:9cd41097b4281eeed8a36faff2f2a142272afe1515310491209f68701399f01c",
+      "finding_counts": {
+        "blocking": 0,
+        "warnings": 0,
+        "total": 0
+      }
+    }
+  },
+  "remote_ci": {
+    "source_commit": "dd212a1ee26482c298f038f5b8af6f42b0233d05",
+    "push_run": {
+      "id": 32488831998,
+      "ubuntu_job": "https://github.com/Grativy6/ARC3/actions/runs/32488831998/job/96791458803",
+      "windows_job": "https://github.com/Grativy6/ARC3/actions/runs/32488831998/job/96791458694",
+      "status": "PASS"
+    },
+    "pull_request_run": {
+      "id": 32488838198,
+      "ubuntu_job": "https://github.com/Grativy6/ARC3/actions/runs/32488838198/job/96791479065",
+      "windows_job": "https://github.com/Grativy6/ARC3/actions/runs/32488838198/job/96791478983",
+      "status": "PASS"
+    }
+  },
+  "preserved_failed_infrastructure_attempts": [
+    {
+      "name": "pytest-base-temp-parent-absent",
+      "status": "RESOLVED_FOR_STAGE_20_INFRASTRUCTURE",
+      "command": ".venv\\Scripts\\python.exe -m pytest -q --basetemp C:\\a\\s20-dd212a1\\pytest-full",
+      "result": "FAILED_INFRASTRUCTURE:411-passed+12-setup-errors+341.51-seconds+77-percent-coverage",
+      "failure": "FileNotFoundError [WinError 3]: C:\\a\\s20-dd212a1\\pytest-full because the external parent did not exist",
+      "bounded_repair": "New-Item -ItemType Directory -Path 'C:\\a\\s20-dd212a1' -Force | Out-Null",
+      "corrected_result": "PASS:423-passed+445.83-seconds+80-percent-coverage"
+    },
+    {
+      "name": "cross-source-identity-integrity-scan",
+      "status": "RESOLVED_FOR_STAGE_20_INFRASTRUCTURE",
+      "result": "FAILED_INFRASTRUCTURE:exit-2",
+      "failure": "integrity scan refused: scan path is outside repository root: C:\\a\\arc3-s18-70ed0f3\\artifacts\\stage18\\rc-90ecf72\\package-a\\arc3-kaggle-candidate.zip",
+      "bounded_repair": "Run one source scan at the current preseal commit and a separate archive scan in the exact clean release-candidate checkout.",
+      "corrected_result": "PASS:both-receipts+0-findings"
+    }
+  ],
+  "measured_result_boundary": {
+    "new_evaluation_performed": false,
+    "strongest_result_reference": "docs/evidence/012-controller-acceptance.json",
+    "strongest_result_label": "synthetic",
+    "strongest_result": "FULL completed 32/32 in 190 actions versus cycle 4/32 in 463 under equal 16-action budgets",
+    "local_public_result_reference": "docs/evidence/018-release-candidate-acceptance.json",
+    "local_public_result": "FAILED_MECHANISM:FULL timed out 6-of-6 and completed zero levels",
+    "official_rhae": null,
+    "holdout_consumed": false
+  },
+  "owner_boundaries": {
+    "kaggle_authentication_used": false,
+    "terms_accepted": false,
+    "candidate_uploaded": false,
+    "official_submission_performed": false,
+    "license_granted": false,
+    "release_published": false,
+    "pull_request_marked_ready": false,
+    "pull_request_merged": false
+  },
+  "limitations": [
+    "Stage 20 verifies the repository and release artifacts; it introduces no new benchmark result.",
+    "The build remains PARTIAL because Stage 16 robustness and Stage 18 local-public policy effectiveness are FAILED_MECHANISM.",
+    "Official RHAE, private Kaggle behavior, hidden-game generalization, and the complete 110-game runtime remain unmeasured.",
+    "The final seal commit is externally bound by the pushed draft PR head because a commit cannot contain its own SHA."
+  ]
+}
