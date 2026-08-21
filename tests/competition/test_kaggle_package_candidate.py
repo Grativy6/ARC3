@@ -517,6 +517,55 @@ def test_stage17_wheelhouse_license_verifier_is_offline_and_fail_closed(
 
 
 @pytest.mark.competition
+def test_stage17_framework_identity_uses_raw_pinned_git_lf_hashes() -> None:
+    assert launcher_module._PINNED_LF_FILES == {
+        "LICENSE": "75c4276c506fd93082b38ad39f67ee97aa859574401ef978e701710c7a40af04",
+        "agents/agent.py": ("49f1a349cd5e2123fceb266aec4a3a758d18ef5520e0212e808f695905d9e073"),
+        "agents/recorder.py": ("0a08d89f4067a760012767c05d4406bd2bf409f426e29a1193106abfcbb696c8"),
+        "agents/swarm.py": ("d9dc48f710f1b90a6552db0921293c7e89c8a925ed00a3faefa07ae19998ad39"),
+    }
+
+
+@pytest.mark.competition
+def test_stage17_framework_identity_accepts_only_lf_or_exact_crlf(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    framework = tmp_path / "framework"
+    agents = framework / "agents"
+    agents.mkdir(parents=True)
+    canonical = {
+        "LICENSE": b"license line one\nlicense line two\n",
+        "agents/agent.py": b"class Agent:\n    pass\n",
+        "agents/recorder.py": b"class Recorder:\n    pass\n",
+        "agents/swarm.py": b"class Swarm:\n    pass\n",
+    }
+    expected = {name: sha256(content).hexdigest() for name, content in canonical.items()}
+    monkeypatch.setattr(launcher_module, "_PINNED_LF_FILES", expected)
+
+    for relative, content in canonical.items():
+        path = framework / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(content)
+    assert launcher_module._validate_framework(framework, allow_test_fixture=False) == (
+        launcher_module.AGENTS_COMMIT,
+        f"git:{launcher_module.AGENTS_COMMIT}",
+        False,
+    )
+
+    for relative, content in canonical.items():
+        (framework / relative).write_bytes(content.replace(b"\n", b"\r\n"))
+    assert launcher_module._validate_framework(framework, allow_test_fixture=False)[2] is False
+
+    (agents / "swarm.py").write_bytes(b"class Swarm:\r\n    pass\n")
+    with pytest.raises(PackagingError, match="differs from pinned"):
+        launcher_module._validate_framework(framework, allow_test_fixture=False)
+
+    (agents / "swarm.py").write_bytes(b"class Swarm:\r\n    mutated\r\n")
+    with pytest.raises(PackagingError, match="differs from pinned"):
+        launcher_module._validate_framework(framework, allow_test_fixture=False)
+
+
+@pytest.mark.competition
 def test_stage17_runtime_launcher_registers_only_first_party_agent(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

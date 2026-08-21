@@ -29,7 +29,7 @@ The selected `fonttools==4.63.0` Linux wheel also carries bundled external OFL/B
 
 | Component | Identity and evidence | Treatment |
 |---|---|---|
-| ARC-AGI-3 Agents | `arcprize/ARC-AGI-3-Agents@4743e7d0aaae0ded0d98a89a7e282e63564cd58b`; MIT `LICENSE` Git blob `d8e1cd42ac40338c6c76a8a6ac18eea0eaf95fbe`; file SHA-256 `d3f580d1aeb46a801279029bd5f06d099a6dcac0cd304dcf61acaed933e8cc40` | Required external competition framework. It is supplied by the competition input, not bundled. The runtime launcher checks pinned core-file hashes, bypasses upstream dotenv/template/telemetry initialization, and registers only ARC3's first-party agent. |
+| ARC-AGI-3 Agents | `arcprize/ARC-AGI-3-Agents@4743e7d0aaae0ded0d98a89a7e282e63564cd58b`; MIT `LICENSE` Git blob `d8e1cd42ac40338c6c76a8a6ac18eea0eaf95fbe`; raw Git LF file SHA-256 `75c4276c506fd93082b38ad39f67ee97aa859574401ef978e701710c7a40af04` | Required external competition framework. It is supplied by the competition input, not bundled. The runtime launcher checks raw-LF pinned core-file hashes (permitting only their exact all-CRLF Windows checkout equivalents), bypasses upstream dotenv/template/telemetry initialization, and registers only ARC3's first-party agent. |
 
 The platform's `arc_agi_3_wheels` directory is also an external competition input. ARC3 does not assume arbitrary contents: the notebook installs only the exact hash-locked Linux requirements with `--no-index --no-deps --require-hashes --only-binary=:all:`. The private Kaggle input and sidecar were not available for local reproduction; this remains an explicit package limitation.
 

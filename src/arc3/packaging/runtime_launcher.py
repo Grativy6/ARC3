@@ -30,11 +30,12 @@ _MANAGED_MODULE_ROOTS = (
     "arcengine",
     "dotenv",
 )
-_PINNED_FILES = {
-    "LICENSE": "d3f580d1aeb46a801279029bd5f06d099a6dcac0cd304dcf61acaed933e8cc40",
-    "agents/agent.py": "500a9b9055aa5023a84b2b19bc9a41cb53dff03b3224b8d1ceb00e738709256f",
-    "agents/recorder.py": "e3bb22cbe67180ee8cf3a207faaada79d836c8a16e4180310ea1a34616ffef9a",
-    "agents/swarm.py": "c1d35066acfccb0b982bc33bb07a732d70da4d938c80ce3cdafd67b1018212cc",
+_PINNED_LF_FILES = {
+    # SHA-256 identities of the raw LF bytes stored by the pinned Git commit.
+    "LICENSE": "75c4276c506fd93082b38ad39f67ee97aa859574401ef978e701710c7a40af04",
+    "agents/agent.py": "49f1a349cd5e2123fceb266aec4a3a758d18ef5520e0212e808f695905d9e073",
+    "agents/recorder.py": "0a08d89f4067a760012767c05d4406bd2bf409f426e29a1193106abfcbb696c8",
+    "agents/swarm.py": "d9dc48f710f1b90a6552db0921293c7e89c8a925ed00a3faefa07ae19998ad39",
 }
 _ORCHESTRATION_ID = "arc3.sequential-pinned-swarm.v1"
 
@@ -130,8 +131,24 @@ class _SequentialThread:
             raise RuntimeError("cannot join a thread before it is started")
 
 
-def _sha256(path: Path) -> str:
-    return hashlib.sha256(path.read_bytes()).hexdigest()
+def _matches_pinned_git_text(path: Path, expected_lf_sha256: str) -> bool:
+    """Match raw Git bytes or their exact all-CRLF Windows checkout form.
+
+    The repository identity is always the raw LF content stored by Git. A
+    Windows checkout may have converted every LF to CRLF; accepting that exact
+    reversible transform keeps local rehearsals portable without accepting
+    mixed line endings, lone carriage returns, or any content mutation.
+    """
+
+    content = path.read_bytes()
+    if hashlib.sha256(content).hexdigest() == expected_lf_sha256:
+        return True
+    canonical_lf = content.replace(b"\r\n", b"\n")
+    if b"\r" in canonical_lf:
+        return False
+    if canonical_lf.replace(b"\n", b"\r\n") != content:
+        return False
+    return hashlib.sha256(canonical_lf).hexdigest() == expected_lf_sha256
 
 
 def _validate_framework(framework_root: Path, *, allow_test_fixture: bool) -> tuple[str, str, bool]:
@@ -150,9 +167,9 @@ def _validate_framework(framework_root: Path, *, allow_test_fixture: bool) -> tu
                 raise PackagingError(f"safe framework fixture is missing {relative}")
         return AGENTS_COMMIT, SAFE_FRAMEWORK_FIXTURE_IDENTITY, True
 
-    for relative, expected in _PINNED_FILES.items():
+    for relative, expected in _PINNED_LF_FILES.items():
         path = framework_root / relative
-        if not path.is_file() or _sha256(path) != expected:
+        if not path.is_file() or not _matches_pinned_git_text(path, expected):
             raise PackagingError(
                 f"platform Agents framework differs from pinned {AGENTS_COMMIT}: {relative}"
             )
