@@ -181,7 +181,7 @@ This file records material decisions made during the autonomous build. It is app
 - **Status:** ADOPTED
 - **Stage:** 04
 - **Date:** 2026-08-21
-- **Commit:** pending
+- **Commit:** ed49b841f3e9f6f5c9a4a6a965e2a60f1c4c3fa5
 - **Decision:** Restrict the observation-derived perception layer to grid, color, geometry, delta, relation, and action-correlation measurements; represent close temporal matches as multiple correspondence alternatives and defer role, causal-rule, and goal promotion to typed hypothesis machinery.
 - **Alternatives:** Label a player/goal directly from visual heuristics; greedily choose one best temporal identity; make palette values semantic by default.
 - **Evidence:** `docs/reports/004-perception-and-frame-differencing.md`; 30 focused tests; deterministic 64×64 benchmark and permutation properties in `docs/evidence/004-perception-acceptance.json`.

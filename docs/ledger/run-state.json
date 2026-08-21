@@ -14,8 +14,8 @@
     "draft": true
   },
   "started_at": "2026-08-21T04:46:19Z",
-  "last_checkpoint_at": "2026-08-21T05:49:07Z",
-  "last_checkpoint_commit": "8fd5a056a71ae52fa37f83f3c3614ae1f0a4f7c3",
+  "last_checkpoint_at": "2026-08-21T05:53:29Z",
+  "last_checkpoint_commit": "ed49b841f3e9f6f5c9a4a6a965e2a60f1c4c3fa5",
   "resume_generation": 0,
   "completed_stages": [
     "00",
@@ -145,7 +145,7 @@
       "report_sha256": "sha256:084735c693e0fefc90d263f7eeedb0d31de7dd3146432f771cc172fa4e99e78b",
       "acceptance_evidence": "docs/evidence/004-perception-acceptance.json",
       "acceptance_evidence_sha256": "sha256:dd5c7bbb06c1c9be968fd5af570678a3b30eab31f2dee956867a1ac85f0e902a",
-      "checkpoint_commit": "pending",
+      "checkpoint_commit": "ed49b841f3e9f6f5c9a4a6a965e2a60f1c4c3fa5",
       "verification": {
         "ruff_lint": "PASS",
         "ruff_format": "PASS",
