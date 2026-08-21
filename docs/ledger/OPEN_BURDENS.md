@@ -573,3 +573,71 @@ This file preserves unresolved technical, evidential, legal, and external burden
 - **Next discriminating action:** Continue all offline work. If an online run is later desired, the smallest owner-only action is to make an already-authorized competition credential available through the documented local secret mechanism; do not transmit it in chat.
 - **Resolution condition:** A separately labeled `online-public` receipt passes with credential provenance kept out of repository artifacts.
 - **Resolution receipt:** none.
+
+---
+
+## 2026-08-21 Stage 13 updates
+
+### B-20260821-016 — Stage 02 timestamps are incomplete evaluation receipts
+
+- **Status update:** RESOLVED for the Stage 13 evaluation envelope.
+- **Last updated:** 2026-08-21
+- **Current evidence:** Every evaluation manifest and report binds exact UTC start/completion timestamps to its code/config/upstream/runtime identity. The clean B0–B4 receipt spans `2026-08-21T08:04:57.093703Z` through `2026-08-21T08:05:13.239118Z`.
+- **Remaining burden:** None for general harness timestamps; official/public runs must use the same envelope in Stage 15.
+- **Resolution receipt:** `docs/evidence/013-evaluation-harness-acceptance.json`; commit `01f7a12e42f50e2899db9d430bcf4d125a81d49f`.
+
+## B-20260821-031 — B0–B4 comparison is a two-seed single-synthetic-environment result
+
+- **Status:** OPEN
+- **Stage:** 13, 14, 15, 19
+- **Opened:** 2026-08-21
+- **Last updated:** 2026-08-21
+- **Owner:** shared
+- **Burden:** The clean harness comparison covers seeds 7 and 11 of `synthetic-grid-v1`; B4 completed 2/2 while B1/B3 completed 1/2 and B0/B2 completed 0/2.
+- **Why it matters:** Exact reproduction cannot turn a narrow distribution into evidence about procedural-family breadth, public games, or hidden evaluation.
+- **Current evidence:** Ten sealed successful run receipts and an exact 10-run reproduction in `docs/evidence/013-evaluation-harness-acceptance.json`; official RHAE is null.
+- **Next discriminating action:** Run frozen Stage 14 procedural ablations, then separately labeled Stage 15 official public partitions without game-specific policy edits.
+- **Resolution condition:** Never fully resolved by more runs of the same environment; narrow only with predeclared broader surfaces.
+- **Resolution receipt:** none.
+
+## B-20260821-032 — Compact performance thresholds exclude RSS, spawn startup, and B4
+
+- **Status:** OPEN
+- **Stage:** 13, 16
+- **Opened:** 2026-08-21
+- **Last updated:** 2026-08-21
+- **Owner:** Codex
+- **Burden:** The pinned threshold passes B0–B3 using Python `tracemalloc` and in-worker wall time, but does not measure whole-process resident memory, spawn startup, or the integrated B4 controller.
+- **Why it matters:** A passing compact-worker gate could coexist with unacceptable competition package startup, memory, or decision latency.
+- **Current evidence:** Clean 8/8 threshold receipt: peak 1,445,249 bytes, decision p95 0.000189000 seconds, worker wall 0.734858 seconds, invalid-action rate 0.0.
+- **Next discriminating action:** Measure full-controller process RSS, startup, long-run trace growth, decision latency, and package sandbox cost in Stage 16/17.
+- **Resolution condition:** Integrated envelopes pass explicit competition-compatible limits or the final package records the failing constraint.
+- **Resolution receipt:** none.
+
+## B-20260821-033 — Artifact seals are not external signatures
+
+- **Status:** ACCEPTED_LIMIT
+- **Stage:** 13, 18, 19
+- **Opened:** 2026-08-21
+- **Last updated:** 2026-08-21
+- **Owner:** shared
+- **Burden:** Closed-set hashes detect artifact mutation relative to the manifest, but the manifest is not signed by an independent authority.
+- **Why it matters:** Tamper evidence supports reproducibility and local integrity; it must not be described as third-party authenticity or official verification.
+- **Current evidence:** Terminal and reproduction artifact sets verify their hashes and recomputed semantics; tamper tests are rejected.
+- **Next discriminating action:** Preserve commit/CI/PR provenance and clean-clone reproduction; add external signing only if a future owner-authorized release requires it.
+- **Resolution condition:** Permanent claim boundary unless an owner-authorized signing/release process is added.
+- **Resolution receipt:** `docs/evidence/013-evaluation-harness-acceptance.json`.
+
+## B-20260821-034 — Concurrent source edits invalidated one terminal-resume test identity
+
+- **Status:** RESOLVED
+- **Stage:** 13
+- **Opened:** 2026-08-21
+- **Last updated:** 2026-08-21
+- **Owner:** Codex
+- **Burden:** A root verification run produced 25 passes and one identity-mismatch failure because a parallel Stage 14 worker modified first-party policy source between the test's initial terminal evaluation and its same-ID resume.
+- **Why it matters:** Treating the failure as random would hide both a real orchestration race and the evaluator's intended refusal to reuse stale-identity artifacts.
+- **Current evidence:** After filesystem writes paused, the same focused suite passed 26/26 in 24.04 seconds. Final evaluation and threshold evidence came from a clean detached worktree at `01f7a12`.
+- **Next discriminating action:** Use frozen commits or isolated worktrees for all final evaluator receipts.
+- **Resolution condition:** Stable-tree rerun passes and authoritative evidence is bound to an isolated committed source tree.
+- **Resolution receipt:** `docs/evidence/013-evaluation-harness-acceptance.json`.

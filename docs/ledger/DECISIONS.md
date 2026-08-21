@@ -301,3 +301,17 @@ This file records material decisions made during the autonomous build. It is app
 - **Consequences:** Wrapper-specific normalization is limited to the pinned official `FrameData` default-action ambiguity. Direct adapters remain strict. Submitted actions require consequence reconciliation and may never be resubmitted. Later ablations must use explicit feature switches without changing the default full-controller semantics.
 - **Reopening condition:** Pinned upstream behavior, replay evidence, or equal-budget evaluation shows the boundary rule loses a real consequence, duplicates an action, or prevents a stronger generic policy under the same integrity constraints.
 - **Supersedes / superseded by:** none.
+
+## D-20260821-021 — Seal process-isolated evaluations to exact source and configuration identity
+
+- **Status:** ADOPTED
+- **Stage:** 13
+- **Date:** 2026-08-21
+- **Commit:** 01f7a12e42f50e2899db9d430bcf4d125a81d49f
+- **Decision:** Run each evaluation case in a spawned worker with explicit budgets; preserve abnormal, timed-out, rejected, and interrupted attempts; seal terminal artifact sets to exact code/config/runtime identity; reject mutation or identity drift; and generate directly executable absolute-interpreter reproduction argv.
+- **Alternatives:** Evaluate in one long-lived process; discard crashed runs; overwrite an evaluation ID after code changes; trust manifest hashes without recomputing semantics; emit a shell command that assumes `uv` is installed globally.
+- **Evidence:** `docs/reports/013-evaluation-harness-and-baselines.md`; 26 focused tests; clean 10-run B0–B4 comparison, 10-run reproduction, and 8-run threshold receipt in `docs/evidence/013-evaluation-harness-acceptance.json`.
+- **Why:** A score without failure retention and exact identity is not a reproducible comparison, and a later pass must not erase an earlier failed mechanism or changed source tree.
+- **Consequences:** Any first-party source edit requires a new evaluation identity. Hash seals are described as tamper-evident, not signed. Compact thresholds apply only to their exact declaration; Stage 16 must measure whole-process and integrated B4 costs separately.
+- **Reopening condition:** A replacement preserves every failure and identity boundary while measurably reducing evaluator cost or broadening supported official scoring without weakening verification.
+- **Supersedes / superseded by:** none.

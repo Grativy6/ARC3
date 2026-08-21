@@ -5,8 +5,8 @@
   "repository": "Grativy6/ARC3",
   "owner": "Christopher D. Pang",
   "status": "IN_PROGRESS",
-  "current_stage": "13",
-  "current_task": "stage-13-evaluation-harness-partitions-and-baselines",
+  "current_stage": "14",
+  "current_task": "stage-14-ablations-and-mechanism-tests",
   "implementation_branch": "build/000-arc3-end-to-end",
   "pull_request": {
     "number": 3,
@@ -14,8 +14,8 @@
     "draft": true
   },
   "started_at": "2026-08-21T04:46:19Z",
-  "last_checkpoint_at": "2026-08-21T08:00:52Z",
-  "last_checkpoint_commit": "3fee19d9f82210ba5010af94feac170164a30f3c",
+  "last_checkpoint_at": "2026-08-21T08:10:03Z",
+  "last_checkpoint_commit": "01f7a12e42f50e2899db9d430bcf4d125a81d49f",
   "resume_generation": 0,
   "completed_stages": [
     "00",
@@ -30,7 +30,8 @@
     "09",
     "10",
     "11",
-    "12"
+    "12",
+    "13"
   ],
   "stage_status": {
     "00": "PASS",
@@ -46,8 +47,8 @@
     "10": "PASS",
     "11": "PASS",
     "12": "PASS",
-    "13": "IN_PROGRESS",
-    "14": "PENDING",
+    "13": "PASS",
+    "14": "IN_PROGRESS",
     "15": "PENDING",
     "16": "PENDING",
     "17": "PENDING",
@@ -345,6 +346,29 @@
         "official_online_api": "BLOCKED_EXTERNAL:no-credentials",
         "public_id_hosted_network_scan": "PASS:0-matches"
       }
+    },
+    "stage_13": {
+      "status": "PASS",
+      "label": "synthetic",
+      "claim": "NO_GENERALIZATION_CLAIM",
+      "report": "docs/reports/013-evaluation-harness-and-baselines.md",
+      "report_sha256": "sha256:50f59919d6a92ecad5ccb3ff5975a7fb56e1f651259914f32078abbc36298626",
+      "acceptance_evidence": "docs/evidence/013-evaluation-harness-acceptance.json",
+      "acceptance_evidence_sha256": "sha256:ab354deec3ef4f7a84d285a8e7603dbe357afcf6c6bbff7862fe94979b94780e",
+      "checkpoint_commit": "01f7a12e42f50e2899db9d430bcf4d125a81d49f",
+      "verification": {
+        "ruff_lint": "PASS",
+        "ruff_format": "PASS:13-files",
+        "mypy_strict": "PASS:8-source-files",
+        "pytest": "PASS:26",
+        "controlled_baselines": "PASS:10-of-10+B0-B4",
+        "artifact_verification": "PASS",
+        "exact_reproduction": "PASS:10-of-10+5-of-5-same-policy",
+        "performance_thresholds": "PASS:8-of-8",
+        "failure_and_tamper_retention": "PASS",
+        "official_rhae": "UNMEASURED:null",
+        "public_environment_opened": "PASS:false"
+      }
     }
   },
   "blocked_items": [
@@ -457,6 +481,12 @@
       "label": "local-public",
       "result": "preacceptance official local smoke on one exposed development game: score 0.0, 0 levels, 8 actions, 8 consequence chains, 0 faults; not a benchmark",
       "report": "docs/reports/012-full-controller-integration.md"
+    },
+    {
+      "stage": "13",
+      "label": "synthetic",
+      "result": "clean process-isolated B0-B4 comparison passed 10/10: full 2/2 in 8 actions, cycle and trace 1/2 in 19, random and novelty 0/2 in 32; exact 10-run reproduction and 8/8 threshold gate passed",
+      "report": "docs/reports/013-evaluation-harness-and-baselines.md"
     }
   ],
   "artifacts": {
@@ -567,9 +597,17 @@
     "stage_12_controller_acceptance": {
       "path": "docs/evidence/012-controller-acceptance.json",
       "sha256": "f4363109262b2f06b64e92ffe7234403d0daaaea36157db65ac4c32508a47772"
+    },
+    "stage_13_report": {
+      "path": "docs/reports/013-evaluation-harness-and-baselines.md",
+      "sha256": "50f59919d6a92ecad5ccb3ff5975a7fb56e1f651259914f32078abbc36298626"
+    },
+    "stage_13_harness_acceptance": {
+      "path": "docs/evidence/013-evaluation-harness-acceptance.json",
+      "sha256": "ab354deec3ef4f7a84d285a8e7603dbe357afcf6c6bbff7862fe94979b94780e"
     }
   },
-  "next_action": "Validate and checkpoint the Stage 13 process-isolated evaluation harness, B0-B4 baselines, sealed reproduction envelopes, comparisons, reports, and regression thresholds.",
+  "next_action": "Complete predeclared equal-budget A1-A10 ablations on frozen synthetic holdouts, preserve raw paired effects and failed mechanisms, and select the simplest strongest measured competition preset.",
   "notes": [
     "Initial READY state was validated against the repository at b1948e9d02ad7b1321cbc57f3538047813e01e98 before this run began.",
     "No prior completed stages, checkpoint commit, or evidence artifacts were recorded; bootstrap PR 1 and its merge commit were independently verified.",
