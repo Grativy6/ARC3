@@ -357,3 +357,17 @@ This file records material decisions made during the autonomous build. It is app
 - **Consequences:** Stage 16 runtime acceptance passes without relaxing budgets, but the stage is `FAILED_MECHANISM` because four robustness cases fail. The optimized policy remains eligible only as a failed-mechanism packaging candidate; no public rerun or holdout exposure is implied.
 - **Reopening condition:** A fault test shows loss of a raw authority-boundary receipt, a crash exposes an unverified cached tail, a clean equal-workload profile violates the frozen envelope, or a broader measured profile justifies a different batching/cache boundary.
 - **Supersedes / superseded by:** none.
+
+## D-20260821-025 — Serialize pinned Swarm games and seal instance-local action payloads
+
+- **Status:** ADOPTED
+- **Stage:** 17
+- **Date:** 2026-08-21
+- **Commit:** `e5f291912726e6139d1dda682707eada657cb5ce`
+- **Decision:** Validate the platform-supplied Agents framework against the raw LF Git identities at pinned commit `4743e7d`, permitting only their exact all-CRLF Windows checkout equivalents; then replace only the validated Swarm module's thread constructor with a reversible sequential worker. Preserve one scorecard and pinned game order, create a fresh immutable action payload for every agent decision, keep the production package CPU-only, and fail closed on any framework, worker, archive, dependency, or wheelhouse identity mismatch.
+- **Alternatives:** Launch the pinned Swarm's 110 CPU-bound controllers concurrently; fork or rewrite the whole upstream framework; use a global lock around mutation of shared action enums; permit unverified framework versions or arbitrary extra wheels; encode public-game identities or action sequences; use a hosted inference service.
+- **Evidence:** `docs/reports/017-offline-kaggle-package.md`; two byte-identical clean-source package builds and offline sandbox receipts summarized in `docs/evidence/017-kaggle-package-acceptance.json`; Stage 16's frozen single-controller resource envelope in `docs/evidence/016-competition-profile-acceptance.json`.
+- **Why:** The pinned Swarm's unbounded thread fan-out conflicts with the measured 240-second/2-GiB sequential controller envelope, and upstream `GameAction` members are shared enum singletons whose mutable coordinate data would cross-contaminate concurrent agents. Exact raw-Git identities keep the narrow runtime adaptation auditable on Linux and Windows without accepting content drift.
+- **Consequences:** The candidate bounds controller concurrency to one, preserves independent per-decision action data, contains no hosted or game-specific runtime dependency, and produces a deterministic `PACKAGING_PASS`. The full 110-game private workload, platform wheel inventory, private gateway, and scorer remain unmeasured; packaging success does not change the negative Stage 15 public result.
+- **Reopening condition:** An exact platform run shows that the sequential substitution breaks the pinned scorecard/gateway contract, a measured bounded concurrency greater than one improves total runtime within RAM and wall limits, or a newer officially pinned framework provides a verified native scheduling/action boundary.
+- **Supersedes / superseded by:** none.

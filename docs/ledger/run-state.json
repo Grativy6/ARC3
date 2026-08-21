@@ -5,8 +5,8 @@
   "repository": "Grativy6/ARC3",
   "owner": "Christopher D. Pang",
   "status": "IN_PROGRESS",
-  "current_stage": "17",
-  "current_task": "stage-17-offline-kaggle-package",
+  "current_stage": "18",
+  "current_task": "stage-18-clean-clone-release-candidate-verification",
   "implementation_branch": "build/000-arc3-end-to-end",
   "pull_request": {
     "number": 3,
@@ -14,8 +14,8 @@
     "draft": true
   },
   "started_at": "2026-08-21T04:46:19Z",
-  "last_checkpoint_at": "2026-08-21T11:49:56Z",
-  "last_checkpoint_commit": "cd3e3aa9cc2c2fa8fbe514b7950862dfe1188783",
+  "last_checkpoint_at": "2026-08-21T12:26:56Z",
+  "last_checkpoint_commit": "e5f291912726e6139d1dda682707eada657cb5ce",
   "resume_generation": 0,
   "completed_stages": [
     "00",
@@ -34,7 +34,8 @@
     "13",
     "14",
     "15",
-    "16"
+    "16",
+    "17"
   ],
   "stage_status": {
     "00": "PASS",
@@ -54,8 +55,8 @@
     "14": "PASS",
     "15": "PASS",
     "16": "FAILED_MECHANISM",
-    "17": "IN_PROGRESS",
-    "18": "PENDING",
+    "17": "PASS",
+    "18": "IN_PROGRESS",
     "19": "PENDING",
     "20": "PENDING"
   },
@@ -444,6 +445,31 @@
         "stage13_regression": "PASS:8-of-8",
         "accelerator": "CPU_SELECTED:GTX1660-available+no-measured-GPU-mechanism"
       }
+    },
+    "stage_17": {
+      "status": "PASS",
+      "label": "synthetic",
+      "packaging_status": "PACKAGING_PASS",
+      "claim": "NO_GENERALIZATION_CLAIM",
+      "report": "docs/reports/017-offline-kaggle-package.md",
+      "report_sha256": "sha256:a9b112a51e2e3ed8a316eeb82a9a26bfbe41b65ce8942f118dfb75c490e08b88",
+      "acceptance_evidence": "docs/evidence/017-kaggle-package-acceptance.json",
+      "acceptance_evidence_sha256": "sha256:aac45a86092a7c83bdf26a2e12fbd396381f37257f9e3b5294850f65152583fa",
+      "candidate_commit": "e5f291912726e6139d1dda682707eada657cb5ce",
+      "candidate_tree": "c25a4d98bb34f785e1b5ded79ed72a990359e114",
+      "candidate_sha256": "sha256:06d688d0ceadc832147e3e2993dd8ba64523bad05ffa53004cf349ee861aceaa",
+      "verification": {
+        "clean_clone_offline_sync": "PASS:61-packages",
+        "competition_pytest": "PASS:31",
+        "candidate_determinism": "PASS:11-of-11",
+        "sandbox": "PASS:offline+0-non-loopback-attempts",
+        "output_schema": "PASS:pinned-public-schema",
+        "secret_scan": "PASS:0-findings",
+        "framework_identity": "PASS:raw-LF+exact-CRLF",
+        "wheelhouse": "PASS:31-of-31",
+        "cross_target_install": "PASS:31-distributions",
+        "official_submission": "NOT_PERFORMED"
+      }
     }
   },
   "blocked_items": [
@@ -574,6 +600,18 @@
       "label": "local-public",
       "result": "MECHANISM_NOT_OBSERVED: FULL timed out in all 30 smoke/development runs and completed zero levels; B0 random completed the sole level with development mean score 0.016196954972465177; 150 terminal outcomes and 13,927 artifacts verify; public holdout unconsumed",
       "report": "docs/reports/015-public-development.md"
+    },
+    {
+      "stage": "16",
+      "label": "synthetic",
+      "result": "FAILED_MECHANISM overall: the optimized controller passed all 9 runtime checks with 80 actions in 116.26474110002164 seconds and 175210496-byte peak RSS, while 4 palette/action-remap robustness cases failed and 1 rule-change case was not exercised",
+      "report": "docs/reports/016-optimization-robustness-integrity.md"
+    },
+    {
+      "stage": "17",
+      "label": "synthetic",
+      "result": "PACKAGING_PASS: two clean-source offline CPU candidate builds were byte-identical across 11 artifacts; sandbox, pinned-public schema, secret, source-identity, exact 31-wheel, and bounded single-agent checks passed; no official submission",
+      "report": "docs/reports/017-offline-kaggle-package.md"
     }
   ],
   "artifacts": {
@@ -712,9 +750,25 @@
     "stage_15_public_development_acceptance": {
       "path": "docs/evidence/015-public-development-acceptance.json",
       "sha256": "43d9b116448668626a27874f138f38f22011fb08fe7d38b8e335333cd0063815"
+    },
+    "stage_16_report": {
+      "path": "docs/reports/016-optimization-robustness-integrity.md",
+      "sha256": "87c06d3b210154048b599784e90e4d39c4d73c10010cdbee146942c2c92a5174"
+    },
+    "stage_16_competition_profile_acceptance": {
+      "path": "docs/evidence/016-competition-profile-acceptance.json",
+      "sha256": "8127acc6441bcba4f4e9b0a02b9950880c3231f7a0b4cef91c95dd089af0f595"
+    },
+    "stage_17_report": {
+      "path": "docs/reports/017-offline-kaggle-package.md",
+      "sha256": "a9b112a51e2e3ed8a316eeb82a9a26bfbe41b65ce8942f118dfb75c490e08b88"
+    },
+    "stage_17_kaggle_package_acceptance": {
+      "path": "docs/evidence/017-kaggle-package-acceptance.json",
+      "sha256": "aac45a86092a7c83bdf26a2e12fbd396381f37257f9e3b5294850f65152583fa"
     }
   },
-  "next_action": "Profile the integrated competition policy under conservative CPU, wall-clock, RAM, trace, checkpoint, planner, and recovery bounds; optimize measured generic bottlenecks without changing the sealed Stage 15 result.",
+  "next_action": "Commit the Stage 18 clean-clone verifier, run it from a fresh clone of the exact candidate commit using only documented bootstrap paths and sealed inputs, repair any reproducibility gaps, then preserve the complete release receipt.",
   "notes": [
     "Initial READY state was validated against the repository at b1948e9d02ad7b1321cbc57f3538047813e01e98 before this run began.",
     "No prior completed stages, checkpoint commit, or evidence artifacts were recorded; bootstrap PR 1 and its merge commit were independently verified.",

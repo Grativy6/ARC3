@@ -855,3 +855,79 @@ This file preserves unresolved technical, evidential, legal, and external burden
 - **Next discriminating action:** Predeclare a non-terminal seed or intervention boundary that guarantees exposure while preserving the same generic rule family and budget.
 - **Resolution condition:** At least two clean deterministic cases reach the rule change and retain explicit confirmation, contradiction, or reopening receipts after the intervention.
 - **Resolution receipt:** none.
+
+---
+
+## 2026-08-21 Stage 17 updates
+
+### B-20260821-038 — Synthetic runtime repair is packaged but public viability is still unmeasured
+
+- **Status update:** NARROWED by a deterministic offline package; not resolved.
+- **Last updated:** 2026-08-21
+- **Current evidence:** The clean `e5f2919` candidate runs one controller at a time and the Stage 17 safe sandbox returns `PACKAGING_PASS`. This is `synthetic` evidence. Stage 15's 30/30 FULL timeouts remain the only `local-public` result.
+- **Remaining burden:** Neither package correctness nor the Stage 16 synthetic envelope establishes that the optimized policy improves on public games. Build 000 keeps the public holdout sealed and does not revise the negative public score.
+- **Resolution receipt:** `docs/evidence/017-kaggle-package-acceptance.json`; prior receipts `docs/evidence/016-competition-profile-acceptance.json` and `docs/evidence/015-public-development-acceptance.json`.
+
+### B-20260821-040 — Packaging does not resolve palette or action-remap failure
+
+- **Status update:** OPEN and unchanged in mechanism status.
+- **Last updated:** 2026-08-21
+- **Current evidence:** The offline package preserves the generic static-integrity boundary and contains no game-specific tables, but Stage 17 performs no new paired equivariance experiment. Both palette cases and both action-remap cases from Stage 16 remain `FAILED_MECHANISM`.
+- **Remaining burden:** A future generic learned or symbolic correspondence mechanism needs a predeclared paired test before the competition preset can claim robustness to either transformation.
+- **Resolution receipt:** none; current failure receipt `docs/evidence/016-competition-profile-acceptance.json`.
+
+## B-20260821-042 — Private Kaggle runtime surfaces are unavailable locally
+
+- **Status:** BLOCKED_EXTERNAL
+- **Stage:** 17, 18, 19
+- **Opened:** 2026-08-21
+- **Last updated:** 2026-08-21
+- **Owner:** shared
+- **Burden:** The private Kaggle wheel inventory, exact platform-supplied Agents input, gateway sidecar, and scorer were not available. The sandbox used a distinct safe framework/gateway fixture and a Windows-compatible dependency-install canary.
+- **Why it matters:** A public exact-wheel download and a local loopback rehearsal cannot prove compatibility with unpublished platform inventory or private evaluator behavior.
+- **Current evidence:** The candidate validates raw LF and exact CRLF forms of the pinned public Agents commit, verifies 31 exact public wheels, executes the production rerun branch offline, and validates the pinned-public output schema. Each unavailable private surface is identified in the receipt.
+- **Next discriminating action:** After the owner accepts applicable terms and supplies the official competition inputs without submitting, run the unchanged candidate through the platform validation surface and preserve the exact input identities and receipt.
+- **Resolution condition:** The unchanged sealed candidate executes against the exact official inputs and private gateway through output validation, or an upstream identity change is recorded and rebuilt before validation.
+- **Resolution receipt:** none.
+
+## B-20260821-043 — Full 110-game sequential runtime is estimated, not measured
+
+- **Status:** OPEN
+- **Stage:** 17, 18, 19
+- **Opened:** 2026-08-21
+- **Last updated:** 2026-08-21
+- **Owner:** Codex
+- **Burden:** The sequential launcher is justified from Stage 16's measured single-controller envelope and tested on a three-game fixture, but the complete 110-game competition workload was not locally available or executed.
+- **Why it matters:** The conservative approximately 3.55-hour CPU estimate leaves margin inside nine hours, but framework, gateway, scoring, and game-dependent controller costs may differ from the synthetic profile.
+- **Current evidence:** Stage 16 measured 116.26474110002164 seconds for 80 actions and 175,210,496 bytes peak RSS; Stage 17 measured `max_concurrency=1`, one worker, exact game order, and successful one- and three-game fixture flows.
+- **Next discriminating action:** Run a no-submit platform rehearsal across the exact supplied game list with wall/RSS/worker receipts, retaining partial completion if the nine-hour or memory boundary is approached.
+- **Resolution condition:** A complete exact-input rehearsal finishes inside the platform wall/RAM budget, or a failed receipt identifies the bounded scheduling/runtime mechanism that must change.
+- **Resolution receipt:** none.
+
+## B-20260821-044 — Private output validation remains gateway-authoritative
+
+- **Status:** BLOCKED_EXTERNAL
+- **Stage:** 17, 18, 19
+- **Opened:** 2026-08-21
+- **Last updated:** 2026-08-21
+- **Owner:** shared
+- **Burden:** The pinned public starter exposes a four-column Parquet example but no standalone private submission validator or scorer.
+- **Why it matters:** Local schema, type, and Parquet checks can catch malformed output but cannot establish that the private gateway accepts or scores it.
+- **Current evidence:** The sandbox artifact has one row, four exact public columns, and passes `pyarrow==21.0.0` validation at level `pinned-public-schema`; the receipt explicitly marks the official gateway authoritative.
+- **Next discriminating action:** Execute the sealed output handoff against the official no-submit validation surface after any required owner legal gate.
+- **Resolution condition:** The official gateway accepts the unchanged candidate output contract or returns a preserved incompatibility receipt that can be repaired generically.
+- **Resolution receipt:** none.
+
+## B-20260821-045 — Windows-derived framework hashes would have rejected genuine Linux input
+
+- **Status:** RESOLVED_FOR_STAGE_17
+- **Stage:** 17
+- **Opened:** 2026-08-21
+- **Last updated:** 2026-08-21
+- **Owner:** Codex
+- **Burden:** The first pushed package source at `e903c88` pinned SHA-256 values from a Windows CRLF checkout. A genuine Linux/Kaggle LF checkout at the same Git commit would therefore fail closed before launch.
+- **Why it matters:** The defect invalidated the first candidate as production packaging evidence despite its local sandbox pass.
+- **Current evidence:** Raw Git object bytes for all four files were independently hashed; each old value was reproduced only by the LF-to-CRLF transform. Commit `e5f2919` pins the raw LF identities and accepts only the exact reversible all-CRLF checkout form. Genuine LF, actual Windows CRLF, mixed-ending rejection, mutation rejection, and two clean deterministic builds pass.
+- **Next discriminating action:** Preserve both the superseded and repaired candidate identities; Stage 18 must rebuild from `e5f2919` or a descendant and compare complete package artifacts.
+- **Resolution condition:** Satisfied for Stage 17 by clean-source `PACKAGING_PASS` at `e5f2919`; any later upstream commit requires new raw-Git pins.
+- **Resolution receipt:** `docs/evidence/017-kaggle-package-acceptance.json`; repair commit `e5f291912726e6139d1dda682707eada657cb5ce`.
