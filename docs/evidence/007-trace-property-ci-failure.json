@@ -3,7 +3,7 @@
   "observed_at": "2026-08-21T06:10:36Z",
   "recorded_at": "2026-08-21T06:33:05Z",
   "failure_classification": "FAILED_MECHANISM",
-  "correction_status": "LOCAL_PASS_REMOTE_PENDING",
+  "correction_status": "REMOTE_PASS",
   "repository_commit": "64408e35bea561f3959791adc94d11885270eca4",
   "runs": [
     {
@@ -32,8 +32,8 @@
     "cause": "The property generator described all generated mappings as valid while allowing key names that the receipt schema intentionally rejects. Platform/example variation exposed the invalid generator domain."
   },
   "correction": {
-    "measured_repository_commit": "3b994821424650ef858de442048bd2638d818a46",
-    "measurement_note": "The strategy correction was uncommitted during local verification.",
+    "measured_repository_commit": "686f13ae2601b1215571db921f60335f1153c576",
+    "measurement_note": "The local strategy correction was measured uncommitted, then committed and verified by both push and pull-request CI matrices.",
     "change": "Prefix recursively generated mapping keys with field_ so the arbitrary round-trip domain excludes schema-reserved credential and reasoning field names; explicit rejection tests remain unchanged.",
     "local_verification": [
       "PASS:11 tests:hypothesis-seed=1:4.10s",
@@ -42,6 +42,10 @@
       "PASS:11 tests:hypothesis-seed=20260821:3.63s",
       "PASS:ruff-check",
       "PASS:ruff-format-check-after-format-correction"
+    ],
+    "remote_verification": [
+      "PASS:push-run-32454918883:ubuntu+windows",
+      "PASS:pull-request-run-32454922333:ubuntu+windows"
     ],
     "commands": [
       "python -m uv run pytest -q --no-cov --basetemp %TEMP%\\arc3-trace-property-1 --hypothesis-seed=1 tests/property/test_trace_properties.py tests/unit/test_trace_schema.py",
@@ -53,6 +57,6 @@
   "claim_limits": [
     "The receipt schema correctly rejected the credential-bearing key; the failure was in the purportedly valid property-test generator.",
     "Later unseeded CI success before this correction did not prove the generator domain was fixed.",
-    "Remote correction status remains pending until the corrective commit completes both Ubuntu and Windows jobs."
+    "The correction is resolved by commit 686f13ae2601b1215571db921f60335f1153c576 and both Ubuntu/Windows CI matrices; the original failure remains preserved above."
   ]
 }
