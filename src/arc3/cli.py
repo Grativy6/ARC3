@@ -17,16 +17,20 @@ from arc3.baseline_runner import BaselineEpisodeResult, run_baseline_episode
 from arc3.config import ARC3Config, default_config
 from arc3.doctor import format_doctor_report, run_doctor
 from arc3.errors import ARC3Error
+from arc3.evaluation import (
+    EvaluationConfig,
+    compare_evaluations,
+    resolve_evaluation,
+    run_evaluation,
+    verify_evaluation_artifacts,
+)
 from arc3.policy.baselines import make_baseline
 from arc3.types import EnvironmentMode
 
 CommandHandler = Callable[[argparse.Namespace], int]
 
 _RESERVED_COMMANDS: dict[str, str] = {
-    "compare": "Stage 13 evaluation comparison",
-    "report": "Stage 13 measured report generation",
     "replay": "Stage 03 immutable trace replay",
-    "verify-artifacts": "Stage 13 artifact verification",
 }
 
 
@@ -135,7 +139,48 @@ def _parse_seeds(value: str) -> tuple[int, ...]:
     return seeds
 
 
+def _parse_agents(value: str) -> tuple[str, ...]:
+    agents = tuple(item.strip().lower() for item in value.split(",") if item.strip())
+    if not agents:
+        raise ValueError("--agents must contain at least one policy name")
+    if len(set(agents)) != len(agents):
+        raise ValueError("--agents must not contain duplicate policy names")
+    return agents
+
+
 def _evaluate_command(args: argparse.Namespace) -> int:
+    if args.agents is not None:
+        outcome = run_evaluation(
+            EvaluationConfig(
+                partition=args.partition,
+                agents=_parse_agents(args.agents),
+                seeds=_parse_seeds(args.seeds),
+                max_actions=args.max_actions,
+                max_resets=args.max_resets,
+                timeout_seconds=args.timeout_seconds,
+                output_root=Path(args.output_root),
+                evaluation_id=args.evaluation_id,
+            )
+        )
+        print(
+            json.dumps(
+                {
+                    "schema": "arc3.evaluation.command.v0.1",
+                    "evaluation_id": outcome.evaluation_id,
+                    "evaluation_path": str(outcome.directory),
+                    "status": outcome.status,
+                    "result_count": outcome.summary["result_count"],
+                    "failure_count": outcome.summary["failure_count"],
+                    "successful_policy_count": outcome.summary["successful_policy_count"],
+                },
+                sort_keys=True,
+                separators=(",", ":"),
+            )
+        )
+        return 0 if outcome.status == "PASS" else 1
+
+    # Backward-compatible Stage 02 single-agent output has no wall-clock fields and
+    # remains byte-for-byte deterministic for its established tests and receipts.
     if args.partition != "smoke":
         raise ValueError("Stage 02 supports only the synthetic smoke partition")
     seeds = _parse_seeds(args.seeds)
@@ -164,6 +209,37 @@ def _evaluate_command(args: argparse.Namespace) -> int:
     }
     print(json.dumps(payload, sort_keys=True, separators=(",", ":")))
     return 0
+
+
+def _compare_command(args: argparse.Namespace) -> int:
+    payload = compare_evaluations(
+        list(args.evaluation),
+        output_root=Path(args.output_root),
+    )
+    print(json.dumps(payload, sort_keys=True, separators=(",", ":")))
+    return 0
+
+
+def _report_command(args: argparse.Namespace) -> int:
+    directory = resolve_evaluation(args.evaluation, output_root=Path(args.output_root))
+    verification = verify_evaluation_artifacts(directory)
+    if not verification["verified"]:
+        raw_errors = verification.get("errors")
+        error_items = raw_errors if isinstance(raw_errors, list) else [raw_errors]
+        details = "; ".join(str(item) for item in error_items)
+        raise ValueError(f"evaluation artifacts failed verification: {details}")
+    report_path = directory / "report.md"
+    if not report_path.is_file():
+        raise ValueError(f"evaluation report is missing: {report_path}")
+    print(report_path.read_text(encoding="utf-8"), end="")
+    return 0
+
+
+def _verify_artifacts_command(args: argparse.Namespace) -> int:
+    directory = resolve_evaluation(args.evaluation, output_root=Path(args.output_root))
+    payload = verify_evaluation_artifacts(directory)
+    print(json.dumps(payload, sort_keys=True, separators=(",", ":")))
+    return 0 if payload["verified"] else 1
 
 
 def _doctor_command(args: argparse.Namespace) -> int:
@@ -239,14 +315,40 @@ def build_parser() -> argparse.ArgumentParser:
     play_parser.set_defaults(handler=_play_command)
 
     evaluate_parser = subparsers.add_parser(
-        "evaluate", help="run the deterministic Stage 02 synthetic smoke partition"
+        "evaluate", help="run a deterministic synthetic evaluation or legacy single baseline"
     )
     evaluate_parser.add_argument("--agent", choices=("random", "cycle"), default="cycle")
+    evaluate_parser.add_argument(
+        "--agents",
+        help="comma-separated Stage 13 policies: random,cycle,novelty,trace,full",
+    )
     evaluate_parser.add_argument("--partition", default="smoke")
     evaluate_parser.add_argument("--seeds", default="0,1,2,3")
     evaluate_parser.add_argument("--max-actions", type=int, default=100)
     evaluate_parser.add_argument("--max-resets", type=int, default=8)
+    evaluate_parser.add_argument("--timeout-seconds", type=float, default=30.0)
+    evaluate_parser.add_argument("--output-root", default="artifacts/evaluations")
+    evaluate_parser.add_argument("--evaluation-id")
     evaluate_parser.set_defaults(handler=_evaluate_command)
+
+    compare_parser = subparsers.add_parser(
+        "compare", help="compare policies within one or more sealed evaluations"
+    )
+    compare_parser.add_argument("--evaluation", action="append", required=True)
+    compare_parser.add_argument("--output-root", default="artifacts/evaluations")
+    compare_parser.set_defaults(handler=_compare_command)
+
+    report_parser = subparsers.add_parser("report", help="render an evaluation Markdown report")
+    report_parser.add_argument("--evaluation", required=True)
+    report_parser.add_argument("--output-root", default="artifacts/evaluations")
+    report_parser.set_defaults(handler=_report_command)
+
+    verify_parser = subparsers.add_parser(
+        "verify-artifacts", help="verify every hash sealed by an evaluation manifest"
+    )
+    verify_parser.add_argument("--evaluation", required=True)
+    verify_parser.add_argument("--output-root", default="artifacts/evaluations")
+    verify_parser.set_defaults(handler=_verify_artifacts_command)
 
     for command, stage in _RESERVED_COMMANDS.items():
         reserved = subparsers.add_parser(command, help=f"reserved: {stage}")
@@ -266,7 +368,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 0
     try:
         return int(handler(args))
-    except ARC3Error as error:
+    except (ARC3Error, ValueError) as error:
         print(f"arc3: {error}", file=sys.stderr)
         return 2
 

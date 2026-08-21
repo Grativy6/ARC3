@@ -67,7 +67,7 @@ def test_cli_doctor_json_contract(capsys: pytest.CaptureFixture[str]) -> None:
 def test_cli_reserves_future_commands_without_false_success(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    assert cli_main(["compare"]) == 2
+    assert cli_main(["replay"]) == 2
     captured = capsys.readouterr()
     assert captured.out == ""
-    assert "reserved for Stage 13" in captured.err
+    assert "reserved for Stage 03" in captured.err
