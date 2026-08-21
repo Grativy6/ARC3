@@ -8,11 +8,11 @@ from collections import Counter
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import cast
+from typing import NoReturn, cast
 
 from arc3.adapters import GridFrame, Observation, validate_action_request
 from arc3.config import derive_seed
-from arc3.errors import CompetitionIntegrityError, PolicyError
+from arc3.errors import ARC3ValidationError, CompetitionIntegrityError, PolicyError
 from arc3.exploration import (
     EffectKind,
     ExplorationPlanner,
@@ -79,7 +79,7 @@ from arc3.planning import (
     search,
 )
 from arc3.trace import CodeIdentity, EventJournal, SourceIdentity, TraceEvent
-from arc3.trace.canonical import sha256_json
+from arc3.trace.canonical import normalize_json, sha256_json
 from arc3.types import (
     ActionName,
     ActionRequest,
@@ -432,12 +432,33 @@ class ARC3Controller:
         return receipt
 
     def _require_observation(self, value: Observation | object) -> Observation:
-        if isinstance(value, Observation):
-            if str(value.game_id) != self.context.game_id:
-                raise PolicyError("observation game identity does not match run context")
-            if not value.frames:
-                raise PolicyError("observation requires at least one normalized frame")
-            return value
+        if not isinstance(value, Observation):
+            self._reject_observation(value, fault="expected immutable first-party Observation")
+        if str(value.game_id) != self.context.game_id:
+            self._reject_observation(
+                value,
+                fault="observation game identity does not match run context",
+            )
+        if not value.frames:
+            self._reject_observation(
+                value,
+                fault="observation requires at least one normalized frame",
+            )
+        try:
+            metadata = dict(value.upstream_metadata)
+            if len(metadata) != len(value.upstream_metadata):
+                raise ARC3ValidationError("upstream metadata keys must be unique")
+            normalize_json(metadata)
+        except (ARC3ValidationError, TypeError, ValueError):
+            self._reject_observation(
+                value,
+                fault="upstream metadata is not canonical JSON",
+            )
+        return value
+
+    def _reject_observation(self, value: object, *, fault: str) -> NoReturn:
+        """Fault with a durable receipt that never serializes untrusted content."""
+
         self._fault_count += 1
         self._phase = ControllerPhase.FAULTED
         event = self._append(
@@ -445,7 +466,7 @@ class ARC3Controller:
             "observation.parse_failed",
             {
                 "input_type": f"{type(value).__module__}.{type(value).__name__}",
-                "fault": "expected immutable first-party Observation",
+                "fault": fault,
             },
         )
         raise PolicyError(f"malformed observation preserved as {event.event_id}")

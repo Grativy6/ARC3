@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import cast
 
 import pytest
 
@@ -18,7 +19,14 @@ from arc3.policy import (
     preset_features,
 )
 from arc3.trace import EventJournal
-from arc3.types import ActionName, ActionRequest, EnvironmentMode, GameId, GameStateName
+from arc3.types import (
+    ActionName,
+    ActionRequest,
+    EnvironmentMode,
+    GameId,
+    GameStateName,
+    JSONScalar,
+)
 
 
 class _Provider:
@@ -90,6 +98,143 @@ def test_malformed_observation_is_preserved_as_a_fault_receipt(tmp_path: Path) -
     assert events[-1].event_type == "observation.parse_failed"
     assert controller.phase is ControllerPhase.FAULTED
     assert controller.snapshot.fault_count == 1
+
+
+def test_empty_frame_batch_is_preserved_as_a_fault_receipt(tmp_path: Path) -> None:
+    controller = ARC3Controller(ControllerPreset.TRACE)
+    controller.reset(_context(tmp_path))
+    observation = Observation(
+        game_id=GameId(SYNTHETIC_GAME_ID),
+        frames=(),
+        state=GameStateName.NOT_FINISHED,
+        levels_completed=0,
+        win_levels=1,
+        available_actions=(ActionName.ACTION1,),
+    )
+
+    with pytest.raises(PolicyError, match="malformed observation preserved"):
+        controller.observe(observation)
+
+    events = controller.journal.verify_manifest()
+    assert events[-1].event_type == "observation.parse_failed"
+    assert events[-1].payload == {
+        "fault": "observation requires at least one normalized frame",
+        "input_type": f"{Observation.__module__}.{Observation.__name__}",
+    }
+    assert controller.phase is ControllerPhase.FAULTED
+    assert controller.snapshot.fault_count == 1
+
+
+def test_noncanonical_metadata_is_not_serialized_in_fault_receipt(tmp_path: Path) -> None:
+    class PoisonMetadata:
+        def __repr__(self) -> str:
+            return "DO_NOT_SERIALIZE_POISON_METADATA"
+
+    controller = ARC3Controller(ControllerPreset.TRACE)
+    controller.reset(_context(tmp_path))
+    observation = Observation(
+        game_id=GameId(SYNTHETIC_GAME_ID),
+        frames=(GridFrame.from_rows(((0, 1), (0, 2))),),
+        state=GameStateName.NOT_FINISHED,
+        levels_completed=0,
+        win_levels=1,
+        available_actions=(ActionName.ACTION1,),
+        upstream_metadata=(("non_canonical", cast(JSONScalar, PoisonMetadata())),),
+    )
+
+    with pytest.raises(PolicyError, match="malformed observation preserved"):
+        controller.observe(observation)
+
+    events = controller.journal.verify_manifest()
+    assert events[-1].event_type == "observation.parse_failed"
+    assert events[-1].payload == {
+        "fault": "upstream metadata is not canonical JSON",
+        "input_type": f"{Observation.__module__}.{Observation.__name__}",
+    }
+    trace_text = "\n".join(
+        path.read_text(encoding="utf-8")
+        for path in controller.context.trace_root.rglob("*.jsonl")
+    )
+    assert "DO_NOT_SERIALIZE_POISON_METADATA" not in trace_text
+    assert controller.phase is ControllerPhase.FAULTED
+    assert controller.snapshot.fault_count == 1
+
+
+def test_malformed_observation_fault_restores_from_close_checkpoint(tmp_path: Path) -> None:
+    context = _context(tmp_path)
+    controller = ARC3Controller(ControllerPreset.FULL)
+    controller.reset(context)
+    observation = Observation(
+        game_id=GameId(SYNTHETIC_GAME_ID),
+        frames=(),
+        state=GameStateName.NOT_FINISHED,
+        levels_completed=0,
+        win_levels=1,
+        available_actions=(ActionName.ACTION1,),
+    )
+    with pytest.raises(PolicyError, match="malformed observation preserved"):
+        controller.observe(observation)
+    controller.close()
+
+    restored = ARC3Controller.restore(context, preset=ControllerPreset.FULL)
+    assert restored.phase is ControllerPhase.FAULTED
+    assert restored.snapshot.fault_count == 1
+    assert sum(
+        event.event_type == "observation.parse_failed"
+        for event in restored.journal.verify_manifest()
+    ) == 1
+    restored.close()
+
+
+def test_wrong_game_observation_uses_the_same_fault_receipt_boundary(tmp_path: Path) -> None:
+    controller = ARC3Controller(ControllerPreset.TRACE)
+    controller.reset(_context(tmp_path))
+    observation = Observation(
+        game_id=GameId("different-synthetic-game"),
+        frames=(GridFrame.from_rows(((0, 1), (0, 2))),),
+        state=GameStateName.NOT_FINISHED,
+        levels_completed=0,
+        win_levels=1,
+        available_actions=(ActionName.ACTION1,),
+    )
+
+    with pytest.raises(PolicyError, match="malformed observation preserved"):
+        controller.observe(observation)
+
+    events = controller.journal.verify_manifest()
+    assert events[-1].event_type == "observation.parse_failed"
+    assert events[-1].payload["fault"] == "observation game identity does not match run context"
+    assert controller.phase is ControllerPhase.FAULTED
+    assert controller.snapshot.fault_count == 1
+
+
+def test_canonical_upstream_metadata_remains_accepted(tmp_path: Path) -> None:
+    controller = ARC3Controller(ControllerPreset.TRACE)
+    controller.reset(_context(tmp_path))
+    observation = Observation(
+        game_id=GameId(SYNTHETIC_GAME_ID),
+        frames=(GridFrame.from_rows(((0, 1), (0, 2))),),
+        state=GameStateName.NOT_FINISHED,
+        levels_completed=0,
+        win_levels=1,
+        available_actions=(ActionName.ACTION1,),
+        upstream_metadata=(("source_revision", "v0.1"), ("retry_count", 0)),
+    )
+
+    controller.observe(observation)
+
+    events = controller.journal.verify_manifest()
+    assert events[-1].event_type != "observation.parse_failed"
+    received = next(event for event in events if event.event_type == "observation.received")
+    assert received.payload["upstream_metadata"] == {
+        "full_reset": False,
+        "levels_completed": 0,
+        "retry_count": 0,
+        "source_revision": "v0.1",
+        "win_levels": 1,
+    }
+    assert controller.phase is ControllerPhase.OBSERVED
+    assert controller.snapshot.fault_count == 0
 
 
 def test_game_over_only_selects_reset_and_accepts_reset_consequence(tmp_path: Path) -> None:
