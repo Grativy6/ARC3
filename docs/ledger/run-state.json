@@ -4,18 +4,20 @@
   "workflow_version": "0.1",
   "repository": "Grativy6/ARC3",
   "owner": "Christopher D. Pang",
-  "status": "READY",
-  "current_stage": "00",
-  "current_task": "preflight-not-started",
-  "implementation_branch": null,
-  "started_at": null,
-  "last_checkpoint_at": "2026-08-20T00:00:00Z",
-  "last_checkpoint_commit": null,
+  "status": "IN_PROGRESS",
+  "current_stage": "01",
+  "current_task": "stage-01-repository-foundation",
+  "implementation_branch": "build/000-arc3-end-to-end",
+  "started_at": "2026-08-21T04:46:19Z",
+  "last_checkpoint_at": "2026-08-21T04:58:23Z",
+  "last_checkpoint_commit": "b1948e9d02ad7b1321cbc57f3538047813e01e98",
   "resume_generation": 0,
-  "completed_stages": [],
+  "completed_stages": [
+    "00"
+  ],
   "stage_status": {
-    "00": "PENDING",
-    "01": "PENDING",
+    "00": "PASS",
+    "01": "IN_PROGRESS",
     "02": "PENDING",
     "03": "PENDING",
     "04": "PENDING",
@@ -36,7 +38,24 @@
     "19": "PENDING",
     "20": "PENDING"
   },
-  "evidence": {},
+  "evidence": {
+    "stage_00": {
+      "status": "PASS",
+      "report": "docs/reports/000-source-identity.md",
+      "report_sha256": "sha256:e85e19027d3920da090afa91d7895b0bcaeaed2c57cdb66aeb1084b2acee7658",
+      "upstream_lock": "upstream.lock.json",
+      "upstream_lock_sha256": "sha256:67e1d937e213bbcc25783784d04c4fa349b85dc09b94855256916ca6b96e808a",
+      "third_party_notices_sha256": "sha256:779702eb89a744f9dcccb68d9f536d413975388162c20136e37aaef37d045f53",
+      "verified_base_commit": "b1948e9d02ad7b1321cbc57f3538047813e01e98",
+      "verification": {
+        "git_fsck": "PASS",
+        "run_state_json": "PASS",
+        "upstream_lock_json": "PASS",
+        "secret_pattern_scan": "PASS:0-matches",
+        "implementation_branch": "PASS"
+      }
+    }
+  },
   "blocked_items": [
     {
       "id": "HUMAN-LICENSE",
@@ -64,10 +83,20 @@
     }
   ],
   "latest_results": [],
-  "artifacts": {},
-  "next_action": "Read AGENTS.md and execute Stage 00. Validate this file before trusting any status flag.",
+  "artifacts": {
+    "upstream_lock": {
+      "path": "upstream.lock.json",
+      "sha256": "67e1d937e213bbcc25783784d04c4fa349b85dc09b94855256916ca6b96e808a"
+    },
+    "stage_00_report": {
+      "path": "docs/reports/000-source-identity.md",
+      "sha256": "e85e19027d3920da090afa91d7895b0bcaeaed2c57cdb66aeb1084b2acee7658"
+    }
+  },
+  "next_action": "Execute Stage 01 repository foundation and its full acceptance suite.",
   "notes": [
-    "Timestamps and commit identities in this initial file are placeholders until Codex begins the implementation run.",
+    "Initial READY state was validated against the repository at b1948e9d02ad7b1321cbc57f3538047813e01e98 before this run began.",
+    "No prior completed stages, checkpoint commit, or evidence artifacts were recorded; bootstrap PR 1 and its merge commit were independently verified.",
     "Update atomically after every meaningful task and verify referenced evidence before marking a stage complete."
   ]
 }

@@ -161,3 +161,79 @@ This file preserves unresolved technical, evidential, legal, and external burden
 - **Next discriminating action:** Finish the draft PR with evidence and one clear review decision.
 - **Resolution condition:** Christopher explicitly directs or performs the merge.
 - **Resolution receipt:** none.
+
+---
+
+## 2026-08-21 Stage 00 updates
+
+### B-20260820-002 — Current competition rules and limits are mutable
+
+- **Status update:** NARROWED for Build 000, never permanently closed.
+- **Last updated:** 2026-08-21
+- **Current evidence:** `upstream.lock.json`; `docs/reports/000-source-identity.md` pin stable documentation bodies, official repository commits, package artifacts, and access times. Kaggle client-rendered HTML is deliberately identified by URL/access time rather than treated as stable content.
+- **Remaining burden:** Revalidate immediately before any public holdout, package freeze, or owner-authorized submission.
+- **Resolution receipt:** Stage 00 source-identity checkpoint, commit pending.
+
+### B-20260820-003 — ARC and Kaggle credentials may be unavailable
+
+- **Status update:** NARROWED / BLOCKED_EXTERNAL for authenticated surfaces.
+- **Last updated:** 2026-08-21
+- **Current evidence:** Presence-only checks found no `ARC_API_KEY`, Kaggle token environment variable, Kaggle CLI, or Kaggle credential file. Network, local toolkit, anonymous, synthetic, and offline packaging routes remain available.
+- **Remaining burden:** Authenticated online-public scorecards and authenticated Kaggle upload/status checks cannot run without an owner-provided credential; this does not block independent work.
+- **Resolution receipt:** `docs/reports/000-source-identity.md`.
+
+## B-20260821-011 — Pinned Kaggle starter has no detected source license
+
+- **Status:** NARROWED
+- **Stage:** 00, 01, 17
+- **Opened:** 2026-08-21
+- **Last updated:** 2026-08-21
+- **Owner:** upstream
+- **Burden:** `arcprize/ARC-AGI-3-Kaggle-Starter@eeb1535404f321d280a8f9194bbc1d7aca5f05fc` has no `LICENSE`, `COPYING`, or `NOTICE` file and no GitHub-detected license, so copying/adapting its source would assume permission not established by the repository.
+- **Why it matters:** Deployment compatibility does not itself grant copyright permission.
+- **Current evidence:** `upstream.lock.json`; `THIRD_PARTY_NOTICES.md`; D-20260821-006.
+- **Next discriminating action:** Implement and test an equivalent first-party wrapper from the documented interface; re-check upstream licensing before any later adaptation.
+- **Resolution condition:** Packaging passes without copied source, or upstream publishes a compatible license/permission whose exact identity is recorded.
+- **Resolution receipt:** none; first-party wrapper not yet implemented.
+
+## B-20260821-012 — Docker is unavailable on the measured host
+
+- **Status:** ACCEPTED_LIMIT
+- **Stage:** 00, 17, 18
+- **Opened:** 2026-08-21
+- **Last updated:** 2026-08-21
+- **Owner:** shared
+- **Burden:** Docker is not installed, so container-based parity checks are unavailable.
+- **Why it matters:** A container could provide an additional Linux/offline packaging check, but it is not required by the controlling workflow.
+- **Current evidence:** `docker --version` was unavailable; Python 3.12, uv, Git, local network access, and a Windows clean-clone path are available.
+- **Next discriminating action:** Use process-level network denial and a fresh clone for Stage 17/18; rely on Linux CI for the second OS surface.
+- **Resolution condition:** Those checks pass, or a container becomes available without paid/system-changing prerequisites.
+- **Resolution receipt:** none.
+
+## B-20260821-013 — Official package, docs, and example identities disagree
+
+- **Status:** OPEN
+- **Stage:** 00, 02, 03, 13, 15
+- **Opened:** 2026-08-21
+- **Last updated:** 2026-08-21
+- **Owner:** upstream
+- **Burden:** The pinned sources contain several contradictions: ARC-AGI declares/tags 0.9.9 while its lock records root 0.9.8; Agents declares 0.1.0 while using v0.9.x tags and toolkit 0.9.1; docs call ACTION7 undo while the engine types it generically; docs' action-count wording differs from the executable non-RESET counter; methodology/toolkit use a 115% level cap while the Kaggle data formula describes a 100% cap; docs say local play has no recordings while toolkit source can save local JSONL; toolkit/Agents surfaces disagree on the default API host; and ARC Prize/Kaggle pages disagree on some milestone prize splits.
+- **Why it matters:** Silently choosing whichever statement is convenient would weaken reproducibility and could invalidate scoring, action validation, or replay claims.
+- **Current evidence:** `upstream.lock.json` `observed_discrepancies`; `docs/reports/000-source-identity.md`; immutable upstream commits pinned there.
+- **Next discriminating action:** Regenerate ARC3's lock, install exact wheels, execute contract probes against the local toolkit, and use the pinned executable behavior for implementation while retaining documentation conflicts.
+- **Resolution condition:** Each behavior used by ARC3 has an executable compatibility test and any remaining doc conflict is labeled in reports.
+- **Resolution receipt:** none.
+
+## B-20260821-014 — Upstream examples and anonymous logging violate ARC3 production constraints
+
+- **Status:** OPEN
+- **Stage:** 02, 12, 16
+- **Opened:** 2026-08-21
+- **Last updated:** 2026-08-21
+- **Owner:** shared
+- **Burden:** Pinned sample policy uses wall-clock/Python-hash seeding, can ignore advertised available actions, and contains a public-game-ID conditional. The toolkit's anonymous-key path can log the fetched key at INFO.
+- **Why it matters:** Copying these patterns would violate determinism, action validity, competition-integrity, and credential hygiene.
+- **Current evidence:** Immutable starter/Agents/toolkit sources identified in `docs/reports/000-source-identity.md`.
+- **Next discriminating action:** Implement first-party deterministic baselines, authoritative available-action validation, redacted logging, and static game-ID/secret scans.
+- **Resolution condition:** Stage 02/16 tests prove those properties on ARC3 production paths; the upstream observations remain historical evidence.
+- **Resolution receipt:** none.

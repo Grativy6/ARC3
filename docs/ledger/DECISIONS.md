@@ -77,3 +77,45 @@ This file records material decisions made during the autonomous build. It is app
 - **Consequences:** Prize eligibility remains an open owner action before official release/evaluation.
 - **Reopening condition:** Christopher explicitly chooses a license.
 - **Supersedes / superseded by:** none.
+
+## D-20260821-005 — Pin Build 000 to measured Stage 00 identities
+
+- **Status:** ADOPTED
+- **Stage:** 00
+- **Date:** 2026-08-21
+- **Commit:** pending
+- **Decision:** Pin the three official upstream repository heads, `arc-agi==0.9.9`, its Python 3.12 Windows resolution, and content identities for stable primary documentation in `upstream.lock.json`.
+- **Alternatives:** Floating main branches and dependency ranges; relying on prose memory.
+- **Evidence:** `docs/reports/000-source-identity.md`; `upstream.lock.json`; successful `git ls-remote`, PyPI metadata, documentation fetches, and `uv pip compile`.
+- **Why:** Executable and mutable upstream identities must be distinguishable from project interpretation and later upstream changes.
+- **Consequences:** Build 000 can be reproduced against an explicit snapshot; later compatibility work must preserve this lock and record a superseding decision.
+- **Reopening condition:** A pinned dependency is unusable, unsafe, or incompatible with the current competition surface, supported by a failing executable test.
+- **Supersedes / superseded by:** none.
+
+## D-20260821-006 — Implement an equivalent Kaggle wrapper without copying the starter
+
+- **Status:** ADOPTED
+- **Stage:** 00–01, 17
+- **Date:** 2026-08-21
+- **Commit:** pending
+- **Decision:** Preserve the official `MyAgent` interface and deployment behavior in first-party ARC3 code, but do not copy source from the pinned Kaggle starter.
+- **Alternatives:** Copy/adapt the starter; defer all packaging work; use the hosted-model-oriented Agents repository as the runtime.
+- **Evidence:** The GitHub tree and repository metadata for `arcprize/ARC-AGI-3-Kaggle-Starter@eeb1535404f321d280a8f9194bbc1d7aca5f05fc` contained no `LICENSE`, `COPYING`, or `NOTICE` and no detected license. The documented interface is sufficient to implement compatibility independently.
+- **Why:** An equivalent wrapper satisfies the deployment contract without assuming a copyright permission that was not found.
+- **Consequences:** Packaging code must be first-party and tested against the pinned public interface; the starter remains an inspected source with `NOASSERTION` licensing in notices.
+- **Reopening condition:** Upstream adds a compatible license or the owner establishes permission and a measured integration benefit justifies adaptation.
+- **Supersedes / superseded by:** supersedes proposed D-20260820-003.
+
+## D-20260821-007 — Use a uv-managed CPython 3.12 toolchain
+
+- **Status:** ADOPTED
+- **Stage:** 00–01
+- **Date:** 2026-08-21
+- **Commit:** pending
+- **Decision:** Use uv-managed CPython 3.12.14 for Build 000. Until the uv executable is on `PATH`, invoke uv reproducibly as `python -m uv` from the installed Python 3.13 launcher.
+- **Alternatives:** Use system Python 3.13; install a machine-wide Python; modify the user's shell profile.
+- **Evidence:** `arc-agi==0.9.9` declares Python `>=3.12`; Stage 00 measured only system Python 3.13 initially, then installed uv 0.12.5 and managed CPython 3.12.14 successfully.
+- **Why:** This meets the official package requirement without an unnecessary system-wide configuration change.
+- **Consequences:** Bootstrap scripts must locate `python -m uv` or the uv-managed interpreter explicitly and remain cross-platform.
+- **Reopening condition:** CI or packaging demonstrates incompatibility with this managed runtime.
+- **Supersedes / superseded by:** none.
