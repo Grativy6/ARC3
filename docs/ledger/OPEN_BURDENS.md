@@ -413,8 +413,8 @@ This file preserves unresolved technical, evidential, legal, and external burden
 - **Owner:** Codex
 - **Burden:** Retrodiction selected the correct model on four unseen symbolic parameter combinations, but symbolic states and right-action plans were supplied by the fixture rather than acquired from raw observations and controller search.
 - **Why it matters:** Model-selection success can fail to survive perception ambiguity, incomplete hypothesis compilation, goal uncertainty, or planning errors in live episodes.
-- **Current evidence:** `docs/evidence/008-world-model-acceptance.json` records 4/4 gated versus 0/4 ungated simulated final states under the same 16 supplied actions.
-- **Next discriminating action:** Build perception-to-symbolic-state integration and bounded planning/recovery in Stages 10–12, then run equal-budget full-game ablations in Stage 14.
+- **Current evidence:** `docs/evidence/008-world-model-acceptance.json` records 4/4 gated versus 0/4 ungated simulated final states under the same 16 supplied actions. `docs/evidence/010-planning-acceptance.json` adds 24/24 bounded-planning versus 0/24 cycle completions, but still starts from evaluator-supplied symbolic states, models, and targets.
+- **Next discriminating action:** Build perception-to-symbolic-state controller integration in Stage 12, then run equal-budget full-game ablations in Stage 14.
 - **Resolution condition:** Integrated traces demonstrate successful state construction, pre-action prediction, live consequence matching, and completion benefit; otherwise retain the isolated result only.
 - **Resolution receipt:** none.
 
@@ -430,4 +430,18 @@ This file preserves unresolved technical, evidential, legal, and external burden
 - **Current evidence:** `docs/evidence/009-goal-acceptance.json` records 64/64 goal-aware versus 0/64 novelty-only synthetic completions under equal five-action budgets; the claim is limited to isolated selection.
 - **Next discriminating action:** Connect goal candidates to bounded search and live consequence receipts in Stages 10–12, then compare equal-budget integrated variants in Stage 14 and preserve a separately labeled public result in Stage 15.
 - **Resolution condition:** Integrated traces show that acquired goals improve completion or action efficiency without hidden fixture estimates, or the mechanism is retained only as an isolated capability with the negative integrated result preserved.
+- **Resolution receipt:** none.
+
+## B-20260821-024 — Planning comparison is compact and evaluator specified
+
+- **Status:** OPEN
+- **Stage:** 10, 12, 14, 15, 16
+- **Opened:** 2026-08-21
+- **Last updated:** 2026-08-21
+- **Owner:** Codex
+- **Burden:** The planning comparison uses obstacle-free symbolic navigation, evaluator-supplied targets and deterministic models, a simple cyclic exploration baseline, and one injected first-action no-op for recovery.
+- **Why it matters:** A bounded search implementation can dominate this fixture yet fail when perception is ambiguous, models branch, goals are wrong, obstacles change mechanics, or search cost approaches the competition envelope.
+- **Current evidence:** `docs/evidence/010-planning-acceptance.json` records 24/24 planning versus 0/24 exploration-only and 24/24 recovery versus 0/24 no-recovery under equal 24-action budgets; the task manifest is hashed.
+- **Next discriminating action:** Integrate raw-observation state construction and persisted model/goal state in Stage 12, compare component ablations on full procedural episodes in Stage 14, and profile expansions/latency/memory in Stage 16.
+- **Resolution condition:** Integrated held-out and separately labeled public receipts demonstrate bounded planning value or preserve an honest negative result with the isolated mechanism claim unchanged.
 - **Resolution receipt:** none.

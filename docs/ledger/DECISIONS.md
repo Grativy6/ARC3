@@ -259,3 +259,17 @@ This file records material decisions made during the autonomous build. It is app
 - **Consequences:** Planning must consume explicit goal records and model estimates, cite source events, and preserve retirement/reopening. Goal ranks remain uncalibrated and do not authorize an environment action by themselves.
 - **Reopening condition:** Integrated held-out evidence shows that the threshold or ranking terms reduce completion/action efficiency, supported by equal-budget traces and an alternative that preserves goal/exploration provenance.
 - **Supersedes / superseded by:** none.
+
+## D-20260821-018 — Search internally, execute one action, then validate
+
+- **Status:** ADOPTED
+- **Stage:** 10
+- **Date:** 2026-08-21
+- **Commit:** pending Stage 10 implementation checkpoint
+- **Decision:** Search deterministic executable models with bounded BFS, uniform-cost, or A*, retain model/goal revisions and predicted states in the plan, emit only one environment action, and require its returned consequence before continuing. Any state, model, goal, or game-state mismatch invalidates blind continuation and selects an explicit bounded recovery mode.
+- **Alternatives:** Continue fixed exploration; emit a complete open-loop action sequence; silently keep a stale plan after mismatch; add belief/MCTS search without measured uncertain-model need.
+- **Evidence:** `docs/reports/010-bounded-planning-and-recovery.md`; 10 focused tests; the 24-task equal-budget comparison in `docs/evidence/010-planning-acceptance.json`.
+- **Why:** Internal search is cheap relative to environment actions, while one-step consequence validation prevents an initially plausible plan from consuming the remaining budget after its assumptions fail.
+- **Consequences:** Integrated execution must preserve pre-action prediction and post-action consequence receipts, deterministic budget/tie-break settings, invalidation causes, and recovery decisions. Belief search remains a reopenable option rather than an unmeasured default.
+- **Reopening condition:** Integrated uncertainty or runtime evidence shows a different bounded search/recovery policy improves completion or action efficiency under the same evaluator envelope.
+- **Supersedes / superseded by:** none.

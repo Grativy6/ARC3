@@ -1,0 +1,67 @@
+{
+  "schema": "arc3.stage-evidence.v0.1",
+  "stage": "10",
+  "status": "PASS",
+  "label": "synthetic",
+  "mechanism_status": "MECHANISM_OBSERVED",
+  "repository": "Grativy6/ARC3",
+  "implementation_branch": "build/000-arc3-end-to-end",
+  "measured_repository_commit": "ff7397907222fc317fb2a84b33f5ec2ab64ca7f9",
+  "measurement_note": "Stage 10 files were uncommitted and are individually verified by the stage checkpoint diff.",
+  "runtime": {
+    "operating_system": "Windows 10.0.19045",
+    "python": "3.12.14",
+    "uv": "0.12.5"
+  },
+  "verification": {
+    "ruff_check": "PASS",
+    "ruff_format_check": "PASS",
+    "mypy_strict": "PASS:7-source-files",
+    "focused_pytest": "PASS:10",
+    "focused_pytest_seconds": 3.87,
+    "bounded_search": "PASS:bfs+uniform-cost+a-star",
+    "node_depth_time_budgets": "PASS",
+    "deterministic_tie_breaking": "PASS",
+    "plan_score_terms": "PASS:completion+actions+risk+information",
+    "one_action_consequence_gate": "PASS",
+    "model_goal_invalidation": "PASS",
+    "prediction_mismatch_receipt": "PASS",
+    "recovery_modes": "PASS:replan+probe+reopen+undo+reset",
+    "named_ablations": "PASS:exploration-only+no-recovery",
+    "public_id_network_hosted_scan": "PASS:0-matches"
+  },
+  "comparison": {
+    "schema": "arc3.planning.comparison.v0.1",
+    "label": "synthetic",
+    "status": "MECHANISM_OBSERVED",
+    "split": "held-out-symbolic-multistep-v0.1",
+    "started_at": "2026-08-21T06:27:25.592930Z",
+    "completed_at": "2026-08-21T06:27:28.329551Z",
+    "seed": 20260821,
+    "tasks": 24,
+    "action_budget_per_task": 24,
+    "task_manifest_sha256": "sha256:feb356d28cd533825f59b4221154fff6055b7ae0ee052ab9302e389bd7b40a14",
+    "planning_completed": 24,
+    "planning_actions": 174,
+    "exploration_only_completed": 0,
+    "exploration_only_actions": 576,
+    "recovery_completed": 24,
+    "recovery_actions": 198,
+    "no_recovery_completed": 0,
+    "no_recovery_actions": 24
+  },
+  "commands": [
+    "python -m uv run ruff check --no-cache src/arc3/planning scripts/measure_planning.py tests/unit/test_planning_search.py tests/unit/test_planning_execution.py tests/property/test_planning_properties.py tests/integration/test_planning_held_out.py",
+    "python -m uv run ruff format --check --no-cache src/arc3/planning scripts/measure_planning.py tests/unit/test_planning_search.py tests/unit/test_planning_execution.py tests/property/test_planning_properties.py tests/integration/test_planning_held_out.py",
+    "python -m uv run mypy --cache-dir %TEMP%\\arc3-stage10-mypy-script src/arc3/planning scripts/measure_planning.py",
+    "python -m uv run pytest -q --no-cov --basetemp %TEMP%\\arc3-stage10-final-pytest-2 tests/unit/test_planning_search.py tests/unit/test_planning_execution.py tests/property/test_planning_properties.py tests/integration/test_planning_held_out.py",
+    "python -m uv run python scripts/measure_planning.py --seed 20260821 --tasks 24 --action-budget 24",
+    "rg -ni \"https?://|\\b(requests|urllib|socket|httpx|openai|anthropic|google\\.generativeai)\\b|ls20-|ft09-|vc33-\" src/arc3/planning"
+  ],
+  "claim_limits": [
+    "The comparison uses compact obstacle-free symbolic navigation tasks and an evaluator-supplied target, not raw observation goal acquisition.",
+    "The exploration-only baseline is a deterministic action cycle, and the recovery comparison injects one no-op first consequence per task.",
+    "Completion likelihood is an uncalibrated caller-supplied estimate; no belief-state search was needed for the deterministic tested model set.",
+    "The result does not establish public-game performance or hidden-game generalization."
+  ]
+}

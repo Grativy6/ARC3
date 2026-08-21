@@ -5,8 +5,8 @@
   "repository": "Grativy6/ARC3",
   "owner": "Christopher D. Pang",
   "status": "IN_PROGRESS",
-  "current_stage": "10",
-  "current_task": "stage-10-bounded-planning-and-recovery",
+  "current_stage": "11",
+  "current_task": "stage-11-scoped-persistent-memory-and-resume",
   "implementation_branch": "build/000-arc3-end-to-end",
   "pull_request": {
     "number": 3,
@@ -14,7 +14,7 @@
     "draft": true
   },
   "started_at": "2026-08-21T04:46:19Z",
-  "last_checkpoint_at": "2026-08-21T06:24:59Z",
+  "last_checkpoint_at": "2026-08-21T06:29:20Z",
   "last_checkpoint_commit": "b712e0bc2fffb592dbf0f6f287045a60aaefc65c",
   "resume_generation": 0,
   "completed_stages": [
@@ -27,7 +27,8 @@
     "06",
     "07",
     "08",
-    "09"
+    "09",
+    "10"
   ],
   "stage_status": {
     "00": "PASS",
@@ -40,8 +41,8 @@
     "07": "PASS",
     "08": "PASS",
     "09": "PASS",
-    "10": "IN_PROGRESS",
-    "11": "PENDING",
+    "10": "PASS",
+    "11": "IN_PROGRESS",
     "12": "PENDING",
     "13": "PENDING",
     "14": "PENDING",
@@ -271,6 +272,28 @@
         "public_id_network_hosted_scan": "PASS:0-matches",
         "held_out_comparison": "PASS:64-of-64-vs-0-of-64"
       }
+    },
+    "stage_10": {
+      "status": "PASS",
+      "label": "synthetic",
+      "mechanism_status": "MECHANISM_OBSERVED",
+      "report": "docs/reports/010-bounded-planning-and-recovery.md",
+      "report_sha256": "sha256:e51eb151d14f05c219c1435b58645c8a05dc366c5bf19568036a842018a5c5eb",
+      "acceptance_evidence": "docs/evidence/010-planning-acceptance.json",
+      "acceptance_evidence_sha256": "sha256:42a57eb4f0d52ba785e5e57a9447a03c7f27ca99ba5ae16c9457a05db0159592",
+      "checkpoint_commit": "pending",
+      "verification": {
+        "ruff_lint": "PASS",
+        "ruff_format": "PASS",
+        "mypy_strict": "PASS:7-source-files",
+        "pytest": "PASS:10",
+        "bounded_search": "PASS:3-algorithms",
+        "one_action_consequence_gate": "PASS",
+        "stale_plan_invalidation": "PASS",
+        "recovery_modes": "PASS:5",
+        "public_id_network_hosted_scan": "PASS:0-matches",
+        "held_out_comparison": "PASS:24-of-24-vs-0-of-24"
+      }
     }
   },
   "blocked_items": [
@@ -359,6 +382,12 @@
       "label": "synthetic",
       "result": "MECHANISM_OBSERVED on 64 delayed/proxy cases: goal-aware selection 64/64 completions versus novelty-only 0/64 under equal five-action budgets",
       "report": "docs/reports/009-typed-goal-acquisition.md"
+    },
+    {
+      "stage": "10",
+      "label": "synthetic",
+      "result": "MECHANISM_OBSERVED on 24 held-out symbolic tasks: bounded planning 24/24 completions in 174 actions versus cycle exploration 0/24 in 576; mismatch recovery 24/24 versus no-recovery 0/24",
+      "report": "docs/reports/010-bounded-planning-and-recovery.md"
     }
   ],
   "artifacts": {
@@ -445,9 +474,17 @@
     "stage_09_goal_acceptance": {
       "path": "docs/evidence/009-goal-acceptance.json",
       "sha256": "59d7fbb60ec3fdfef6435a59e4f351b1f078075e00100e14bd73ebc8d2487ce9"
+    },
+    "stage_10_report": {
+      "path": "docs/reports/010-bounded-planning-and-recovery.md",
+      "sha256": "e51eb151d14f05c219c1435b58645c8a05dc366c5bf19568036a842018a5c5eb"
+    },
+    "stage_10_planning_acceptance": {
+      "path": "docs/evidence/010-planning-acceptance.json",
+      "sha256": "42a57eb4f0d52ba785e5e57a9447a03c7f27ca99ba5ae16c9457a05db0159592"
     }
   },
-  "next_action": "Complete Stage 10 bounded symbolic search, one-action execution, prediction validation, mismatch recovery, and equal-budget ablations.",
+  "next_action": "Complete Stage 11 scoped persistent memory, deterministic process-death recovery, bounded retention, and cross-level comparison.",
   "notes": [
     "Initial READY state was validated against the repository at b1948e9d02ad7b1321cbc57f3538047813e01e98 before this run began.",
     "No prior completed stages, checkpoint commit, or evidence artifacts were recorded; bootstrap PR 1 and its merge commit were independently verified.",
