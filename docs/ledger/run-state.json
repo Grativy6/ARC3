@@ -1,0 +1,73 @@
+{
+  "schema": "arc3.workflow.run-state.v0.1",
+  "workflow": "docs/workflows/000-arc3-autonomous-end-to-end.md",
+  "workflow_version": "0.1",
+  "repository": "Grativy6/ARC3",
+  "owner": "Christopher D. Pang",
+  "status": "READY",
+  "current_stage": "00",
+  "current_task": "preflight-not-started",
+  "implementation_branch": null,
+  "started_at": null,
+  "last_checkpoint_at": "2026-08-20T00:00:00Z",
+  "last_checkpoint_commit": null,
+  "resume_generation": 0,
+  "completed_stages": [],
+  "stage_status": {
+    "00": "PENDING",
+    "01": "PENDING",
+    "02": "PENDING",
+    "03": "PENDING",
+    "04": "PENDING",
+    "05": "PENDING",
+    "06": "PENDING",
+    "07": "PENDING",
+    "08": "PENDING",
+    "09": "PENDING",
+    "10": "PENDING",
+    "11": "PENDING",
+    "12": "PENDING",
+    "13": "PENDING",
+    "14": "PENDING",
+    "15": "PENDING",
+    "16": "PENDING",
+    "17": "PENDING",
+    "18": "PENDING",
+    "19": "PENDING",
+    "20": "PENDING"
+  },
+  "evidence": {},
+  "blocked_items": [
+    {
+      "id": "HUMAN-LICENSE",
+      "kind": "human_gate",
+      "status": "OPEN",
+      "description": "A prize-eligible public license must be chosen by the repository owner before release/official eligibility. Engineering may continue without granting one."
+    },
+    {
+      "id": "HUMAN-KAGGLE-TERMS",
+      "kind": "human_gate",
+      "status": "OPEN",
+      "description": "Only the owner may accept Kaggle/competition legal terms."
+    },
+    {
+      "id": "HUMAN-OFFICIAL-SUBMISSION",
+      "kind": "human_gate",
+      "status": "OPEN",
+      "description": "Official Kaggle upload/submission and use of daily submission quota require explicit owner action."
+    },
+    {
+      "id": "CREDENTIALS-OPTIONAL",
+      "kind": "external_resource",
+      "status": "UNKNOWN",
+      "description": "ARC_API_KEY and Kaggle credentials may not be present. Use anonymous/local modes and prepare tested adapters if absent."
+    }
+  ],
+  "latest_results": [],
+  "artifacts": {},
+  "next_action": "Read AGENTS.md and execute Stage 00. Validate this file before trusting any status flag.",
+  "notes": [
+    "Timestamps and commit identities in this initial file are placeholders until Codex begins the implementation run.",
+    "Update atomically after every meaningful task and verify referenced evidence before marking a stage complete."
+  ]
+}
