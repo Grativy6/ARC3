@@ -957,3 +957,15 @@ This file preserves unresolved technical, evidential, legal, and external burden
 - **Current evidence:** On the three-game `local-public` smoke partition at seeds 7 and 11, B4 FULL timed out in all six runs after 146 total environment actions, completed zero levels, and returned a `PARTIAL` evaluation. B0 random and B1 cycle each returned their full 480 actions and also completed zero levels. All partial artifacts verify. Official RHAE remains unmeasured/null.
 - **Remaining burden:** The Stage 16 synthetic runtime repair has not produced a passing sealed public development result. The public holdout therefore remains unconsumed, and no hidden-game or official-private generalization claim is available.
 - **Resolution receipt:** Current failure receipt `docs/evidence/018-release-candidate-acceptance.json`; prior negative receipt `docs/evidence/015-public-development-acceptance.json`.
+
+---
+
+## 2026-08-21 Stage 19 updates
+
+### B-20260820-004 — License evidence is complete; the grant remains owner-blocked
+
+- **Status update:** BLOCKED_EXTERNAL; narrowed to one explicit owner decision.
+- **Last updated:** 2026-08-21
+- **Current evidence:** All 61 `uv.lock` records are reconciled in `THIRD_PARTY_NOTICES.md` and `docs/evidence/019-dependency-license-inventory.json`: one first-party owner-decision record and 60 third-party records, with zero unknown third-party records. `docs/legal/candidates/MIT-0-CANDIDATE.md` preserves sourced MIT-0 text under `CANDIDATE ONLY — NO LICENSE GRANTED`; no root `LICENSE` exists.
+- **Remaining burden:** Only Christopher D. Pang may approve or reject a public license for ARC3 first-party source. Candidate preparation does not grant one.
+- **Resolution receipt:** none; owner action remains required.

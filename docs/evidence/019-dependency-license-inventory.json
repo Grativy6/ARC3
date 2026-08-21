@@ -1,0 +1,149 @@
+{
+  "audit": {
+    "audited_repository_commit": "67e4b0ed4be8dbe4e3ea5a0dbc7c20ef9b934c4e",
+    "network_used_for_metadata": false,
+    "platform": "win32",
+    "python_version": "3.12.14",
+    "status": "COMPLETE_LOCK_INVENTORY"
+  },
+  "claim": "DEPENDENCY_LICENSE_INVENTORY_ONLY",
+  "verification_commands": [
+    {
+      "argv": [
+        "C:/Users/cdpan/AppData/Roaming/Python/Python313/Scripts/uv.exe",
+        "lock",
+        "--check",
+        "--offline"
+      ],
+      "result": "PASS"
+    },
+    {
+      "argv": [
+        ".venv/Scripts/python.exe",
+        "-c",
+        "import hashlib,json,tomllib; from pathlib import Path; root=Path('.'); inv=json.loads((root/'docs/evidence/019-dependency-license-inventory.json').read_text(encoding='utf-8')); lock=tomllib.loads((root/'uv.lock').read_text(encoding='utf-8')); lock_specs={f\"{p['name']}=={p['version']}\" for p in lock['package']}; inv_specs={s for g in inv['license_groups'] for s in g['packages']}; assert lock_specs==inv_specs and len(lock_specs)==61; assert len(inv['development_evidence_sha256'])==23; [(lambda p,e: (_ for _ in ()).throw(AssertionError(p)) if 'sha256:'+hashlib.sha256((root/p).read_bytes()).hexdigest()!=e else None)(v['path'],v['sha256']) for v in inv['sources'].values()]; assert not (root/'LICENSE').exists(); print('STAGE19_INVENTORY_VALIDATION_PASS')"
+      ],
+      "result": "PASS:61-lock-specs+23-development-records+3-source-hashes+no-root-license"
+    }
+  ],
+  "counts": {
+    "first_party_owner_decision_required": 1,
+    "lock_records": 61,
+    "stage17_spdx_third_party_records": 37,
+    "stage19_additional_third_party_records": 23,
+    "third_party_records": 60,
+    "unknown_third_party_records": 0
+  },
+  "development_evidence_sha256": {
+    "cfgv==3.5.0": ["sha256:01fc3f8031a672b3f5d7d8ac262e432f3ea812809f5697d6bc5b270bf6446561"],
+    "colorama==0.4.6": ["sha256:cac35c02686e5d04a5a7140bfb3b36e73aed496656e891102e428886d7930318"],
+    "coverage==7.15.4": [
+      "sha256:eb3d7b5485466acbd81f2b496f595ab637d2792e268206b27d99e793bdb67549",
+      "sha256:445e6e7876ff25ff16254af9ba7cb38939b108bad08034ab7742334473ad0e34"
+    ],
+    "distlib==0.4.3": ["sha256:808e10c8a6ab8deb149ff9b3fb19f447a808094606d712a9ca57fead3552599d"],
+    "filelock==3.32.3": ["sha256:608c89d5060ae9921adccf3236695bc654a9946e12323ef6c021dfa04e294d48"],
+    "hypothesis==6.165.10": ["sha256:ac89037bac63550644dce8cf32c6765e5fab9dc1a1ce94b89f8a805f341a6750"],
+    "identify==2.6.19": ["sha256:edbc2ad3b7084fac873e1b1b450fd370d914eb97f7f31263b4ff65f47dc10c43"],
+    "iniconfig==2.3.0": ["sha256:3409fa91f7ace557894632676656e32264fe5ef7581535725dc9a23774551bd4"],
+    "librt==0.15.0": ["sha256:81b7ac7e5dc9410dd4aa4c8f8c5884b43cb821137904dc247b381132389b6aa8"],
+    "mypy==1.20.2": [
+      "sha256:1cdee80ea9363fbe69582df40fa64e1853d7647fb4978c2b376f5854d88142be",
+      "sha256:13c71e0962836d8850762bda0f6234ff213034871fa66b6c42962549d73517a4"
+    ],
+    "mypy-extensions==1.1.0": ["sha256:a50450da1d53cd777b80ced77c58ff96abe0ccd879706bd142c3ec20e245f0b4"],
+    "nodeenv==1.10.0": ["sha256:606faf42d48b54d539dae99db6fecd48544535587e27275b319a3f36113cb6fa"],
+    "platformdirs==4.11.3": ["sha256:29e0fd62e929850e86eb28c3fdccf0cefdf4fa94879011cffb3d0d4bed6d4db6"],
+    "pre-commit==4.6.2": ["sha256:ea2ca27cba7cc35822d95a46d59bcd3cc88e196592e6390d1949a359ffc990e8"],
+    "pygments==2.21.0": ["sha256:a9d66f1d526df02e29dce73436d34e56e8632f46c275bbdffc70569e882f9f17"],
+    "pytest==8.4.2": ["sha256:ca836a5f9ecca3b2f350230faa20a48fb8b145653b5568d784862df864706b9b"],
+    "pytest-cov==6.3.0": ["sha256:835586ae156766a24e3c103fbc55d9af6b1a16df57ca932c97482a2737fd83d5"],
+    "python-discovery==1.5.2": ["sha256:90e25e1faf2a4aaea8d95ee8e7f5738b052a1acc0c9c58068101f931a86bd588"],
+    "pyyaml==6.0.3": ["sha256:8d3928f9dc4490fd635707cb88eb26bd764102a7282954307d3e5167a577e8a4"],
+    "ruff==0.16.4": ["sha256:2597d854122b77ddc71971564ca2350a37608575ce324adc5650a2b2051c8f18"],
+    "sortedcontainers==2.4.0": ["sha256:1db7cae7fce6452e2e608e401a0f953e0133e4c2d75db69fb8ae851d2086f5b6"],
+    "types-requests==2.33.0.20260712": ["sha256:295f8538c94ae5c3043301cf7cff1c852dab6a786a8ddee471e061b40d5ecabe"],
+    "virtualenv==21.7.4": ["sha256:5c15919378c5b2aaab7b19cea70d8cdc75f76879e32454e4c0399f8b71d171e9"]
+  },
+  "license_groups": [
+    {
+      "concluded": "MIT",
+      "packages": [
+        "annotated-types==0.8.0", "arc-agi==0.9.9", "arcengine==0.9.3",
+        "blinker==1.9.0", "cfgv==3.5.0", "charset-normalizer==3.5.1",
+        "filelock==3.32.3", "fonttools==4.63.0", "hatchling==1.32.0",
+        "identify==2.6.19", "iniconfig==2.3.0", "librt==0.15.0",
+        "mypy-extensions==1.1.0", "platformdirs==4.11.3", "pluggy==1.6.0",
+        "pre-commit==4.6.2", "pydantic==2.13.4", "pydantic-core==2.46.4",
+        "pyparsing==3.3.2", "pytest==8.4.2", "pytest-cov==6.3.0",
+        "python-discovery==1.5.2", "pyyaml==6.0.3", "six==1.17.0",
+        "tomlkit==0.15.1", "typing-inspection==0.4.4", "urllib3==2.7.0",
+        "virtualenv==21.7.4"
+      ]
+    },
+    {
+      "concluded": "BSD-3-Clause",
+      "packages": [
+        "click==8.4.2", "colorama==0.4.6", "contourpy==1.3.3",
+        "cycler==0.12.1", "flask==3.1.3", "idna==3.19", "itsdangerous==2.2.0",
+        "jinja2==3.1.6", "kiwisolver==1.5.0", "markupsafe==3.0.3",
+        "nodeenv==1.10.0", "python-dotenv==1.2.3", "werkzeug==3.1.8"
+      ]
+    },
+    {
+      "concluded": "Apache-2.0",
+      "packages": [
+        "coverage==7.15.4", "pyarrow==21.0.0", "requests==2.34.2",
+        "sortedcontainers==2.4.0", "trove-classifiers==2026.6.1.19",
+        "types-requests==2.33.0.20260712"
+      ]
+    },
+    {
+      "concluded": "MPL-2.0",
+      "packages": ["certifi==2026.7.22", "hypothesis==6.165.10", "pathspec==1.1.1"]
+    },
+    {
+      "concluded": "PSF-2.0",
+      "packages": ["distlib==0.4.3", "typing-extensions==4.16.0"]
+    },
+    {"concluded": "Apache-2.0 OR BSD-2-Clause", "packages": ["packaging==26.3"]},
+    {"concluded": "Apache-2.0 OR BSD-3-Clause", "packages": ["python-dateutil==2.9.0.post0"]},
+    {"concluded": "BSD-2-Clause", "packages": ["pygments==2.21.0"]},
+    {"concluded": "MIT-CMU", "packages": ["pillow==12.3.0"]},
+    {
+      "concluded": "BSD-3-Clause AND 0BSD AND MIT AND Zlib AND CC0-1.0",
+      "packages": ["numpy==2.5.2"]
+    },
+    {"concluded": "LicenseRef-Matplotlib-3.11.1-Composite", "packages": ["matplotlib==3.11.1"]},
+    {
+      "concluded": "Composite: MIT primary plus embedded PSF and typeshed Apache/MIT terms",
+      "packages": ["mypy==1.20.2"]
+    },
+    {
+      "concluded": "Composite: MIT primary plus bundled third-party notices",
+      "packages": ["ruff==0.16.4"]
+    },
+    {"concluded": "NOASSERTION / OWNER_DECISION_REQUIRED", "packages": ["arc3==0.1.0"]}
+  ],
+  "notes": [
+    "The first-party ARC3 record is deliberately not assigned a public license.",
+    "The pinned Kaggle Starter is an inspected non-distributed source with NOASSERTION and is not a uv.lock record.",
+    "Colorama and Nodeenv BSD-3-Clause values are conclusions from exact embedded three-clause texts.",
+    "Mypy, Ruff, Matplotlib, NumPy, FontTools, PyArrow, and Coverage retain their bundled or notice evidence."
+  ],
+  "schema": "arc3.dependency-license-inventory.v0.1",
+  "sources": {
+    "runtime_and_build_evidence": {
+      "path": "src/arc3/packaging/sbom.py",
+      "sha256": "sha256:512f8704467ef01304482f78b7c525986e8435f2378040036ba3b281de132ae7"
+    },
+    "third_party_notice": {
+      "path": "THIRD_PARTY_NOTICES.md",
+      "sha256": "sha256:86840196ffa2741c54e36251774a8b373cd47ea68a59f321e30170bfd6733b55"
+    },
+    "uv_lock": {
+      "path": "uv.lock",
+      "sha256": "sha256:3bf42dcbe45720f71b7433584f56a5d5982ec1c687c341ad2626222fa5de285b"
+    }
+  }
+}

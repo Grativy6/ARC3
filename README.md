@@ -1,91 +1,134 @@
 # ARC3
 
-Autonomous research and engineering workspace for the **ARC Prize 2026 — ARC-AGI-3** interactive reasoning benchmark.
+ARC3 is a reproducible, offline-capable research agent for the **ARC Prize 2026 — ARC-AGI-3**
+interactive reasoning benchmark. It explores unfamiliar grid environments, preserves immutable
+observations and action consequences, tracks revisable hypotheses, compiles executable world
+models, infers candidate goals, plans one action at a time, recovers from contradictions, and
+checkpoints exact state.
 
-ARC3's initial target is a reproducible, offline-capable agent that can explore unfamiliar grid environments, infer mechanics and candidate goals, test rules against preserved history, plan efficiently, recover from failed predictions, and package cleanly for Kaggle evaluation.
+## Measured status
 
-## Current status
+**Build 000: PARTIAL.** The typed agent, deterministic evaluation system, trace/replay/checkpoint
+machinery, procedural environments, ablations, runtime profile, integrity checks, and offline
+Kaggle package candidate are implemented on `build/000-arc3-end-to-end`. Review remains in
+[draft PR #3](https://github.com/Grativy6/ARC3/pull/3); nothing has been merged, released, licensed,
+or submitted.
 
-**`WORKFLOW_READY`** — the complete autonomous Codex workflow is prepared. Agent implementation and measured scoring have not started.
+“PARTIAL” describes the measured agent result, not missing evidence:
 
-## Start the autonomous build
-
-1. Open the branch `workflow/000-autonomous-arc3` in Codex.
-2. Read [`CODEX_START.md`](CODEX_START.md).
-3. Paste its launcher exactly once.
-
-The short form is:
-
-> Read `AGENTS.md`, then execute `docs/workflows/000-arc3-autonomous-end-to-end.md` from beginning to end. Use all routine permissions granted there, persist after every meaningful task, resume from `docs/ledger/run-state.json` after interruption, and stop only at its explicit human gates. Do not merge the final PR.
-
-The implementation run creates and works on:
-
-```text
-build/000-arc3-end-to-end
-```
-
-## What is already prepared
-
-| Surface | Purpose |
+| Surface | Strongest relevant result |
 |---|---|
-| [`AGENTS.md`](AGENTS.md) | Repository-wide autonomy, integrity, evidence, and human-gate contract |
-| [`CODEX_START.md`](CODEX_START.md) | One-paste launcher and recommended Codex permissions |
-| [`docs/workflows/000-arc3-autonomous-end-to-end.md`](docs/workflows/000-arc3-autonomous-end-to-end.md) | Twenty-one-stage build from source identity through offline Kaggle package, clean-clone verification, research report, and draft PR |
-| [`docs/specs/target-architecture.md`](docs/specs/target-architecture.md) | Observation → trace → hypothesis → world model → goal → plan/probe → action → consequence/reopening architecture |
-| [`docs/specs/trace-ledger-contract.md`](docs/specs/trace-ledger-contract.md) | Append-only, hash-linked receipts, replay, summaries, and checkpoint contract |
-| [`docs/specs/evaluation-protocol.md`](docs/specs/evaluation-protocol.md) | Baselines, partitions, ablations, reproducibility envelope, and claim limits |
-| [`docs/ledger/run-state.json`](docs/ledger/run-state.json) | Machine-readable persistent stage/task state for interruption recovery |
-| [`docs/ledger/DECISIONS.md`](docs/ledger/DECISIONS.md) | Append-oriented material decision ledger |
-| [`docs/ledger/OPEN_BURDENS.md`](docs/ledger/OPEN_BURDENS.md) | Unresolved technical, evidential, external, and owner-gated burdens |
-| [`docs/legal/LICENSE-DECISION.md`](docs/legal/LICENSE-DECISION.md) | Explicit owner gate for the eventual open-source license |
+| synthetic | Full controller 32/32 in 190 actions vs cycle 4/32 in 463 under equal 16-action budgets |
+| synthetic ablation | FULL 8/14 in 150 actions; no world-model simulation 1/14 in 211; no goal inference 0/14 in 224 |
+| local-public | Full controller timed out in all 30 Stage 15 smoke/development runs and all 6 Stage 18 release-smoke runs, completing zero levels; random produced the sole nonzero Stage 15 result and completed one development level |
+| synthetic runtime | 80 actions in 116.26474110002164 seconds; 175,210,496-byte peak RSS; all 9 runtime checks passed |
+| synthetic robustness | 7 passed, 4 palette/action-remap cases failed, 1 rule-change case not exercised |
+| synthetic package | Two byte-identical offline candidates passed sandbox, schema, source, wheel, secret, and game-ID checks |
+| synthetic release infrastructure | Clean clone passed 423 tests, 13 replay/tamper tests, exact benchmark reproduction, deterministic packaging, integrity, and artifact verification |
 
-## Build route
+These results do not establish hidden-game generalization. There is no `online-public`,
+`Kaggle-public`, `semi-private`, or `official-private` result. Official RHAE is unmeasured/null for
+the local runs; completion, environment-action counts, and local scorecard values are not RHAE.
 
-```text
-source identity
-→ reproducible project foundation
-→ official SDK and baselines
-→ immutable trace / replay / checkpoint
-→ perception and object correspondence
-→ typed hypotheses and reopening
-→ procedural unseen-rule laboratory
-→ information-efficient exploration
-→ retrodictive executable world model
-→ goal acquisition
-→ planning and recovery
-→ scoped persistent memory
-→ integrated ARC3 controller
-→ evaluation harness and ablations
-→ public-game development
-→ runtime and integrity hardening
-→ offline Kaggle package
-→ clean-clone verification
-→ methods/results report and owner handoff
-→ final draft PR
+## Quickstart
+
+Requirements: Git, uv 0.12.5, and a uv-managed CPython 3.12.14 runtime.
+
+```powershell
+git clone https://github.com/Grativy6/ARC3.git
+Set-Location ARC3
+git switch build/000-arc3-end-to-end
+uv sync --frozen --all-extras --dev --python 3.12.14
+uv run arc3 doctor
+uv run pytest -q
 ```
 
-The final competition policy must work without internet or a hosted model API. Public game IDs may appear in manifests and reports, but production policy may not contain game-specific solutions.
+Quality and integrity checks:
+
+```powershell
+uv run ruff check .
+uv run ruff format --check .
+uv run mypy --strict src agent scripts
+uv run python -m scripts.check_competition_integrity --root .
+```
+
+Build the no-submit offline candidate:
+
+```powershell
+.\scripts\prepare_kaggle_submission.ps1 --output artifacts\stage17\candidate --owner-username OWNER_USERNAME
+```
+
+The package command uses `OWNER_USERNAME` only as notebook metadata. It does not authenticate,
+accept terms, upload, or submit. Exact clean-clone release reproduction is documented in
+[`docs/reports/018-release-candidate-verification.md`](docs/reports/018-release-candidate-verification.md).
+
+## Architecture
+
+```text
+observation
+  -> interpretation
+  -> candidate hypothesis
+  -> accepted rule
+  -> executable world model
+  -> goal hypothesis
+  -> probe or plan
+  -> action
+  -> returned consequence
+  -> trace update and possible reopening
+```
+
+Raw environment receipts are immutable and hash-linked. Derived summaries, hypotheses, indices,
+world models, goals, and plans remain revisable. Every action is bound to its pre-action evidence,
+active models and goals, selected plan/probe, concise alternatives, returned consequence, and
+resulting confirmation or contradiction. The controller emits one action, waits for its actual
+consequence, then validates or recovers.
+
+Production policy is offline and CPU-default. It contains no hosted model API, public-game ID
+conditionals, manually encoded public-game action sequences, or game-specific solution table.
+Static source and archive checks fail on obvious violations of those restrictions; they are not a
+proof that every possible shortcut is absent.
+
+## Evidence map
+
+| Artifact | Purpose |
+|---|---|
+| [`docs/research/ARC3-Build-000-report.md`](docs/research/ARC3-Build-000-report.md) | Methods, results, ablations, failures, and limitations |
+| [`docs/handoffs/000-autonomous-arc3.md`](docs/handoffs/000-autonomous-arc3.md) | Owner handoff and exact next boundary |
+| [`docs/ledger/run-state.json`](docs/ledger/run-state.json) | Persistent machine-readable stage state |
+| [`docs/ledger/DECISIONS.md`](docs/ledger/DECISIONS.md) | Material technical decisions |
+| [`docs/ledger/OPEN_BURDENS.md`](docs/ledger/OPEN_BURDENS.md) | Unresolved mechanisms, evidence gaps, and external gates |
+| [`docs/evidence/`](docs/evidence/) | Compact measured acceptance receipts |
+| [`docs/reports/`](docs/reports/) | Stage methods and reproduction commands |
+| [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md) | Complete locked dependency/license inventory |
+| [`docs/legal/candidates/MIT-0-CANDIDATE.md`](docs/legal/candidates/MIT-0-CANDIDATE.md) | Nonoperative owner-review candidate; no license granted |
+
+The repository-wide execution and integrity contract remains [`AGENTS.md`](AGENTS.md). The frozen
+bootstrap copy under `docs/reference/` is provenance, not a competing instruction set.
+
+## Known limitations
+
+- The measured public result is negative; synthetic completion did not transfer.
+- Palette and action remapping break otherwise successful paired synthetic cases.
+- The one-shot public holdout remains deliberately unconsumed after its development gate failed.
+- The private Kaggle wheel inventory, gateway, scorer, and complete 110-game runtime were not
+  available locally.
+- The complete sequential competition runtime is estimated, not measured end to end.
+- Hash seals are tamper-evident identities, not signatures or proof of trusted execution.
+- No official submission or hidden/private evaluation has occurred.
+
+Low or zero scores remain evidence when their budgets, source identity, failures, and artifacts are
+preserved. Packaging success does not revise gameplay results.
 
 ## Human gates
 
-The autonomous run may build, test, benchmark, push branches, and open/update a draft PR. It may not independently:
+Only Christopher D. Pang may accept competition terms, grant a public license, supply or disclose
+credentials, spend money, make an official submission, publish a release/DOI, communicate
+externally as the owner, or merge the draft PR. There is intentionally no root `LICENSE`.
 
-- accept ARC Prize or Kaggle legal terms;
-- grant a public software license;
-- spend money or activate paid compute;
-- expose or create credentials;
-- submit an official competition entry;
-- merge into `main`;
-- communicate externally as Christopher D. Pang.
+## Authorship and claim boundary
 
-At a gate, Codex must prepare everything up to the boundary, record the exact smallest owner action, and continue all independent work.
+**Christopher D. Pang** is the project author and steward. AI systems are development tools and
+assistants, not co-authors, owners, or independent authorities.
 
-## Result discipline
-
-ARC3 will distinguish synthetic, local-public, online-public, Kaggle-public, semi-private, and official-private results. A public-game win is not a hidden-generalization result. A clean package is not an official submission. A trace-inspired architecture is not proof of PAL.
-
-Low or zero scores remain valid results when the run is reproducible and honestly reported.
-
-## Authorship
-
-**Christopher D. Pang** is the project author and steward. AI systems are development tools and assistants, not co-authors, owners, or independent authorities.
+ARC3 is a bounded engineering experiment. It does not prove PAL, AGI, consciousness, hidden-game
+generalization, or a general theory of intelligence.

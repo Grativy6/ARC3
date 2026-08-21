@@ -1,6 +1,6 @@
 # Third-party notices
 
-Status: Build 000 Stage 17 inventory
+Status: Build 000 Stage 19 complete lock inventory
 Last verified: 2026-08-21
 
 Christopher D. Pang is the author and steward of ARC3. Third-party works retain their own authorship, copyright, and license terms. This inventory records the exact Build 000 runtime, platform-input, and build-only identities; it does not grant a license for ARC3 itself.
@@ -24,6 +24,52 @@ The generated `runtime-requirements-linux-cp312.txt`, `runtime-wheels-linux-cp31
 The selected `fonttools==4.63.0` Linux wheel also carries bundled external OFL/BSD notices in `LICENSE.external` (20,022 bytes; SHA-256 `94a83aaee0729a0f302d34acc4acecbd9d58366f262429075fe557e4a54b2e69`). The generated SBOM records that notice alongside the primary FontTools `LICENSE` identity.
 
 `colorama==0.4.6` remains in the cross-platform development lock as a Windows-only conditional dependency of Click; it is not in the Linux competition requirements or runtime SBOM closure.
+
+## Complete repository lock reconciliation
+
+The Stage 19 audit binds `uv.lock` at
+`sha256:3bf42dcbe45720f71b7433584f56a5d5982ec1c687c341ad2626222fa5de285b`.
+It contains 61 package records: one first-party `arc3` record and 60 third-party records. The
+Stage 17 SPDX file covers 37 locked third-party distributions, and the development-lock table
+below covers the remaining 23, including the previously noted platform-conditional Colorama
+record. Thus every locked record has a declared or concluded treatment; `arc3` remains the sole
+`OWNER_DECISION_REQUIRED` / `NOASSERTION` record. The compact machine-readable reconciliation is
+`docs/evidence/019-dependency-license-inventory.json`.
+
+Hashes below are SHA-256 identities of exact installed `.dist-info` license or notice evidence in
+the frozen Python 3.12 environment. “Composite” means the primary license and bundled terms must
+travel together. Colorama and Nodeenv declare generic BSD metadata; the BSD-3-Clause conclusion
+comes from their exact embedded three-clause text.
+
+| Development-lock distribution | Concluded treatment | Exact evidence SHA-256 |
+|---|---|---|
+| `cfgv==3.5.0` | MIT | `01fc3f8031a672b3f5d7d8ac262e432f3ea812809f5697d6bc5b270bf6446561` |
+| `colorama==0.4.6` | BSD-3-Clause | `cac35c02686e5d04a5a7140bfb3b36e73aed496656e891102e428886d7930318` |
+| `coverage==7.15.4` | Apache-2.0 | LICENSE `eb3d7b5485466acbd81f2b496f595ab637d2792e268206b27d99e793bdb67549`; NOTICE `445e6e7876ff25ff16254af9ba7cb38939b108bad08034ab7742334473ad0e34` |
+| `distlib==0.4.3` | PSF-2.0 | `808e10c8a6ab8deb149ff9b3fb19f447a808094606d712a9ca57fead3552599d` |
+| `filelock==3.32.3` | MIT | `608c89d5060ae9921adccf3236695bc654a9946e12323ef6c021dfa04e294d48` |
+| `hypothesis==6.165.10` | MPL-2.0 | `ac89037bac63550644dce8cf32c6765e5fab9dc1a1ce94b89f8a805f341a6750` |
+| `identify==2.6.19` | MIT | `edbc2ad3b7084fac873e1b1b450fd370d914eb97f7f31263b4ff65f47dc10c43` |
+| `iniconfig==2.3.0` | MIT | `3409fa91f7ace557894632676656e32264fe5ef7581535725dc9a23774551bd4` |
+| `librt==0.15.0` | MIT with bundled terms retained | `81b7ac7e5dc9410dd4aa4c8f8c5884b43cb821137904dc247b381132389b6aa8` |
+| `mypy==1.20.2` | Composite: MIT primary plus embedded PSF and typeshed Apache/MIT terms | primary `1cdee80ea9363fbe69582df40fa64e1853d7647fb4978c2b376f5854d88142be`; typeshed `13c71e0962836d8850762bda0f6234ff213034871fa66b6c42962549d73517a4` |
+| `mypy-extensions==1.1.0` | MIT | `a50450da1d53cd777b80ced77c58ff96abe0ccd879706bd142c3ec20e245f0b4` |
+| `nodeenv==1.10.0` | BSD-3-Clause | `606faf42d48b54d539dae99db6fecd48544535587e27275b319a3f36113cb6fa` |
+| `platformdirs==4.11.3` | MIT | `29e0fd62e929850e86eb28c3fdccf0cefdf4fa94879011cffb3d0d4bed6d4db6` |
+| `pre-commit==4.6.2` | MIT | `ea2ca27cba7cc35822d95a46d59bcd3cc88e196592e6390d1949a359ffc990e8` |
+| `pygments==2.21.0` | BSD-2-Clause | `a9d66f1d526df02e29dce73436d34e56e8632f46c275bbdffc70569e882f9f17` |
+| `pytest==8.4.2` | MIT | `ca836a5f9ecca3b2f350230faa20a48fb8b145653b5568d784862df864706b9b` |
+| `pytest-cov==6.3.0` | MIT | `835586ae156766a24e3c103fbc55d9af6b1a16df57ca932c97482a2737fd83d5` |
+| `python-discovery==1.5.2` | MIT | `90e25e1faf2a4aaea8d95ee8e7f5738b052a1acc0c9c58068101f931a86bd588` |
+| `pyyaml==6.0.3` | MIT | `8d3928f9dc4490fd635707cb88eb26bd764102a7282954307d3e5167a577e8a4` |
+| `ruff==0.16.4` | Composite: MIT primary plus bundled third-party notices | `2597d854122b77ddc71971564ca2350a37608575ce324adc5650a2b2051c8f18` |
+| `sortedcontainers==2.4.0` | Apache-2.0 | `1db7cae7fce6452e2e608e401a0f953e0133e4c2d75db69fb8ae851d2086f5b6` |
+| `types-requests==2.33.0.20260712` | Apache-2.0 | `295f8538c94ae5c3043301cf7cff1c852dab6a786a8ddee471e061b40d5ecabe` |
+| `virtualenv==21.7.4` | MIT | `5c15919378c5b2aaab7b19cea70d8cdc75f76879e32454e4c0399f8b71d171e9` |
+
+No locked third-party distribution was unknown or absent from the synchronized audit environment.
+The installed metadata for `arc-agi==0.9.9` and `arcengine==0.9.3` declares MIT but embeds no
+license file, so the existing upstream Git/sdist identities remain the controlling evidence.
 
 ## Platform-supplied runtime component
 

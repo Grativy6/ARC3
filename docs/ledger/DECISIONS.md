@@ -399,3 +399,17 @@ This file records material decisions made during the autonomous build. It is app
 - **Consequences:** Artifact integrity and policy effectiveness remain separate claims. A partial public result can be reproducibly sealed without becoming PASS, and CI pays the explicit full-history checkout cost.
 - **Reopening condition:** GitHub supplies a trustworthy minimal ancestry proof that retains the exact assertion, or a replacement artifact format verifies negative/partial runs with stronger provenance at lower cost.
 - **Supersedes / superseded by:** none.
+
+## D-20260821-028 — Keep first-party licensing nonoperative pending the owner decision
+
+- **Status:** ADOPTED
+- **Stage:** 19
+- **Date:** 2026-08-21
+- **Commit:** pending Stage 19 documentation checkpoint
+- **Decision:** Leave the repository without a root `LICENSE`, keep first-party `arc3` as `NOASSERTION / OWNER_DECISION_REQUIRED`, and place sourced MIT-0 text only in `docs/legal/candidates/MIT-0-CANDIDATE.md` beneath the explicit boundary `CANDIDATE ONLY — NO LICENSE GRANTED`. Reconcile all 61 `uv.lock` records separately in the third-party inventory.
+- **Alternatives:** Infer a license from competition eligibility; install candidate text as the root license; leave development-only dependencies unaccounted; describe the unlicensed Kaggle Starter as redistributable; block documentation work until the owner decides.
+- **Evidence:** `THIRD_PARTY_NOTICES.md`; `docs/evidence/019-dependency-license-inventory.json`; `docs/legal/candidates/MIT-0-CANDIDATE.md`; SPDX MIT-0 canonical source named in the candidate; absence of a root `LICENSE`.
+- **Why:** A public license is an owner-only legal grant, while preparing an exact review candidate and complete dependency evidence is reversible engineering work that can be completed without manufacturing authority.
+- **Consequences:** The Build 000 source remains unlicensed pending explicit owner direction. Runtime, build, inspected-source, and first-party license treatments remain visibly distinct, and packaging success is not described as prize eligibility.
+- **Reopening condition:** Christopher D. Pang explicitly approves or rejects the candidate, or authoritative competition requirements change before that decision.
+- **Supersedes / superseded by:** none.
