@@ -5,8 +5,8 @@
   "repository": "Grativy6/ARC3",
   "owner": "Christopher D. Pang",
   "status": "IN_PROGRESS",
-  "current_stage": "15",
-  "current_task": "stage-15-public-game-development",
+  "current_stage": "16",
+  "current_task": "stage-16-optimization-robustness-integrity",
   "implementation_branch": "build/000-arc3-end-to-end",
   "pull_request": {
     "number": 3,
@@ -14,8 +14,8 @@
     "draft": true
   },
   "started_at": "2026-08-21T04:46:19Z",
-  "last_checkpoint_at": "2026-08-21T08:45:17Z",
-  "last_checkpoint_commit": "565712fe6fb1e62f704f40a7693d3d3fb1de3ada",
+  "last_checkpoint_at": "2026-08-21T10:49:34Z",
+  "last_checkpoint_commit": "6a0f6e5b9cf076f7d755675ece0fa46379202161",
   "resume_generation": 0,
   "completed_stages": [
     "00",
@@ -32,7 +32,8 @@
     "11",
     "12",
     "13",
-    "14"
+    "14",
+    "15"
   ],
   "stage_status": {
     "00": "PASS",
@@ -50,8 +51,8 @@
     "12": "PASS",
     "13": "PASS",
     "14": "PASS",
-    "15": "IN_PROGRESS",
-    "16": "PENDING",
+    "15": "PASS",
+    "16": "IN_PROGRESS",
     "17": "PENDING",
     "18": "PENDING",
     "19": "PENDING",
@@ -396,6 +397,27 @@
         "exact_semantic_reproduction": "PASS",
         "initial_workspace_run": "FAILED_INFRASTRUCTURE:WinError-5-preserved"
       }
+    },
+    "stage_15": {
+      "status": "PASS",
+      "label": "local-public",
+      "evaluation_status": "PARTIAL",
+      "claim": "MECHANISM_NOT_OBSERVED",
+      "claim_boundary": "NO_GENERALIZATION_CLAIM",
+      "report": "docs/reports/015-public-development.md",
+      "report_sha256": "sha256:c2b8a7c84b9164bc0859497a650fb3d4c5968ce600d701be1669bf0643efdff9",
+      "acceptance_evidence": "docs/evidence/015-public-development-acceptance.json",
+      "acceptance_evidence_sha256": "sha256:43d9b116448668626a27874f138f38f22011fb08fe7d38b8e335333cd0063815",
+      "checkpoint_commit": "6a0f6e5b9cf076f7d755675ece0fa46379202161",
+      "verification": {
+        "smoke": "PARTIAL:30-runs+6-full-timeouts+0-levels",
+        "development": "PARTIAL:120-runs+24-full-timeouts+B0-1-level",
+        "artifact_verification": "PASS:13927-artifacts+0-errors",
+        "official_metadata_identity": "PASS:25-of-25",
+        "holdout_gate": "PASS:rejected-before-gameplay+0-events",
+        "holdout_result": "NOT_MEASURED",
+        "frozen_commit_ci": "PASS:ubuntu+windows:runs-32471135774,32471131148"
+      }
     }
   },
   "blocked_items": [
@@ -520,6 +542,12 @@
       "label": "synthetic",
       "result": "clean paired A1-A10 matrix passed 154/154 with zero faults: FULL 8/14 in 150 actions; no-simulation A4 1/14 in 211; no-goal A5 0/14 in 224; A3 tied completion with 9 fewer actions and remains conflicting evidence",
       "report": "docs/reports/014-ablations-and-mechanism-tests.md"
+    },
+    {
+      "stage": "15",
+      "label": "local-public",
+      "result": "MECHANISM_NOT_OBSERVED: FULL timed out in all 30 smoke/development runs and completed zero levels; B0 random completed the sole level with development mean score 0.016196954972465177; 150 terminal outcomes and 13,927 artifacts verify; public holdout unconsumed",
+      "report": "docs/reports/015-public-development.md"
     }
   ],
   "artifacts": {
@@ -650,9 +678,17 @@
     "stage_14_infrastructure_failure": {
       "path": "docs/evidence/014-ablation-infrastructure-failure.json",
       "sha256": "04a0e470e63f41a8dd3b5a51bfca4748321111f7b97926f4549b77044567975f"
+    },
+    "stage_15_report": {
+      "path": "docs/reports/015-public-development.md",
+      "sha256": "c2b8a7c84b9164bc0859497a650fb3d4c5968ce600d701be1669bf0643efdff9"
+    },
+    "stage_15_public_development_acceptance": {
+      "path": "docs/evidence/015-public-development-acceptance.json",
+      "sha256": "43d9b116448668626a27874f138f38f22011fb08fe7d38b8e335333cd0063815"
     }
   },
-  "next_action": "Evaluate the frozen FULL competition policy on official public smoke and development partitions, preserve exposure identities, then open the predeclared public holdout at most once if anonymous assets are available.",
+  "next_action": "Profile the integrated competition policy under conservative CPU, wall-clock, RAM, trace, checkpoint, planner, and recovery bounds; optimize measured generic bottlenecks without changing the sealed Stage 15 result.",
   "notes": [
     "Initial READY state was validated against the repository at b1948e9d02ad7b1321cbc57f3538047813e01e98 before this run began.",
     "No prior completed stages, checkpoint commit, or evidence artifacts were recorded; bootstrap PR 1 and its merge commit were independently verified.",

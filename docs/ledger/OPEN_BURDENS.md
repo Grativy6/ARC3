@@ -735,3 +735,75 @@ This file preserves unresolved technical, evidential, legal, and external burden
 - **Next discriminating action:** Continue generated high-churn checkpoint/evaluation trees under a unique short `C:\a` root; retain atomic replacement tests on ordinary repository paths.
 - **Resolution condition:** The same frozen protocol completes from a clean committed worktree with exact semantic reproduction and no checkpoint fault.
 - **Resolution receipt:** `docs/evidence/014-ablation-acceptance.json`; commit `565712fe6fb1e62f704f40a7693d3d3fb1de3ada`.
+
+---
+
+## 2026-08-21 Stage 15 updates
+
+### B-20260820-008 — The public matrix did not show benefit from the trace/world-model bundle
+
+- **Status update:** OPEN with negative local-public evidence.
+- **Last updated:** 2026-08-21
+- **Current evidence:** FULL retained the required trace, hypothesis, model, goal, plan, action, consequence, and replay receipts, but timed out in all 30 public runs and completed zero levels. B0 random completed the sole level.
+- **Remaining burden:** The current result confounds mechanism quality with excessive integrated runtime and persistence cost. It cannot establish that trace discipline is useless, nor that the synthetic benefit transfers to official or hidden games.
+- **Resolution receipt:** `docs/evidence/015-public-development-acceptance.json`.
+
+### B-20260821-027 — Integrated controller success is synthetic while official public evaluation remains negative
+
+- **Status update:** NARROWED with complete negative local-public evidence; unresolved for future generic policies and hidden evaluation.
+- **Last updated:** 2026-08-21
+- **Current evidence:** On three smoke and 12 development games, seeds 7 and 11, FULL completed zero levels and timed out in all 30 runs after 460 total actions. B0 random completed the only level and had development mean score `0.016196954972465177`; B1–B4 had mean score 0.0. All 150 run outcomes and 13,927 sealed artifacts verify.
+- **Remaining burden:** FULL's synthetic mechanism result did not transfer to the measured public surface. No public holdout, online-public, Kaggle-public, semi-private, or official-private evidence exists.
+- **Resolution receipt:** `docs/evidence/015-public-development-acceptance.json`; measured commit `6a0f6e5b9cf076f7d755675ece0fa46379202161`.
+
+### B-20260821-031 — B0–B4 comparison now includes public development but remains non-generalizing
+
+- **Status update:** NARROWED by 150 separately labeled local-public runs; hidden-game generalization remains unresolved.
+- **Last updated:** 2026-08-21
+- **Current evidence:** The public matrix covers 15 predeclared smoke/development games with two seeds and equal 80-action, eight-reset, 120-second budgets. B0's sole level was an isolated random event; FULL timed out in every run. The public holdout remains unconsumed.
+- **Remaining burden:** Neither a larger public matrix nor a future holdout can establish official-private performance. The current policy also lacks a passing public development result.
+- **Resolution receipt:** `docs/evidence/015-public-development-acceptance.json`.
+
+### B-20260821-032 — B4 public wall time is now measured while RSS remains open
+
+- **Status update:** NARROWED; the compact threshold omission materially manifested on the public surface.
+- **Last updated:** 2026-08-21
+- **Current evidence:** B4 timed out after 120 seconds in all 30 public runs and completed only 8–20 actions per development run, while B0–B3 each returned 80 actions. Representative B4 trace cost was 88,417.9 bytes/action; whole-process RSS remains unmeasured.
+- **Remaining burden:** Stage 16 must separately measure startup, RSS, phase latency, planner expansion, checkpoint growth, and sustained 80-action execution under an explicit competition envelope.
+- **Resolution receipt:** `docs/evidence/015-public-development-acceptance.json`.
+
+### B-20260821-036 — Public traces expose cost but do not isolate all component value
+
+- **Status update:** NARROWED by official-shaped trace exposure; component effects remain confounded by runtime.
+- **Last updated:** 2026-08-21
+- **Current evidence:** Representative FULL public traces include observation, hypothesis, retrodiction, goal, model-promotion, simulation, action, and returned-consequence receipts. A 19-action run retained 759 events and 1,679,940 trace bytes before its 120-second timeout.
+- **Remaining burden:** Because every FULL public run timed out, Stage 15 cannot attribute failure to any one A1–A10 component or distinguish compute from checkpoint/trace I/O. Controlled Stage 16 profiling remains required.
+- **Resolution receipt:** `docs/evidence/015-public-development-acceptance.json`.
+
+## B-20260821-038 — FULL exceeds the public per-run wall envelope
+
+- **Status:** OPEN
+- **Stage:** 15, 16, 17, 18, 19
+- **Opened:** 2026-08-21
+- **Last updated:** 2026-08-21
+- **Owner:** Codex
+- **Burden:** FULL timed out in all six smoke and all 24 development runs at 120 seconds, after only 8–20 actions per development run. The simple baselines returned all 80 actions in each run.
+- **Why it matters:** A trace-correct policy that cannot act within competition-compatible runtime and memory limits is not a viable offline submission candidate.
+- **Current evidence:** FULL produced 460 total actions across 30 timeouts, zero levels, and zero returned official scorecards. The representative 19-action failure used 1,679,940 trace bytes and 759 events. Timeout receipts replay and all evaluation seals verify.
+- **Next discriminating action:** Stage 16 must profile whole-process RSS, per-phase latency, planner expansion, trace/checkpoint growth, restart, and malformed-input recovery under the frozen competition envelope; optimize only measured generic bottlenecks.
+- **Resolution condition:** The integrated policy completes its declared action workload within conservative competition wall/RAM/trace limits without material regression against the pinned synthetic milestone, or the final candidate is explicitly classified as failing that constraint.
+- **Resolution receipt:** none.
+
+## B-20260821-039 — Public holdout remains deliberately unconsumed
+
+- **Status:** OPEN
+- **Stage:** 15, 19
+- **Opened:** 2026-08-21
+- **Last updated:** 2026-08-21
+- **Owner:** shared
+- **Burden:** The one-shot holdout command rejected the PARTIAL development manifest before acquisition or gameplay. There are zero holdout exposure events and zero locally acquired holdout assets.
+- **Why it matters:** Opening the holdout after a failed development gate would weaken the predeclared protocol; leaving it closed means there is no holdout result.
+- **Current evidence:** Exact rejection: `sealed development evidence is not a passing development run`; the requested evaluation directory does not exist; exposure-ledger hash is `sha256:cd9af42ed3a5ef9fa0dc201ddb10e32d2bcccee9df729aa0c7d53077c04c9ad4`.
+- **Next discriminating action:** Preserve the partition until a future generic frozen milestone passes a sealed development gate. Do not acquire or inspect it during Build 000 packaging or release verification.
+- **Resolution condition:** A future predeclared milestone legitimately passes development and consumes the holdout once, or the project permanently retires the holdout without exposure.
+- **Resolution receipt:** none.

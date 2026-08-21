@@ -1,0 +1,271 @@
+{
+  "schema": "arc3.stage15.public-development-acceptance.v0.1",
+  "stage": "15",
+  "stage_status": "PASS",
+  "surface": "local-public",
+  "claim": "MECHANISM_NOT_OBSERVED",
+  "claim_boundary": "NO_GENERALIZATION_CLAIM",
+  "measured_commit": "6a0f6e5b9cf076f7d755675ece0fa46379202161",
+  "milestone_id": "build-000-stage15-v0.1",
+  "protocol": {
+    "agents": [
+      "random",
+      "cycle",
+      "novelty",
+      "trace",
+      "full"
+    ],
+    "baseline_ids": {
+      "random": "B0",
+      "cycle": "B1",
+      "novelty": "B2",
+      "trace": "B3",
+      "full": "B4"
+    },
+    "seeds": [
+      7,
+      11
+    ],
+    "max_actions": 80,
+    "max_resets": 8,
+    "per_run_wall_clock_seconds": 120.0,
+    "process_isolation": "multiprocessing-spawn",
+    "policy_network_mode": "offline",
+    "python_version": "3.12.14",
+    "platform": "win32",
+    "cpu": "AMD64 Family 23 Model 8 Stepping 2, AuthenticAMD",
+    "logical_cpu_count": 12,
+    "scorer": "arc-agi==0.9.9 local ScorecardManager; arcengine==0.9.3",
+    "official_rhae": null,
+    "public_partition_manifest_sha256": "sha256:682d5891c2aface54803d9bd1173c55ed21e89856e13b8a478fb9276ee963f2f",
+    "upstream_lock_sha256": "sha256:67e1d937e213bbcc25783784d04c4fa349b85dc09b94855256916ca6b96e808a"
+  },
+  "source_revalidation": {
+    "status": "PASS",
+    "discovered_public_games": 25,
+    "partition_manifest_games": 25,
+    "missing_game_ids": [],
+    "extra_game_ids": [],
+    "mismatched_stable_names": [],
+    "partition_counts": {
+      "smoke": 3,
+      "development": 12,
+      "public-holdout": 10
+    },
+    "locally_acquired_games": 15,
+    "locally_acquired_holdout_games": 0,
+    "gameplay_opened_during_revalidation": false,
+    "game_source_semantically_inspected": false
+  },
+  "smoke": {
+    "evaluation_id": "stage15-smoke-6a0f6e5b9cf0",
+    "partition": "smoke",
+    "status": "PARTIAL",
+    "claim": "MECHANISM_NOT_OBSERVED",
+    "games": 3,
+    "runs": 30,
+    "sealed_artifacts_verified": 2579,
+    "verification_errors": [],
+    "started_at": "2026-08-21T09:07:46.596487Z",
+    "completed_at": "2026-08-21T09:27:04.580252Z",
+    "first_party_source_hash": "sha256:19a02698148e935197326842b91472db0098c37289e3196994e72f08ffc31eba",
+    "identity_hash": "sha256:d8c82f45b225b81e61a189abd2a19ced81595d576a75dc41d46f1ac37375b8ad",
+    "config_hash": "sha256:43c05268bd0f98620d8e039bea821bb96eb441c24f52daf173c66e8dd5aaa2ed",
+    "semantic_manifest_hash": "sha256:84cbc4da9dbc4ba58d883ac336e4eef37cc9a5be63d2c0e343fae8f3c5de7747",
+    "manifest_file_sha256": "sha256:41e347e2146f37046d9e608ace8d768a70d74e2b03ca276832e1238ca17cb8d7",
+    "results_file_sha256": "sha256:627391767f9081e52838b312b3bea68da818e9e79e3ee4a2a5c39493b3634b46",
+    "summary_file_sha256": "sha256:be46dd1efe791352b2f702cd0fddbead4e64e55aac030cecf5b4f06430a0f223",
+    "tree_file_count_including_manifest": 2580,
+    "tree_bytes_including_manifest": 196742833,
+    "policies": {
+      "B0_random": {
+        "runs": 6,
+        "transport_successes": 6,
+        "failures": 0,
+        "environment_actions": 480,
+        "levels_completed": 0,
+        "mean_score": 0.0
+      },
+      "B1_cycle": {
+        "runs": 6,
+        "transport_successes": 6,
+        "failures": 0,
+        "environment_actions": 480,
+        "levels_completed": 0,
+        "mean_score": 0.0
+      },
+      "B2_novelty": {
+        "runs": 6,
+        "transport_successes": 6,
+        "failures": 0,
+        "environment_actions": 480,
+        "levels_completed": 0,
+        "mean_score": 0.0
+      },
+      "B3_trace": {
+        "runs": 6,
+        "transport_successes": 6,
+        "failures": 0,
+        "environment_actions": 480,
+        "levels_completed": 0,
+        "mean_score": 0.0
+      },
+      "B4_full": {
+        "runs": 6,
+        "transport_successes": 0,
+        "failures": 6,
+        "faults": 6,
+        "failure_kind": "wall_clock_timeout",
+        "environment_actions_before_timeout": 116,
+        "levels_completed": 0,
+        "mean_score": 0.0
+      }
+    }
+  },
+  "development": {
+    "evaluation_id": "stage15-development-6a0f6e5b9cf0",
+    "partition": "development",
+    "status": "PARTIAL",
+    "claim": "MECHANISM_NOT_OBSERVED",
+    "games": 12,
+    "runs": 120,
+    "sealed_artifacts_verified": 11348,
+    "verification_errors": [],
+    "started_at": "2026-08-21T09:27:58.621708Z",
+    "completed_at": "2026-08-21T10:45:58.718383Z",
+    "first_party_source_hash": "sha256:19a02698148e935197326842b91472db0098c37289e3196994e72f08ffc31eba",
+    "identity_hash": "sha256:6a3a1a0bfddae7d70c9cc5418ef9bc35b75481cfee332b1ca00147b732117e32",
+    "config_hash": "sha256:64c1c3051ff616037bec339ae662b74f5673f3ca6fcf4a6fdaf183cd86cea165",
+    "semantic_manifest_hash": "sha256:de4a67ed3be6e7c929ec719f1ae1c6d27571e6dfa8f246d040501208350fa45c",
+    "manifest_file_sha256": "sha256:156b1f1bbd185d336068d5dc3b3c6b2241ff651c60107e9694df995eac85a592",
+    "results_file_sha256": "sha256:87e4d0fe9468be2f10354a261705955e0e5cfdab90c6a572f506265dbd0ba450",
+    "summary_file_sha256": "sha256:118899e787169c37a65e6e6fec600055c9a53a7885ee042bceeb8f5aec2da107",
+    "tree_file_count_including_manifest": 11349,
+    "tree_bytes_including_manifest": 746649425,
+    "public_exposure_ledger_sha256_after": "sha256:cd9af42ed3a5ef9fa0dc201ddb10e32d2bcccee9df729aa0c7d53077c04c9ad4",
+    "public_exposure_ledger_events_after": 330,
+    "public_exposure_ledger_tail_sequence": 329,
+    "public_exposure_ledger_tail_hash": "sha256:c8c1f9cc5aa1c6e099e7c81abc0ef2848936f3411a77a870d1fe940c2d1060d4",
+    "policies": {
+      "B0_random": {
+        "runs": 24,
+        "transport_successes": 24,
+        "failures": 0,
+        "environment_actions": 1920,
+        "resets": 5,
+        "levels_completed": 1,
+        "mean_score": 0.016196954972465177
+      },
+      "B1_cycle": {
+        "runs": 24,
+        "transport_successes": 24,
+        "failures": 0,
+        "environment_actions": 1920,
+        "resets": 4,
+        "levels_completed": 0,
+        "mean_score": 0.0
+      },
+      "B2_novelty": {
+        "runs": 24,
+        "transport_successes": 24,
+        "failures": 0,
+        "environment_actions": 1920,
+        "resets": 6,
+        "levels_completed": 0,
+        "mean_score": 0.0
+      },
+      "B3_trace": {
+        "runs": 24,
+        "transport_successes": 24,
+        "failures": 0,
+        "environment_actions": 1920,
+        "resets": 4,
+        "levels_completed": 0,
+        "mean_score": 0.0
+      },
+      "B4_full": {
+        "runs": 24,
+        "transport_successes": 0,
+        "failures": 24,
+        "faults": 24,
+        "failure_kind": "wall_clock_timeout",
+        "environment_actions_before_timeout": 344,
+        "environment_actions_min": 8,
+        "environment_actions_max": 20,
+        "levels_completed": 0,
+        "mean_score": 0.0
+      }
+    },
+    "strongest_scored_run": {
+      "run_id": "r11l-495a7899-B0-random-seed-7",
+      "baseline_id": "B0",
+      "levels_completed": 1,
+      "environment_actions": 80,
+      "official_run_actions_including_reset": 81,
+      "score": 0.38872691933916426,
+      "aggregate_policy_mean_score": 0.016196954972465177,
+      "verified": true,
+      "verification_surface": "pinned local official ScorecardManager",
+      "receipt_hash": "sha256:3e3e06967309828df54279a357acdb3eb023641ed04aa9953871e0dbb2309961",
+      "trace_manifest_hash": "sha256:6b53c6eece17a55b9d049741ab734c8db9ec4028189c11fcf57ccdafda458846",
+      "tail_event_hash": "sha256:08acf70045b01a54d03b760b8c46fe9df3441c797285ede42a977acc36865386"
+    }
+  },
+  "representative_full_failure": {
+    "run_id": "ar25-0c556536-B4-full-seed-7",
+    "status": "timeout",
+    "wall_clock_seconds": 120.110601900029,
+    "environment_actions": 19,
+    "trace_events": 759,
+    "trace_bytes": 1679940,
+    "trace_bytes_per_action": 88417.8947368421,
+    "replay_verified": true,
+    "receipt_hash": "sha256:edee6bc4da0ffcf466c32cf202ef86b9db7f80c943c5422c57bc6c73d9fc41f8",
+    "trace_manifest_hash": "sha256:be7f3ac2fceab90248b8dbb507a4a4dd172e58623cfb3a18df1e5bece7907dbd",
+    "tail_event_hash": "sha256:3d0c3faa57f635661423dc2e5abeaba17b39784f5a9e90087b45af84d883cfd8"
+  },
+  "public_holdout_gate": {
+    "requested_evaluation_id": "stage15-public-holdout-6a0f6e5b9cf0",
+    "gate_status": "REJECTED_BEFORE_GAMEPLAY",
+    "reason": "sealed development evidence is not a passing development run",
+    "command_exit_code": 1,
+    "command_error_status": "FAILED_INFRASTRUCTURE",
+    "holdout_ledger_events": 0,
+    "holdout_started_events": 0,
+    "evaluation_directory_created": false,
+    "holdout_consumed": false,
+    "holdout_result_claim": "NOT_MEASURED"
+  },
+  "raw_artifacts": {
+    "root": "C:/a/arc3-s15-6a0f6e5/artifacts/stage15",
+    "smoke_evaluation": "C:/a/arc3-s15-6a0f6e5/artifacts/stage15/evaluations/stage15-smoke-6a0f6e5b9cf0",
+    "development_evaluation": "C:/a/arc3-s15-6a0f6e5/artifacts/stage15/evaluations/stage15-development-6a0f6e5b9cf0",
+    "public_exposure_ledger": "C:/a/arc3-s15-6a0f6e5/artifacts/stage15/public-exposure.jsonl",
+    "retention_boundary": "Raw official-game assets and high-volume trace/checkpoint artifacts remain local and are not committed. This compact receipt binds their verified manifests and hashes."
+  },
+  "commands": {
+    "smoke": ".venv\\Scripts\\python.exe -m scripts.evaluate_public --partition smoke --agents random,cycle,novelty,trace,full --seeds 7,11 --max-actions 80 --max-resets 8 --timeout-seconds 120 --frozen-commit 6a0f6e5b9cf076f7d755675ece0fa46379202161 --evaluation-id stage15-smoke-6a0f6e5b9cf0 --milestone-id build-000-stage15-v0.1 --acquire-missing",
+    "development": ".venv\\Scripts\\python.exe -m scripts.evaluate_public --partition development --agents random,cycle,novelty,trace,full --seeds 7,11 --max-actions 80 --max-resets 8 --timeout-seconds 120 --frozen-commit 6a0f6e5b9cf076f7d755675ece0fa46379202161 --evaluation-id stage15-development-6a0f6e5b9cf0 --milestone-id build-000-stage15-v0.1 --acquire-missing",
+    "verify_smoke": ".venv\\Scripts\\python.exe -m scripts.evaluate_public --verify artifacts\\stage15\\evaluations\\stage15-smoke-6a0f6e5b9cf0",
+    "verify_development": ".venv\\Scripts\\python.exe -m scripts.evaluate_public --verify artifacts\\stage15\\evaluations\\stage15-development-6a0f6e5b9cf0",
+    "revalidate": ".venv\\Scripts\\python.exe -m scripts.evaluate_public --inventory-only --revalidate-online-metadata",
+    "holdout_gate": ".venv\\Scripts\\python.exe -m scripts.evaluate_public --partition public-holdout --agents random,cycle,novelty,trace,full --seeds 7,11 --max-actions 80 --max-resets 8 --timeout-seconds 120 --frozen-commit 6a0f6e5b9cf076f7d755675ece0fa46379202161 --evaluation-id stage15-public-holdout-6a0f6e5b9cf0 --milestone-id build-000-stage15-v0.1 --allow-public-holdout --sealed-development-manifest artifacts\\stage15\\evaluations\\stage15-development-6a0f6e5b9cf0\\manifest.json"
+  },
+  "verification": {
+    "smoke_manifest_and_artifacts": "PASS:30-runs+2579-artifacts",
+    "development_manifest_and_artifacts": "PASS:120-runs+11348-artifacts",
+    "official_metadata_identity": "PASS:25-of-25",
+    "gameplay_source_inspection": "PASS:none",
+    "holdout_nonconsumption": "PASS:0-events+0-assets",
+    "production_public_game_id_scan": "PASS:covered-by-frozen-commit-CI",
+    "frozen_commit_ci": "PASS:ubuntu+windows:runs-32471135774,32471131148"
+  },
+  "limits": [
+    "The full controller scored zero and timed out in every smoke and development run; this is negative mechanism evidence, not a public improvement.",
+    "The only nonzero result was one level from B0 random on one development run.",
+    "Successful local runs were scored by the pinned official local ScorecardManager; timed-out full-controller runs returned no official scorecard.",
+    "No public holdout game was acquired or opened because the development gate did not pass.",
+    "No online-public, Kaggle-public, semi-private, or official-private result exists.",
+    "Public-game performance does not establish hidden-game generalization, PAL, AGI, consciousness, or a general theory of intelligence."
+  ]
+}

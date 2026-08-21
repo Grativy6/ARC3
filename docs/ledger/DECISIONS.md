@@ -329,3 +329,17 @@ This file records material decisions made during the autonomous build. It is app
 - **Consequences:** Stage 15 evaluates the frozen FULL/COMPETITION policy without game-specific changes. A3, A1, A8, A9, and the null A2/A6/A7/A10 results remain explicit burdens; runtime costs move to Stage 16 rather than being inferred from sequential ablation wall times.
 - **Reopening condition:** A broader predeclared equal-budget comparison, separately labeled official-public evidence, or controlled Stage 16 profiling shows that a simpler preset preserves completion while improving action/runtime efficiency without weakening trace, restart, or accepted-rule integrity.
 - **Supersedes / superseded by:** none.
+
+## D-20260821-023 — Keep the public holdout sealed after the frozen development policy fails its gate
+
+- **Status:** ADOPTED
+- **Stage:** 15
+- **Date:** 2026-08-21
+- **Commit:** 6a0f6e5b9cf076f7d755675ece0fa46379202161
+- **Decision:** Evaluate the frozen FULL/COMPETITION policy and B0–B3 baselines on the predeclared smoke and development partitions without public-game-specific changes; preserve every timeout as terminal evidence; and require a passing sealed development manifest before acquiring or opening the public holdout. Because the development manifest is `PARTIAL` with `MECHANISM_NOT_OBSERVED`, leave the holdout unconsumed and move the generic runtime bottleneck to Stage 16.
+- **Alternatives:** Extend only FULL's public timeout; tune policy behavior from individual public identities; discard timed-out receipts; open the holdout despite a failing development gate; treat the random baseline's isolated level as evidence for hidden generalization.
+- **Evidence:** `docs/reports/015-public-development.md`; 150 sealed smoke/development runs and 13,927 verified artifacts summarized in `docs/evidence/015-public-development-acceptance.json`; zero holdout ledger events.
+- **Why:** Equal budgets and immutable negative results preserve a meaningful baseline comparison. The one-shot holdout provides evidence only if its predeclared gate is enforced before exposure.
+- **Consequences:** Stage 15 remains bound to commit `6a0f6e5`; later generic optimizations require a new identity and cannot rewrite this result. Stage 16 must bound controller latency and persistence cost. The public holdout remains available for a future independently frozen milestone that passes development.
+- **Reopening condition:** A generic policy at a new frozen commit produces a passing sealed development result under a declared protocol; opening the holdout would still require a new milestone identity and the existing one-shot gate.
+- **Supersedes / superseded by:** none.
