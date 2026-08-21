@@ -405,11 +405,25 @@ This file records material decisions made during the autonomous build. It is app
 - **Status:** ADOPTED
 - **Stage:** 19
 - **Date:** 2026-08-21
-- **Commit:** pending Stage 19 documentation checkpoint
+- **Commit:** `dd212a1ee26482c298f038f5b8af6f42b0233d05`
 - **Decision:** Leave the repository without a root `LICENSE`, keep first-party `arc3` as `NOASSERTION / OWNER_DECISION_REQUIRED`, and place sourced MIT-0 text only in `docs/legal/candidates/MIT-0-CANDIDATE.md` beneath the explicit boundary `CANDIDATE ONLY — NO LICENSE GRANTED`. Reconcile all 61 `uv.lock` records separately in the third-party inventory.
 - **Alternatives:** Infer a license from competition eligibility; install candidate text as the root license; leave development-only dependencies unaccounted; describe the unlicensed Kaggle Starter as redistributable; block documentation work until the owner decides.
 - **Evidence:** `THIRD_PARTY_NOTICES.md`; `docs/evidence/019-dependency-license-inventory.json`; `docs/legal/candidates/MIT-0-CANDIDATE.md`; SPDX MIT-0 canonical source named in the candidate; absence of a root `LICENSE`.
 - **Why:** A public license is an owner-only legal grant, while preparing an exact review candidate and complete dependency evidence is reversible engineering work that can be completed without manufacturing authority.
 - **Consequences:** The Build 000 source remains unlicensed pending explicit owner direction. Runtime, build, inspected-source, and first-party license treatments remain visibly distinct, and packaging success is not described as prize eligibility.
 - **Reopening condition:** Christopher D. Pang explicitly approves or rejects the candidate, or authoritative competition requirements change before that decision.
+- **Supersedes / superseded by:** none.
+
+## D-20260821-029 — Verify source and package at their exact Git identities
+
+- **Status:** ADOPTED
+- **Stage:** 20
+- **Date:** 2026-08-21
+- **Commit:** resolved externally as draft PR #3 `headRefOid` after the Stage 20 seal is pushed
+- **Decision:** Run the final static source scan against the clean preseal branch tip and run the archive scan separately inside the exact clean Stage 18 release-candidate checkout that contains the sealed package. Bind both canonical receipts in the Stage 20 evidence instead of copying the archive across repository roots or weakening the scanner's root-containment check.
+- **Alternatives:** Copy the sealed candidate into the current checkout; allow an integrity scan to inspect paths outside its declared repository root; scan only current documentation descendants and omit the exact package; rebuild a new candidate from documentation-only commits; discard the refused combined attempt.
+- **Evidence:** `docs/evidence/020-final-verification.json`; current-source receipt `C:/a/s20-dd212a1/integrity-source-receipt.json`; exact-candidate archive receipt `C:/a/s20-dd212a1/integrity-archive-receipt.json`; release identity in `docs/evidence/018-release-candidate-acceptance.json`.
+- **Why:** Source identity and archive provenance are stronger when each scan is rooted at the commit that produced the bytes. The scanner's refusal to cross a repository boundary is a useful integrity constraint, not a condition to bypass.
+- **Consequences:** The final evidence contains two passing zero-finding receipts and preserves the initial cross-root refusal. Stage 20 documentation descendants do not silently become a new production package identity, and the Stage 18 candidate remains byte-for-byte unchanged.
+- **Reopening condition:** A future scanner can cryptographically bind an external archive to a separately declared source identity without weakening path containment, or any production source/package byte changes after `90ecf7267d5bb23d751d6f7ce3e8aa75f2f1a130`.
 - **Supersedes / superseded by:** none.

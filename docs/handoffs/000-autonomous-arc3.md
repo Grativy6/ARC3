@@ -8,6 +8,8 @@
 - **Release-candidate source:** `90ecf7267d5bb23d751d6f7ce3e8aa75f2f1a130`
 - **Release-candidate tree:** `0cf6e00b2fcc399e7a99a62c20e91bb84d485f13`
 - **Stage 18 evidence checkpoint:** `a72737c923fff23b31b16450c7553a1ab3766f53`
+- **Stage 20 preseal verification commit:** `dd212a1ee26482c298f038f5b8af6f42b0233d05`
+- **Stage 20 final verification:** `docs/evidence/020-final-verification.json`
 - **Claim boundary:** NO_GENERALIZATION_CLAIM
 
 The final workflow commit is the pushed tip containing the Stage 20 seal. A commit cannot contain
@@ -93,6 +95,28 @@ Build and locally exercise the no-submit offline package:
 upload, or submit. The hermetic Stage 18 command, exact transient/evidence paths, and permitted
 nondeterminism are in `docs/reports/018-release-candidate-verification.md`.
 
+## Final verification seal
+
+At clean preseal commit `dd212a1ee26482c298f038f5b8af6f42b0233d05`, the exact local full
+suite passed 423 tests in 445.83 seconds at 80% coverage. Lint, formatting, strict typing over 142
+source files, 13 replay/tamper tests, doctor, offline lock validation, release-receipt validation,
+package projection, ledger path/hash/object validation, Markdown links, and the diff audit passed.
+The source remained unchanged from the Stage 18 candidate across `src`, `agent`, `scripts`,
+`pyproject.toml`, and `uv.lock`. Push run `32488831998` and PR run `32488838198` passed on Ubuntu
+and Windows.
+
+Two initial infrastructure attempts remain visible. The first full-suite run reached 411 passes
+but had 12 setup errors because `C:\a\s20-dd212a1` did not yet exist; creating only that external
+parent and rerunning the identical command produced the passing result above. A combined integrity
+scan refused an archive outside the current repository root. The corrected identity-preserving
+method scanned the current source at `dd212a1` and the sealed archive in its exact `90ecf72`
+checkout separately; both canonical receipts passed with zero findings. Details and commands are
+in `docs/evidence/020-final-verification.json`.
+
+The final seal changes only documentation/ledger evidence after this measured preseal identity.
+Its exact commit is the pushed draft PR's `headRefOid`; final CI is authoritative for that
+documentation-only tip. The production candidate remains the Stage 18 550,068-byte archive.
+
 ## Key artifacts and SHA-256 identities
 
 | Artifact | SHA-256 |
@@ -108,6 +132,7 @@ nondeterminism are in `docs/reports/018-release-candidate-verification.md`.
 | Stage 18 550,068-byte offline candidate | `5d64883392f8b1506314e64442702f51ecf0b52e54e190277dad52f07e6cd3f7` |
 | `uv.lock` | `3bf42dcbe45720f71b7433584f56a5d5982ec1c687c341ad2626222fa5de285b` |
 | `docs/evidence/019-dependency-license-inventory.json` | `7df3e815648e4c1e69f15c2a1f727c5a43dd37276bb1f9a2c5d6016597ce6c7f` |
+| `docs/evidence/020-final-verification.json` | `ee52c19903824a9219eafc171389c300efc14ae647b98d4d915f9ac534bc3c9c` |
 
 The ignored Stage 18 raw artifacts remain under
 `C:\a\arc3-s18-70ed0f3\artifacts\stage18\rc-90ecf72` on the measured machine. Compact receipts in
@@ -129,7 +154,8 @@ the repository bind the relevant identities so the handoff does not depend on th
 
 The initial Stage 18 417-pass/five-failure clean-clone run, OneDrive fixture failure, Windows/Linux
 line-ending defect, and shallow-history CI failure remain preserved as infrastructure evidence;
-later repairs do not erase them.
+later repairs do not erase them. The Stage 20 missing-temp-parent and cross-root-scan refusals are
+likewise preserved, with their bounded successful reruns.
 
 ## Licensing and external gates
 

@@ -969,3 +969,21 @@ This file preserves unresolved technical, evidential, legal, and external burden
 - **Current evidence:** All 61 `uv.lock` records are reconciled in `THIRD_PARTY_NOTICES.md` and `docs/evidence/019-dependency-license-inventory.json`: one first-party owner-decision record and 60 third-party records, with zero unknown third-party records. `docs/legal/candidates/MIT-0-CANDIDATE.md` preserves sourced MIT-0 text under `CANDIDATE ONLY — NO LICENSE GRANTED`; no root `LICENSE` exists.
 - **Remaining burden:** Only Christopher D. Pang may approve or reject a public license for ARC3 first-party source. Candidate preparation does not grant one.
 - **Resolution receipt:** none; owner action remains required.
+
+---
+
+## 2026-08-21 Stage 20 updates
+
+## B-20260821-047 — Initial final-verification paths changed test and scan reachability
+
+- **Status:** RESOLVED_FOR_STAGE_20_INFRASTRUCTURE
+- **Stage:** 20
+- **Opened:** 2026-08-21
+- **Last updated:** 2026-08-21
+- **Owner:** Codex
+- **Burden:** The first exact full-suite invocation reached 411 passes but produced 12 setup errors because the declared external pytest base-temp parent did not exist. Separately, the first combined integrity invocation correctly refused to scan the Stage 18 candidate archive outside the current repository root.
+- **Why it matters:** Neither an absent temporary parent nor a cross-repository path refusal is evidence about agent behavior, but silently changing commands or weakening root containment would make the final receipt less reproducible.
+- **Current evidence:** Creating only `C:/a/s20-dd212a1` and rerunning the identical pytest command produced 423 passes in 445.83 seconds at 80% coverage. The integrity check was split at the source-identity boundary: the clean preseal source scan and the exact Stage 18 release-candidate archive scan each passed with zero findings and canonical receipts.
+- **Next discriminating action:** None for Build 000. A later finalization should precreate its declared external temp parent and scan each package from its producing checkout.
+- **Resolution condition:** Satisfied for Stage 20; both corrected commands passed without repository-source or scanner-policy changes, and both initial failures remain in the final receipt.
+- **Resolution receipt:** `docs/evidence/020-final-verification.json`; `C:/a/s20-dd212a1/integrity-source-receipt.json`; `C:/a/s20-dd212a1/integrity-archive-receipt.json`.

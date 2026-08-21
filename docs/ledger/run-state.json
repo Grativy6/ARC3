@@ -4,9 +4,10 @@
   "workflow_version": "0.1",
   "repository": "Grativy6/ARC3",
   "owner": "Christopher D. Pang",
-  "status": "IN_PROGRESS",
+  "build_status": "PARTIAL",
+  "status": "COMPLETE",
   "current_stage": "20",
-  "current_task": "stage-20-draft-pr-finalization",
+  "current_task": "complete",
   "implementation_branch": "build/000-arc3-end-to-end",
   "pull_request": {
     "number": 3,
@@ -14,8 +15,8 @@
     "draft": true
   },
   "started_at": "2026-08-21T04:46:19Z",
-  "last_checkpoint_at": "2026-08-21T13:45:46Z",
-  "last_checkpoint_commit": "a72737c923fff23b31b16450c7553a1ab3766f53",
+  "last_checkpoint_at": "2026-08-21T14:06:18Z",
+  "last_checkpoint_commit": "dd212a1ee26482c298f038f5b8af6f42b0233d05",
   "resume_generation": 0,
   "completed_stages": [
     "00",
@@ -37,7 +38,8 @@
     "16",
     "17",
     "18",
-    "19"
+    "19",
+    "20"
   ],
   "stage_status": {
     "00": "PASS",
@@ -60,7 +62,7 @@
     "17": "PASS",
     "18": "FAILED_MECHANISM",
     "19": "PASS",
-    "20": "IN_PROGRESS"
+    "20": "PASS"
   },
   "evidence": {
     "stage_00": {
@@ -521,7 +523,7 @@
       "research_report": "docs/research/ARC3-Build-000-report.md",
       "research_report_sha256": "sha256:1b147249727859f6af3e6292dc8074f38375040af5d49275dc731177c0181ee9",
       "handoff": "docs/handoffs/000-autonomous-arc3.md",
-      "handoff_sha256": "sha256:b810fc2577f02f21f28c8c9c3751051de5dec46879b04e688e2b89f83cbd3068",
+      "handoff_sha256": "sha256:93c9e3a340726096875a89359f3fda42b225fb94e4c6702bd92feab33a4b67d3",
       "dependency_license_inventory": "docs/evidence/019-dependency-license-inventory.json",
       "dependency_license_inventory_sha256": "sha256:7df3e815648e4c1e69f15c2a1f727c5a43dd37276bb1f9a2c5d6016597ce6c7f",
       "third_party_notices_sha256": "sha256:86840196ffa2741c54e36251774a8b373cd47ea68a59f321e30170bfd6733b55",
@@ -538,6 +540,40 @@
         "candidate_boundary": "PASS:CANDIDATE-ONLY-NO-LICENSE-GRANTED",
         "handoff_owner_action": "PASS:exactly-one-smallest-action",
         "readme": "PASS:description+status+quickstart+limitations"
+      }
+    },
+    "stage_20": {
+      "status": "PASS",
+      "label": "synthetic",
+      "build_status": "PARTIAL",
+      "claim": "NO_GENERALIZATION_CLAIM",
+      "acceptance_evidence": "docs/evidence/020-final-verification.json",
+      "acceptance_evidence_sha256": "sha256:ee52c19903824a9219eafc171389c300efc14ae647b98d4d915f9ac534bc3c9c",
+      "handoff": "docs/handoffs/000-autonomous-arc3.md",
+      "handoff_sha256": "sha256:93c9e3a340726096875a89359f3fda42b225fb94e4c6702bd92feab33a4b67d3",
+      "preseal_commit": "dd212a1ee26482c298f038f5b8af6f42b0233d05",
+      "preseal_tree": "d5a7c2e6a0029eeff365eab9cccb76357af5bbc6",
+      "release_candidate_commit": "90ecf7267d5bb23d751d6f7ce3e8aa75f2f1a130",
+      "final_seal_binding": "draft-PR-3-headRefOid-after-push",
+      "verification": {
+        "branch_and_remote_preseal": "PASS:clean+equal",
+        "dependency_lock": "PASS:offline+61-records",
+        "ruff_lint": "PASS",
+        "ruff_format": "PASS:235-files",
+        "mypy_strict": "PASS:142-source-files",
+        "full_test_suite": "PASS:423-in-445.83-seconds+80-percent-coverage",
+        "trace_replay_tamper": "PASS:13-in-6.37-seconds",
+        "current_source_integrity": "PASS:0-findings",
+        "release_candidate_archive_integrity": "PASS:0-findings+1-archive",
+        "release_receipt": "PASS:RECEIPT_VALID",
+        "package_projection": "PASS:PACKAGE_VALID",
+        "ledger_paths_hashes_objects": "PASS:25-commit-objects",
+        "diff_audit": "PASS:303-files+0-notebooks+0-large-artifacts",
+        "secret_scan": "PASS:0-findings",
+        "remote_ci_preseal": "PASS:ubuntu+windows:runs-32488831998,32488838198",
+        "draft_pull_request": "PASS:open+draft+unmerged",
+        "initial_full_suite": "FAILED_INFRASTRUCTURE:411-passed+12-setup-errors",
+        "initial_cross_root_integrity": "FAILED_INFRASTRUCTURE:refused-outside-root"
       }
     }
   },
@@ -699,6 +735,12 @@
       "label": "synthetic",
       "result": "PASS: complete methods/results/limitations report, owner handoff, README, 61-of-61 lock/license reconciliation, and nonoperative MIT-0 owner-review candidate; no license granted",
       "report": "docs/research/ARC3-Build-000-report.md"
+    },
+    {
+      "stage": "20",
+      "label": "synthetic",
+      "result": "PASS: final branch/draft-PR seal, 423 tests, strict lint/type/replay, clean source and exact package integrity, evidence validation, diff audit, and Ubuntu/Windows CI; BUILD 000 remains PARTIAL from preserved failed mechanisms",
+      "report": "docs/evidence/020-final-verification.json"
     }
   ],
   "artifacts": {
@@ -872,7 +914,7 @@
     },
     "stage_19_handoff": {
       "path": "docs/handoffs/000-autonomous-arc3.md",
-      "sha256": "b810fc2577f02f21f28c8c9c3751051de5dec46879b04e688e2b89f83cbd3068"
+      "sha256": "93c9e3a340726096875a89359f3fda42b225fb94e4c6702bd92feab33a4b67d3"
     },
     "stage_19_dependency_license_inventory": {
       "path": "docs/evidence/019-dependency-license-inventory.json",
@@ -881,6 +923,10 @@
     "stage_19_license_candidate": {
       "path": "docs/legal/candidates/MIT-0-CANDIDATE.md",
       "sha256": "bb511507879af8dc8f2fcf94d90329f13f73fe3b457e267e6855d4ab52b290e2"
+    },
+    "stage_20_final_verification": {
+      "path": "docs/evidence/020-final-verification.json",
+      "sha256": "ee52c19903824a9219eafc171389c300efc14ae647b98d4d915f9ac534bc3c9c"
     },
     "readme": {
       "path": "README.md",
@@ -891,10 +937,12 @@
       "sha256": "86840196ffa2741c54e36251774a8b373cd47ea68a59f321e30170bfd6733b55"
     }
   },
-  "next_action": "Finalize draft PR #3, run the complete Stage 20 verification matrix against the exact clean final head, validate all evidence paths and hashes, push the final seal, and leave the PR draft and unmerged.",
+  "next_action": "Review docs/legal/candidates/MIT-0-CANDIDATE.md and explicitly approve or reject MIT-0 for ARC3 first-party source. No license is granted until that instruction.",
   "notes": [
     "Initial READY state was validated against the repository at b1948e9d02ad7b1321cbc57f3538047813e01e98 before this run began.",
     "No prior completed stages, checkpoint commit, or evidence artifacts were recorded; bootstrap PR 1 and its merge commit were independently verified.",
-    "Update atomically after every meaningful task and verify referenced evidence before marking a stage complete."
+    "Update atomically after every meaningful task and verify referenced evidence before marking a stage complete.",
+    "The final seal commit is resolved externally as draft PR #3's pushed headRefOid because a Git commit cannot contain its own SHA.",
+    "Stage 20 adds no benchmark result; BUILD 000 is PARTIAL because Stage 16 and Stage 18 preserve FAILED_MECHANISM outcomes."
   ]
 }
