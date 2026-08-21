@@ -117,6 +117,7 @@ from .models import (
     ControllerPreset,
     ControllerSnapshot,
     ObservationReceipt,
+    PresetFeatures,
     RunContext,
     preset_features,
 )
@@ -228,9 +229,17 @@ class ARC3Controller:
         preset: ControllerPreset | str = ControllerPreset.FULL,
         *,
         local_proposal_provider: LocalProposalProvider | None = None,
+        features: PresetFeatures | None = None,
     ) -> None:
         self.preset = preset if isinstance(preset, ControllerPreset) else ControllerPreset(preset)
-        self.features = preset_features(self.preset)
+        selected_features = preset_features(self.preset) if features is None else features
+        if self.preset is ControllerPreset.COMPETITION and selected_features != preset_features(
+            ControllerPreset.COMPETITION
+        ):
+            raise CompetitionIntegrityError(
+                "competition preset forbids experimental feature overrides"
+            )
+        self.features = selected_features
         if self.preset is ControllerPreset.COMPETITION and local_proposal_provider is not None:
             raise CompetitionIntegrityError(
                 "competition preset forbids the experimental local proposal provider"
@@ -267,10 +276,12 @@ class ARC3Controller:
         self._memory = PersistentMemory()
         self._plan_executor = PlanExecutor()
         self._pending_plan_emission = False
+        self._planning_disabled_after_mismatch = False
         self._ensemble: WorldModelEnsemble | None = None
         self._model_candidates: tuple[ModelCandidate, ...] = ()
         self._transitions: list[PreservedTransition] = []
         self._transition_levels: dict[str, int] = {}
+        self._transition_summaries: dict[int, list[PreservedTransition]] = {}
         self._component_to_entity: dict[str, str] = {}
         self._provisional_mover_id: str | None = None
         self._goal_targets: dict[str, tuple[str, str]] = {}
@@ -341,12 +352,17 @@ class ARC3Controller:
             self,
             self.preset,
             local_proposal_provider=self._local_proposals,
+            features=self.features,
         )
         self._initialize_context(context)
         self._append(
             context.game_id,
             "run.started",
-            {"preset": self.preset.value, "network_enabled": context.config.network_enabled},
+            {
+                "preset": self.preset.value,
+                "network_enabled": context.config.network_enabled,
+                "features": self.features.to_dict(),
+            },
             scope="run",
         )
 
@@ -355,7 +371,7 @@ class ARC3Controller:
         self._source = SourceIdentity(
             context.source_kind,
             context.source_version,
-            {"preset": self.preset.value},
+            {"preset": self.preset.value, "features": self.features.to_dict()},
         )
         self._code = CodeIdentity(
             context.git_commit,
@@ -501,14 +517,15 @@ class ARC3Controller:
                 after_metadata=_metadata(observation),
                 background_colors=frozenset({prior_background, background}),
             )
-            tracking = track_components(
-                prior_components,
-                components,
-                frame_extent=(
-                    max(prior_frame.width, frame.width),
-                    max(prior_frame.height, frame.height),
-                ),
-            )
+            if self.features.use_object_tracking:
+                tracking = track_components(
+                    prior_components,
+                    components,
+                    frame_extent=(
+                        max(prior_frame.width, frame.width),
+                        max(prior_frame.height, frame.height),
+                    ),
+                )
             xs = [change.x for change in delta.cell_changes]
             ys = [change.y for change in delta.cell_changes]
             delta_event = self._append(
@@ -541,7 +558,7 @@ class ARC3Controller:
                             ),
                             "correspondence_score": change.correspondence_score,
                         }
-                        for change in tracking.changes
+                        for change in (tracking.changes if tracking is not None else ())
                     ],
                     "metadata_changes": {
                         change.field: {"before": change.before, "after": change.after}
@@ -807,13 +824,21 @@ class ARC3Controller:
             record
             for record in self._hypotheses.all()
             if record.scope is not HypothesisScope.LEVEL or record.scope_ref == current_scope
+            if self.features.retain_rejected_hypotheses
+            or (
+                record.status is not HypothesisStatus.REJECTED and not record.contradiction_receipts
+            )
         )
         compiled = compile_hypotheses(eligible)
         self._model_candidates = compiled.candidates
-        level_transitions = tuple(
-            item
-            for item in self._transitions
-            if self._transition_levels.get(item.transition_id) == self._level_index
+        level_transitions = (
+            tuple(self._transition_summaries.get(self._level_index, ()))
+            if self.features.use_trace_summaries
+            else tuple(
+                item
+                for item in self._transitions
+                if self._transition_levels.get(item.transition_id) == self._level_index
+            )
         )
         artifacts = []
         for candidate in compiled.candidates:
@@ -825,7 +850,11 @@ class ARC3Controller:
                     "transition_ids": [item.transition_id for item in level_transitions],
                 },
             )
-            artifact = retrodict(candidate, level_transitions)
+            artifact = retrodict(
+                candidate,
+                level_transitions,
+                enabled=self.features.use_retrodiction_gate,
+            )
             artifacts.append(artifact)
             self._append(
                 str(observation.game_id),
@@ -846,9 +875,17 @@ class ARC3Controller:
             artifact.model_id
             for artifact in artifacts
             if artifact.status is PromotionStatus.PROMOTED
+            or (
+                not self.features.use_retrodiction_gate
+                and artifact.status is PromotionStatus.UNGATED_ABLATION
+            )
         }
         if accepted_ids:
-            self._ensemble = gated_ensemble(compiled.candidates, tuple(artifacts))
+            self._ensemble = gated_ensemble(
+                compiled.candidates,
+                tuple(artifacts),
+                allow_ungated_ablation=not self.features.use_retrodiction_gate,
+            )
             for candidate in self._ensemble.candidates:
                 self._append(
                     str(observation.game_id),
@@ -856,7 +893,11 @@ class ARC3Controller:
                     {
                         "model_id": candidate.model_id,
                         "hypothesis_ids": list(candidate.hypothesis_ids),
-                        "promotion_basis": "complete compatible-trace retrodiction",
+                        "promotion_basis": (
+                            "complete compatible-trace retrodiction"
+                            if self.features.use_retrodiction_gate
+                            else "ungated Stage 14 ablation"
+                        ),
                     },
                 )
         else:
@@ -870,17 +911,33 @@ class ARC3Controller:
         actions: list[ActionRequest] = []
         for name in observation.available_actions:
             if name is ActionName.ACTION6:
-                coordinates = generate_coordinate_candidates(
-                    observation.frames[-1],
-                    components=view.components,
-                    changed_cells=view.delta.cell_changes if view.delta is not None else (),
-                    explored=self._explored_coordinates,
-                    max_candidates=min(
-                        self.context.config.budgets.max_coordinate_candidates,
-                        24,
-                    ),
-                )
-                actions.extend(ActionRequest(name, item.coordinate) for item in coordinates)
+                limit = min(self.context.config.budgets.max_coordinate_candidates, 24)
+                if self.features.use_coordinate_salience:
+                    coordinates = tuple(
+                        item.coordinate
+                        for item in generate_coordinate_candidates(
+                            observation.frames[-1],
+                            components=view.components,
+                            changed_cells=(
+                                view.delta.cell_changes if view.delta is not None else ()
+                            ),
+                            explored=self._explored_coordinates,
+                            max_candidates=limit,
+                        )
+                    )
+                else:
+                    frame = observation.frames[-1]
+                    unexplored = [
+                        Coordinate(x, y)
+                        for y in range(frame.height)
+                        for x in range(frame.width)
+                        if Coordinate(x, y) not in self._explored_coordinates
+                    ]
+                    population = unexplored or [
+                        Coordinate(x, y) for y in range(frame.height) for x in range(frame.width)
+                    ]
+                    coordinates = tuple(self._rng.sample(population, k=min(limit, len(population))))
+                actions.extend(ActionRequest(name, coordinate) for coordinate in coordinates)
             else:
                 actions.append(ActionRequest(name))
         return tuple(actions)
@@ -938,7 +995,12 @@ class ARC3Controller:
         self, action: ActionRequest, state: SymbolicState
     ) -> tuple[str | None, float, int]:
         goal_id = self._active_goal_id
-        if goal_id is None or self._ensemble is None or goal_id not in self._goal_targets:
+        if (
+            not self.features.use_world_model_simulation
+            or goal_id is None
+            or self._ensemble is None
+            or goal_id not in self._goal_targets
+        ):
             return None, 0.0, 0
         mover_id, target_id = self._goal_targets[goal_id]
         before_distance = _entity_distance(state, mover_id, target_id)
@@ -970,7 +1032,7 @@ class ARC3Controller:
             failure = 0.25 if estimate.kind is EffectKind.NO_OP and not estimate.prior_only else 0.0
             novelty = 1.0 / (1.0 + self._action_counts[action])
             information = 0.0
-            if self._ensemble is not None:
+            if self.features.use_information_gain and self._ensemble is not None:
                 information = float(
                     len(self._ensemble.predict(view.symbolic_state, action).alternatives) > 1
                 )
@@ -990,7 +1052,11 @@ class ARC3Controller:
     def _exploration_alternatives(
         self, state: SymbolicState, actions: Sequence[ActionRequest]
     ) -> tuple[ExplorationAlternative, ...]:
-        if self._ensemble is None:
+        if (
+            not self.features.use_world_model_simulation
+            or not self.features.use_information_gain
+            or self._ensemble is None
+        ):
             return ()
         alternatives: list[ExplorationAlternative] = []
         for candidate in self._ensemble.candidates:
@@ -1016,6 +1082,8 @@ class ARC3Controller:
     ) -> tuple[ActionRequest, str, str] | None:
         if (
             not self.features.use_planning
+            or not self.features.use_world_model_simulation
+            or self._planning_disabled_after_mismatch
             or self._ensemble is None
             or self._active_goal_id is None
             or self._active_goal_id not in self._goal_targets
@@ -1337,7 +1405,11 @@ class ARC3Controller:
         self._pending_prediction = None
         self._restored_prediction_state_ids = ()
         self._restored_prediction_plan_ids = ()
-        if self._ensemble is not None and action.name is not ActionName.RESET:
+        if (
+            self.features.use_world_model_simulation
+            and self._ensemble is not None
+            and action.name is not ActionName.RESET
+        ):
             prediction = self._prediction_book.emit(
                 action_decision_id=decision_id,
                 ensemble=self._ensemble,
@@ -1553,6 +1625,8 @@ class ARC3Controller:
             )
             if planning_consequence.recovery is not None:
                 invalidated_plans.add(planning_consequence.plan_id)
+            if not self.features.use_planner_recovery and not planning_consequence.matched:
+                self._planning_disabled_after_mismatch = True
             self._pending_plan_emission = False
 
         if pending.action.name is not ActionName.RESET:
@@ -1570,6 +1644,7 @@ class ARC3Controller:
             )
             self._transitions.append(transition)
             self._transition_levels[transition.transition_id] = previous_level
+            self._transition_summaries.setdefault(previous_level, []).append(transition)
             if self.features.use_hypotheses:
                 self._update_action_hypothesis(after, transition, consequence_id)
 
@@ -1711,6 +1786,7 @@ class ARC3Controller:
         self._ensemble = None
         self._model_candidates = ()
         self._provisional_mover_id = None
+        self._planning_disabled_after_mismatch = False
         if observation.state is GameStateName.WIN:
             return
 
@@ -1728,7 +1804,8 @@ class ARC3Controller:
             )
             event = self._hypotheses.events[-1]
             self._append(str(observation.game_id), event.event_type.value, event.to_trace_payload())
-        self._seed_contact_goal(observation, receipt, view)
+        if self.features.use_goals:
+            self._seed_contact_goal(observation, receipt, view)
 
     def _update_action_hypothesis(
         self,
@@ -1743,6 +1820,7 @@ class ARC3Controller:
             and record.statement.action == transition.action.name.value
             and record.scope_ref == f"level:{self._transition_levels[transition.transition_id]}"
             and record.status not in {HypothesisStatus.REJECTED, HypothesisStatus.SUPERSEDED}
+            and (self.features.retain_rejected_hypotheses or not record.contradiction_receipts)
         )
         for record in matching:
             compiled = compile_hypotheses((record,))
@@ -1881,6 +1959,7 @@ class ARC3Controller:
                 "coordinates": [[item.x, item.y] for item in sorted(self._explored_coordinates)],
             },
             planner_state={
+                "controller_features": self.features.to_dict(),
                 "plan": (
                     self._serialize_plan(self._plan_executor.plan)
                     if self._plan_executor.plan is not None
@@ -1888,6 +1967,7 @@ class ARC3Controller:
                 ),
                 "cursor": self._plan_executor.cursor,
                 "pending_plan_emission": self._pending_plan_emission,
+                "planning_disabled_after_mismatch": self._planning_disabled_after_mismatch,
                 "pending_prediction": (
                     self._pending_prediction.to_dict()
                     if self._pending_prediction is not None
@@ -1918,10 +1998,11 @@ class ARC3Controller:
         *,
         preset: ControllerPreset | str = ControllerPreset.FULL,
         checkpoint_path: str | Path | None = None,
+        features: PresetFeatures | None = None,
     ) -> ARC3Controller:
         """Restore a compatible checkpoint without emitting a pending action again."""
 
-        controller = cls(preset)
+        controller = cls(preset, features=features)
         controller._initialize_context(context)
         if controller._checkpoint_manager is None or controller._code is None:
             raise PolicyError("checkpoint manager did not initialize")
@@ -2101,6 +2182,13 @@ class ARC3Controller:
         return phase
 
     def _restore_planner_state(self, value: Mapping[str, JSONValue]) -> None:
+        raw_features = value.get("controller_features")
+        if raw_features is not None and raw_features != self.features.to_dict():
+            raise PolicyError("checkpoint controller feature identity does not match")
+        planning_disabled = value.get("planning_disabled_after_mismatch", False)
+        if not isinstance(planning_disabled, bool):
+            raise PolicyError("checkpoint planner-recovery ablation marker is malformed")
+        self._planning_disabled_after_mismatch = planning_disabled
         pending_plan = value.get("pending_plan_emission")
         if not isinstance(pending_plan, bool):
             raise PolicyError("checkpoint pending-plan marker is malformed")
@@ -2194,24 +2282,49 @@ class ARC3Controller:
                         raise PolicyError("checkpoint transition level is malformed")
                     self._transitions.append(transition)
                     self._transition_levels[transition.transition_id] = level_index
+                    self._transition_summaries.setdefault(level_index, []).append(transition)
         current_scope = f"level:{self._level_index}"
         eligible = tuple(
             record
             for record in self._hypotheses.all()
             if record.scope is not HypothesisScope.LEVEL or record.scope_ref == current_scope
+            if self.features.retain_rejected_hypotheses
+            or (
+                record.status is not HypothesisStatus.REJECTED and not record.contradiction_receipts
+            )
         )
         compiled = compile_hypotheses(eligible)
         self._model_candidates = compiled.candidates
-        level_transitions = tuple(
-            item
-            for item in self._transitions
-            if self._transition_levels.get(item.transition_id) == self._level_index
+        level_transitions = (
+            tuple(self._transition_summaries.get(self._level_index, ()))
+            if self.features.use_trace_summaries
+            else tuple(
+                item
+                for item in self._transitions
+                if self._transition_levels.get(item.transition_id) == self._level_index
+            )
         )
         artifacts = tuple(
-            retrodict(candidate, level_transitions) for candidate in compiled.candidates
+            retrodict(
+                candidate,
+                level_transitions,
+                enabled=self.features.use_retrodiction_gate,
+            )
+            for candidate in compiled.candidates
         )
-        if any(artifact.status is PromotionStatus.PROMOTED for artifact in artifacts):
-            self._ensemble = gated_ensemble(compiled.candidates, artifacts)
+        if any(
+            artifact.status is PromotionStatus.PROMOTED
+            or (
+                not self.features.use_retrodiction_gate
+                and artifact.status is PromotionStatus.UNGATED_ABLATION
+            )
+            for artifact in artifacts
+        ):
+            self._ensemble = gated_ensemble(
+                compiled.candidates,
+                artifacts,
+                allow_ungated_ablation=not self.features.use_retrodiction_gate,
+            )
 
     def _restore_goal_state(self, value: Mapping[str, JSONValue]) -> None:
         raw_records = value.get("records", [])

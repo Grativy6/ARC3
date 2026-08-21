@@ -44,6 +44,35 @@ class PresetFeatures:
     use_planning: bool
     use_memory: bool
     allow_local_proposals: bool = False
+    retain_rejected_hypotheses: bool = True
+    use_retrodiction_gate: bool = True
+    use_world_model_simulation: bool = True
+    use_coordinate_salience: bool = True
+    use_planner_recovery: bool = True
+    use_object_tracking: bool = True
+    use_information_gain: bool = True
+    use_trace_summaries: bool = True
+
+    def to_dict(self) -> dict[str, JSONValue]:
+        """Return the complete deterministic mechanism identity."""
+
+        return {
+            "allow_local_proposals": self.allow_local_proposals,
+            "retain_rejected_hypotheses": self.retain_rejected_hypotheses,
+            "use_coordinate_salience": self.use_coordinate_salience,
+            "use_goals": self.use_goals,
+            "use_hypotheses": self.use_hypotheses,
+            "use_information_gain": self.use_information_gain,
+            "use_measurements": self.use_measurements,
+            "use_memory": self.use_memory,
+            "use_object_tracking": self.use_object_tracking,
+            "use_planner_recovery": self.use_planner_recovery,
+            "use_planning": self.use_planning,
+            "use_retrodiction_gate": self.use_retrodiction_gate,
+            "use_trace_summaries": self.use_trace_summaries,
+            "use_world_model": self.use_world_model,
+            "use_world_model_simulation": self.use_world_model_simulation,
+        }
 
 
 _PRESET_FEATURES: dict[ControllerPreset, PresetFeatures] = {
