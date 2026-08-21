@@ -172,7 +172,7 @@ This file preserves unresolved technical, evidential, legal, and external burden
 - **Last updated:** 2026-08-21
 - **Current evidence:** `upstream.lock.json`; `docs/reports/000-source-identity.md` pin stable documentation bodies, official repository commits, package artifacts, and access times. Kaggle client-rendered HTML is deliberately identified by URL/access time rather than treated as stable content.
 - **Remaining burden:** Revalidate immediately before any public holdout, package freeze, or owner-authorized submission.
-- **Resolution receipt:** Stage 00 source-identity checkpoint, commit pending.
+- **Resolution receipt:** Stage 00 source-identity checkpoint `9e17c9d20334f8e52be2eafcc8f84a1d2f0973b2`.
 
 ### B-20260820-003 — ARC and Kaggle credentials may be unavailable
 

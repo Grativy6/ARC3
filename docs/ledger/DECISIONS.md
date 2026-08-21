@@ -83,7 +83,7 @@ This file records material decisions made during the autonomous build. It is app
 - **Status:** ADOPTED
 - **Stage:** 00
 - **Date:** 2026-08-21
-- **Commit:** pending
+- **Commit:** 9e17c9d20334f8e52be2eafcc8f84a1d2f0973b2
 - **Decision:** Pin the three official upstream repository heads, `arc-agi==0.9.9`, its Python 3.12 Windows resolution, and content identities for stable primary documentation in `upstream.lock.json`.
 - **Alternatives:** Floating main branches and dependency ranges; relying on prose memory.
 - **Evidence:** `docs/reports/000-source-identity.md`; `upstream.lock.json`; successful `git ls-remote`, PyPI metadata, documentation fetches, and `uv pip compile`.
@@ -97,7 +97,7 @@ This file records material decisions made during the autonomous build. It is app
 - **Status:** ADOPTED
 - **Stage:** 00–01, 17
 - **Date:** 2026-08-21
-- **Commit:** pending
+- **Commit:** 9e17c9d20334f8e52be2eafcc8f84a1d2f0973b2
 - **Decision:** Preserve the official `MyAgent` interface and deployment behavior in first-party ARC3 code, but do not copy source from the pinned Kaggle starter.
 - **Alternatives:** Copy/adapt the starter; defer all packaging work; use the hosted-model-oriented Agents repository as the runtime.
 - **Evidence:** The GitHub tree and repository metadata for `arcprize/ARC-AGI-3-Kaggle-Starter@eeb1535404f321d280a8f9194bbc1d7aca5f05fc` contained no `LICENSE`, `COPYING`, or `NOTICE` and no detected license. The documented interface is sufficient to implement compatibility independently.
@@ -111,7 +111,7 @@ This file records material decisions made during the autonomous build. It is app
 - **Status:** ADOPTED
 - **Stage:** 00–01
 - **Date:** 2026-08-21
-- **Commit:** pending
+- **Commit:** 9e17c9d20334f8e52be2eafcc8f84a1d2f0973b2
 - **Decision:** Use uv-managed CPython 3.12.14 for Build 000. Until the uv executable is on `PATH`, invoke uv reproducibly as `python -m uv` from the installed Python 3.13 launcher.
 - **Alternatives:** Use system Python 3.13; install a machine-wide Python; modify the user's shell profile.
 - **Evidence:** `arc-agi==0.9.9` declares Python `>=3.12`; Stage 00 measured only system Python 3.13 initially, then installed uv 0.12.5 and managed CPython 3.12.14 successfully.
