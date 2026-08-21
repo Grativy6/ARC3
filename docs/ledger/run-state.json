@@ -14,8 +14,8 @@
     "draft": true
   },
   "started_at": "2026-08-21T04:46:19Z",
-  "last_checkpoint_at": "2026-08-21T06:29:20Z",
-  "last_checkpoint_commit": "b712e0bc2fffb592dbf0f6f287045a60aaefc65c",
+  "last_checkpoint_at": "2026-08-21T06:30:13Z",
+  "last_checkpoint_commit": "50e8bd2732dc195f268658a015d9b4c01efd0ed5",
   "resume_generation": 0,
   "completed_stages": [
     "00",
@@ -281,7 +281,7 @@
       "report_sha256": "sha256:e51eb151d14f05c219c1435b58645c8a05dc366c5bf19568036a842018a5c5eb",
       "acceptance_evidence": "docs/evidence/010-planning-acceptance.json",
       "acceptance_evidence_sha256": "sha256:42a57eb4f0d52ba785e5e57a9447a03c7f27ca99ba5ae16c9457a05db0159592",
-      "checkpoint_commit": "pending",
+      "checkpoint_commit": "50e8bd2732dc195f268658a015d9b4c01efd0ed5",
       "verification": {
         "ruff_lint": "PASS",
         "ruff_format": "PASS",

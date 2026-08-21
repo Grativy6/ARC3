@@ -265,7 +265,7 @@ This file records material decisions made during the autonomous build. It is app
 - **Status:** ADOPTED
 - **Stage:** 10
 - **Date:** 2026-08-21
-- **Commit:** pending Stage 10 implementation checkpoint
+- **Commit:** 50e8bd2732dc195f268658a015d9b4c01efd0ed5
 - **Decision:** Search deterministic executable models with bounded BFS, uniform-cost, or A*, retain model/goal revisions and predicted states in the plan, emit only one environment action, and require its returned consequence before continuing. Any state, model, goal, or game-state mismatch invalidates blind continuation and selects an explicit bounded recovery mode.
 - **Alternatives:** Continue fixed exploration; emit a complete open-loop action sequence; silently keep a stale plan after mismatch; add belief/MCTS search without measured uncertain-model need.
 - **Evidence:** `docs/reports/010-bounded-planning-and-recovery.md`; 10 focused tests; the 24-task equal-budget comparison in `docs/evidence/010-planning-acceptance.json`.
