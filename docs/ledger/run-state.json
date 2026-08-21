@@ -14,8 +14,8 @@
     "draft": true
   },
   "started_at": "2026-08-21T04:46:19Z",
-  "last_checkpoint_at": "2026-08-21T05:23:18Z",
-  "last_checkpoint_commit": "420ef0c3ea7385e79cd1ff8051ec31db688ab92b",
+  "last_checkpoint_at": "2026-08-21T05:35:09Z",
+  "last_checkpoint_commit": "63ee8a6069d7af4fe39d92277b6702ff253d7aa1",
   "resume_generation": 0,
   "completed_stages": [
     "00",
@@ -98,7 +98,7 @@
       "scorecard_evidence_sha256": "sha256:64e635c5575c1e357c4cda41134461d489b5d98f34be8b08ce382c6a619132bc",
       "public_partition_manifest": "docs/evaluation/public-game-partitions.v0.1.json",
       "public_partition_manifest_sha256": "sha256:682d5891c2aface54803d9bd1173c55ed21e89856e13b8a478fb9276ee963f2f",
-      "checkpoint_commit": "pending-stage-02-commit",
+      "checkpoint_commit": "63ee8a6069d7af4fe39d92277b6702ff253d7aa1",
       "verification": {
         "ruff_lint": "PASS",
         "ruff_format": "PASS",

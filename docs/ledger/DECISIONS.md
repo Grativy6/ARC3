@@ -139,7 +139,7 @@ This file records material decisions made during the autonomous build. It is app
 - **Status:** ADOPTED
 - **Stage:** 02
 - **Date:** 2026-08-21
-- **Commit:** pending
+- **Commit:** 63ee8a6069d7af4fe39d92277b6702ff253d7aa1
 - **Decision:** Treat the pinned SDK as an environment transport/scorer boundary, but validate exact coordinates, advertised-action membership, terminal lifecycle, mode precedence, and credential-safe logging in first-party code before any upstream call.
 - **Alternatives:** Trust upstream Pydantic coercion and wrapper lifecycle; fork or vendor the SDK.
 - **Evidence:** `docs/reports/002-official-sdk-baselines.md`; 27 focused tests; executable probes preserved in `docs/evidence/002-baseline-scorecards.json` and the Stage 00 discrepancy ledger.
@@ -153,7 +153,7 @@ This file records material decisions made during the autonomous build. It is app
 - **Status:** ADOPTED
 - **Stage:** 02, 13, 15
 - **Date:** 2026-08-21
-- **Commit:** pending
+- **Commit:** 63ee8a6069d7af4fe39d92277b6702ff253d7aa1
 - **Decision:** Assign current public names by sorted `SHA-256(salt + NUL + stable_name)` into fixed-size smoke/development/holdout partitions. Move any already-opened game to development without erasing its original assignment.
 - **Alternatives:** Curate favorable partitions; treat every public game as development; claim a previously opened game remains held out.
 - **Evidence:** `docs/evaluation/public-game-partitions.v0.1.json`; the pre-manifest `ls20` SDK probe.
