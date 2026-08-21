@@ -209,7 +209,7 @@ This file records material decisions made during the autonomous build. It is app
 - **Status:** ADOPTED
 - **Stage:** 06
 - **Date:** 2026-08-21
-- **Commit:** pending
+- **Commit:** 7282c99286aa48bad310d22f138766d117d3e367
 - **Decision:** Generate deterministic procedural episodes through an official-shaped production session while keeping exact rules, goals, transition annotations, contradictions, and oracle plans on an evaluator-only object. Freeze development, held-out-combination, and wholly held-out-family generator domains.
 - **Alternatives:** Put rule labels in observations; test only curated public games; expose oracle annotations to simplify controller development; draw every parameter from one shared range.
 - **Evidence:** `docs/reports/006-synthetic-environment-laboratory.md`; 16 focused tests; 630 solvable/leakage-checked episodes and pinned random baselines in `docs/evidence/006-lab-acceptance.json`.
