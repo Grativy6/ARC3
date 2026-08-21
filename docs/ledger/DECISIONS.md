@@ -279,7 +279,7 @@ This file records material decisions made during the autonomous build. It is app
 - **Status:** ADOPTED
 - **Stage:** 11
 - **Date:** 2026-08-21
-- **Commit:** pending Stage 11 implementation checkpoint
+- **Commit:** 54064d412ca01ce078ae693d4f9fb0e071d853f3
 - **Decision:** Keep episode, opaque-game, and generic derived-memory scopes distinct; require immutable event/chunk source links for every summary; gate generic retrieval on current-game structural evidence; enforce deterministic record/byte eviction; and restore a pending submitted action only into an await-consequence state that forbids resubmission.
 - **Alternatives:** One global memory dictionary; retrieval by environment ID; retain summaries without receipt hashes; silently drop old trace; resubmit an action after uncertain process-death timing.
 - **Evidence:** `docs/reports/011-scoped-persistent-memory.md`; 12 focused tests; cross-level and 5,000-insert measurements in `docs/evidence/011-memory-acceptance.json`.
