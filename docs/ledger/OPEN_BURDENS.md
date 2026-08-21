@@ -311,3 +311,11 @@ This file preserves unresolved technical, evidential, legal, and external burden
 - **Next discriminating action:** Keep it in development/regression only and run Stage 15 public holdout solely on the 10 unexposed manifest entries.
 - **Resolution condition:** Permanent process constraint for Build 000; never erase the exposure record.
 - **Resolution receipt:** `docs/evaluation/public-game-partitions.v0.1.json`.
+
+### B-20260821-015 — Remote CI and true clean-clone execution are not yet receipts
+
+- **Status update:** REOPENED for the Stage 02 checkpoint.
+- **Last updated:** 2026-08-21
+- **Current evidence:** Stage 02 Actions runs `32451110070` and `32451112828` failed one stale Stage 01 assertion after the `evaluate` command became real; all preceding sync/lint/format/type steps passed. The test now targets the still-reserved `compare` command.
+- **Remaining burden:** Observe the correcting Linux/Windows run, then retain Stage 18 true clean-clone verification as a separate boundary.
+- **Resolution receipt:** pending correcting run.

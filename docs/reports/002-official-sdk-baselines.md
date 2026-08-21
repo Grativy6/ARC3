@@ -107,6 +107,15 @@ and sorting, environment-mode override rejection before construction, offline no
 construction, sentinel credential suppression, sanitized errors, deterministic random/cycle/
 sweep policies, reset/action budgets, synthetic scorecards, and CLI repeatability.
 
+### Remote CI integration fault
+
+Initial Stage 02 Actions runs `32451110070` and `32451112828` passed sync, Ruff, formatting,
+and strict mypy on both operating systems, then failed the full test suite: the Stage 01 doctor
+test still asserted that `arc3 evaluate` was a reserved future command after Stage 02 had
+implemented it. The test was corrected to exercise the still-reserved `arc3 compare` command.
+This is preserved as an integration-test maintenance failure; the correcting CI receipt is
+recorded in the run ledger when complete.
+
 ## Public partition integrity
 
 The 25 discovered names were partitioned by a committed salt and full SHA-256 ordering: three

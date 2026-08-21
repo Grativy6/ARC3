@@ -93,7 +93,7 @@
         "local-public"
       ],
       "report": "docs/reports/002-official-sdk-baselines.md",
-      "report_sha256": "sha256:65e321d09ea5988f509b67bc8215b2cc4cd72291290d438fdda997f9893b37f1",
+      "report_sha256": "sha256:5063a3c0d3732268297c89f0333ddb1ca44e8df03b51a2968941b42f43b81378",
       "scorecard_evidence": "docs/evidence/002-baseline-scorecards.json",
       "scorecard_evidence_sha256": "sha256:64e635c5575c1e357c4cda41134461d489b5d98f34be8b08ce382c6a619132bc",
       "public_partition_manifest": "docs/evaluation/public-game-partitions.v0.1.json",
@@ -110,6 +110,8 @@
         "invalid_action_prevention": "PASS",
         "determinism": "PASS",
         "production_public_id_scan": "PASS:0-matches",
+        "remote_ci_initial": "FAILED_MECHANISM:stale-reserved-command-test:runs-32451110070,32451112828",
+        "remote_ci_correction": "PENDING",
         "evidence_json": "PASS"
       }
     }
@@ -179,7 +181,7 @@
     },
     "stage_02_report": {
       "path": "docs/reports/002-official-sdk-baselines.md",
-      "sha256": "65e321d09ea5988f509b67bc8215b2cc4cd72291290d438fdda997f9893b37f1"
+      "sha256": "5063a3c0d3732268297c89f0333ddb1ca44e8df03b51a2968941b42f43b81378"
     },
     "stage_02_scorecards": {
       "path": "docs/evidence/002-baseline-scorecards.json",
