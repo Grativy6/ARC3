@@ -6,16 +6,17 @@ Bootstrap reference (frozen): `docs/reference/AGENTS.arc3-bootstrap.v0.1.md`
 
 The controlling build plan is:
 
-`docs/workflows/000-arc3-autonomous-end-to-end.md`
+`docs/workflows/001-local-public-failure-recovery.md`
 
-Read that file completely before changing implementation files. Then read:
+Build 000 remains immutable historical evidence. Read the Build 001 workflow completely before changing implementation files. Then read:
 
 1. `docs/specs/target-architecture.md`
 2. `docs/specs/trace-ledger-contract.md`
 3. `docs/specs/evaluation-protocol.md`
-4. `docs/ledger/run-state.json`
-5. `docs/ledger/DECISIONS.md`
-6. `docs/ledger/OPEN_BURDENS.md`
+4. `docs/handoffs/000-autonomous-arc3.md`
+5. `docs/ledger/run-state.json`
+6. `docs/ledger/DECISIONS.md`
+7. `docs/ledger/OPEN_BURDENS.md`
 
 If instructions conflict, this priority order controls:
 
@@ -75,6 +76,12 @@ Do **not** perform these without an explicit later instruction from Christopher:
 
 When a human-gated action is reached, prepare everything up to the boundary, write the exact one-step owner action in the handoff, and continue all other available work.
 
+### MIT-0 approval rule
+
+`docs/legal/candidates/MIT-0-CANDIDATE.md` remains nonoperative unless Christopher explicitly approves MIT-0. A statement equivalent to **“I approve MIT-0 for ARC3 first-party source”** is sufficient authorization. Discussion, praise, or saying the candidate sounds fine is not itself a license grant.
+
+If explicit approval is present in the active owner instruction, follow the Build 001 workflow's licensing procedure and preserve the decision provenance.
+
 ## Credentials and secrets
 
 - Never commit API keys, Kaggle tokens, cookies, credentials, `.env`, or generated auth files.
@@ -90,24 +97,24 @@ This project is designed for long autonomous runs and interruption recovery.
 At startup:
 
 1. inspect git status and current branch;
-2. read `docs/ledger/run-state.json`;
-3. verify whether the recorded latest commit exists;
-4. resume the first incomplete atomic task rather than restarting completed work;
-5. validate existing artifacts before trusting their status.
+2. read Build 000 historical state plus any existing `docs/ledger/build-001-run-state.json`;
+3. verify recorded commits/artifact hashes before trusting completion flags;
+4. resume the first incomplete Build 001 atomic task rather than restarting completed work;
+5. validate existing artifacts before rerunning expensive work.
 
 After every meaningful atomic task:
 
 1. run the smallest relevant verification;
-2. update `docs/ledger/run-state.json` atomically;
-3. append material decisions to `docs/ledger/DECISIONS.md`;
-4. append unresolved failures or uncertainty to `docs/ledger/OPEN_BURDENS.md`;
+2. update the Build 001 run state atomically;
+3. append material decisions to the Build 001 decisions ledger;
+4. append unresolved failures or uncertainty to the Build 001 open-burdens ledger;
 5. commit a coherent checkpoint;
 6. push when network and credentials permit.
 
 After every workflow stage:
 
 - run the full stage acceptance suite;
-- write or update the stage report under `docs/reports/`;
+- write/update the stage report;
 - update the draft PR body with measured status;
 - mark the stage complete only when its evidence paths exist.
 
@@ -116,8 +123,8 @@ Never erase an unresolved burden merely because a later approach succeeds. Mark 
 ## Git policy
 
 - Never develop directly on `main` unless the owner explicitly instructs it.
-- If no implementation branch exists, create `build/000-arc3-end-to-end` from the current controlling branch.
-- Keep the workflow/setup branch separate when practical.
+- Build 001 implementation branch: `build/001-local-public-recovery` from current `main`.
+- Keep workflow/setup branches separate when practical.
 - Use small, meaningful commits. Suggested prefixes: `build`, `feat`, `fix`, `test`, `bench`, `docs`, `chore`.
 - Do not rewrite or force-push shared history unless a source-identity repair requires it and the workflow explicitly records the mapping.
 - Do not merge the final PR.
@@ -136,7 +143,7 @@ Pin upstream commit SHAs and package versions in `upstream.lock.json`. Preserve 
 
 Do not silently replace upstream behavior with memory or assumptions. If docs, package behavior, and code disagree, record the discrepancy and prefer the executable pinned version for implementation while flagging the documentation conflict.
 
-Do not add a final project `LICENSE` without owner approval. A candidate MIT-0 text may be prepared under `docs/legal/` for review because prize eligibility requires a permissive open-source license.
+Do not add or alter the operative project `LICENSE` without the explicit owner approval described above.
 
 ## Competition integrity
 
@@ -214,16 +221,17 @@ Every environment action should be traceable to:
 
 ## Resource discipline
 
-- Begin with symbolic and algorithmic baselines before adding trainable models.
+- Begin with symbolic and algorithmic repairs before adding trainable models.
 - Profile before optimizing.
 - Prefer information-efficient probes because environment actions are squared in the RHAE penalty.
-- Internal computation is cheaper than environment interaction, but still enforce wall-clock and memory budgets compatible with the current Kaggle rules.
-- Do not download very large models or datasets without evidence that they are necessary and compatible with offline competition packaging.
-- Cache public dependencies and games locally when licensing and rules allow.
+- Internal computation is cheaper than environment interaction, but enforce wall-clock and memory budgets compatible with current competition constraints.
+- Do not download very large models or datasets without evidence that they are necessary and compatible with offline packaging.
+- Cache public dependencies/games locally when licensing and rules allow.
+- Keep the ten-game public holdout sealed until Workflow 001 Stage 11 explicitly earns opening it.
 
 ## Failure handling
 
-A stage may end in one of these statuses:
+A stage may end in:
 
 - `PASS` — acceptance criteria met;
 - `PARTIAL` — useful bounded result, remaining burden recorded;
@@ -242,20 +250,21 @@ When a command fails:
 5. record the unresolved burden if not repaired;
 6. continue independent stages when possible.
 
-## Definition of done
+## Definition of done for Build 001
 
-The autonomous run is complete only when all achievable stages in the controlling workflow have been executed and the repository contains:
+The autonomous run is complete only when all achievable stages in Workflow 001 have been executed and the repository contains:
 
-- a working, typed ARC-AGI-3 agent;
-- deterministic local evaluation and replay tooling;
-- an immutable trace ledger and checkpoint/resume path;
-- a general perception → hypothesis → world-model → goal → plan → action loop;
-- pinned baselines and ablations;
-- measured reports with honest labels;
-- an offline Kaggle-package candidate;
-- clean tests, lint, type checks, and secret scan;
-- source identity and third-party notices;
-- a final handoff with exact owner-only next steps;
-- a pushed implementation branch and updated draft PR when GitHub access permits.
+- a causal local-public failure diagnosis;
+- controller-level palette/action equivariance evidence;
+- guaranteed-exposure rule-change reopening evidence;
+- an explicit retrodiction keep/narrow/defer/remove decision grounded in paired results;
+- a budgeted two-speed controller or a preserved failed-mechanism result;
+- measured local-public development recovery evidence;
+- a frozen holdout-gate decision and one-shot holdout result only if earned;
+- full regression/robustness results against Build 000;
+- an offline package candidate;
+- clean tests, lint, type checks, integrity and secret scans;
+- a final Build 001 research report and owner handoff;
+- a pushed Build 001 branch and draft PR.
 
-If measured performance remains low, finish honestly with the strongest reproducible system and a prioritized residual map. Do not stop merely because the benchmark is difficult.
+If performance remains low, finish honestly with the strongest reproducible system and a prioritized residual map. Do not stop merely because the benchmark is difficult.
