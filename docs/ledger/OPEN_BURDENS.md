@@ -417,3 +417,17 @@ This file preserves unresolved technical, evidential, legal, and external burden
 - **Next discriminating action:** Build perception-to-symbolic-state integration and bounded planning/recovery in Stages 10–12, then run equal-budget full-game ablations in Stage 14.
 - **Resolution condition:** Integrated traces demonstrate successful state construction, pre-action prediction, live consequence matching, and completion benefit; otherwise retain the isolated result only.
 - **Resolution receipt:** none.
+
+## B-20260821-023 — Goal comparison begins from supplied evidence and action estimates
+
+- **Status:** OPEN
+- **Stage:** 09, 10, 12, 14, 15
+- **Opened:** 2026-08-21
+- **Last updated:** 2026-08-21
+- **Owner:** Codex
+- **Burden:** The delayed/proxy comparison supplies strong external-progress evidence and per-action goal-advance estimates before selection; it does not measure whether raw observations yield the right goal, reachability estimate, or multi-step plan.
+- **Why it matters:** A selector can reject a novelty trap when given correct estimates yet still fail in an integrated episode because the candidate goal, model, or plan is wrong.
+- **Current evidence:** `docs/evidence/009-goal-acceptance.json` records 64/64 goal-aware versus 0/64 novelty-only synthetic completions under equal five-action budgets; the claim is limited to isolated selection.
+- **Next discriminating action:** Connect goal candidates to bounded search and live consequence receipts in Stages 10–12, then compare equal-budget integrated variants in Stage 14 and preserve a separately labeled public result in Stage 15.
+- **Resolution condition:** Integrated traces show that acquired goals improve completion or action efficiency without hidden fixture estimates, or the mechanism is retained only as an isolated capability with the negative integrated result preserved.
+- **Resolution receipt:** none.

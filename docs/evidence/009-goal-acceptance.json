@@ -1,0 +1,72 @@
+{
+  "schema": "arc3.stage-evidence.v0.1",
+  "stage": "09",
+  "status": "PASS",
+  "label": "synthetic",
+  "mechanism_status": "MECHANISM_OBSERVED",
+  "repository": "Grativy6/ARC3",
+  "implementation_branch": "build/000-arc3-end-to-end",
+  "measured_repository_commit": "f87cdb2d5eaa0be90f90fcbb301babefd78574e2",
+  "measurement_note": "Stage 09 files were uncommitted and are individually verified by the stage checkpoint diff.",
+  "runtime": {
+    "operating_system": "Windows 10.0.19045",
+    "python": "3.12.14",
+    "uv": "0.12.5"
+  },
+  "goal_kinds": [
+    "explicit-progress",
+    "level-advance",
+    "win",
+    "exit",
+    "matching-slot",
+    "completion-pattern",
+    "contact",
+    "discrepancy-reduction"
+  ],
+  "verification": {
+    "ruff_check": "PASS",
+    "ruff_format_check": "PASS",
+    "mypy_strict": "PASS:10-source-files",
+    "focused_pytest": "PASS:19",
+    "focused_pytest_seconds": 1.48,
+    "explicit_progress_signals": "PASS:score+progress+level+completion+win+game-over",
+    "structural_candidates": "PASS:exit+slot+pattern+contact+discrepancy",
+    "goal_role_separation": "PASS:external+subgoal+terminal+intrinsic-exploration",
+    "source_scope_lineage": "PASS",
+    "cross_level_comparison": "PASS",
+    "contradict_retire_reopen": "PASS",
+    "novelty_suppression_after_progress": "PASS",
+    "non_anthropomorphic_report": "PASS",
+    "public_id_network_hosted_scan": "PASS:0-matches"
+  },
+  "comparison": {
+    "schema": "arc3.goals.comparison.v0.1",
+    "label": "synthetic",
+    "status": "MECHANISM_OBSERVED",
+    "scorer": "arc3.goals.delayed-proxy-completion.v1",
+    "started_at": "2026-08-21T06:22:13.991719Z",
+    "completed_at": "2026-08-21T06:22:13.999719Z",
+    "case_seed": 20260821,
+    "episodes": 64,
+    "action_budget_per_episode": 5,
+    "goal_completions": 64,
+    "novelty_completions": 0,
+    "goal_actions": 320,
+    "novelty_actions": 320,
+    "completion_rate_difference": 1.0,
+    "case_manifest_sha256": "sha256:ab5f45ef23e3b42d5ed4b32760f8cd430e98a0c097e760551017ac6d01e199b7"
+  },
+  "commands": [
+    "python -m uv run ruff check --no-cache src/arc3/goals scripts/measure_goals.py tests/unit/test_goals_progress.py tests/unit/test_goals_registry.py tests/unit/test_goals_selection.py tests/unit/test_goals_structure.py tests/integration/test_goals_acquisition.py tests/integration/test_goals_delayed_proxy.py tests/property/test_goals_properties.py",
+    "python -m uv run ruff format --check --no-cache src/arc3/goals scripts/measure_goals.py tests/unit/test_goals_progress.py tests/unit/test_goals_registry.py tests/unit/test_goals_selection.py tests/unit/test_goals_structure.py tests/integration/test_goals_acquisition.py tests/integration/test_goals_delayed_proxy.py tests/property/test_goals_properties.py",
+    "python -m uv run mypy --cache-dir %TEMP%\\arc3-stage09-mypy-script src/arc3/goals scripts/measure_goals.py",
+    "python -m uv run pytest -q --no-cov --basetemp %TEMP%\\arc3-stage09-final-pytest tests/unit/test_goals_progress.py tests/unit/test_goals_registry.py tests/unit/test_goals_selection.py tests/unit/test_goals_structure.py tests/integration/test_goals_acquisition.py tests/integration/test_goals_delayed_proxy.py tests/property/test_goals_properties.py",
+    "python -m uv run python scripts/measure_goals.py --case-seed 20260821 --episodes 64 --horizon 5",
+    "rg -ni \"https?://|\\b(requests|urllib|socket|httpx|openai|anthropic|google\\.generativeai)\\b|ls20-|ft09-|vc33-\" src/arc3/goals"
+  ],
+  "claim_limits": [
+    "The comparison isolates action selection after strong external-progress evidence; it is not a full controller or environment evaluation.",
+    "Synthetic model estimates identify the progress and novelty alternatives, so the result does not establish end-to-end goal inference accuracy.",
+    "The result does not establish public-game performance or hidden-game generalization."
+  ]
+}

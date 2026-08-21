@@ -245,3 +245,17 @@ This file records material decisions made during the autonomous build. It is app
 - **Consequences:** Every promoted model carries a test/exclusion/contradiction receipt; prediction mismatch reopens models and invalidates dependent plans; ensembles preserve underdetermination.
 - **Reopening condition:** Integrated evidence shows the gate is too strict or too permissive, supported by preserved transition artifacts and an alternative that retains contradiction visibility.
 - **Supersedes / superseded by:** none.
+
+## D-20260821-017 — Keep goal desirability separate from exploration utility
+
+- **Status:** ADOPTED
+- **Stage:** 09
+- **Date:** 2026-08-21
+- **Commit:** pending Stage 09 implementation checkpoint
+- **Decision:** Represent externally evidenced progress, intermediate subgoals, and terminal hypotheses as typed, source-linked, reopenable goal records, while keeping novelty, information gain, and reversibility in a separate intrinsic exploration value. Once explicit external progress clears the declared rank threshold, suppress novelty but retain information and reversibility terms.
+- **Alternatives:** Optimize one combined novelty/progress score; infer terminal goals directly from geometry; permanently discard contradicted goals; treat structural affordances as accepted objectives.
+- **Evidence:** `docs/reports/009-typed-goal-acquisition.md`; 19 focused tests; the 64-case delayed/proxy comparison in `docs/evidence/009-goal-acceptance.json`.
+- **Why:** Novel observations are useful probes but are not evidence that the resulting state advances an external objective; preserving the distinction prevents novelty loops from displacing measured progress.
+- **Consequences:** Planning must consume explicit goal records and model estimates, cite source events, and preserve retirement/reopening. Goal ranks remain uncalibrated and do not authorize an environment action by themselves.
+- **Reopening condition:** Integrated held-out evidence shows that the threshold or ranking terms reduce completion/action efficiency, supported by equal-budget traces and an alternative that preserves goal/exploration provenance.
+- **Supersedes / superseded by:** none.

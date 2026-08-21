@@ -5,8 +5,8 @@
   "repository": "Grativy6/ARC3",
   "owner": "Christopher D. Pang",
   "status": "IN_PROGRESS",
-  "current_stage": "09",
-  "current_task": "stage-09-typed-goal-acquisition",
+  "current_stage": "10",
+  "current_task": "stage-10-bounded-planning-and-recovery",
   "implementation_branch": "build/000-arc3-end-to-end",
   "pull_request": {
     "number": 3,
@@ -14,7 +14,7 @@
     "draft": true
   },
   "started_at": "2026-08-21T04:46:19Z",
-  "last_checkpoint_at": "2026-08-21T06:17:07Z",
+  "last_checkpoint_at": "2026-08-21T06:22:20Z",
   "last_checkpoint_commit": "3f48ab4ca62ec032e52dc875d9f7c8e5810a0262",
   "resume_generation": 0,
   "completed_stages": [
@@ -26,7 +26,8 @@
     "05",
     "06",
     "07",
-    "08"
+    "08",
+    "09"
   ],
   "stage_status": {
     "00": "PASS",
@@ -38,8 +39,8 @@
     "06": "PASS",
     "07": "PASS",
     "08": "PASS",
-    "09": "IN_PROGRESS",
-    "10": "PENDING",
+    "09": "PASS",
+    "10": "IN_PROGRESS",
     "11": "PENDING",
     "12": "PENDING",
     "13": "PENDING",
@@ -248,6 +249,28 @@
         "public_id_network_hosted_scan": "PASS:0-matches",
         "held_out_comparison": "PASS:4-of-4-vs-0-of-4-ablation"
       }
+    },
+    "stage_09": {
+      "status": "PASS",
+      "label": "synthetic",
+      "mechanism_status": "MECHANISM_OBSERVED",
+      "report": "docs/reports/009-typed-goal-acquisition.md",
+      "report_sha256": "sha256:233b95df7bfac56c0d07d9c1133a66eda4dbb7eb7ee557a1b56c2be481e69e0d",
+      "acceptance_evidence": "docs/evidence/009-goal-acceptance.json",
+      "acceptance_evidence_sha256": "sha256:59d7fbb60ec3fdfef6435a59e4f351b1f078075e00100e14bd73ebc8d2487ce9",
+      "checkpoint_commit": "pending",
+      "verification": {
+        "ruff_lint": "PASS",
+        "ruff_format": "PASS",
+        "mypy_strict": "PASS:10-source-files",
+        "pytest": "PASS:19",
+        "explicit_progress_signals": "PASS:6",
+        "structural_goal_kinds": "PASS:5",
+        "role_and_utility_separation": "PASS",
+        "retire_reopen_lineage": "PASS",
+        "public_id_network_hosted_scan": "PASS:0-matches",
+        "held_out_comparison": "PASS:64-of-64-vs-0-of-64"
+      }
     }
   },
   "blocked_items": [
@@ -330,6 +353,12 @@
       "label": "synthetic",
       "result": "MECHANISM_OBSERVED on 4 held-out symbolic combinations: retrodiction-gated 4/4 predicted completions versus retrodiction-off highest-rank 0/4 under 16 supplied planned actions",
       "report": "docs/reports/008-retrodictive-executable-world-model.md"
+    },
+    {
+      "stage": "09",
+      "label": "synthetic",
+      "result": "MECHANISM_OBSERVED on 64 delayed/proxy cases: goal-aware selection 64/64 completions versus novelty-only 0/64 under equal five-action budgets",
+      "report": "docs/reports/009-typed-goal-acquisition.md"
     }
   ],
   "artifacts": {
@@ -408,9 +437,17 @@
     "stage_08_world_model_acceptance": {
       "path": "docs/evidence/008-world-model-acceptance.json",
       "sha256": "b055d417ab699a1957a590050f42d0e93ffefcd40b98eecd45a8ed6ca20583ac"
+    },
+    "stage_09_report": {
+      "path": "docs/reports/009-typed-goal-acquisition.md",
+      "sha256": "233b95df7bfac56c0d07d9c1133a66eda4dbb7eb7ee557a1b56c2be481e69e0d"
+    },
+    "stage_09_goal_acceptance": {
+      "path": "docs/evidence/009-goal-acceptance.json",
+      "sha256": "59d7fbb60ec3fdfef6435a59e4f351b1f078075e00100e14bd73ebc8d2487ce9"
     }
   },
-  "next_action": "Complete Stage 09 typed external-progress, subgoal, terminal-goal, structural-candidate, contradiction/reopening, and novelty-trap comparison.",
+  "next_action": "Complete Stage 10 bounded symbolic search, one-action execution, prediction validation, mismatch recovery, and equal-budget ablations.",
   "notes": [
     "Initial READY state was validated against the repository at b1948e9d02ad7b1321cbc57f3538047813e01e98 before this run began.",
     "No prior completed stages, checkpoint commit, or evidence artifacts were recorded; bootstrap PR 1 and its merge commit were independently verified.",
