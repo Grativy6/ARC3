@@ -80,6 +80,15 @@ The PowerShell bootstrap was exercised on the measured Windows host. Bash syntax
 successfully during scaffold validation; execution on Linux remains delegated to the pushed CI
 job and later clean-clone verification.
 
+### Remote CI fault and correction
+
+The first pushed CI runs `32450125300` and `32450125762` passed on Ubuntu and failed on
+Windows at `ruff format --check`: Git's Windows checkout converted tracked LF files to CRLF,
+and Ruff correctly reported 16 files as requiring normalization. This was an infrastructure
+configuration failure, not relabeled as a product pass. `.gitattributes` now fixes text files to
+LF across checkouts; the correcting CI result is recorded separately in the run ledger after it
+completes.
+
 ## Test coverage of the contract
 
 The 49 focused tests cover:

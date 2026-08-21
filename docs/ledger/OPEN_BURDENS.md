@@ -259,7 +259,7 @@ This file preserves unresolved technical, evidential, legal, and external burden
 - **Owner:** Codex
 - **Burden:** CI configuration and local bootstrap contracts can pass while a pushed Linux/Windows job or an isolated clone still fails.
 - **Why it matters:** Repository-local success is not evidence of cross-platform or clean-clone reproducibility.
-- **Current evidence:** Local Windows `scripts/bootstrap.ps1 -Check` passed; CI YAML and bootstrap contents have executable contract tests. No remote Actions result or true clean-clone receipt is claimed yet.
+- **Current evidence:** Local Windows `scripts/bootstrap.ps1 -Check` passed. Initial Actions runs `32450125300` and `32450125762` passed on Ubuntu but failed Windows formatting because checkout converted LF to CRLF. `.gitattributes` was added to make source line endings invariant; the correcting run is pending. No true clean-clone receipt is claimed yet.
 - **Next discriminating action:** Observe the pushed Stage 01 Actions run, then perform the Stage 18 fresh-clone locked bootstrap and artifact verification.
 - **Resolution condition:** Linux and Windows CI plus the declared Stage 18 clean-clone checks pass, or failures are preserved with exact outputs.
 - **Resolution receipt:** none.
