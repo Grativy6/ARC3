@@ -135,6 +135,39 @@ def test_reachable_excluded_first_party_wrapper_is_scanned(
 
 
 @pytest.mark.competition
+def test_reachable_packaging_build_tool_is_scanned_despite_default_exclusion(
+    integrity_repo: tuple[Path, str, str],
+) -> None:
+    root, _, _ = integrity_repo
+    entry = root / "agent" / "my_agent.py"
+    package = root / "src" / "arc3" / "__init__.py"
+    packaging = root / "src" / "arc3" / "packaging" / "__init__.py"
+    builder = root / "src" / "arc3" / "packaging" / "builder.py"
+    builder.parent.mkdir(parents=True)
+    package.parent.mkdir(parents=True, exist_ok=True)
+    entry.write_text("from arc3.packaging import builder\n", encoding="utf-8")
+    package.write_text("", encoding="utf-8")
+    packaging.write_text("", encoding="utf-8")
+    builder.write_text("import subprocess\nsubprocess.run(['local-helper'])\n", encoding="utf-8")
+    candidates = (entry, package, packaging, builder)
+    policy_files = discover_policy_files(root, candidate_files=candidates)
+    assert builder in policy_files
+    public = load_public_identifiers(
+        root / "docs" / "evaluation" / "public-game-partitions.v0.1.json"
+    )
+    findings = scan_policy_files(
+        root=root,
+        files=policy_files,
+        public_identifiers=public.identifiers,
+    )
+    assert any(
+        finding.path.endswith("packaging/builder.py")
+        and finding.category is FindingCategory.FORBIDDEN_NETWORK_CLIENT
+        for finding in findings
+    )
+
+
+@pytest.mark.competition
 def test_obvious_game_solution_table_is_blocked(integrity_repo: tuple[Path, str, str]) -> None:
     root, _, _ = integrity_repo
     target = "KNOWN_GAME_" + "PLANS"
