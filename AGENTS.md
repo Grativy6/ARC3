@@ -1,5 +1,7 @@
 # AGENTS.md — ARC3 execution contract
 
+Bootstrap reference (frozen): `docs/reference/AGENTS.arc3-bootstrap.v0.1.md`
+
 ## Controlling instruction
 
 The controlling build plan is:
