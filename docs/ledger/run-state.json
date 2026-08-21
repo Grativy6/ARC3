@@ -14,8 +14,8 @@
     "draft": true
   },
   "started_at": "2026-08-21T04:46:19Z",
-  "last_checkpoint_at": "2026-08-21T06:09:04Z",
-  "last_checkpoint_commit": "a699ef8edb0befac5fadc9906e6b1fb10d86ac1b",
+  "last_checkpoint_at": "2026-08-21T06:17:07Z",
+  "last_checkpoint_commit": "3f48ab4ca62ec032e52dc875d9f7c8e5810a0262",
   "resume_generation": 0,
   "completed_stages": [
     "00",
@@ -234,7 +234,7 @@
       "report_sha256": "sha256:576528ffdae6dc5424151fda3a1c7f7705337827cfa403e9001eb44027402bda",
       "acceptance_evidence": "docs/evidence/008-world-model-acceptance.json",
       "acceptance_evidence_sha256": "sha256:b055d417ab699a1957a590050f42d0e93ffefcd40b98eecd45a8ed6ca20583ac",
-      "checkpoint_commit": "pending",
+      "checkpoint_commit": "3f48ab4ca62ec032e52dc875d9f7c8e5810a0262",
       "verification": {
         "ruff_lint": "PASS",
         "ruff_format": "PASS",

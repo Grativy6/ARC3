@@ -237,7 +237,7 @@ This file records material decisions made during the autonomous build. It is app
 - **Status:** ADOPTED
 - **Stage:** 08
 - **Date:** 2026-08-21
-- **Commit:** pending
+- **Commit:** 3f48ab4ca62ec032e52dc875d9f7c8e5810a0262
 - **Decision:** Compile compatible typed hypotheses into deterministic executable candidates, but promote a model only through an artifact that retrodicts every preserved compatible transition or records a declared condition-based exclusion. Preserve contradictory candidates/residuals and provide retrodiction-off only as an explicit ablation.
 - **Alternatives:** Select the highest current hypothesis rank; test only the latest transition; silently ignore unsupported rule syntax; collapse disagreeing models to one outcome.
 - **Evidence:** `docs/reports/008-retrodictive-executable-world-model.md`; 12 focused tests; four-combination model-selection comparison in `docs/evidence/008-world-model-acceptance.json`.
