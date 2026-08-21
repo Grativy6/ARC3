@@ -5,8 +5,8 @@
   "repository": "Grativy6/ARC3",
   "owner": "Christopher D. Pang",
   "status": "IN_PROGRESS",
-  "current_stage": "06",
-  "current_task": "stage-06-synthetic-environment-laboratory",
+  "current_stage": "07",
+  "current_task": "stage-07-action-semantics-and-efficient-exploration",
   "implementation_branch": "build/000-arc3-end-to-end",
   "pull_request": {
     "number": 3,
@@ -23,7 +23,8 @@
     "02",
     "03",
     "04",
-    "05"
+    "05",
+    "06"
   ],
   "stage_status": {
     "00": "PASS",
@@ -32,8 +33,8 @@
     "03": "PASS",
     "04": "PASS",
     "05": "PASS",
-    "06": "IN_PROGRESS",
-    "07": "PENDING",
+    "06": "PASS",
+    "07": "IN_PROGRESS",
     "08": "PENDING",
     "09": "PENDING",
     "10": "PENDING",
@@ -179,6 +180,27 @@
         "reopen_plan_invalidation": "PASS",
         "trace_index_integration": "PASS"
       }
+    },
+    "stage_06": {
+      "status": "PASS",
+      "label": "synthetic",
+      "report": "docs/reports/006-synthetic-environment-laboratory.md",
+      "report_sha256": "sha256:70eeaf147630697d99a4252df8cec256572a85ba102a80d5a0467b3405b0fea2",
+      "acceptance_evidence": "docs/evidence/006-lab-acceptance.json",
+      "acceptance_evidence_sha256": "sha256:21f239e91f471e9e8d3dbebb01c7c69e3dbc6dc2df03e9fa81cc28ff9e77051c",
+      "checkpoint_commit": "pending",
+      "verification": {
+        "ruff_lint": "PASS",
+        "ruff_format": "PASS",
+        "mypy_strict": "PASS:6-source-files",
+        "pytest": "PASS:16",
+        "rule_families": "PASS:15",
+        "deterministic_partitions": "PASS",
+        "oracle_solvability": "PASS:630-episodes",
+        "observation_leakage": "PASS:0-detected-fields",
+        "false_lead_contradiction": "PASS",
+        "random_baselines": "PASS:3-partitions"
+      }
     }
   },
   "blocked_items": [
@@ -243,6 +265,12 @@
       "label": "synthetic",
       "result": "20 focused tests passed; all 9 typed families and the create-support-contradict-narrow-reject-reopen lineage with plan invalidation passed",
       "report": "docs/reports/005-typed-hypothesis-registry.md"
+    },
+    {
+      "stage": "06",
+      "label": "synthetic",
+      "result": "15 rule families and 630/630 oracle-solvable leakage-checked episodes; random completion 33.33% development, 30.00% held-out combinations, 6.67% held-out families",
+      "report": "docs/reports/006-synthetic-environment-laboratory.md"
     }
   ],
   "artifacts": {
@@ -297,9 +325,17 @@
     "stage_05_hypothesis_acceptance": {
       "path": "docs/evidence/005-hypothesis-acceptance.json",
       "sha256": "880a6496a5179b7ccf86852d322888b53592ddcd45752928375f86a093c35df1"
+    },
+    "stage_06_report": {
+      "path": "docs/reports/006-synthetic-environment-laboratory.md",
+      "sha256": "70eeaf147630697d99a4252df8cec256572a85ba102a80d5a0467b3405b0fea2"
+    },
+    "stage_06_lab_acceptance": {
+      "path": "docs/evidence/006-lab-acceptance.json",
+      "sha256": "21f239e91f471e9e8d3dbebb01c7c69e3dbc6dc2df03e9fa81cc28ff9e77051c"
     }
   },
-  "next_action": "Complete Stage 06 procedural ARC-compatible environment, held-out rule families, evaluator-only ground truth, leakage checks, and baseline measurements.",
+  "next_action": "Complete Stage 07 action-effect inference, information-efficient coordinate probes, repeated-action suppression, and held-out baseline comparison.",
   "notes": [
     "Initial READY state was validated against the repository at b1948e9d02ad7b1321cbc57f3538047813e01e98 before this run began.",
     "No prior completed stages, checkpoint commit, or evidence artifacts were recorded; bootstrap PR 1 and its merge commit were independently verified.",

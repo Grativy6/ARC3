@@ -203,3 +203,17 @@ This file records material decisions made during the autonomous build. It is app
 - **Consequences:** World-model and planning stages can consume typed, rebuildable candidates and must respond to reopening signals; rank values remain explicitly uncalibrated.
 - **Reopening condition:** Held-out evidence demonstrates that the vocabulary cannot express a needed generic rule or that a deterministic transition loses source lineage.
 - **Supersedes / superseded by:** none.
+
+## D-20260821-014 — Separate procedural production observations from evaluator truth
+
+- **Status:** ADOPTED
+- **Stage:** 06
+- **Date:** 2026-08-21
+- **Commit:** pending
+- **Decision:** Generate deterministic procedural episodes through an official-shaped production session while keeping exact rules, goals, transition annotations, contradictions, and oracle plans on an evaluator-only object. Freeze development, held-out-combination, and wholly held-out-family generator domains.
+- **Alternatives:** Put rule labels in observations; test only curated public games; expose oracle annotations to simplify controller development; draw every parameter from one shared range.
+- **Evidence:** `docs/reports/006-synthetic-environment-laboratory.md`; 16 focused tests; 630 solvable/leakage-checked episodes and pinned random baselines in `docs/evidence/006-lab-acceptance.json`.
+- **Why:** General mechanisms need repeatable unseen-rule tests whose answers cannot leak through the production interface and whose held-out status is explicit.
+- **Consequences:** Controller code may consume only `LabSession` observations; evaluator ground truth is limited to scoring, diagnostics, and test assertions; synthetic results remain separately labeled.
+- **Reopening condition:** A leakage test fails, a seeded episode is unsolvable, or measured public transition structure demonstrates a missing generic laboratory axis.
+- **Supersedes / superseded by:** none.

@@ -375,3 +375,17 @@ This file preserves unresolved technical, evidential, legal, and external burden
 - **Next discriminating action:** Measure retrodictive accuracy, contradiction rate, rule survival, and downstream score/action effects on held-out procedural episodes in Stages 08, 13, and 14.
 - **Resolution condition:** Calibration evidence supports a revised meaning, or the final system retains rank-only semantics with measured limits.
 - **Resolution receipt:** none.
+
+## B-20260821-020 — Procedural laboratory fidelity is bounded
+
+- **Status:** OPEN
+- **Stage:** 06, 13, 14, 19
+- **Opened:** 2026-08-21
+- **Last updated:** 2026-08-21
+- **Owner:** shared
+- **Burden:** The 15 executable procedural families exercise declared mechanics but remain compact first-party abstractions; their distribution and difficulty are not evidence that they represent the current public or private ARC-AGI-3 game distribution.
+- **Why it matters:** A controller can overfit the laboratory generator or improve synthetic completion without improving official gameplay.
+- **Current evidence:** `docs/evidence/006-lab-acceptance.json` records deterministic splits, 630 solvable episodes, and random baselines; no official score is inferred.
+- **Next discriminating action:** Keep generator ground truth away from production code, evaluate mechanisms on frozen held-out combinations/families in Stage 14, and separately measure the untouched public partition in Stage 15.
+- **Resolution condition:** Never fully closed by synthetic results; narrow only with independent public/official receipts while preserving surface labels.
+- **Resolution receipt:** none.

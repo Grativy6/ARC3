@@ -1,0 +1,121 @@
+{
+  "schema": "arc3.stage-evidence.v0.1",
+  "stage": "06",
+  "status": "PASS",
+  "label": "synthetic",
+  "repository": "Grativy6/ARC3",
+  "implementation_branch": "build/000-arc3-end-to-end",
+  "measured_repository_commit": "22cc5c9de9d4b3d8814433b964f8a4c0687b537f",
+  "measurement_note": "Stage 06 files were uncommitted and are individually verified by the stage checkpoint diff.",
+  "runtime": {
+    "operating_system": "Windows 10.0.19045",
+    "python": "3.12.14",
+    "uv": "0.12.5",
+    "cpu": "AMD Ryzen 5 2600 Six-Core Processor",
+    "memory_bytes": 17124503552
+  },
+  "rule_families": [
+    "unknown-directional-mapping",
+    "controllable-identification",
+    "conditional-traversal",
+    "toggle-door-key",
+    "coordinate-unknown-target",
+    "color-shape-matching",
+    "cyclic-timing",
+    "reversible-irreversible",
+    "delayed-reward",
+    "misleading-novelty",
+    "partial-observability",
+    "rule-change-between-levels",
+    "false-initial-hypothesis",
+    "multiple-compatible-models",
+    "game-over-reset-recovery"
+  ],
+  "partition_contract": {
+    "development_family_count": 12,
+    "held_out_combination_family_count": 12,
+    "held_out_family_count": 3,
+    "development_and_held_out_families_disjoint": true,
+    "held_out_generation_deterministic": true
+  },
+  "verification": {
+    "ruff_check": "PASS",
+    "ruff_format_check": "PASS",
+    "mypy_strict": "PASS:6-source-files",
+    "focused_pytest": "PASS:16",
+    "focused_pytest_seconds": 12.74,
+    "registered_distinct_families": "PASS:15",
+    "seeded_variation_axes": "PASS:palette+shape+position+action-map+distractors+layout+consequence",
+    "first_time_no_instruction_observations": "PASS",
+    "evaluator_only_ground_truth": "PASS",
+    "false_leading_then_contradiction": "PASS",
+    "batch_recording_determinism": "PASS",
+    "oracle_solvability": "PASS:630-episodes",
+    "observation_leakage": "PASS:0-detected-fields"
+  },
+  "self_test": {
+    "started_at": "2026-08-21T05:57:58.419455Z",
+    "completed_at": "2026-08-21T05:58:11.720305Z",
+    "seeds": [0, 1, 2, 17, 113, 808, 20260821],
+    "partitions": [
+      "development",
+      "held-out-combinations",
+      "held-out-families"
+    ],
+    "episodes": 630,
+    "elapsed_seconds": 11.156787000014447,
+    "solvability": "PASS",
+    "observation_leakage": "PASS:0-detected-fields"
+  },
+  "random_baselines": [
+    {
+      "partition": "development",
+      "root_seed": 20260821,
+      "episodes": 30,
+      "action_budget": 64,
+      "completed": 10,
+      "completion_rate": 0.3333333333333333,
+      "environment_actions": 1407,
+      "resets": 0,
+      "mean_environment_actions": 46.9,
+      "records_sha256": "sha256:9cc4ade3fe17392ef4b44dd6b6bc38cbcd8ee192c569fde44c324c7857e4b14b"
+    },
+    {
+      "partition": "held-out-combinations",
+      "root_seed": 20260821,
+      "episodes": 30,
+      "action_budget": 64,
+      "completed": 9,
+      "completion_rate": 0.3,
+      "environment_actions": 1594,
+      "resets": 0,
+      "mean_environment_actions": 53.13333333333333,
+      "records_sha256": "sha256:e6f10bc3fca0a839f673e5736df2b2efbb09d474d45850e21c2887af933f4c41"
+    },
+    {
+      "partition": "held-out-families",
+      "root_seed": 20260821,
+      "episodes": 30,
+      "action_budget": 64,
+      "completed": 2,
+      "completion_rate": 0.06666666666666667,
+      "environment_actions": 1840,
+      "resets": 10,
+      "mean_environment_actions": 61.333333333333336,
+      "records_sha256": "sha256:5a15df086a44d4f9ca0465c590bad4f4b1e5e377b2d813c74e1e6bc6a55e5cd5"
+    }
+  ],
+  "scorer": "arc3.lab.completion-rate.v1",
+  "commands": [
+    "python -m uv run ruff check src/arc3/lab scripts/measure_lab_baselines.py",
+    "python -m uv run ruff format --check src/arc3/lab scripts/measure_lab_baselines.py",
+    "python -m uv run mypy src/arc3/lab scripts/measure_lab_baselines.py",
+    "python -m uv run pytest -q --no-cov --basetemp %TEMP%\\arc3-stage06-final-pytest-nocov tests/unit/test_lab_catalog.py tests/unit/test_lab_transitions.py tests/property/test_lab_determinism.py tests/integration/test_lab_batch.py",
+    "python -m uv run python scripts/measure_lab_baselines.py --root-seed 20260821 --episodes 30 --max-actions 64"
+  ],
+  "claim_limits": [
+    "Completion rates use the first-party exact synthetic scorer and are not official RHAE scores.",
+    "Evaluator-only API separation is not an adversarial Python source-reflection boundary.",
+    "Procedural fixture performance cannot establish public- or hidden-game generalization."
+  ]
+}
