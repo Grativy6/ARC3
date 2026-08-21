@@ -4,12 +4,13 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import pytest
 from scripts.evaluate_public import build_parser
 
 from arc3.adapters import EnvironmentDescriptor
+from arc3.competition_runtime import FROZEN_COMPETITION_RUNTIME
 from arc3.errors import EvaluationError
 from arc3.evaluation.artifacts import (
     atomic_write_bytes,
@@ -25,11 +26,13 @@ from arc3.evaluation.public import (
     PublicEvaluationConfig,
     PublicExposureLedger,
     PublicPartitionManifest,
+    _run_context,
     local_asset_identity,
     validate_frozen_source,
     validate_public_gate,
 )
 from arc3.evaluation.public_runner import _aggregate, verify_public_evaluation
+from arc3.policy import RunContext
 from arc3.types import GameId
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -57,6 +60,44 @@ def test_stage15_default_declaration_is_full_b0_through_b4() -> None:
     assert args.max_actions == 80
     assert args.max_resets == 8
     assert args.timeout_seconds == 120.0
+    config = PublicEvaluationConfig(
+        partition="development",
+        agents=("full",),
+        seeds=(7,),
+        frozen_commit=FROZEN,
+    )
+    assert config.max_actions == FROZEN_COMPETITION_RUNTIME.max_actions == 80
+    assert config.max_resets == FROZEN_COMPETITION_RUNTIME.max_resets == 8
+    assert config.timeout_seconds == 120.0
+    assert FROZEN_COMPETITION_RUNTIME.per_game_wall_clock_seconds == 240.0
+
+
+def test_stage15_context_uses_frozen_controller_bounds_with_surface_wall_override(
+    tmp_path: Path,
+) -> None:
+    context = cast(
+        RunContext,
+        _run_context(
+            {
+                "checkpoint_path": str(tmp_path / "checkpoint"),
+                "game_id": "opaque-stage15-fixture",
+                "git_commit": FROZEN,
+                "max_actions": 80,
+                "max_resets": 8,
+                "run_id": "stage15-runtime-bounds",
+                "seed": 7,
+                "timeout_seconds": 120.0,
+                "trace_path": str(tmp_path / "trace"),
+            }
+        ),
+    )
+    budgets = context.config.budgets
+    assert budgets.max_actions == FROZEN_COMPETITION_RUNTIME.max_actions
+    assert budgets.max_resets == FROZEN_COMPETITION_RUNTIME.max_resets
+    assert budgets.decision_seconds == FROZEN_COMPETITION_RUNTIME.decision_seconds
+    assert budgets.wall_clock_seconds == 120.0
+    assert budgets.memory_megabytes == FROZEN_COMPETITION_RUNTIME.memory_megabytes
+    assert budgets.max_search_nodes == FROZEN_COMPETITION_RUNTIME.max_search_nodes
 
 
 def test_manifest_tamper_and_discovery_drift_are_rejected(tmp_path: Path) -> None:

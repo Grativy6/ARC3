@@ -34,6 +34,7 @@ from arc3.adapters.arc_agi import (
     DEFAULT_BASE_URL,
     ArcAGIAdapter,
 )
+from arc3.competition_runtime import FROZEN_COMPETITION_RUNTIME
 from arc3.config import ARC3Config, BudgetConfig
 from arc3.errors import AdapterError, EvaluationError
 from arc3.trace import (
@@ -311,8 +312,11 @@ class PublicEvaluationConfig:
     agents: tuple[str, ...]
     seeds: tuple[int, ...]
     frozen_commit: str
-    max_actions: int = 80
-    max_resets: int = 8
+    max_actions: int = FROZEN_COMPETITION_RUNTIME.max_actions
+    max_resets: int = FROZEN_COMPETITION_RUNTIME.max_resets
+    # Stage 15 public development is a predeclared 120-second measurement
+    # surface. The packaged competition wrapper separately uses the frozen
+    # 240-second per-game bound.
     timeout_seconds: float = 120.0
     manifest_path: Path = Path("docs/evaluation/public-game-partitions.v0.1.json")
     environments_dir: Path = Path("artifacts/stage15/public-environments")
@@ -801,8 +805,16 @@ def _run_context(spec: Mapping[str, object]) -> object:
     budgets = BudgetConfig(
         max_actions=int(cast(int, spec["max_actions"])),
         max_resets=int(cast(int, spec["max_resets"])),
-        decision_seconds=max(0.001, min(5.0, timeout)),
+        decision_seconds=max(
+            0.001,
+            min(FROZEN_COMPETITION_RUNTIME.decision_seconds, timeout),
+        ),
         wall_clock_seconds=timeout,
+        memory_megabytes=FROZEN_COMPETITION_RUNTIME.memory_megabytes,
+        max_coordinate_candidates=FROZEN_COMPETITION_RUNTIME.max_coordinate_candidates,
+        max_search_nodes=FROZEN_COMPETITION_RUNTIME.max_search_nodes,
+        max_search_depth=FROZEN_COMPETITION_RUNTIME.max_search_depth,
+        max_trace_bytes=FROZEN_COMPETITION_RUNTIME.max_trace_bytes,
     )
     config = ARC3Config.for_mode(
         EnvironmentMode.LOCAL,

@@ -10,6 +10,7 @@ import pytest
 from arcengine import FrameData, GameAction, GameState
 
 from arc3.adapters.synthetic import SYNTHETIC_GAME_ID, SyntheticAdapter
+from arc3.competition_runtime import FROZEN_COMPETITION_RUNTIME
 from arc3.config import ARC3Config, BudgetConfig
 from arc3.policy import ARC3Controller, ControllerPhase, ControllerPreset, LocalProposal, RunContext
 from arc3.types import EnvironmentMode
@@ -110,7 +111,8 @@ def test_pinned_frame_data_default_action_is_stripped_only_by_official_wrapper()
     assert agent._controller is not None
     assert agent._controller.snapshot.actions_used == 1
     assert agent._controller.snapshot.fault_count == 0
-    assert agent._controller.context.config.budgets.max_actions == MyAgent.MAX_ACTIONS == 80
+    assert agent._controller.context.config.budgets == FROZEN_COMPETITION_RUNTIME.budgets()
+    assert MyAgent.MAX_ACTIONS == FROZEN_COMPETITION_RUNTIME.max_actions == 80
     agent._controller.close()
 
 

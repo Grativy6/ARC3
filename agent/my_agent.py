@@ -16,7 +16,8 @@ from pathlib import Path
 from typing import ClassVar
 
 from arc3.adapters.arc_agi import normalize_frame_data
-from arc3.config import ARC3Config, BudgetConfig, derive_seed
+from arc3.competition_runtime import FROZEN_COMPETITION_RUNTIME
+from arc3.config import ARC3Config, derive_seed
 from arc3.errors import ConfigurationError
 from arc3.policy import ARC3Controller, ControllerPhase, ControllerPreset, RunContext
 from arc3.trace.canonical import sha256_json
@@ -50,7 +51,7 @@ class _FallbackGameAction(StrEnum):
 class _FallbackAgent:
     """Import-only stand-in used when the optional framework is unavailable."""
 
-    MAX_ACTIONS: ClassVar[int] = 80
+    MAX_ACTIONS: ClassVar[int] = FROZEN_COMPETITION_RUNTIME.max_actions
 
     def __init__(self, *args: object, **kwargs: object) -> None:
         del args
@@ -115,7 +116,7 @@ def _translate_action(action: ActionRequest) -> object:
 class MyAgent(_AgentBase):  # type: ignore[misc,valid-type]
     """Official wrapper using the exact production controller implementation."""
 
-    MAX_ACTIONS = 80
+    MAX_ACTIONS = FROZEN_COMPETITION_RUNTIME.max_actions
 
     def __init__(self, *args: object, **kwargs: object) -> None:
         forwarded = dict(kwargs)
@@ -148,7 +149,7 @@ class MyAgent(_AgentBase):  # type: ignore[misc,valid-type]
             profile="competition",
             trace_root=str(runtime_root / "trace"),
             artifact_root=str(runtime_root / "artifacts"),
-            budgets=BudgetConfig(max_actions=self.MAX_ACTIONS),
+            budgets=FROZEN_COMPETITION_RUNTIME.budgets(),
         )
         controller = ARC3Controller(ControllerPreset.COMPETITION)
         controller.reset(
