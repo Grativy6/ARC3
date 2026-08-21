@@ -502,6 +502,7 @@ def test_plan_declares_every_release_boundary_without_hosted_inference(tmp_path:
     } == set(by_id)
     assert "--offline" in by_id["dependency-lock"].argv
     assert "--acquire-missing" not in by_id["official-smoke"].argv
+    assert by_id["official-artifact-verification"].dependencies == ("official-inventory",)
     transient = (tmp_path.parent / "transient").resolve()
     assert str(transient / "tmp" / "pytest-full") in by_id["full-test-suite"].argv
     assert str(transient / "cache" / "mypy" / "full") in by_id["mypy-strict"].argv

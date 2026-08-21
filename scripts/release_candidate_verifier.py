@@ -1068,7 +1068,7 @@ def build_plan(
             ),
             300.0,
             required=False,
-            dependencies=("official-smoke",),
+            dependencies=("official-inventory",),
         ),
     )
 
@@ -2142,7 +2142,7 @@ def run_release_verification(
     results.append(log_scan)
 
     result_labels = ["synthetic"]
-    if prior["official-smoke"].status == "PASS":
+    if official_available:
         result_labels.append("local-public")
     plan = _plan_document(specs)
     completed_at = _utc_now()
