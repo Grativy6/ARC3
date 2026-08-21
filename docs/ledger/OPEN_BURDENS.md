@@ -445,3 +445,17 @@ This file preserves unresolved technical, evidential, legal, and external burden
 - **Next discriminating action:** Integrate raw-observation state construction and persisted model/goal state in Stage 12, compare component ablations on full procedural episodes in Stage 14, and profile expansions/latency/memory in Stage 16.
 - **Resolution condition:** Integrated held-out and separately labeled public receipts demonstrate bounded planning value or preserve an honest negative result with the isolated mechanism claim unchanged.
 - **Resolution receipt:** none.
+
+## B-20260821-025 — Trace round-trip property generated schema-forbidden keys
+
+- **Status:** NARROWED; local correction passes, remote confirmation pending
+- **Stage:** 03, 07, corrective checkpoint after 10
+- **Opened:** 2026-08-21
+- **Last updated:** 2026-08-21
+- **Owner:** Codex
+- **Burden:** Windows CI runs `32453259223` and `32453261970` minimized the purportedly valid arbitrary receipt payload to `{"CREDENTIALS": null}`; the schema correctly rejected it, so the generator's domain contradicted the test name.
+- **Why it matters:** Unseeded platform/example variation made CI flaky and a later pass without a strategy correction could mask the invalid property domain.
+- **Current evidence:** `docs/evidence/007-trace-property-ci-failure.json`; both Ubuntu jobs passed and both Windows jobs failed at commit `64408e35bea561f3959791adc94d11885270eca4`. The corrected strategy plus explicit schema rejection suite passed four seeds locally.
+- **Next discriminating action:** Push the correction and require both Ubuntu and Windows CI jobs to pass before marking this burden resolved.
+- **Resolution condition:** Corrective commit passes the full CI matrix while explicit nested credential/reasoning rejection tests remain enabled.
+- **Resolution receipt:** pending.

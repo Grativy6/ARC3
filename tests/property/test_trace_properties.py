@@ -26,15 +26,15 @@ CODE = CodeIdentity("abc123", CONFIG_HASH)
 WHEN = "2026-08-21T00:00:00Z"
 
 json_scalars = st.none() | st.booleans() | st.integers(-(2**53), 2**53) | st.text(max_size=30)
+receipt_safe_keys = st.text(min_size=1, max_size=12).map(lambda value: f"field_{value}")
 json_values = st.recursive(
     json_scalars,
     lambda children: (
-        st.lists(children, max_size=5)
-        | st.dictionaries(st.text(min_size=1, max_size=12), children, max_size=5)
+        st.lists(children, max_size=5) | st.dictionaries(receipt_safe_keys, children, max_size=5)
     ),
     max_leaves=15,
 )
-json_objects = st.dictionaries(st.text(min_size=1, max_size=12), json_values, max_size=8)
+json_objects = st.dictionaries(receipt_safe_keys, json_values, max_size=8)
 
 
 def run_event(payload: dict[str, object], *, event_id: str = "E-PROPERTY") -> TraceEvent:

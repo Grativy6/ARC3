@@ -1,0 +1,58 @@
+{
+  "schema": "arc3.ci-failure-evidence.v0.1",
+  "observed_at": "2026-08-21T06:10:36Z",
+  "recorded_at": "2026-08-21T06:33:05Z",
+  "failure_classification": "FAILED_MECHANISM",
+  "correction_status": "LOCAL_PASS_REMOTE_PENDING",
+  "repository_commit": "64408e35bea561f3959791adc94d11885270eca4",
+  "runs": [
+    {
+      "id": 32453259223,
+      "event": "push",
+      "url": "https://github.com/Grativy6/ARC3/actions/runs/32453259223",
+      "ubuntu": "PASS",
+      "windows": "FAIL"
+    },
+    {
+      "id": 32453261970,
+      "event": "pull_request",
+      "url": "https://github.com/Grativy6/ARC3/actions/runs/32453261970",
+      "ubuntu": "PASS",
+      "windows": "FAIL"
+    }
+  ],
+  "failure": {
+    "test": "tests/property/test_trace_properties.py::test_arbitrary_valid_event_round_trips_without_semantic_loss",
+    "minimized_payload": {
+      "CREDENTIALS": null
+    },
+    "exception": "arc3.errors.ARC3ValidationError: credential-bearing field 'CREDENTIALS' is forbidden in receipts",
+    "hypothesis_reproduction": "@reproduce_failure('6.165.10', b'AAGLQ1JFREVOVElBTFNBAEEAAA==')",
+    "windows_summary": "1 failed, 184 passed",
+    "cause": "The property generator described all generated mappings as valid while allowing key names that the receipt schema intentionally rejects. Platform/example variation exposed the invalid generator domain."
+  },
+  "correction": {
+    "measured_repository_commit": "3b994821424650ef858de442048bd2638d818a46",
+    "measurement_note": "The strategy correction was uncommitted during local verification.",
+    "change": "Prefix recursively generated mapping keys with field_ so the arbitrary round-trip domain excludes schema-reserved credential and reasoning field names; explicit rejection tests remain unchanged.",
+    "local_verification": [
+      "PASS:11 tests:hypothesis-seed=1:4.10s",
+      "PASS:11 tests:hypothesis-seed=2:4.38s",
+      "PASS:11 tests:hypothesis-seed=3:3.63s",
+      "PASS:11 tests:hypothesis-seed=20260821:3.63s",
+      "PASS:ruff-check",
+      "PASS:ruff-format-check-after-format-correction"
+    ],
+    "commands": [
+      "python -m uv run pytest -q --no-cov --basetemp %TEMP%\\arc3-trace-property-1 --hypothesis-seed=1 tests/property/test_trace_properties.py tests/unit/test_trace_schema.py",
+      "python -m uv run pytest -q --no-cov --basetemp %TEMP%\\arc3-trace-property-2 --hypothesis-seed=2 tests/property/test_trace_properties.py tests/unit/test_trace_schema.py",
+      "python -m uv run pytest -q --no-cov --basetemp %TEMP%\\arc3-trace-property-3 --hypothesis-seed=3 tests/property/test_trace_properties.py tests/unit/test_trace_schema.py",
+      "python -m uv run pytest -q --no-cov --basetemp %TEMP%\\arc3-trace-property-20260821 --hypothesis-seed=20260821 tests/property/test_trace_properties.py tests/unit/test_trace_schema.py"
+    ]
+  },
+  "claim_limits": [
+    "The receipt schema correctly rejected the credential-bearing key; the failure was in the purportedly valid property-test generator.",
+    "Later unseeded CI success before this correction did not prove the generator domain was fixed.",
+    "Remote correction status remains pending until the corrective commit completes both Ubuntu and Windows jobs."
+  ]
+}
