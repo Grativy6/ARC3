@@ -170,6 +170,9 @@ class ManyComponentStressSession:
         self._actions = 0
         self._resets = 0
         self._closed = False
+        self._navigation_lane = size == 32 and component_count == 64
+        self._mover = (2, 2)
+        self._target = (6, 2)
         self._cells = self._initial_cells()
         self._observation = self._make_observation(returned_action=None, full_reset=False)
 
@@ -179,6 +182,17 @@ class ManyComponentStressSession:
 
     def _initial_cells(self) -> list[list[int]]:
         rows = [[0 for _ in range(self._size)] for _ in range(self._size)]
+        if self._navigation_lane:
+            mover_x, mover_y = self._mover
+            target_x, target_y = self._target
+            rows[mover_y][mover_x] = 10
+            rows[target_y][target_x] = 11
+            colors = (*range(1, 10), *range(12, 16))
+            for index in range(self._component_count - 2):
+                x = 1 + 2 * (index % (self._size // 2))
+                y = 7 + 2 * (index // (self._size // 2))
+                rows[y][x] = colors[index % len(colors)]
+            return rows
         for index in range(self._component_count):
             x = 1 + 2 * (index % (self._size // 2))
             y = 1 + 2 * (index // (self._size // 2))
@@ -213,17 +227,33 @@ class ManyComponentStressSession:
         validate_action_request(self._observation, action)
         if action.name is ActionName.RESET:
             self._resets += 1
+            self._mover = (2, 2)
             self._cells = self._initial_cells()
             self._observation = self._make_observation(
                 returned_action=action,
                 full_reset=True,
             )
             return self._observation
-        index = self._actions % self._component_count
-        x = 1 + 2 * (index % (self._size // 2))
-        y = 1 + 2 * (index // (self._size // 2))
-        action_offset = int(action.name.value.removeprefix("ACTION"))
-        self._cells[y][x] = 1 + (self._cells[y][x] - 1 + action_offset) % 15
+        if self._navigation_lane:
+            dx, dy = {
+                ActionName.ACTION1: (0, -1),
+                ActionName.ACTION2: (0, 1),
+                ActionName.ACTION3: (-1, 0),
+                ActionName.ACTION4: (1, 0),
+            }[action.name]
+            old_x, old_y = self._mover
+            candidate = (old_x + dx, old_y + dy)
+            new_x, new_y = candidate
+            if 0 <= new_x < self._size and 0 <= new_y < self._size and candidate != self._target:
+                self._cells[old_y][old_x] = 0
+                self._cells[new_y][new_x] = 10
+                self._mover = candidate
+        else:
+            index = self._actions % self._component_count
+            x = 1 + 2 * (index % (self._size // 2))
+            y = 1 + 2 * (index // (self._size // 2))
+            action_offset = int(action.name.value.removeprefix("ACTION"))
+            self._cells[y][x] = 1 + (self._cells[y][x] - 1 + action_offset) % 15
         self._actions += 1
         self._observation = self._make_observation(
             returned_action=action,

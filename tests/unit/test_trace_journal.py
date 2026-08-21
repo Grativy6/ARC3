@@ -69,8 +69,12 @@ def test_append_reopen_and_partial_line_recovery(tmp_path: Path) -> None:
     resumed = EventJournal(root, run_id="run-1")
     assert resumed.recovery_receipt.discarded_byte_length > 0
     assert [item.event_id for item in resumed.verify_manifest()] == ["E-START", "E-FAULT"]
+    assert resumed.get_event("E-START") == first
+    assert resumed.get_event("missing") is None
+    assert resumed.tail_event is not None
+    assert resumed.tail_event.event_id == "E-FAULT"
     assert resumed.tail_hash != first.event_hash
-    resumed.append(
+    appended = resumed.append(
         episode_id="episode-1",
         game_id="synthetic-redacted",
         level_index=0,
@@ -83,6 +87,8 @@ def test_append_reopen_and_partial_line_recovery(tmp_path: Path) -> None:
         event_id="E-RESUMED",
     )
     assert resumed.event_count == 3
+    assert resumed.get_event("E-RESUMED") == appended
+    assert resumed.tail_event == appended
     resumed.close()
 
 

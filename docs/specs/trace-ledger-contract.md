@@ -135,6 +135,7 @@ Required envelope rules:
 ### 5.3 Perception events
 
 - `perception.component_detected`
+- `perception.components_detected` (bounded batch of one observation's component measurements)
 - `perception.object_correspondence_proposed`
 - `perception.object_correspondence_rejected`
 - `perception.salience_computed`

@@ -67,6 +67,9 @@ def test_runtime_profile_restarts_pending_actions_and_replays_exact_trace(
     assert cast(dict[str, JSONValue], result["checkpoint_latency_seconds"])["count"] > 0
     assert cast(dict[str, JSONValue], result["consequence_latency_seconds"])["count"] > 0
     assert cast(dict[str, JSONValue], result["total_step_latency_seconds"])["count"] > 0
+    assert result["python_tracemalloc_peak_bytes"] is None
+    memory_after = cast(dict[str, JSONValue], result["kernel_memory_after"])
+    assert isinstance(memory_after["peak_rss_bytes"], int)
 
 
 @pytest.mark.integration
@@ -95,6 +98,34 @@ def test_declared_wall_cutoff_is_a_measured_mechanism_failure(tmp_path: Path) ->
     assert predicates["forced_length_workload_completed"] is False
     assert budgets["wall_clock_within_declared_limit"] is False
     assert result["verified"] is False
+
+
+@pytest.mark.integration
+def test_component_stress_profile_exercises_a_bounded_planner(tmp_path: Path) -> None:
+    result = run_runtime_profile(
+        tmp_path / "component-planner",
+        config=RuntimeProfileConfig(
+            seed=25,
+            frame_size=32,
+            fixture="component-stress",
+            component_count=64,
+            max_actions=16,
+            max_resets=2,
+            restart_every=8,
+            wall_clock_seconds=60.0,
+            max_search_nodes=10_000,
+            max_search_depth=32,
+        ),
+        git_commit="stage16-component-planner",
+        preset=ControllerPreset.COMPETITION,
+    )
+    planner = cast(dict[str, JSONValue], result["planner"])
+    assert cast(int, planner["evaluation_count"]) > 0
+    assert cast(int, planner["maximum_expanded_nodes"]) <= 10_000
+    assert (
+        cast(dict[str, JSONValue], result["required_predicates"])["planner_exercised_and_bounded"]
+        is True
+    )
 
 
 @pytest.mark.integration

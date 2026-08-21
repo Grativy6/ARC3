@@ -181,3 +181,21 @@ def test_many_component_stress_fixture_forces_declared_action_length() -> None:
     score = session.close()
     assert score.total_actions == 12
     assert score.runs[0].completed is False
+
+
+def test_default_component_stress_fixture_has_a_generic_navigation_lane() -> None:
+    session = ManyComponentStressSession(size=32, component_count=64)
+    initial = session.observation.frames[-1].cells
+    assert sum(value != 0 for row in initial for value in row) == 64
+    assert initial[2][2] == 10
+    assert initial[2][6] == 11
+
+    for _index in range(3):
+        session.step(ActionRequest(ActionName.ACTION4))
+    adjacent = session.observation.frames[-1].cells
+    assert adjacent[2][5] == 10
+    assert adjacent[2][6] == 11
+
+    blocked = session.step(ActionRequest(ActionName.ACTION4)).frames[-1].cells
+    assert blocked == adjacent
+    assert sum(value != 0 for row in blocked for value in row) == 64

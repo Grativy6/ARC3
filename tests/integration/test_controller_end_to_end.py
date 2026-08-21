@@ -78,6 +78,15 @@ def test_every_action_has_ordered_receipts_and_verified_hash_chain(tmp_path: Pat
     events = list(controller.journal.verify_manifest())
     verify_event_chain(events)
     assert completed is True
+    component_batches = [
+        event for event in events if event.event_type == "perception.components_detected"
+    ]
+    assert component_batches
+    assert all(
+        event.payload["component_count"] == len(event.payload["components"])
+        for event in component_batches
+        if isinstance(event.payload["components"], list)
+    )
 
     by_step: dict[int, list[str]] = {}
     for event in events:

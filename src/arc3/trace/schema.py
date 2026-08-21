@@ -44,6 +44,7 @@ CORE_EVENT_TYPES: Final[frozenset[str]] = frozenset(
         "observation.metadata_changed",
         "observation.parse_failed",
         "perception.component_detected",
+        "perception.components_detected",
         "perception.object_correspondence_proposed",
         "perception.object_correspondence_rejected",
         "perception.salience_computed",

@@ -321,8 +321,10 @@ class EventJournal:
         if len(self._event_ids) != len(sealed_events) + len(active_events):
             raise TraceIntegrityError("duplicate event_id across sealed and active journal data")
         all_events = [*sealed_events, *active_events]
+        self._events_by_id = {event.event_id: event for event in all_events}
         self._tail_event_id = all_events[-1].event_id if all_events else None
         self._tail_hash = all_events[-1].event_hash if all_events else None
+        self._tail_event = all_events[-1] if all_events else None
         self._active_event_count = len(active_events)
         self._handle: BinaryIO = self.active_path.open("ab")
 
@@ -335,8 +337,19 @@ class EventJournal:
         return self._tail_hash
 
     @property
+    def tail_event(self) -> TraceEvent | None:
+        """Return the already-verified live tail without reparsing the ledger."""
+
+        return self._tail_event
+
+    @property
     def event_count(self) -> int:
         return len(self._event_ids)
+
+    def get_event(self, event_id: str) -> TraceEvent | None:
+        """Return an event verified at open or append time by immutable identity."""
+
+        return self._events_by_id.get(event_id)
 
     @property
     def manifest(self) -> RunManifest:
@@ -510,8 +523,10 @@ class EventJournal:
             self._pending_since_flush += 1
             self._active_event_count += 1
             self._event_ids.add(event.event_id)
+            self._events_by_id[event.event_id] = event
             self._tail_event_id = event.event_id
             self._tail_hash = event.event_hash
+            self._tail_event = event
             if self._pending_since_flush >= self.flush_every:
                 self.flush()
 

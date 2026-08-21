@@ -299,22 +299,20 @@ class ControllerCheckpointManager:
         self.store = CheckpointStore(root)
 
     @staticmethod
-    def _validate_pending_tail(
-        state: DerivedControllerState, events: tuple[TraceEvent, ...]
-    ) -> None:
+    def _validate_pending_tail(state: DerivedControllerState, journal: EventJournal) -> None:
         pending = state.pending_action
         if pending is None:
             return
-        if not events or events[-1].event_id != pending.submitted_event_id:
+        submitted = journal.tail_event
+        if submitted is None or submitted.event_id != pending.submitted_event_id:
             raise MemoryContractError(
                 "pending action must point to the current trace tail before checkpointing"
             )
-        submitted = events[-1]
         if submitted.event_type != "action.submitted":
             raise MemoryContractError("pending action tail is not an action.submitted receipt")
         if submitted.step_index != pending.step_index:
             raise MemoryContractError("pending action step does not match submitted receipt")
-        if not any(event.event_id == pending.selected_event_id for event in events):
+        if journal.get_event(pending.selected_event_id) is None:
             raise MemoryContractError("pending action selected receipt is absent from trace")
 
     def write(
@@ -326,10 +324,14 @@ class ControllerCheckpointManager:
         rng: random.Random,
         state: DerivedControllerState,
     ) -> tuple[Path, CheckpointEnvelope]:
-        events = journal.verify_manifest()
-        if not events or journal.tail_event_id is None or journal.tail_hash is None:
+        # Opening the journal verifies every pre-existing byte, and append_event
+        # verifies each new event and its link before retaining it.  Flush the
+        # live tail for durability, then bind the checkpoint to that verified
+        # in-memory identity instead of reparsing the complete growing ledger.
+        journal.flush()
+        if journal.tail_event is None or journal.tail_event_id is None or journal.tail_hash is None:
             raise MemoryContractError("controller checkpoint requires a non-empty verified trace")
-        self._validate_pending_tail(state, events)
+        self._validate_pending_tail(state, journal)
         return self.store.write(
             run_id=journal.run_id,
             episode_id=episode_id,
@@ -361,5 +363,5 @@ class ControllerCheckpointManager:
             expected_config_hash=code_identity.config_hash,
         )
         state = DerivedControllerState.from_dict(restored.state.get("derived_controller_state"))
-        self._validate_pending_tail(state, journal.verify_manifest())
+        self._validate_pending_tail(state, journal)
         return RestoredController(state=state, rng=restored.rng, envelope=restored.envelope)

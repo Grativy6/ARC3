@@ -378,7 +378,14 @@ class ARC3Controller:
             str(context.config.hash),
             {"profile": context.config.profile},
         )
-        self._journal = EventJournal(context.trace_root, run_id=context.run_id)
+        # Derived events are buffered between authority boundaries.  Raw
+        # observations, submitted actions, returned consequences, checkpoints,
+        # and close still force durable flushes explicitly below.
+        self._journal = EventJournal(
+            context.trace_root,
+            run_id=context.run_id,
+            flush_every=128,
+        )
         self._checkpoint_manager = ControllerCheckpointManager(context.checkpoint_root)
         self._rng = random.Random(derive_seed(context.config.seed, "arc3-controller"))
 
@@ -499,6 +506,7 @@ class ARC3Controller:
         )
         raw_id = raw.event_id
         raw_hash = raw.event_hash
+        self.journal.flush()
         frame = observation.frames[-1]
         background = Counter(cell for row in frame.cells for cell in row).most_common(1)[0][0]
         components = extract_components(
@@ -591,27 +599,32 @@ class ARC3Controller:
             measurement_ids.append(delta_event.event_id)
 
         if self.features.use_measurements:
-            for component in components:
-                event = self._append(
-                    str(observation.game_id),
-                    "perception.component_detected",
-                    {
-                        "source_observation_event_id": raw_id,
-                        "component_id": component.component_id,
-                        "entity_candidate_id": component_to_entity[component.component_id],
-                        "color": component.color,
-                        "area": component.area,
-                        "bounds": [
-                            component.bounds.left,
-                            component.bounds.top,
-                            component.bounds.right,
-                            component.bounds.bottom,
-                        ],
-                        "translation_signature": component.translation_signature,
-                        "interpretation_status": "measurement-only",
-                    },
-                )
-                measurement_ids.append(event.event_id)
+            event = self._append(
+                str(observation.game_id),
+                "perception.components_detected",
+                {
+                    "source_observation_event_id": raw_id,
+                    "component_count": len(components),
+                    "components": [
+                        {
+                            "component_id": component.component_id,
+                            "entity_candidate_id": component_to_entity[component.component_id],
+                            "color": component.color,
+                            "area": component.area,
+                            "bounds": [
+                                component.bounds.left,
+                                component.bounds.top,
+                                component.bounds.right,
+                                component.bounds.bottom,
+                            ],
+                            "translation_signature": component.translation_signature,
+                        }
+                        for component in components
+                    ],
+                    "interpretation_status": "measurement-only",
+                },
+            )
+            measurement_ids.append(event.event_id)
             if tracking is not None:
                 event = self._append(
                     str(observation.game_id),
@@ -1466,6 +1479,10 @@ class ARC3Controller:
                 "prediction_receipt_id": prediction_receipt_id,
             },
         )
+        # The action receipt must be durable before the adapter is allowed to
+        # execute it.  This also flushes the derived selection receipts that
+        # explain the action without fsyncing each one independently.
+        self.journal.flush()
         submitted_id = submitted.event_id
         self._pending_action = PendingAction(
             selected_event_id=selected_id,
@@ -1547,6 +1564,9 @@ class ARC3Controller:
         )
         consequence_id = consequence.event_id
         consequence_hash = consequence.event_hash
+        # Preserve the returned environment receipt before any revisable
+        # interpretation or model update runs.
+        self.journal.flush()
         # The consequence closes the submitted step; its returned observation is
         # the evidence boundary for the next decision step.
         self._step_index += 1
@@ -2066,14 +2086,7 @@ class ARC3Controller:
             )
         latest_event_id = state.perception_state.get("latest_observation_event_id")
         if isinstance(latest_event_id, str):
-            source_event = next(
-                (
-                    event
-                    for event in controller.journal.verify_manifest()
-                    if event.event_id == latest_event_id
-                ),
-                None,
-            )
+            source_event = controller.journal.get_event(latest_event_id)
             if source_event is not None and controller._latest_observation is not None:
                 controller._latest_receipt = ObservationReceipt(
                     source_event.event_id,
@@ -2893,7 +2906,12 @@ class ARC3Controller:
         # The durable restart point must bind the final trace tail, including
         # run.completed.  A pending action remains checkpointable because its
         # action.submitted receipt is intentionally left as the tail.
-        if self.features.use_memory:
+        checkpoint_is_current = (
+            self._last_checkpoint is not None
+            and self._last_checkpoint.envelope.trace_tail_event_id == self.journal.tail_event_id
+            and self._last_checkpoint.envelope.trace_tail_hash == self.journal.tail_hash
+        )
+        if self.features.use_memory and not checkpoint_is_current:
             self._last_checkpoint = self.checkpoint()
         self.journal.close()
         self._phase = ControllerPhase.CLOSED
