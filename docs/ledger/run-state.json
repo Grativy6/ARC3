@@ -5,8 +5,8 @@
   "repository": "Grativy6/ARC3",
   "owner": "Christopher D. Pang",
   "status": "IN_PROGRESS",
-  "current_stage": "08",
-  "current_task": "stage-08-retrodictive-executable-world-model",
+  "current_stage": "09",
+  "current_task": "stage-09-typed-goal-acquisition",
   "implementation_branch": "build/000-arc3-end-to-end",
   "pull_request": {
     "number": 3,
@@ -25,7 +25,8 @@
     "04",
     "05",
     "06",
-    "07"
+    "07",
+    "08"
   ],
   "stage_status": {
     "00": "PASS",
@@ -36,8 +37,8 @@
     "05": "PASS",
     "06": "PASS",
     "07": "PASS",
-    "08": "IN_PROGRESS",
-    "09": "PENDING",
+    "08": "PASS",
+    "09": "IN_PROGRESS",
     "10": "PENDING",
     "11": "PENDING",
     "12": "PENDING",
@@ -224,6 +225,29 @@
         "public_game_id_scan": "PASS:0-matches",
         "held_out_comparison": "PASS:median-1-vs-4-random-vs-3-cycle"
       }
+    },
+    "stage_08": {
+      "status": "PASS",
+      "label": "synthetic",
+      "mechanism_status": "MECHANISM_OBSERVED",
+      "report": "docs/reports/008-retrodictive-executable-world-model.md",
+      "report_sha256": "sha256:576528ffdae6dc5424151fda3a1c7f7705337827cfa403e9001eb44027402bda",
+      "acceptance_evidence": "docs/evidence/008-world-model-acceptance.json",
+      "acceptance_evidence_sha256": "sha256:b055d417ab699a1957a590050f42d0e93ffefcd40b98eecd45a8ed6ca20583ac",
+      "checkpoint_commit": "pending",
+      "verification": {
+        "ruff_lint": "PASS",
+        "ruff_format": "PASS",
+        "mypy_strict": "PASS:10-source-files",
+        "pytest": "PASS:12",
+        "rule_primitives": "PASS:9",
+        "retrodiction_gate": "PASS",
+        "contradiction_visibility": "PASS",
+        "deterministic_simulator": "PASS",
+        "prediction_mismatch_reopening": "PASS",
+        "public_id_network_hosted_scan": "PASS:0-matches",
+        "held_out_comparison": "PASS:4-of-4-vs-0-of-4-ablation"
+      }
     }
   },
   "blocked_items": [
@@ -300,6 +324,12 @@
       "label": "synthetic",
       "result": "MECHANISM_OBSERVED on 101 semantic-identification cases: median 1 action versus random 4 and cycle 3",
       "report": "docs/reports/007-action-semantics-and-exploration.md"
+    },
+    {
+      "stage": "08",
+      "label": "synthetic",
+      "result": "MECHANISM_OBSERVED on 4 held-out symbolic combinations: retrodiction-gated 4/4 predicted completions versus retrodiction-off highest-rank 0/4 under 16 supplied planned actions",
+      "report": "docs/reports/008-retrodictive-executable-world-model.md"
     }
   ],
   "artifacts": {
@@ -370,9 +400,17 @@
     "stage_07_exploration_acceptance": {
       "path": "docs/evidence/007-exploration-acceptance.json",
       "sha256": "83a637c1ea1032cbd87a440c73a08ca8f601918b000dd8880848588be4c1e0c4"
+    },
+    "stage_08_report": {
+      "path": "docs/reports/008-retrodictive-executable-world-model.md",
+      "sha256": "576528ffdae6dc5424151fda3a1c7f7705337827cfa403e9001eb44027402bda"
+    },
+    "stage_08_world_model_acceptance": {
+      "path": "docs/evidence/008-world-model-acceptance.json",
+      "sha256": "b055d417ab699a1957a590050f42d0e93ffefcd40b98eecd45a8ed6ca20583ac"
     }
   },
-  "next_action": "Complete Stage 08 executable rule primitives, retrodiction gate, deterministic simulator, prediction receipts, mismatch reopening, and held-out mechanism comparison.",
+  "next_action": "Complete Stage 09 typed external-progress, subgoal, terminal-goal, structural-candidate, contradiction/reopening, and novelty-trap comparison.",
   "notes": [
     "Initial READY state was validated against the repository at b1948e9d02ad7b1321cbc57f3538047813e01e98 before this run began.",
     "No prior completed stages, checkpoint commit, or evidence artifacts were recorded; bootstrap PR 1 and its merge commit were independently verified.",

@@ -403,3 +403,17 @@ This file preserves unresolved technical, evidential, legal, and external burden
 - **Next discriminating action:** Integrate exploration with retrodictive models, goals, and planning in Stage 12, then run equal-budget full-game ablations in Stage 14 and untouched public evaluation in Stage 15.
 - **Resolution condition:** Full-game evidence shows action/completion benefit, or the mechanism is retained only as an isolated capability with an honest negative integrated result.
 - **Resolution receipt:** none.
+
+## B-20260821-022 — World-model comparison supplies symbolic states and plans
+
+- **Status:** OPEN
+- **Stage:** 08, 10, 12, 14
+- **Opened:** 2026-08-21
+- **Last updated:** 2026-08-21
+- **Owner:** Codex
+- **Burden:** Retrodiction selected the correct model on four unseen symbolic parameter combinations, but symbolic states and right-action plans were supplied by the fixture rather than acquired from raw observations and controller search.
+- **Why it matters:** Model-selection success can fail to survive perception ambiguity, incomplete hypothesis compilation, goal uncertainty, or planning errors in live episodes.
+- **Current evidence:** `docs/evidence/008-world-model-acceptance.json` records 4/4 gated versus 0/4 ungated simulated final states under the same 16 supplied actions.
+- **Next discriminating action:** Build perception-to-symbolic-state integration and bounded planning/recovery in Stages 10–12, then run equal-budget full-game ablations in Stage 14.
+- **Resolution condition:** Integrated traces demonstrate successful state construction, pre-action prediction, live consequence matching, and completion benefit; otherwise retain the isolated result only.
+- **Resolution receipt:** none.

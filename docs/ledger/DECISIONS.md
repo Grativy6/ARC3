@@ -231,3 +231,17 @@ This file records material decisions made during the autonomous build. It is app
 - **Consequences:** The controller must preserve predicted disagreements and budget state before probe selection; near budget it falls back to progress/risk, and game over mandates reset.
 - **Reopening condition:** Integrated held-out or public results fail to improve action efficiency, or calibrated risk/progress evidence supports revised utility terms.
 - **Supersedes / superseded by:** none.
+
+## D-20260821-016 — Require full-history retrodiction before model promotion
+
+- **Status:** ADOPTED
+- **Stage:** 08
+- **Date:** 2026-08-21
+- **Commit:** pending
+- **Decision:** Compile compatible typed hypotheses into deterministic executable candidates, but promote a model only through an artifact that retrodicts every preserved compatible transition or records a declared condition-based exclusion. Preserve contradictory candidates/residuals and provide retrodiction-off only as an explicit ablation.
+- **Alternatives:** Select the highest current hypothesis rank; test only the latest transition; silently ignore unsupported rule syntax; collapse disagreeing models to one outcome.
+- **Evidence:** `docs/reports/008-retrodictive-executable-world-model.md`; 12 focused tests; four-combination model-selection comparison in `docs/evidence/008-world-model-acceptance.json`.
+- **Why:** A rule that narrates the latest consequence but contradicts preserved history has not earned executable promotion.
+- **Consequences:** Every promoted model carries a test/exclusion/contradiction receipt; prediction mismatch reopens models and invalidates dependent plans; ensembles preserve underdetermination.
+- **Reopening condition:** Integrated evidence shows the gate is too strict or too permissive, supported by preserved transition artifacts and an alternative that retains contradiction visibility.
+- **Supersedes / superseded by:** none.
