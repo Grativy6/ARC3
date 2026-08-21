@@ -223,7 +223,7 @@ This file records material decisions made during the autonomous build. It is app
 - **Status:** ADOPTED
 - **Stage:** 07
 - **Date:** 2026-08-21
-- **Commit:** pending
+- **Commit:** a699ef8edb0befac5fadc9906e6b1fb10d86ac1b
 - **Decision:** Rank legal probes using explicit alternative-discrimination, progress, reversibility, novelty, failure-risk, repetition, and budget-pressure terms; scope ineffective-action suppression to structural conditions; enable undo only after a receipt establishes restoration semantics.
 - **Alternatives:** Fixed action cycling; novelty-only probing; assume conventional directional/undo names are authoritative; permanently blacklist a no-op action across changed states.
 - **Evidence:** `docs/reports/007-action-semantics-and-exploration.md`; 14 focused tests; the 101-case comparison in `docs/evidence/007-exploration-acceptance.json`.
