@@ -1,0 +1,78 @@
+{
+  "schema": "arc3.stage-evidence.v0.1",
+  "stage": "11",
+  "status": "PASS",
+  "label": "synthetic",
+  "mechanism_status": "MECHANISM_OBSERVED",
+  "repository": "Grativy6/ARC3",
+  "implementation_branch": "build/000-arc3-end-to-end",
+  "measured_repository_commit": "686f13ae2601b1215571db921f60335f1153c576",
+  "measurement_note": "Stage 11 files were uncommitted and are individually verified by the stage checkpoint diff.",
+  "runtime": {
+    "operating_system": "Windows 10.0.19045",
+    "python": "3.12.14",
+    "uv": "0.12.5"
+  },
+  "verification": {
+    "ruff_check": "PASS",
+    "ruff_format_check": "PASS",
+    "mypy_strict": "PASS:10-source-files",
+    "focused_pytest": "PASS:12",
+    "focused_pytest_seconds": 2.85,
+    "scope_separation": "PASS:episode+game+generic",
+    "retrieval_modes": "PASS:exact-event+abstract-state+active-contradiction+analogous-rule",
+    "source_links": "PASS:event-range+event-hashes+sealed-chunk-hashes",
+    "summary_replay_and_tamper_rejection": "PASS",
+    "checkpoint_all_derived_fields": "PASS",
+    "rng_resume": "PASS:20-of-20-followup-actions",
+    "process_death_pending_action": "PASS:exit-23+no-resubmission",
+    "bounded_eviction_and_snapshot": "PASS",
+    "no_memory_and_rejection_retention_ablations": "PASS",
+    "game_id_solution_lookup_scan": "PASS:0-matches",
+    "public_id_network_hosted_scan": "PASS:0-matches"
+  },
+  "comparison": {
+    "schema": "arc3.memory.comparison.v0.1",
+    "label": "synthetic",
+    "status": "MECHANISM_OBSERVED",
+    "started_at": "2026-08-21T06:37:53.740643Z",
+    "completed_at": "2026-08-21T06:37:57.792564Z",
+    "cross_level": {
+      "scorer": "arc3.memory.direction-validation-probes.v0.1",
+      "with_memory_probes": 1,
+      "without_memory_probes": 3,
+      "probe_reduction": 2,
+      "probe_reduction_fraction": 0.6666666666666666,
+      "retrieved_source_event_ids": [
+        "E-STAGE11-DIRECTION"
+      ]
+    },
+    "long_run": {
+      "insertions": 5000,
+      "elapsed_seconds": 4.04091189999599,
+      "retained_records": 128,
+      "record_limit": 128,
+      "encoded_store_bytes": 179180,
+      "encoded_byte_limit": 524288,
+      "tracemalloc_current_bytes": 178195,
+      "tracemalloc_peak_bytes": 185190,
+      "record_bound_held": true,
+      "encoded_byte_bound_held": true,
+      "snapshot_sha256": "sha256:aab4cd55cdb2e3cf278d08137b950758eb21868bc67165cd2ce92c22ed59d1c7"
+    }
+  },
+  "commands": [
+    "python -m uv run ruff check --no-cache src/arc3/memory scripts/measure_memory.py tests/unit/test_memory_integrity.py tests/unit/test_memory_scopes.py tests/property/test_memory_bounds.py tests/integration/test_memory_checkpoint_resume.py tests/integration/test_memory_cross_level.py tests/replay/test_memory_source_replay.py",
+    "python -m uv run ruff format --check --no-cache src/arc3/memory scripts/measure_memory.py tests/unit/test_memory_integrity.py tests/unit/test_memory_scopes.py tests/property/test_memory_bounds.py tests/integration/test_memory_checkpoint_resume.py tests/integration/test_memory_cross_level.py tests/replay/test_memory_source_replay.py",
+    "python -m uv run mypy --cache-dir %TEMP%\\arc3-stage11-final-mypy src/arc3/memory scripts/measure_memory.py",
+    "python -m uv run pytest -q --no-cov --basetemp %TEMP%\\arc3-stage11-final-pytest-2 tests/unit/test_memory_integrity.py tests/unit/test_memory_scopes.py tests/property/test_memory_bounds.py tests/integration/test_memory_checkpoint_resume.py tests/integration/test_memory_cross_level.py tests/replay/test_memory_source_replay.py",
+    "python -m uv run python scripts/measure_memory.py",
+    "rg -ni \"https?://|\\b(requests|urllib|socket|httpx|openai|anthropic|google\\.generativeai)\\b|ls20-|ft09-|vc33-\" src/arc3/memory"
+  ],
+  "claim_limits": [
+    "The cross-level comparison isolates reuse of one generic directional rule and is not a full procedural or public game completion.",
+    "Full subsystem state is checkpointed as validated canonical derived snapshots; Stage 12 must supply and test typed adapters for live controller objects.",
+    "Pending-action restart waits for reconciliation and never resubmits; an adapter unable to redeliver the consequence remains an integration burden.",
+    "The result does not establish public-game performance or hidden-game generalization."
+  ]
+}

@@ -336,8 +336,8 @@ This file preserves unresolved technical, evidential, legal, and external burden
 
 - **Status update:** OPEN; implementation is now ablatable but no performance value is inferred.
 - **Last updated:** 2026-08-21
-- **Current evidence:** Immutable receipts, replay, rejected-state preservation, and checkpoint/reopen mechanics pass 29 focused tests. This is mechanism evidence only.
-- **Remaining burden:** Stage 14 must compare the integrated controller with and without trace-derived memory under identical seeds, budgets, and scorers.
+- **Current evidence:** Immutable receipts, replay, rejected-state preservation, and checkpoint/reopen mechanics pass their focused suites. Stage 11 additionally measures one source-linked cross-level rule at one validation probe versus three without memory; this remains isolated synthetic mechanism evidence.
+- **Remaining burden:** Stage 14 must compare the integrated controller with and without trace-derived memory and rejected-hypothesis retention under identical seeds, budgets, and scorers.
 - **Resolution receipt:** none.
 
 ### B-20260821-016 — Stage 02 timestamps are incomplete evaluation receipts
@@ -459,3 +459,17 @@ This file preserves unresolved technical, evidential, legal, and external burden
 - **Next discriminating action:** Push the correction and require both Ubuntu and Windows CI jobs to pass before marking this burden resolved.
 - **Resolution condition:** Corrective commit passes the full CI matrix while explicit nested credential/reasoning rejection tests remain enabled.
 - **Resolution receipt:** pending.
+
+## B-20260821-026 — Live typed checkpoint reconstruction and consequence reconciliation remain open
+
+- **Status:** OPEN
+- **Stage:** 11, 12, 16
+- **Opened:** 2026-08-21
+- **Last updated:** 2026-08-21
+- **Owner:** Codex
+- **Burden:** Stage 11 validates canonical snapshots for every declared derived subsystem and safely restores a pending action, but it does not itself reconstruct all Stage 12 live typed objects or prove that each official adapter can redeliver/reconcile an already-submitted consequence.
+- **Why it matters:** Correct JSON and RNG restoration can still leave a live controller unable to continue, or an adapter might make action outcome state ambiguous after process death.
+- **Current evidence:** The child-process exit-23 test restored every canonical field, returned `AWAIT_CONSEQUENCE`, refused resubmission, and matched 20/20 later RNG choices. The cross-level comparison is only a supplied abstract-rule fixture.
+- **Next discriminating action:** Implement typed Stage 12 reconstruction and adapter-level pending-consequence tests; exercise partial checkpoint recovery and long-run restart behavior again in Stage 16.
+- **Resolution condition:** Synthetic and official-shaped adapter tests resume the same controller state/action stream across process death without duplicated actions; incompatible checkpoints remain preserved for diagnosis.
+- **Resolution receipt:** none.

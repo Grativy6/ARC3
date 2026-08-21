@@ -273,3 +273,17 @@ This file records material decisions made during the autonomous build. It is app
 - **Consequences:** Integrated execution must preserve pre-action prediction and post-action consequence receipts, deterministic budget/tie-break settings, invalidation causes, and recovery decisions. Belief search remains a reopenable option rather than an unmeasured default.
 - **Reopening condition:** Integrated uncertainty or runtime evidence shows a different bounded search/recovery policy improves completion or action efficiency under the same evaluator envelope.
 - **Supersedes / superseded by:** none.
+
+## D-20260821-019 — Persist only scoped, source-linked, bounded derived memory
+
+- **Status:** ADOPTED
+- **Stage:** 11
+- **Date:** 2026-08-21
+- **Commit:** pending Stage 11 implementation checkpoint
+- **Decision:** Keep episode, opaque-game, and generic derived-memory scopes distinct; require immutable event/chunk source links for every summary; gate generic retrieval on current-game structural evidence; enforce deterministic record/byte eviction; and restore a pending submitted action only into an await-consequence state that forbids resubmission.
+- **Alternatives:** One global memory dictionary; retrieval by environment ID; retain summaries without receipt hashes; silently drop old trace; resubmit an action after uncertain process-death timing.
+- **Evidence:** `docs/reports/011-scoped-persistent-memory.md`; 12 focused tests; cross-level and 5,000-insert measurements in `docs/evidence/011-memory-acceptance.json`.
+- **Why:** Useful derived reuse must retain provenance and scope without becoming a game-specific solution cache, while restart continuity must not duplicate an environment action.
+- **Consequences:** Stage 12 must supply typed live-state adapters around the canonical checkpoint fields and reconcile a pending consequence through the adapter. Raw trace remains immutable outside derived-memory eviction.
+- **Reopening condition:** Integrated equal-budget evidence shows different scope, retrieval, or retention policies improve completion/action efficiency without weakening source identity or competition integrity.
+- **Supersedes / superseded by:** none.
