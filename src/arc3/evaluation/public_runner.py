@@ -61,6 +61,8 @@ from .public import (
 )
 
 _TERMINAL_STATUSES = frozenset({"PASS", "PARTIAL", "FAILED_INFRASTRUCTURE"})
+_PUBLIC_SUMMARY_SCHEMA = "arc3.public-evaluation.summary.v0.2"
+_LEGACY_PUBLIC_SUMMARY_SCHEMA = "arc3.public-evaluation.summary.v0.1"
 
 
 def _as_int(value: object, *, field: str) -> int:
@@ -1002,7 +1004,9 @@ def _preserve(path: Path, failures: Path) -> None:
     path.replace(failures / f"{path.stem}.invalid-{uuid.uuid4().hex}{path.suffix}")
 
 
-def _aggregate(results: list[dict[str, Any]], *, partition: str) -> dict[str, object]:
+def _legacy_aggregate(results: list[dict[str, Any]], *, partition: str) -> dict[str, object]:
+    """Reproduce v0.1 summaries so immutable historical evaluations remain verifiable."""
+
     policies: dict[str, dict[str, object]] = {}
     failures = 0
     for result in results:
@@ -1085,10 +1089,152 @@ def _aggregate(results: list[dict[str, Any]], *, partition: str) -> dict[str, ob
         else "FAILED_INFRASTRUCTURE"
     )
     return {
-        "schema": "arc3.public-evaluation.summary.v0.1",
+        "schema": _LEGACY_PUBLIC_SUMMARY_SCHEMA,
         "status": status,
         "claim": claim,
         "claim_boundary": "NO_GENERALIZATION_CLAIM",
+        "result_count": len(results),
+        "failure_count": failures,
+        "policies": {agent: policies[agent] for agent in sorted(policies)},
+    }
+
+
+def _empty_score_metrics(*, evidence_scope: str) -> dict[str, object]:
+    return {
+        "evidence_scope": evidence_scope,
+        "run_count": 0,
+        "score_sum": 0.0,
+        "mean_score": None,
+        "levels_completed": 0,
+        "completed_runs": 0,
+    }
+
+
+def _add_score_metrics(metrics: dict[str, object], score: dict[str, object]) -> None:
+    metrics["run_count"] = int(cast(int, metrics["run_count"])) + 1
+    metrics["score_sum"] = float(cast(float, metrics["score_sum"])) + _as_float(
+        score["score"], field="score"
+    )
+    metrics["levels_completed"] = int(cast(int, metrics["levels_completed"])) + _as_int(
+        score["levels_completed"], field="levels_completed"
+    )
+    metrics["completed_runs"] = int(cast(int, metrics["completed_runs"])) + int(
+        bool(score["completed"])
+    )
+
+
+def _finalize_score_metrics(metrics: dict[str, object]) -> None:
+    run_count = int(cast(int, metrics["run_count"]))
+    score_sum = float(cast(float, metrics["score_sum"]))
+    metrics["mean_score"] = score_sum / run_count if run_count else None
+
+
+def _aggregate(results: list[dict[str, Any]], *, partition: str) -> dict[str, object]:
+    """Aggregate successful outcomes without promoting recovered failure evidence."""
+
+    policies: dict[str, dict[str, object]] = {}
+    failures = 0
+    for result in results:
+        agent = str(result["agent"])
+        row = policies.setdefault(
+            agent,
+            {
+                "baseline_id": result["baseline_id"],
+                "runs": 0,
+                "successes": 0,
+                "failures": 0,
+                "successful_score_metrics": _empty_score_metrics(
+                    evidence_scope="terminal-success-receipts"
+                ),
+                "recovered_failure_score_metrics": _empty_score_metrics(
+                    evidence_scope="verified-scorecards-on-failed-receipts"
+                ),
+                "unscored_failure_runs": 0,
+                "environment_actions": 0,
+                "resets": 0,
+                "faults": 0,
+            },
+        )
+        row["runs"] = int(cast(int, row["runs"])) + 1
+        score = cast(dict[str, object], result["score"])
+        if result["status"] == "success":
+            row["successes"] = int(cast(int, row["successes"])) + 1
+            _add_score_metrics(cast(dict[str, object], row["successful_score_metrics"]), score)
+        else:
+            row["failures"] = int(cast(int, row["failures"])) + 1
+            failures += 1
+            if score.get("verified") is True:
+                _add_score_metrics(
+                    cast(dict[str, object], row["recovered_failure_score_metrics"]),
+                    score,
+                )
+            else:
+                row["unscored_failure_runs"] = int(cast(int, row["unscored_failure_runs"])) + 1
+        metrics = cast(dict[str, object], result["metrics"])
+        row["environment_actions"] = int(cast(int, row["environment_actions"])) + _as_int(
+            metrics["environment_actions"], field="environment_actions"
+        )
+        row["resets"] = int(cast(int, row["resets"])) + _as_int(metrics["resets"], field="resets")
+        row["faults"] = int(cast(int, row["faults"])) + _as_int(
+            metrics.get("fault_count", 0), field="fault_count"
+        )
+
+    for row in policies.values():
+        successful_metrics = cast(dict[str, object], row["successful_score_metrics"])
+        recovered_metrics = cast(dict[str, object], row["recovered_failure_score_metrics"])
+        _finalize_score_metrics(successful_metrics)
+        _finalize_score_metrics(recovered_metrics)
+        # Flat fields remain for consumers of the public summary, but their scope is now
+        # explicitly and exclusively successful terminal receipts.
+        row["levels_completed"] = successful_metrics["levels_completed"]
+        row["completed_runs"] = successful_metrics["completed_runs"]
+        row["mean_score"] = successful_metrics["mean_score"]
+
+    claim = "MECHANISM_NOT_OBSERVED"
+    full = policies.get("full")
+    baselines = [row for agent, row in policies.items() if agent != "full"]
+    if failures == 0 and full is not None and baselines:
+        full_mean = full["mean_score"]
+        baseline_means = [row["mean_score"] for row in baselines]
+        if isinstance(full_mean, (int, float)) and all(
+            isinstance(value, (int, float)) for value in baseline_means
+        ):
+            full_rank = (
+                int(cast(int, full["levels_completed"])),
+                float(full_mean),
+                -int(cast(int, full["environment_actions"])),
+            )
+            best_baseline = max(
+                (
+                    int(cast(int, row["levels_completed"])),
+                    float(cast(float, row["mean_score"])),
+                    -int(cast(int, row["environment_actions"])),
+                )
+                for row in baselines
+            )
+            full_has_positive_progress = (
+                int(cast(int, full["levels_completed"])) > 0 or float(full_mean) > 0.0
+            )
+            if full_has_positive_progress and full_rank > best_baseline:
+                claim = (
+                    "PUBLIC_HOLDOUT_IMPROVEMENT"
+                    if partition == "public-holdout"
+                    else "LOCAL_PUBLIC_IMPROVEMENT"
+                )
+    status = (
+        "PASS"
+        if failures == 0
+        else "PARTIAL"
+        if failures < len(results)
+        else "FAILED_INFRASTRUCTURE"
+    )
+    return {
+        "schema": _PUBLIC_SUMMARY_SCHEMA,
+        "status": status,
+        "claim": claim,
+        "claim_boundary": "NO_GENERALIZATION_CLAIM",
+        "score_metric_scope": "SUCCESSFUL_RUNS_ONLY",
+        "recovered_failure_evidence_scope": "FAILED_RECEIPTS_ONLY_NOT_FOR_IMPROVEMENT",
         "result_count": len(results),
         "failure_count": failures,
         "policies": {agent: policies[agent] for agent in sorted(policies)},
@@ -1110,19 +1256,78 @@ def _render_report(
         f"- Manifest: `{manifest['public_partition_manifest_hash']}`",
         f"- Network during evaluation: `{manifest['network_mode']}`",
         "",
-        "| policy | game | seed | status | levels | score | actions | resets | faults |",
-        "|---|---|---:|---|---:|---:|---:|---:|---:|",
     ]
+    if summary.get("schema") == _PUBLIC_SUMMARY_SCHEMA:
+        lines.extend(
+            [
+                "Successful-run score and level aggregates exclude every failed receipt. "
+                "Verified scorecards recovered from failed receipts remain visible only as "
+                "failed evidence and never enter an improvement gate.",
+                "",
+                "## Policy aggregates",
+                "",
+                "| policy | runs | successes | failures | successful levels | "
+                "successful mean score | recovered failed scores | recovered failed levels | "
+                "recovered failed mean score | actions |",
+                "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
+            ]
+        )
+        policies = cast(dict[str, dict[str, object]], summary["policies"])
+        for agent in sorted(policies):
+            row = policies[agent]
+            successful = cast(dict[str, object], row["successful_score_metrics"])
+            recovered = cast(dict[str, object], row["recovered_failure_score_metrics"])
+            successful_mean = successful["mean_score"]
+            recovered_mean = recovered["mean_score"]
+            lines.append(
+                "| {agent} | {runs} | {successes} | {failures} | "
+                "{successful_levels} | {successful_mean} | {recovered_runs} | "
+                "{recovered_levels} | {recovered_mean} | {actions} |".format(
+                    agent=agent,
+                    runs=row["runs"],
+                    successes=row["successes"],
+                    failures=row["failures"],
+                    successful_levels=successful["levels_completed"],
+                    successful_mean=(
+                        "n/a"
+                        if successful_mean is None
+                        else f"{float(cast(float, successful_mean)):.6f}"
+                    ),
+                    recovered_runs=recovered["run_count"],
+                    recovered_levels=recovered["levels_completed"],
+                    recovered_mean=(
+                        "n/a"
+                        if recovered_mean is None
+                        else f"{float(cast(float, recovered_mean)):.6f}"
+                    ),
+                    actions=row["environment_actions"],
+                )
+            )
+        lines.extend(["", "## Run receipts", ""])
+    lines.extend(
+        [
+            "| policy | game | seed | status | score evidence | levels | score | actions | "
+            "resets | faults |",
+            "|---|---|---:|---|---|---:|---:|---:|---:|---:|",
+        ]
+    )
     for result in results:
         score = cast(dict[str, object], result["score"])
         metrics = cast(dict[str, object], result["metrics"])
+        if result["status"] == "success":
+            score_evidence = "successful-run"
+        elif score.get("verified") is True:
+            score_evidence = "recovered-failure"
+        else:
+            score_evidence = "unscored-failure"
         lines.append(
-            "| {agent} | {game} | {seed} | {status} | {levels} | {score} | "
+            "| {agent} | {game} | {seed} | {status} | {score_evidence} | {levels} | {score} | "
             "{actions} | {resets} | {faults} |".format(
                 agent=result["agent"],
                 game=result["game_id"],
                 seed=result["seed"],
                 status=result["status"],
+                score_evidence=score_evidence,
                 levels=score["levels_completed"],
                 score=score["score"],
                 actions=metrics["environment_actions"],
@@ -1318,7 +1523,13 @@ def verify_public_evaluation(directory: str | Path) -> dict[str, object]:
             errors.append("manifest partition is invalid")
         else:
             try:
-                expected_summary = _aggregate(results, partition=partition)
+                summary_schema = summary.get("schema")
+                if summary_schema == _LEGACY_PUBLIC_SUMMARY_SCHEMA:
+                    expected_summary = _legacy_aggregate(results, partition=partition)
+                elif summary_schema == _PUBLIC_SUMMARY_SCHEMA:
+                    expected_summary = _aggregate(results, partition=partition)
+                else:
+                    raise EvaluationError("public summary schema is unsupported")
             except (EvaluationError, KeyError, TypeError, ValueError):
                 errors.append("run receipts cannot be aggregated")
             else:

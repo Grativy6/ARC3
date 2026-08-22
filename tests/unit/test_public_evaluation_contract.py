@@ -48,8 +48,10 @@ from arc3.evaluation.public_runner import (
     _asset_identity_check,
     _failure_result,
     _hot_path_profile_valid,
+    _legacy_aggregate,
     _OfflineSocketGuard,
     _receipt_valid,
+    _render_report,
     _reproduction_argv,
     _worker,
     verify_public_evaluation,
@@ -763,6 +765,158 @@ def test_failure_receipt_preserves_a_recovered_official_score() -> None:
     assert receipt["status"] == "failure"
     assert receipt["score"] == recovered_score
     assert receipt["failure"]["kind"] == "PolicyError"
+
+
+def test_aggregate_separates_recovered_failure_scores_from_success_metrics() -> None:
+    results: list[dict[str, Any]] = [
+        {
+            "agent": "random",
+            "baseline_id": "B0",
+            "game_id": "fixture-v1",
+            "seed": 7,
+            "status": "success",
+            "score": {
+                "verified": True,
+                "score": 0.4,
+                "levels_completed": 1,
+                "completed": True,
+            },
+            "metrics": {"environment_actions": 4, "resets": 0, "fault_count": 0},
+        },
+        {
+            "agent": "full",
+            "baseline_id": "B4",
+            "game_id": "fixture-v1",
+            "seed": 7,
+            "status": "success",
+            "score": {
+                "verified": True,
+                "score": 0.1,
+                "levels_completed": 0,
+                "completed": False,
+            },
+            "metrics": {"environment_actions": 1, "resets": 0, "fault_count": 0},
+        },
+        {
+            "agent": "full",
+            "baseline_id": "B4",
+            "game_id": "fixture-v1",
+            "seed": 8,
+            "status": "failure",
+            "score": {
+                "verified": True,
+                "score": 8.0,
+                "levels_completed": 8,
+                "completed": True,
+            },
+            "metrics": {"environment_actions": 2, "resets": 0, "fault_count": 1},
+        },
+    ]
+
+    summary = _aggregate(results, partition="development")
+    policies = cast(dict[str, dict[str, object]], summary["policies"])
+    full = policies["full"]
+    successful = cast(dict[str, object], full["successful_score_metrics"])
+    recovered = cast(dict[str, object], full["recovered_failure_score_metrics"])
+
+    assert summary["schema"] == "arc3.public-evaluation.summary.v0.2"
+    assert summary["status"] == "PARTIAL"
+    assert summary["claim"] == "MECHANISM_NOT_OBSERVED"
+    assert summary["score_metric_scope"] == "SUCCESSFUL_RUNS_ONLY"
+    assert full["levels_completed"] == 0
+    assert full["completed_runs"] == 0
+    assert full["mean_score"] == pytest.approx(0.1)
+    assert successful == {
+        "evidence_scope": "terminal-success-receipts",
+        "run_count": 1,
+        "score_sum": 0.1,
+        "mean_score": 0.1,
+        "levels_completed": 0,
+        "completed_runs": 0,
+    }
+    assert recovered == {
+        "evidence_scope": "verified-scorecards-on-failed-receipts",
+        "run_count": 1,
+        "score_sum": 8.0,
+        "mean_score": 8.0,
+        "levels_completed": 8,
+        "completed_runs": 1,
+    }
+
+    report = _render_report(
+        {
+            "surface": "local-public",
+            "partition": "development",
+            "git_commit": "fixture-commit",
+            "public_partition_manifest_hash": "sha256:fixture",
+            "network_mode": "offline-evaluation",
+        },
+        summary,
+        results,
+    )
+    assert "Successful-run score and level aggregates exclude every failed receipt" in report
+    assert "| full | 2 | 1 | 1 | 0 | 0.100000 | 1 | 8 | 8.000000 | 3 |" in report
+    assert "| full | fixture-v1 | 8 | failure | recovered-failure |" in report
+
+
+def test_unverified_failed_receipt_has_no_score_aggregate() -> None:
+    summary = _aggregate(
+        [
+            {
+                "agent": "full",
+                "baseline_id": "B4",
+                "status": "timeout",
+                "score": {
+                    "verified": False,
+                    "score": 0.0,
+                    "levels_completed": 0,
+                    "completed": False,
+                },
+                "metrics": {"environment_actions": 3, "resets": 0, "fault_count": 1},
+            }
+        ],
+        partition="development",
+    )
+    full = cast(dict[str, dict[str, object]], summary["policies"])["full"]
+    successful = cast(dict[str, object], full["successful_score_metrics"])
+    recovered = cast(dict[str, object], full["recovered_failure_score_metrics"])
+
+    assert full["mean_score"] is None
+    assert successful["run_count"] == 0
+    assert recovered["run_count"] == 0
+    assert recovered["mean_score"] is None
+    assert full["unscored_failure_runs"] == 1
+
+
+def test_legacy_public_summary_remains_reproducible_for_immutable_evidence() -> None:
+    summary = _legacy_aggregate(
+        [
+            {
+                "agent": "full",
+                "baseline_id": "B4",
+                "status": "timeout",
+                "score": {"score": 0.0, "levels_completed": 0, "completed": False},
+                "metrics": {"environment_actions": 21, "resets": 0, "fault_count": 1},
+            }
+        ],
+        partition="development",
+    )
+
+    assert summary["schema"] == "arc3.public-evaluation.summary.v0.1"
+    assert summary["policies"] == {
+        "full": {
+            "baseline_id": "B4",
+            "runs": 1,
+            "successes": 0,
+            "failures": 1,
+            "levels_completed": 0,
+            "completed_runs": 0,
+            "environment_actions": 21,
+            "resets": 0,
+            "faults": 1,
+            "mean_score": 0.0,
+        }
+    }
 
 
 def test_worker_seals_trace_score_resources_asset_and_close_after_policy_fault(
