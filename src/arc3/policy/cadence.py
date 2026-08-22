@@ -572,6 +572,40 @@ class CadenceState:
             pending_path=None,
         )
 
+    def abort(
+        self,
+        selection: CadenceSelection,
+        *,
+        completed_event_id: str,
+        status: DeliberationStatus,
+    ) -> CadenceState:
+        """Close an unacted reasoning path without advancing cadence counters.
+
+        A budget fault or an explicit safe-checkpoint boundary can terminate a
+        selected path before any action crosses the adapter boundary.  Such a
+        terminal receipt is auditable, but it is not a completed policy turn
+        and therefore must not change ``fast_streak`` (or any other trigger
+        input) merely because checkpointing occurred.
+        """
+
+        _require_text(completed_event_id, field="completed_event_id")
+        if status not in {
+            DeliberationStatus.BUDGET_EXHAUSTED,
+            DeliberationStatus.FAILED,
+        }:
+            raise PolicyError("aborted deliberation requires a non-success terminal status")
+        if self.pending_selection_hash != selection.selection_hash:
+            raise PolicyError("aborted cadence selection disagrees with pending selection")
+        if self.pending_path is not selection.path:
+            raise PolicyError("aborted cadence path disagrees with pending path")
+        return replace(
+            self,
+            last_completed_deliberation_event_id=completed_event_id,
+            last_completed_status=status,
+            pending_selection_hash=None,
+            pending_path=None,
+        )
+
     def assert_checkpointable(self) -> None:
         """Reject a state that could falsely imply completed deliberation."""
 

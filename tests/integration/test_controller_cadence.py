@@ -85,8 +85,10 @@ def test_automatic_checkpoint_keeps_one_reasoning_cycle_per_observation_boundary
     )
     assert any(item.event_type == "run.checkpoint_written" for item in initial_events)
     initial_event_ids = tuple(item.event_id for item in initial_events)
-    with pytest.raises(PolicyError, match="deliberation is in progress"):
-        controller.checkpoint()
+    safe_checkpoint = controller._last_checkpoint
+    assert safe_checkpoint is not None
+    returned_checkpoint = controller.checkpoint()
+    assert returned_checkpoint == safe_checkpoint
     assert (
         tuple(item.event_id for item in controller.journal.verify_manifest()) == initial_event_ids
     )
@@ -225,6 +227,145 @@ def test_reasoning_failure_is_terminally_receipted_before_fallback_action(
         == "reasoning.path_selected"
     )
     controller.close()
+
+
+@pytest.mark.integration
+def test_trace_checkpoint_aborts_without_becoming_a_cadence_policy_input(
+    tmp_path: Path,
+) -> None:
+    session_a = SyntheticAdapter(seed=7, size=8, max_steps=32).open(SYNTHETIC_GAME_ID)
+    session_b = SyntheticAdapter(seed=7, size=8, max_steps=32).open(SYNTHETIC_GAME_ID)
+    checkpointed = ARC3Controller(ControllerPreset.TRACE)
+    uninterrupted = ARC3Controller(ControllerPreset.TRACE)
+    checkpoint_context = _context(tmp_path, label="trace-checkpointed")
+    checkpointed.reset(checkpoint_context)
+    uninterrupted.reset(_context(tmp_path, label="trace-uninterrupted"))
+    checkpointed.observe(session_a.observation)
+    uninterrupted.observe(session_b.observation)
+    before = checkpointed.cadence_state
+
+    checkpoint = checkpointed.checkpoint()
+    after = checkpointed.cadence_state
+    assert after["fast_streak"] == before["fast_streak"]
+    assert after["no_progress_streak"] == before["no_progress_streak"]
+    events = checkpointed.journal.verify_manifest()
+    assert [item.event_type for item in events[-3:]] == [
+        "reasoning.deliberation_completed",
+        "reasoning.checkpoint_state",
+        "run.checkpoint_written",
+    ]
+    assert events[-3].payload["status"] == "FAILED"
+    assert events[-3].payload["fault_type"] == "CheckpointRequestedBeforeAction"
+
+    checkpointed.journal.close()
+    restored = ARC3Controller.restore(
+        checkpoint_context,
+        preset=ControllerPreset.TRACE,
+        checkpoint_path=checkpoint.path,
+    )
+    checkpointed_decision = restored.choose_action()
+    uninterrupted_decision = uninterrupted.choose_action()
+    assert checkpointed_decision.action == uninterrupted_decision.action
+    assert checkpointed_decision.rationale_category == uninterrupted_decision.rationale_category
+    assert checkpointed_decision.rationale_summary == uninterrupted_decision.rationale_summary
+    assert restored.cadence_state["fast_streak"] == uninterrupted.cadence_state["fast_streak"]
+    assert (
+        restored.cadence_state["no_progress_streak"]
+        == uninterrupted.cadence_state["no_progress_streak"]
+    )
+    restored_selection = next(
+        item
+        for item in reversed(restored.journal.verify_manifest())
+        if item.event_type == "reasoning.path_selected"
+    )
+    uninterrupted_selection = next(
+        item
+        for item in reversed(uninterrupted.journal.verify_manifest())
+        if item.event_type == "reasoning.path_selected"
+    )
+    assert restored_selection.payload["path"] == uninterrupted_selection.payload["path"]
+    assert (
+        restored_selection.payload["ordered_triggers"]
+        == uninterrupted_selection.payload["ordered_triggers"]
+    )
+    restored.close()
+    uninterrupted.close()
+
+
+@pytest.mark.integration
+def test_close_before_action_aborts_without_changing_restored_cadence_path(
+    tmp_path: Path,
+) -> None:
+    session_a = SyntheticAdapter(seed=7, size=8, max_steps=32).open(SYNTHETIC_GAME_ID)
+    session_b = SyntheticAdapter(seed=7, size=8, max_steps=32).open(SYNTHETIC_GAME_ID)
+    cadence = CadenceConfig(repeated_no_progress_threshold=16)
+    closed = ARC3Controller(ControllerPreset.FULL, cadence_config=cadence)
+    uninterrupted = ARC3Controller(ControllerPreset.FULL, cadence_config=cadence)
+    closed_context = _context(tmp_path, label="closed-before-action")
+    closed.reset(closed_context)
+    uninterrupted.reset(_context(tmp_path, label="close-uninterrupted"))
+    closed.observe(session_a.observation)
+    uninterrupted.observe(session_b.observation)
+    for _ in range(6):
+        closed_selection = closed._reasoning_selection
+        uninterrupted_pending = uninterrupted._reasoning_selection
+        assert closed_selection is not None
+        assert uninterrupted_pending is not None
+        assert closed_selection.path == uninterrupted_pending.path
+        if closed_selection.path.value == "FAST":
+            break
+        closed_decision = closed.choose_action()
+        uninterrupted_decision = uninterrupted.choose_action()
+        assert closed_decision.action == uninterrupted_decision.action
+        closed.apply_consequence(session_a.step(closed_decision.action))
+        uninterrupted.apply_consequence(session_b.step(uninterrupted_decision.action))
+    else:
+        pytest.fail("fixture did not reach a pending FAST cadence path")
+    assert closed._reasoning_selection is not None
+    assert closed._reasoning_selection.path.value == "FAST"
+    before = closed.cadence_state
+
+    closed.close()
+    checkpoint = closed._last_checkpoint
+    assert checkpoint is not None
+    assert checkpoint.phase is ControllerPhase.OBSERVED
+
+    restored = ARC3Controller.restore(
+        closed_context,
+        preset=ControllerPreset.FULL,
+        checkpoint_path=checkpoint.path,
+        cadence_config=cadence,
+    )
+    events = restored.journal.verify_manifest()
+    terminal = next(
+        item for item in reversed(events) if item.event_type == "reasoning.deliberation_completed"
+    )
+    assert terminal.payload["status"] == "FAILED"
+    assert terminal.payload["fault_type"] == "ControllerClosedBeforeAction"
+    assert restored.cadence_state["fast_streak"] == before["fast_streak"]
+    assert restored.cadence_state["no_progress_streak"] == before["no_progress_streak"]
+    restored_decision = restored.choose_action()
+    uninterrupted_decision = uninterrupted.choose_action()
+    assert restored_decision.action == uninterrupted_decision.action
+    assert restored_decision.rationale_category == uninterrupted_decision.rationale_category
+    assert restored_decision.rationale_summary == uninterrupted_decision.rationale_summary
+    restored_selection = next(
+        item
+        for item in reversed(restored.journal.verify_manifest())
+        if item.event_type == "reasoning.path_selected"
+    )
+    uninterrupted_selection = next(
+        item
+        for item in reversed(uninterrupted.journal.verify_manifest())
+        if item.event_type == "reasoning.path_selected"
+    )
+    assert restored_selection.payload["path"] == uninterrupted_selection.payload["path"]
+    assert (
+        restored_selection.payload["ordered_triggers"]
+        == uninterrupted_selection.payload["ordered_triggers"]
+    )
+    restored.close()
+    uninterrupted.close()
 
 
 @pytest.mark.integration

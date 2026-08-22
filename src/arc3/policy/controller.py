@@ -16,6 +16,7 @@ from arc3.adapters import GridFrame, Observation, validate_action_request
 from arc3.config import derive_seed
 from arc3.errors import (
     ARC3ValidationError,
+    CheckpointError,
     CompetitionIntegrityError,
     PlanningError,
     PolicyError,
@@ -75,6 +76,7 @@ from arc3.hypotheses import (
 from arc3.memory import (
     ControllerCheckpointManager,
     DerivedControllerState,
+    MemoryContractError,
     PendingAction,
     PersistentMemory,
 )
@@ -114,6 +116,7 @@ from arc3.trace import (
     abandoned_event_ids,
     authoritative_events,
 )
+from arc3.trace.authority import is_revisable_interruption_event_type
 from arc3.trace.canonical import normalize_json, sha256_json
 from arc3.types import (
     ActionName,
@@ -1381,7 +1384,12 @@ class ARC3Controller:
                 scope="run",
             )
 
-    def _complete_reasoning_cycle(self, observation: Observation) -> TraceEvent:
+    def _complete_reasoning_cycle(
+        self,
+        observation: Observation,
+        *,
+        advance_cadence: bool = True,
+    ) -> TraceEvent:
         """Emit the one terminal receipt after current-decision cache work."""
 
         selection = self._reasoning_selection
@@ -1450,10 +1458,18 @@ class ARC3Controller:
             event_type,
             terminal_payload,
         )
-        self._cadence_state = self._cadence_state.complete(
-            selection,
-            completed_event_id=terminal.event_id,
-            status=status,
+        self._cadence_state = (
+            self._cadence_state.complete(
+                selection,
+                completed_event_id=terminal.event_id,
+                status=status,
+            )
+            if advance_cadence
+            else self._cadence_state.abort(
+                selection,
+                completed_event_id=terminal.event_id,
+                status=status,
+            )
         )
         self._reasoning_completed_event_id = terminal.event_id
         return terminal
@@ -1538,6 +1554,13 @@ class ARC3Controller:
                 "fault": fault,
             },
         )
+        if self._transient_fold_boundary == "observation-processing":
+            # Validation failed before an observation receipt or any derived
+            # interpretation was admitted.  The typed parse-failure receipt is
+            # therefore a complete durable fault boundary.  In contrast, a
+            # malformed returned consequence leaves an already-submitted
+            # adapter crossing unresolved and must stay transient.
+            self._transient_fold_boundary = None
         raise PolicyError(f"malformed observation preserved as {event.event_id}")
 
     @_profiled("perception")
@@ -3640,7 +3663,18 @@ class ARC3Controller:
                 raise PolicyError("budget exhaustion lacks its observation boundary")
             self._reasoning_terminal_status = DeliberationStatus.BUDGET_EXHAUSTED
             self._reasoning_budget_exhaustions.append(budget)
-            self._complete_reasoning_cycle(latest)
+            self._complete_reasoning_cycle(latest, advance_cadence=False)
+        if self._transient_fold_boundary == "action-construction":
+            # No action crossed the adapter boundary.  Clear only the
+            # action-construction scratch fields after the immutable fault and
+            # terminal cadence receipts exist, then commit the faulted state.
+            self._pending_plan_emission = False
+            self._calibration_pending_handle = None
+            self._pending_canonical_effect = None
+            self._pending_resolution_kind = None
+            self._pending_change_candidate_id = None
+            self._pending_reexploration_candidate_id = None
+            self._transient_fold_boundary = None
         if self.features.use_memory:
             self._last_checkpoint = self.checkpoint()
         raise PolicyError(f"{budget} budget exhausted ({used}/{limit})")
@@ -6610,9 +6644,80 @@ class ARC3Controller:
             },
         )
 
+    def _safe_fold_checkpoint_for_pending_deliberation(
+        self,
+    ) -> ControllerCheckpoint | None:
+        """Return the exact pre-deliberation fold checkpoint when recoverable.
+
+        The durable automatic checkpoint is written after the observation or
+        consequence fold and before ``reasoning.path_selected``.  Returning it
+        is safe only while every later receipt is on the closed revisable
+        interruption allowlist; restore will then reopen precisely that suffix.
+        """
+
+        manager = self._checkpoint_manager
+        checkpoint = self._last_checkpoint
+        receipt = self._latest_receipt
+        if (
+            manager is None
+            or checkpoint is None
+            or receipt is None
+            or not checkpoint.path.is_file()
+        ):
+            return None
+        try:
+            persisted = manager.store.load(checkpoint.path)
+            state = DerivedControllerState.from_dict(
+                persisted.state.get("derived_controller_state")
+            )
+            events = self.journal.verify_manifest()
+        except (CheckpointError, MemoryContractError, OSError, ValueError):
+            return None
+        planner = state.planner_state
+        cadence = planner.get("cadence_state")
+        if not isinstance(cadence, Mapping):
+            return None
+        commitments = tuple(
+            (index, event)
+            for index, event in enumerate(events)
+            if event.event_type == "run.checkpoint_written"
+            and event.episode_id == self.context.episode_id
+        )
+        if not commitments:
+            return None
+        commitment_index, commitment = commitments[-1]
+        suffix = events[commitment_index + 1 :]
+        if (
+            persisted.checkpoint_hash != checkpoint.envelope.checkpoint_hash
+            or commitment.payload.get("checkpoint_hash") != persisted.checkpoint_hash
+            or commitment.payload.get("pending_submitted_event_id") is not None
+            or not suffix
+            or any(
+                event.episode_id != self.context.episode_id
+                or not is_revisable_interruption_event_type(event.event_type)
+                for event in suffix
+            )
+            or state.pending_action is not None
+            or state.step_index != self._step_index
+            or state.level_index != self._level_index
+            or state.perception_state.get("latest_observation_event_id")
+            != receipt.observation_event_id
+            or planner.get("cadence_folded_observation_event_id") != receipt.observation_event_id
+            or cadence.get("pending_selection_hash") is not None
+            or cadence.get("pending_path") is not None
+        ):
+            return None
+        return checkpoint
+
     @_profiled("checkpointing")
     def checkpoint(self) -> ControllerCheckpoint:
-        """Write a hash-bound snapshot at the current immutable trace tail."""
+        """Return a safe hash-bound restart point.
+
+        Normally this writes a snapshot at the current immutable trace tail.
+        If an automatic pre-deliberation fold checkpoint already commits the
+        exact observation boundary and only safely revisable derived receipts
+        follow it, return that existing content-addressed checkpoint unchanged.
+        """
 
         if self._checkpoint_manager is None or self._code is None or self._source is None:
             raise PolicyError("controller checkpoint identity is unavailable")
@@ -6621,7 +6726,17 @@ class ARC3Controller:
         if self._cadence_activation_event_id is None:
             raise PolicyError("controller cadence activation identity is unavailable")
         if self._cadence_state.deliberation_in_progress:
-            raise PolicyError("checkpoint refused while reasoning deliberation is in progress")
+            safe_fold = self._safe_fold_checkpoint_for_pending_deliberation()
+            if safe_fold is not None:
+                return safe_fold
+            if self.preset not in {ControllerPreset.BASELINE, ControllerPreset.TRACE}:
+                raise PolicyError("checkpoint refused while reasoning deliberation is in progress")
+            latest = self._latest_observation
+            if latest is None:
+                raise PolicyError("pending reasoning lacks its observation boundary")
+            self._reasoning_terminal_status = DeliberationStatus.FAILED
+            self._reasoning_fault_type = "CheckpointRequestedBeforeAction"
+            self._complete_reasoning_cycle(latest, advance_cadence=False)
         pending_goal_transitions = [
             self._serialize_goal_transition(item) for item in self._pending_goal_transitions
         ]
@@ -6837,6 +6952,56 @@ class ARC3Controller:
         self._last_checkpoint = checkpoint
         return checkpoint
 
+    def _preflight_checkpoint_runtime_identity(self, path: str | Path | None) -> None:
+        """Report caller-selected runtime mismatches before strict source binding.
+
+        The full restore still validates the exact current source identity.  A
+        read-only hash-validated envelope preflight merely distinguishes an
+        intentional cadence, feature, or retrodiction mismatch from unrelated
+        source drift so the public controller API raises its documented
+        ``PolicyError`` rather than leaking the lower-level commitment error.
+        """
+
+        if self._checkpoint_manager is None:
+            raise PolicyError("checkpoint manager did not initialize")
+        authoritative_path = path
+        if authoritative_path is None:
+            # ``latest.json`` is a replaceable convenience pointer, not trace
+            # authority.  Select the same content-addressed envelope named by
+            # the last immutable commitment that the strict restore validates
+            # below, so an orphan newer write cannot influence diagnostics.
+            commitments = tuple(
+                event
+                for event in self.journal.verify_manifest()
+                if event.episode_id == self.context.episode_id
+                and event.event_type == "run.checkpoint_written"
+            )
+            if not commitments:
+                return
+            committed_hash = commitments[-1].payload.get("checkpoint_hash")
+            if not isinstance(committed_hash, str):
+                return
+            authoritative_path = self._checkpoint_manager.store.content_addressed_path(
+                committed_hash
+            )
+        envelope = self._checkpoint_manager.store.load(authoritative_path)
+        state = DerivedControllerState.from_dict(envelope.state.get("derived_controller_state"))
+        checkpoint_features = state.planner_state.get("controller_features")
+        if checkpoint_features is not None and checkpoint_features != self.features.to_dict():
+            raise PolicyError("checkpoint controller feature identity does not match")
+        checkpoint_cadence = state.planner_state.get("cadence_config")
+        if checkpoint_cadence is not None:
+            try:
+                parsed_cadence = CadenceConfig.from_dict(checkpoint_cadence)
+            except PolicyError as error:
+                raise PolicyError("checkpoint cadence/cache state is malformed") from error
+            if parsed_cadence != self._cadence_config:
+                raise PolicyError("checkpoint cadence configuration does not match runtime")
+        checkpoint_retrodiction = state.world_model_ensemble.get("retrodiction_state")
+        if isinstance(checkpoint_retrodiction, Mapping):
+            if checkpoint_retrodiction.get("config") != self._retrodiction_runtime.config.to_dict():
+                raise PolicyError("checkpoint retrodiction runtime does not match controller")
+
     @classmethod
     def restore(
         cls,
@@ -6884,6 +7049,8 @@ class ARC3Controller:
                 "legacy checkpoint migration may cross only to a different git commit under "
                 "the same configuration identity"
             )
+        if not legacy_migration_requested:
+            controller._preflight_checkpoint_runtime_identity(checkpoint_path)
         restored = controller._checkpoint_manager.restore(
             journal=controller.journal,
             episode_id=context.episode_id,
@@ -10768,7 +10935,7 @@ class ARC3Controller:
                 raise PolicyError("pending reasoning lacks its observation boundary")
             self._reasoning_terminal_status = DeliberationStatus.FAILED
             self._reasoning_fault_type = "ControllerClosedBeforeAction"
-            self._complete_reasoning_cycle(latest)
+            self._complete_reasoning_cycle(latest, advance_cadence=False)
         if self._phase is not ControllerPhase.AWAITING_CONSEQUENCE:
             events = self._policy_events()
             last_material_event = next(

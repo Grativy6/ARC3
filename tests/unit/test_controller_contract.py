@@ -399,8 +399,9 @@ def test_mechanics_membership_failure_precedes_transition_collection_mutation(
 
 def test_action_and_reset_budgets_are_enforced_independently(tmp_path: Path) -> None:
     active = _manual_observation(state=GameStateName.NOT_FINISHED)
+    action_context = _context(tmp_path / "actions", max_actions=1, max_resets=1)
     action_controller = ARC3Controller(ControllerPreset.FULL)
-    action_controller.reset(_context(tmp_path / "actions", max_actions=1, max_resets=1))
+    action_controller.reset(action_context)
     action_controller.observe(active)
     first = action_controller.choose_action()
     action_controller.apply_consequence(
@@ -411,11 +412,32 @@ def test_action_and_reset_budgets_are_enforced_independently(tmp_path: Path) -> 
     )
     assert action_controller.snapshot.actions_used == 1
     assert action_controller.snapshot.resets_used == 0
+    action_fast_streak = action_controller.cadence_state["fast_streak"]
     with pytest.raises(PolicyError, match=r"max_actions budget exhausted \(1/1\)"):
         action_controller.choose_action()
     assert action_controller.phase is ControllerPhase.FAULTED
+    assert action_controller.cadence_state["fast_streak"] == action_fast_streak
+    assert [item.event_type for item in action_controller.journal.verify_manifest()[-4:]] == [
+        "run.environment_fault",
+        "reasoning.deliberation_completed",
+        "reasoning.checkpoint_state",
+        "run.checkpoint_written",
+    ]
     with pytest.raises(PolicyError, match="faulted controller cannot act"):
         action_controller.choose_action()
+    action_checkpoint = action_controller._last_checkpoint
+    assert action_checkpoint is not None
+    action_controller.journal.close()
+    restored_action_fault = ARC3Controller.restore(
+        action_context,
+        preset=ControllerPreset.FULL,
+        checkpoint_path=action_checkpoint.path,
+    )
+    assert restored_action_fault.phase is ControllerPhase.FAULTED
+    assert restored_action_fault.cadence_state == action_controller.cadence_state
+    with pytest.raises(PolicyError, match="faulted controller cannot act"):
+        restored_action_fault.choose_action()
+    restored_action_fault.close()
 
     reset_controller = ARC3Controller(ControllerPreset.FULL)
     reset_controller.reset(_context(tmp_path / "resets", max_actions=1, max_resets=1))
@@ -432,8 +454,16 @@ def test_action_and_reset_budgets_are_enforced_independently(tmp_path: Path) -> 
     assert reset_controller.snapshot.actions_used == 0
     assert reset_controller.snapshot.resets_used == 1
     reset_controller.observe(_manual_observation(state=GameStateName.GAME_OVER))
+    reset_fast_streak = reset_controller.cadence_state["fast_streak"]
     with pytest.raises(PolicyError, match=r"max_resets budget exhausted \(1/1\)"):
         reset_controller.choose_action()
+    assert reset_controller.cadence_state["fast_streak"] == reset_fast_streak
+    assert [item.event_type for item in reset_controller.journal.verify_manifest()[-4:]] == [
+        "run.environment_fault",
+        "reasoning.deliberation_completed",
+        "reasoning.checkpoint_state",
+        "run.checkpoint_written",
+    ]
 
 
 def test_returned_action_mismatch_preserves_raw_receipts_before_fault(tmp_path: Path) -> None:

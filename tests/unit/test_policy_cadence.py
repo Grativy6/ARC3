@@ -203,6 +203,22 @@ def test_cadence_state_roundtrips_and_rejects_mid_deliberation_checkpoint() -> N
     assert completed.last_completed_deliberation_event_id == "E-COMPLETE"
     assert completed.fast_streak == 1
 
+    aborted = pending.abort(
+        selection,
+        completed_event_id="E-ABORTED",
+        status=DeliberationStatus.FAILED,
+    )
+    assert CadenceState.from_checkpoint_dict(aborted.to_checkpoint_dict()) == aborted
+    assert aborted.last_completed_deliberation_event_id == "E-ABORTED"
+    assert aborted.last_completed_status is DeliberationStatus.FAILED
+    assert aborted.fast_streak == state.fast_streak
+    with pytest.raises(PolicyError, match="non-success"):
+        pending.abort(
+            selection,
+            completed_event_id="E-NOT-ABORTED",
+            status=DeliberationStatus.COMPLETED,
+        )
+
 
 def test_config_identity_mismatch_fails_closed() -> None:
     state = CadenceState.initial(CadenceConfig())

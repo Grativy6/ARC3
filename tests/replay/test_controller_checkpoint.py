@@ -103,6 +103,7 @@ def test_pending_action_checkpoint_restores_without_resubmission(tmp_path: Path)
 @pytest.mark.replay
 def test_restore_ignores_orphan_newer_latest_without_commitment_receipt(
     tmp_path: Path,
+    orphan_latest_kind: str,
 ) -> None:
     context = _context(tmp_path)
     controller = ARC3Controller(ControllerPreset.FULL)
@@ -119,6 +120,11 @@ def test_restore_ignores_orphan_newer_latest_without_commitment_receipt(
 
     raw_checkpoint = json.loads(checkpoint.path.read_text(encoding="utf-8"))
     raw_state = cast(dict[str, JSONValue], raw_checkpoint["state"])
+    orphan_state = cast(dict[str, JSONValue], json.loads(json.dumps(raw_state)))
+    orphan_derived = cast(dict[str, JSONValue], orphan_state["derived_controller_state"])
+    orphan_planner = cast(dict[str, JSONValue], orphan_derived["planner_state"])
+    orphan_features = cast(dict[str, JSONValue], orphan_planner["controller_features"])
+    orphan_features["use_goals"] = False
     orphan_path, orphan = CheckpointStore(context.checkpoint_root).write(
         run_id=context.run_id,
         episode_id=context.episode_id,
@@ -127,7 +133,7 @@ def test_restore_ignores_orphan_newer_latest_without_commitment_receipt(
         git_commit=context.git_commit,
         config_hash=str(context.config.hash),
         rng=random.Random(999),
-        state=raw_state,
+        state=orphan_state,
     )
     assert orphan_path != checkpoint.path
     assert orphan.checkpoint_hash != checkpoint.envelope.checkpoint_hash
@@ -137,12 +143,19 @@ def test_restore_ignores_orphan_newer_latest_without_commitment_receipt(
         ]
         == orphan.checkpoint_hash
     )
+    if orphan_latest_kind == "malformed":
+        (context.checkpoint_root / "latest.json").write_text("{malformed", encoding="utf-8")
     controller.journal.close()
 
     restored = ARC3Controller.restore(context, preset=ControllerPreset.FULL)
     assert restored.snapshot.phase is ControllerPhase.AWAITING_CONSEQUENCE
     assert restored.journal.tail_event_id == committed_receipt.event_id
     assert restored.journal.tail_hash == committed_receipt.event_hash
+
+
+@pytest.fixture(params=("runtime-mismatch", "malformed"))
+def orphan_latest_kind(request: pytest.FixtureRequest) -> str:
+    return cast(str, request.param)
 
 
 @pytest.mark.replay

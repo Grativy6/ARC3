@@ -1288,8 +1288,15 @@ def _checkpoint_restore(
     )
     try:
         after = restored.snapshot
+        terminal_suffix = tuple(event.event_type for event in events[before.trace_events :])
         passed = (
-            after.trace_events == before.trace_events + 2
+            terminal_suffix
+            == (
+                "run.completed",
+                "reasoning.checkpoint_state",
+                "run.checkpoint_written",
+            )
+            and after.trace_events == len(events)
             and replace(after, trace_events=before.trace_events) == before
         )
     finally:
