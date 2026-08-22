@@ -487,3 +487,26 @@ independent authorities.
 - Reopening condition: a completion can pass without an exact typed projection and restore, any D
   cell can omit or alter one of the three byte snapshots, or current asset bytes differ from the
   frozen prior identity.
+
+## D-001-0028 — Preserve the unique Stage 07 attempt and keep FULL
+
+- Recorded: 2026-08-22T18:38:27.5753539Z
+- Status: accepted
+- Decision: Treat the execution from clean commit
+  `f683dbc672213e804ddc6120b0be2762e6c66a08` as the one and only frozen official Stage 07
+  attempt. Do not rerun, resume, complete, or overwrite it. Because it created only 279/280 matrix
+  cell directories, ran 0/60 microbenchmarks, raised during final aggregation, and never evaluated
+  the replacement gates, retain production mode `FULL`. Repair only the fail-closed partial-result
+  serialization path for future protocols and continue Workflow 001 with the negative result.
+- Evidence: `docs/evidence/001-07-failed-infrastructure-attempt-01.json`; preserved work inventory
+  `sha256:fa79526cc91c096fa38868fe4aa11e52cad6c8f0fe8c804ebe00806ee6f4f62e`; nine D-cell
+  failure receipts report `WorldModelError: mechanics transition bound exceeded for epoch`; the
+  final `CACHED_INCREMENTAL` seed-23 D cell was not started. The post-loop verification receipts
+  all pass, but they cannot supply the missing matrix or microbenchmark evidence.
+- Boundary: the 270 synthetic cell directories and nine `local-public` failure receipts remain
+  partial evidence. Lost process-local wall/CPU/RSS measurements are not reconstructed or claimed.
+  The ten-game holdout remains sealed with zero events/assets. A harness defect does not erase the
+  D-cell mechanism failure, and the mechanism failure does not convert the harness into a PASS.
+- Reopening condition: none within Build 001. A future separately predeclared workflow may execute
+  a new comparison under a new attempt identity, but it cannot revise or supersede this attempt's
+  immutable status.

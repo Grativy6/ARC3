@@ -7,12 +7,12 @@
   "build_status": "IN_PROGRESS",
   "status": "IN_PROGRESS",
   "current_stage": "07",
-  "current_task": "Run the one frozen Stage 07 retrodiction decision attempt from the clean sealed source checkpoint",
+  "current_task": "Preserve the unique failed Stage 07 attempt, repair partial serialization without rerunning, and close the stage honestly",
   "implementation_branch": "build/001-local-public-recovery",
   "pull_request": "https://github.com/Grativy6/ARC3/pull/5",
   "started_at": "2026-08-21T15:41:02Z",
-  "last_checkpoint_at": "2026-08-22T17:29:57.7116351Z",
-  "last_checkpoint_commit": "1cf1945c42bb7da42e63b423c4a986d72fd24ead",
+  "last_checkpoint_at": "2026-08-22T18:38:27.5753539Z",
+  "last_checkpoint_commit": "f683dbc672213e804ddc6120b0be2762e6c66a08",
   "base": {
     "main_commit": "28c7a00732ce48e5c231211b01bc6eba7d0d71b4",
     "main_tree": "4586299448e9b1b585a0878674ed5f9afa60c384",
@@ -323,7 +323,7 @@
       "rule_change_and_noise_cases": 32,
       "local_public_development_cases": 2,
       "micro_history_sizes": 6,
-      "implementation_status": "OFFICIAL_HARNESS_SEALED_PENDING_ONE_MEASUREMENT",
+      "implementation_status": "UNIQUE_OFFICIAL_ATTEMPT_FAILED_PENDING_FAIL_CLOSED_SERIALIZATION_REPAIR",
       "runtime_checkpoint_commit": "586e8ba2c9c414b4bf2cc426ad5c1bbd357d5258",
       "runtime_authority_checkpoint_commit": "44fc3666522db4787f4349c4a5cb5ee085f787d9",
       "runtime_final_audit_checkpoint_commit": "2a78ba0f873a6f2c0e2b214a953f4b303057139e",
@@ -331,7 +331,21 @@
       "premeasurement_audit": "docs/evidence/001-07-premeasurement-audit.json",
       "premeasurement_audit_sha256": "sha256:c0520173e58dbc1b994169e858e09a36d0f03003eb5953e2f0583d8c93a4478c",
       "runtime_verification": "PASS:139-expanded+48-all-mode-adapter+87-artifact-asset-repair+ruff+format+mypy-strict",
-      "production_default": "FULL_UNCHANGED_PENDING_MEASURED_DECISION",
+      "official_attempt_01": {
+        "status": "FAILED_INFRASTRUCTURE",
+        "source_commit": "f683dbc672213e804ddc6120b0be2762e6c66a08",
+        "result_file_created": false,
+        "cell_directories": "279/280",
+        "synthetic_cell_directories": 270,
+        "local_public_cells_attempted": 9,
+        "local_public_cells_completed": 0,
+        "microbenchmarks": "0/60",
+        "replacement_gates_evaluated": false,
+        "failure_receipt": "docs/evidence/001-07-failed-infrastructure-attempt-01.json",
+        "partial_work_inventory_sha256": "sha256:fa79526cc91c096fa38868fe4aa11e52cad6c8f0fe8c804ebe00806ee6f4f62e",
+        "development_exposure_ledger_sha256": "sha256:4f924df44b11decb392022a927b3296e0248a02edac2c87c53899d374045f0c7"
+      },
+      "production_default": "FULL_RETAINED_NO_ELIGIBLE_REPLACEMENT_DECISION",
       "public_holdout_consumed": false
     }
   },
@@ -443,10 +457,14 @@
     "stage_07_premeasurement_audit": {
       "path": "docs/evidence/001-07-premeasurement-audit.json",
       "sha256": "c0520173e58dbc1b994169e858e09a36d0f03003eb5953e2f0583d8c93a4478c"
+    },
+    "stage_07_failed_infrastructure_attempt_01": {
+      "path": "docs/evidence/001-07-failed-infrastructure-attempt-01.json",
+      "sha256": "18fa8016d9f62d92ed390b58630892e7e36bfd3c55d6a131d0fafa68c1e185c2"
     }
   },
   "blocked_items": [],
-  "next_action": "Commit the premeasurement ledger checkpoint, verify a clean source and absent official targets, then execute the one frozen Stage 07 attempt without reopening its contract.",
+  "next_action": "Validate and commit the failed-attempt receipt, repair only fail-closed partial serialization with a regression test, then close Stage 07 without rerunning it.",
   "notes": [
     "Build 000 ledgers and reports are immutable historical evidence and are not overwritten by Build 001.",
     "The owner explicitly approved MIT-0 for ARC3 first-party source in the active Build 001 instruction.",

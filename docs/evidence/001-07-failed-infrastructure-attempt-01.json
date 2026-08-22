@@ -1,0 +1,140 @@
+{
+  "schema": "arc3.build-001.stage-07-failed-infrastructure.v0.1",
+  "status": "FAILED_INFRASTRUCTURE",
+  "evidence_labels": [
+    "synthetic",
+    "local-public"
+  ],
+  "attempt": 1,
+  "claim_boundary": "This is the one frozen official Stage 07 attempt. It did not produce the declared result artifact, did not execute the exact 280-cell matrix, did not execute the 60 microbenchmarks, and cannot select a replacement retrodiction mode. Production remains FULL. The 270 synthetic cell directories and nine local-public failure receipts are partial negative evidence only; they are not a completed benchmark or a hidden-generalization claim.",
+  "source": {
+    "git_commit": "f683dbc672213e804ddc6120b0be2762e6c66a08",
+    "git_tree": "0e05672f7d2cf488b66f7dc21b67b9110a27352f",
+    "branch": "build/001-local-public-recovery",
+    "worktree_clean_before_attempt": true,
+    "worktree_clean_after_attempt": true,
+    "main_ancestor": "28c7a00732ce48e5c231211b01bc6eba7d0d71b4",
+    "predeclaration": "docs/evidence/001-07-retrodiction-predeclaration.json",
+    "predeclaration_sha256": "sha256:d4eb82f2e0c04e1c94be4d6fbaa8862aa808cc07932042a02d0c5fbcc02dc608",
+    "predeclaration_amendment": "docs/evidence/001-07-retrodiction-predeclaration-amendment-01.json",
+    "predeclaration_amendment_sha256": "sha256:5c8ff0c91602d86ecaadd61197dfb80681f618ad4e6c810c26933ca337fdcc3b",
+    "premeasurement_audit": "docs/evidence/001-07-premeasurement-audit.json",
+    "premeasurement_audit_sha256": "sha256:c0520173e58dbc1b994169e858e09a36d0f03003eb5953e2f0583d8c93a4478c"
+  },
+  "command": {
+    "argv": "C:/a/arc3-b001-28c7a00/Scripts/python.exe scripts/measure_retrodiction_decision.py --execute --output C:/a/arc3-b001/artifacts/stage07/retrodiction-decision-attempt-01.json --work-root C:/a/arc3-b001/artifacts/stage07/retrodiction-decision-work-attempt-01 --exposure-ledger C:/a/arc3-b001/artifacts/stage07/public-exposure.jsonl --environments-dir C:/a/arc3-s15-6a0f6e5/artifacts/stage15/public-environments --recordings-dir C:/a/arc3-b001/artifacts/stage07/development-recordings",
+    "exit_code": 1,
+    "result_file_created": false,
+    "first_raw_file_creation_utc": "2026-08-22T17:31:10.8464817Z",
+    "last_raw_file_write_utc": "2026-08-22T18:32:52.7530182Z",
+    "failure_observed_by_owner_thread_utc": "2026-08-22T18:38:27.5753539Z"
+  },
+  "failure": {
+    "kind": "KeyError",
+    "classification": "FAILED_INFRASTRUCTURE",
+    "missing_cell_id": "stage07-cell-279-D-3ded77000d47d823",
+    "operation": "_apply_global_integrity indexed every frozen matrix cell after only 279 CellMeasurement values existed",
+    "message": "'stage07-cell-279-D-3ded77000d47d823'",
+    "stack": [
+      "scripts/measure_retrodiction_decision.py:2613:<module>",
+      "scripts/measure_retrodiction_decision.py:2590:main",
+      "scripts/measure_retrodiction_decision.py:2430:measure_retrodiction_decision",
+      "scripts/measure_retrodiction_decision.py:2084:_apply_global_integrity"
+    ],
+    "control_flow_reconstruction": {
+      "status": "INFERRED_FROM_PINNED_EXECUTABLE_SOURCE_AND_RAW_CELL_COUNT",
+      "fact": "The matrix loop broke after cell ordinal 278 because the post-cell elapsed-time check exceeded the frozen 3600-second overall limit. The harness then ran its verification suite and failed while applying global integrity to the absent ordinal 279 measurement.",
+      "why_bounded": "In the pinned source, the only loop exit with 279 measurements is the explicit overall-wall-limit branch. The exact elapsed wall/CPU/RSS values remained process-local and were lost when aggregation raised before serialization; none are claimed here."
+    }
+  },
+  "partial_execution": {
+    "evaluation_cells_predeclared": 280,
+    "cell_directories_created": 279,
+    "synthetic_cell_directories_created": 270,
+    "local_public_cell_directories_created": 9,
+    "missing_cell_count": 1,
+    "missing_cell": {
+      "ordinal": 279,
+      "group": "D",
+      "mode": "CACHED_INCREMENTAL",
+      "seed": 23,
+      "case_id": "ar25-0c556536"
+    },
+    "microbenchmark_cells_predeclared": 60,
+    "microbenchmark_cells_executed": 0,
+    "replacement_gates_evaluated": false,
+    "replacement_decision_eligible": false,
+    "retained_production_mode": "FULL"
+  },
+  "local_public_failures": {
+    "attempted": 9,
+    "completed_without_exception": 0,
+    "common_error_kind": "WorldModelError",
+    "common_error_message": "mechanics transition bound exceeded for epoch",
+    "modes_seed_7": [
+      "FULL",
+      "NONE",
+      "RECENT_WINDOW_8",
+      "EVENT_TRIGGERED",
+      "CACHED_INCREMENTAL"
+    ],
+    "modes_seed_23": [
+      "FULL",
+      "NONE",
+      "RECENT_WINDOW_8",
+      "EVENT_TRIGGERED"
+    ],
+    "failure_receipts": [
+      {"ordinal": 270, "path": "cells/270-adeb8ba86261c212/failure.json", "sha256": "sha256:76b554316553d42fd50b5240573e5c1e87fd64b4b1c7490788f49c4ffae6969b"},
+      {"ordinal": 271, "path": "cells/271-7f0fd278eb0ab13a/failure.json", "sha256": "sha256:8dbbd7bfd475838c7aa72fc0d5e29273e48d6e63f1117cb019ce135d23d4bd6a"},
+      {"ordinal": 272, "path": "cells/272-60c2bb565c512c72/failure.json", "sha256": "sha256:c854eff7a918410220c92f2a1e272dbf43694a0dcf0beee7d558179429c144de"},
+      {"ordinal": 273, "path": "cells/273-e1affac95bb88f18/failure.json", "sha256": "sha256:8e8a43952701d1064d95bd6c522f4c78bc9678bf5c882e79be9d3cf317c36b6a"},
+      {"ordinal": 274, "path": "cells/274-073b599ed97c15cf/failure.json", "sha256": "sha256:8df65e58f2c4780dab6ccd847a5d08d218c7f9c3c52b1a634317b9b1430cad16"},
+      {"ordinal": 275, "path": "cells/275-1c03b5567dc3a9e9/failure.json", "sha256": "sha256:1a22a10ade71799bb829a8d9b6fb3b1891b152b226db84de9640514be815af10"},
+      {"ordinal": 276, "path": "cells/276-f64404f03ba63073/failure.json", "sha256": "sha256:e8a73854f44c733bcc24fb786973e70733d672406e047dc46ac3c7ace3f171a1"},
+      {"ordinal": 277, "path": "cells/277-5d81b498c1478b37/failure.json", "sha256": "sha256:5b977f66806df4a140d023fe23e53a67a70fb17a54c1e0f3ef896b44e4c0e5f0"},
+      {"ordinal": 278, "path": "cells/278-6541aed230bee58e/failure.json", "sha256": "sha256:b8f0d3f67f8389f201e02e350c67d0ed29765d4feaba3a0d2cdcfa2c4a79ab5e"}
+    ]
+  },
+  "preserved_partial_work_tree": {
+    "path": "C:/a/arc3-b001/artifacts/stage07/retrodiction-decision-work-attempt-01",
+    "file_count": 6615,
+    "total_bytes": 1854364170,
+    "inventory_definition": "sha256_json(sorted list of {bytes,path-relative-posix,sha256} produced by scripts.measure_retrodiction_decision._work_inventory)",
+    "inventory_sha256": "sha256:fa79526cc91c096fa38868fe4aa11e52cad6c8f0fe8c804ebe00806ee6f4f62e",
+    "preservation_rule": "The work tree is immutable failed-attempt evidence and must not be overwritten, completed in place, deleted, or relabeled as an exact matrix result."
+  },
+  "verification_after_cell_loop": {
+    "status": "PASS",
+    "receipts": [
+      {"path": "verification/verification-00.json", "sha256": "sha256:7fab2ec62fe656875dc439ff47143932f5dee3928da7c7ae2ce293bb42ebaec1", "result": "PASS:focused-pytest"},
+      {"path": "verification/verification-01.json", "sha256": "sha256:67320665f2821abfbfc87186227075707ed9ca6e5e878ad1679884f96bb48d5a", "result": "PASS:ruff-lint"},
+      {"path": "verification/verification-02.json", "sha256": "sha256:36db13dac61eb395514501a60f3671924ecb5facbc70b9896661f545c3647c00", "result": "PASS:ruff-format"},
+      {"path": "verification/verification-03.json", "sha256": "sha256:dccd903dbce40b2655a90b4b24d068b47cca33d6ac2ff6fb18477f38ae8006f5", "result": "PASS:mypy-strict"},
+      {"path": "verification/verification-04.json", "sha256": "sha256:a2308147719826b2da10f2b26f0be075e01dac6a17216b6455e2acedc5851095", "result": "PASS:competition-integrity"}
+    ]
+  },
+  "public_exposure": {
+    "ledger": "C:/a/arc3-b001/artifacts/stage07/public-exposure.jsonl",
+    "ledger_sha256": "sha256:4f924df44b11decb392022a927b3296e0248a02edac2c87c53899d374045f0c7",
+    "development_events": 9,
+    "public_holdout_gameplay_events": 0,
+    "locally_acquired_holdout_assets": 0,
+    "holdout_status": "SEALED_UNCONSUMED"
+  },
+  "repair_boundary": {
+    "allowed_changes": [
+      "make partial global-integrity application total over the measurements that actually exist",
+      "serialize a fail-closed partial artifact before returning nonzero",
+      "add regression coverage for an overall limit reached before the final matrix cell"
+    ],
+    "forbidden_changes": [
+      "rerun the one official Stage 07 attempt",
+      "execute or synthesize the missing cell or microbenchmarks as official evidence",
+      "change the frozen gates, budgets, seeds, case order, or mode order",
+      "promote a replacement retrodiction mode",
+      "open the ten-game public holdout",
+      "overwrite or delete the failed-attempt work tree or exposure ledger"
+    ]
+  }
+}

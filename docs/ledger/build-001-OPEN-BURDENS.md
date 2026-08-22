@@ -753,3 +753,51 @@ does not erase earlier uncertainty or failed mechanisms.
 - Resolution condition: a coherent rehashed historical-rank mutation fails for retained and
   evicted completions while clean legacy/current checkpoints still restore.
 - Resolution receipt: none.
+
+## B-001-0041 — Stage 07 partial aggregation raised instead of serializing failure
+
+- Status: OPEN
+- Stage: 07, 08, 14
+- Opened: 2026-08-22
+- Burden: the unique official Stage 07 attempt exceeded its frozen overall wall limit after 279
+  matrix measurements. `_apply_global_integrity` then indexed the absent ordinal-279 measurement
+  and raised `KeyError` before the harness could serialize its declared `PARTIAL` result. Exact
+  process-local wall, CPU, RSS, raw measurement, and microbenchmark arrays were lost with the
+  process; they must not be reconstructed as measured values.
+- Why it matters: a fail-closed experiment must preserve a machine-readable terminal artifact even
+  when a resource boundary interrupts the declared matrix. Hash-linked raw receipts remain, but
+  they are weaker and more expensive to recover than the intended terminal result.
+- Current evidence: `docs/evidence/001-07-failed-infrastructure-attempt-01.json`; 279 cell
+  directories, 6,615 files, 1,854,364,170 bytes, inventory SHA-256
+  `fa79526cc91c096fa38868fe4aa11e52cad6c8f0fe8c804ebe00806ee6f4f62e`; no official output file;
+  exit 1 at `_apply_global_integrity`; all five post-loop verification commands passed.
+- Next discriminating action: make global integrity total over the completed prefix, serialize an
+  explicitly incomplete fail-closed artifact, and add a regression test that reaches the overall
+  limit before the final matrix cell. Do not rerun the unique attempt.
+- Resolution condition: a synthetic unit/integration fixture with a deliberately incomplete matrix
+  writes a structurally valid `PARTIAL` artifact, selects `KEEP_FULL`, exits nonzero, and retains the
+  missing-cell/resource failure without a `KeyError`.
+- Resolution receipt: none.
+
+## B-001-0042 — Every attempted Stage 07 local-public mode exceeded the mechanics epoch bound
+
+- Status: OPEN
+- Stage: 07, 08, 09
+- Opened: 2026-08-22
+- Burden: all nine attempted `local-public` D cells—five modes at seed 7 and four modes at seed
+  23—raised `WorldModelError: mechanics transition bound exceeded for epoch`. The frozen overall
+  limit was reached before seed-23 `CACHED_INCREMENTAL` started. No mode completed a permitted
+  development episode, so Stage 07 provides no public benefit/cost comparison.
+- Why it matters: retrodiction-mode selection cannot repair a shared bounded-world-model failure,
+  and the same failure would prevent the two-speed or Stage 09 policy from interacting effectively
+  unless the lifecycle/storage bound is addressed generically.
+- Current evidence: the nine immutable failure receipts listed in
+  `docs/evidence/001-07-failed-infrastructure-attempt-01.json`; development exposure ledger SHA-256
+  `4f924df44b11decb392022a927b3296e0248a02edac2c87c53899d374045f0c7`; zero holdout events.
+- Next discriminating action: isolate the transition-growth cause from the raw traces and implement
+  a generic epoch rollover or bounded-history policy only if it preserves immutable receipts,
+  accepted-rule authority, replay, checkpoint restore, and the Stage 06 negative evidence.
+- Resolution condition: a predeclared generic development run completes within the same action and
+  wall budgets without exceeding the epoch bound, while synthetic replay and contradiction tests
+  remain within their frozen floors.
+- Resolution receipt: none.
