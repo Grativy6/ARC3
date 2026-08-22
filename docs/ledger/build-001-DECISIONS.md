@@ -56,3 +56,15 @@ independent authorities.
 - Evidence: `docs/evidence/001-01-reproduction-predeclaration.json` and focused selector tests.
 - Boundary: no asset acquisition, no hosted inference, no holdout selection, and no production
   repair before the reproduction receipt is sealed.
+
+## D-001-0006 — Preserve evaluator failure status while classifying the Stage 01 objective
+
+- Recorded: 2026-08-22T03:26:00Z
+- Status: accepted
+- Decision: Preserve the generic evaluator's `FAILED_INFRASTRUCTURE` aggregate and exit 1 for an
+  all-timeout bundle, while marking Workflow 001 Stage 01 `PASS` because the predeclared target was
+  to reproduce that exact timeout pathology. Do not relabel the run itself as success.
+- Evidence: verified timeout receipt and comparison in
+  `docs/evidence/001-01-reproduction-acceptance.json`.
+- Boundary: this classification says only that failure reproduction succeeded; local-public
+  controller recovery remains open.

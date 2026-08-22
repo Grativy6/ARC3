@@ -10,6 +10,10 @@ does not erase earlier uncertainty or failed mechanisms.
 - Burden: FULL completed zero levels and timed out in every measured local-public run; causal hot
   path and generic recovery remain unproved.
 - Next evidence: Stages 01–03 reproduction, instrumentation, and interventions.
+- Stage 01 update (2026-08-22): **failure reproduced, burden remains open**. The frozen production
+  policy timed out after 120.11965939996298 seconds and 21 actions with zero completed levels on the
+  one predeclared development run; the 56-artifact bundle and trace replay verify. Stage 02 must now
+  measure the hot path, and Stage 03 must establish causal interventions before repair.
 
 ## B-001-0002 — Palette and action equivariance failures
 
