@@ -62,8 +62,13 @@ source = { registry = "https://example.invalid/simple" }
 """,
         encoding="utf-8",
     )
-    (root / "pyproject.toml").write_text("[project]\nname='fixture'\n", encoding="utf-8")
+    (root / "pyproject.toml").write_text(
+        '[project]\nname="arc3"\nlicense="MIT-0"\nlicense-files=["LICENSE"]\n',
+        encoding="utf-8",
+    )
     (root / "upstream.lock.json").write_text("{}\n", encoding="utf-8")
+    project_root = Path(__file__).resolve().parents[2]
+    (root / "LICENSE").write_bytes((project_root / "LICENSE").read_bytes())
     (root / "THIRD_PARTY_NOTICES.md").write_text("fixture\n", encoding="utf-8")
     entry = root / "agent" / "my_agent.py"
     entry.parent.mkdir()

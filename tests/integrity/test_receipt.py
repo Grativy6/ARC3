@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 from pathlib import Path
 
 import pytest
@@ -108,6 +109,44 @@ def test_explicit_manifest_identity_is_an_auditable_override(
 
 
 @pytest.mark.competition
+def test_build_run_holdout_manifest_identity_is_an_auditable_binding(
+    integrity_repo: tuple[Path, str, str],
+) -> None:
+    root, _, _ = integrity_repo
+    manifest = root / "docs" / "evaluation" / "public-game-partitions.v0.1.json"
+    expected = "sha256:" + hashlib.sha256(manifest.read_bytes()).hexdigest()
+    run_state = root / "docs" / "ledger" / "build-001-run-state.json"
+    run_state.write_text(
+        json.dumps(
+            {
+                "holdout": {
+                    "manifest": "docs/evaluation/public-game-partitions.v0.1.json",
+                    "manifest_sha256": expected,
+                    "status": "SEALED_UNCONSUMED",
+                }
+            },
+            sort_keys=True,
+        ),
+        encoding="utf-8",
+    )
+    receipt = build_integrity_receipt(
+        root,
+        run_state_path=run_state,
+        include_installed_metadata=False,
+    )
+    checks = receipt.body["checks"]
+    assert isinstance(checks, dict)
+    assert checks["source_identity"] == {"passed": True}
+    inputs = receipt.body["inputs"]
+    assert isinstance(inputs, dict)
+    assert inputs["manifest_binding"] == {
+        "declaration": "docs/ledger/build-001-run-state.json",
+        "expected_sha256": expected,
+        "issue": None,
+    }
+
+
+@pytest.mark.competition
 def test_missing_required_notices_is_explicit_supply_failure(
     integrity_repo: tuple[Path, str, str],
 ) -> None:
@@ -127,12 +166,12 @@ def test_missing_required_notices_is_explicit_supply_failure(
 
 
 @pytest.mark.competition
-def test_owner_license_boundary_is_status_not_an_assumed_license(
+def test_owner_approved_license_is_reported_from_first_party_inventory(
     integrity_repo: tuple[Path, str, str],
 ) -> None:
     root, _, _ = integrity_repo
     receipt = build_integrity_receipt(root, include_installed_metadata=False)
     summary = receipt.body["license_summary"]
     assert isinstance(summary, dict)
-    assert summary["first_party_license_status"] == "OWNER_DECISION_REQUIRED"
+    assert summary["first_party_license_status"] == "MIT-0"
     assert "owner_license_decision_pending" not in summary

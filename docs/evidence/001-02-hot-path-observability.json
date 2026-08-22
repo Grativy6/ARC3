@@ -1,0 +1,263 @@
+{
+  "schema": "arc3.build-001.stage-02-hot-path-observability.v0.1",
+  "status": "PASS",
+  "evidence_labels": [
+    "synthetic",
+    "local-public"
+  ],
+  "completed_at": "2026-08-22T04:03:00Z",
+  "claim_boundary": "This receipt measures instrumentation identity, overhead, and one bounded development-game hot path. It is not a benchmark, holdout, hidden-game, or generalization result.",
+  "frozen_source": {
+    "git_commit": "8168168ea224add5b8e296ee892866d75f1ca0b7",
+    "instrumentation_commit": "84854c4ada25684f5248fe7bd8725d3b6301c2d5",
+    "instrumentation_tree": "1647efcc4dfa00b3cfd472c9d9cf4f9a73367904",
+    "synthetic_first_party_source_hash": "sha256:1db18d2fa024eb608e002354e17345c2c522f235825eb634aa2e96a18d127fa3",
+    "local_public_first_party_source_hash": "sha256:1f7d320f74ce1b05b046ac1f942ab7e6ccc4eb3475f61f8892629477a7512916",
+    "worktree_clean_before_measurements": true,
+    "predeclaration": "docs/evidence/001-02-hot-path-predeclaration.json",
+    "predeclaration_sha256": "sha256:c573de083314be601a0bd9e877adf533e1880a61cc1825d91b509d61e15248fb"
+  },
+  "verification": {
+    "focused_tests": "PASS:45",
+    "clean_source_stage16_regressions": "PASS:2",
+    "ruff_check": "PASS",
+    "ruff_format_check": "PASS",
+    "mypy_strict": "PASS",
+    "diff_check": "PASS",
+    "profile_receipt_validation": "PASS",
+    "public_artifact_verification": {
+      "verified": true,
+      "artifact_count": 30,
+      "run_count": 1,
+      "errors": []
+    }
+  },
+  "synthetic_overhead": {
+    "evidence_label": "synthetic",
+    "schema": "arc3.hot-path-overhead.v0.1",
+    "status": "PASS",
+    "seed": 25,
+    "action_budget": 8,
+    "repetitions_per_mode": 7,
+    "total_trials": 14,
+    "alternating_order": true,
+    "exact_action_decision_signatures_match": true,
+    "exact_outcomes_match": true,
+    "reference_decision_signature_hash": "sha256:ffcc6cd63aead5be8a818b317f83998d51e7798ab4c1818cec83a79d539d8078",
+    "disabled_median_wall_ns": 544027700.0,
+    "enabled_median_wall_ns": 569138900.0,
+    "median_wall_overhead_ratio": 1.046157943796,
+    "median_wall_overhead_percent": 4.61579438,
+    "median_cpu_overhead_ratio": 1.034482758621,
+    "predeclared_wall_ratio_max": 1.15,
+    "overhead_gate_pass": true,
+    "enabled_profile_coverage": {
+      "minimum": 0.997462528656,
+      "median": 0.99754874656,
+      "maximum": 0.998081016478
+    },
+    "maximum_observed_process_peak_rss_bytes": 37322752,
+    "raw_path": "C:/a/arc3-b001/artifacts/stage02/hot-path-overhead.json",
+    "raw_file_sha256": "sha256:0c2b4137b1627ef1670709fa4bab2f3af77aae619066eab6d49f40d47e33b6c3",
+    "artifact_core_hash": "sha256:97a8f4c136700164e6e17636361a0a19a406edb14a72f9d4426b2703cea0d2b5"
+  },
+  "local_public_profile": {
+    "evidence_label": "local-public",
+    "evaluation_id": "build001-stage02-ar25-seed7-profile",
+    "run_id": "ar25-0c556536-B4-full-seed-7",
+    "game_id": "ar25-0c556536",
+    "seed": 7,
+    "preset": "FULL/B4",
+    "max_actions": 8,
+    "max_resets": 8,
+    "timeout_seconds": 120.0,
+    "terminal_status": "success",
+    "wall_clock_seconds": 38.334538700059056,
+    "environment_actions": 8,
+    "resets": 0,
+    "levels_completed": 0,
+    "score": 0.0,
+    "scorecard_verified": true,
+    "official_rhae": null,
+    "profile": {
+      "schema": "arc3.hot-path-profile.v0.2",
+      "enabled": true,
+      "active_span_count": 0,
+      "total_wall_ns": 38303050300,
+      "total_cpu_ns": 38062500000,
+      "named_exclusive_wall_ns": 38294748700,
+      "attribution_coverage": 0.999783265303,
+      "runtime_remainder_wall_ns": 8301600,
+      "over_attributed_wall_ns": 0,
+      "boundary_count": 26,
+      "segment_count": 1,
+      "max_actions_observed": 8,
+      "maximum_current_rss_bytes": 148414464,
+      "maximum_peak_rss_bytes": 148418560,
+      "peak_python_allocation_bytes": 50326431
+    },
+    "exclusive_wall_ranking": [
+      {
+        "rank": 1,
+        "phase": "action_selection",
+        "exclusive_wall_ns": 18407804300,
+        "percent_total": 48.058325,
+        "calls": 8
+      },
+      {
+        "rank": 2,
+        "phase": "checkpointing",
+        "exclusive_wall_ns": 6499125100,
+        "percent_total": 16.967644,
+        "calls": 18
+      },
+      {
+        "rank": 3,
+        "phase": "startup",
+        "exclusive_wall_ns": 4151448300,
+        "percent_total": 10.838427,
+        "calls": 2
+      },
+      {
+        "rank": 4,
+        "phase": "goal_inference",
+        "exclusive_wall_ns": 3532356600,
+        "percent_total": 9.222129,
+        "calls": 18
+      },
+      {
+        "rank": 5,
+        "phase": "trace_serialization",
+        "exclusive_wall_ns": 2342465200,
+        "percent_total": 6.11561,
+        "calls": 284
+      },
+      {
+        "rank": 6,
+        "phase": "perception",
+        "exclusive_wall_ns": 981261400,
+        "percent_total": 2.561836,
+        "calls": 9
+      },
+      {
+        "rank": 7,
+        "phase": "retrodiction",
+        "exclusive_wall_ns": 901480900,
+        "percent_total": 2.353549,
+        "calls": 9
+      },
+      {
+        "rank": 8,
+        "phase": "planning",
+        "exclusive_wall_ns": 423179000,
+        "percent_total": 1.104818,
+        "calls": 8
+      }
+    ],
+    "steady_state": {
+      "definition": "Deltas between consecutive episode_action boundaries, excluding the first action and startup/initial observation.",
+      "actions_measured": 7,
+      "median_wall_ns": 4341123000,
+      "minimum_wall_ns": 3822396100,
+      "maximum_wall_ns": 4776867900,
+      "median_action_selection_wall_ns": 2595648000,
+      "median_checkpointing_wall_ns": 807838800,
+      "checkpointing_wall_ns_action_2": 346869100,
+      "checkpointing_wall_ns_action_8": 1239666700,
+      "retrodiction_wall_ns_action_2": 50246200,
+      "retrodiction_wall_ns_action_8": 194310900
+    },
+    "cache_and_repetition": {
+      "hits": 16,
+      "misses": 1,
+      "opportunity_misses": 34,
+      "input_observations": 51,
+      "repeated_inputs": 38,
+      "unique_inputs": 13,
+      "change_kind_counts": {
+        "global_change": 1,
+        "history_growth": 9,
+        "initial": 1,
+        "local_change": 0,
+        "unchanged": 40
+      }
+    },
+    "trace": {
+      "event_count": 241,
+      "byte_length": 593206,
+      "bytes_per_action": 74150.75,
+      "replay_verified": true,
+      "manifest_hash": "sha256:4649079cbe7df02e1325eab0653aa1950758cfa940fdc4e53d4c4a3bef91862a",
+      "tail_event_hash": "sha256:a6966fd9ab957cc27d6d7f5a0c71e68a0febda3f570398231e4a5e859d37481e"
+    },
+    "raw_path": "C:/a/arc3-b001/artifacts/stage02/evaluations/build001-stage02-ar25-seed7-profile",
+    "run_receipt_hash": "sha256:306906edc7225359a885a04df6ac303c71207f50ce68058ff3da5baa16707275",
+    "run_spec_hash": "sha256:8b50813c4507579a18b75ee4f85362fc90d9af24a8e6e8537ee415edb4a235bd",
+    "manifest_file_sha256": "sha256:5c2dd60a893c1ec4f31d35902026b601100eb77c5a5bf1bc285485d24f151060",
+    "manifest_self_hash": "sha256:68e284e2dafa3afbf51cefbdaf8977cef897587cb07d44f7c132bf80a6e3e5f3",
+    "results_jsonl_sha256": "sha256:1b8b4738f5851670a2b7692023a92c028f0f7aa04c1c0f0d69e339bc735a17cf",
+    "summary_file_sha256": "sha256:e09332f2f3c283df7edb56467ccfedcf384e0e8f43f6f23e6282489887ebab35",
+    "identity_hash": "sha256:19553e92467f6fe715115cbdcacb6e2692caa8bf49a10b4d9fb65bb110ced01b",
+    "config_hash": "sha256:babed8092b5b0c994bd6599a01fc0acc31f3eec738240f9beafd4b97af402d9c",
+    "asset_aggregate_sha256": "sha256:e796e615d2e10c93b849f9bf150308fbf84d624725deaf995d7ec2d1c2f86b22"
+  },
+  "runtime_identity": {
+    "python": "3.12.14",
+    "python_implementation": "CPython",
+    "platform": "Windows-10-10.0.19045-SP0",
+    "processor": "AMD64 Family 23 Model 8 Stepping 2, AuthenticAMD",
+    "logical_cpu_count": 12,
+    "gpu": null,
+    "arc_agi": "0.9.9",
+    "arcengine": "0.9.3",
+    "numpy": "2.5.2",
+    "pydantic": "2.13.4",
+    "process_isolation": "multiprocessing-spawn",
+    "network_mode": "offline-evaluation",
+    "upstream_lock_hash": "sha256:67e1d937e213bbcc25783784d04c4fa349b85dc09b94855256916ca6b96e808a"
+  },
+  "holdout": {
+    "status": "SEALED_UNCONSUMED",
+    "build_000_exposure_ledger_sha256": "sha256:cd9af42ed3a5ef9fa0dc201ddb10e32d2bcccee9df729aa0c7d53077c04c9ad4",
+    "stage_02_exposure_ledger_sha256": "sha256:646ce90008f66bf54dfafd4ce7b80274c9b35cf819b0bafdb7cdf4e06325b676",
+    "stage_02_development_events": 2,
+    "stage_02_holdout_events": 0,
+    "stage_02_exposure_tail_sequence": 1,
+    "stage_02_exposure_tail_hash": "sha256:be6c951e8a7d606ab7bff0ed05730395f5dab2dad043395e150f3d845cc051dd",
+    "locally_acquired_holdout_assets": 0
+  },
+  "resolved_failures": [
+    {
+      "kind": "test-path-typo",
+      "observed": "The first focused invocation named nonexistent tests/unit/test_controller.py and collected zero tests.",
+      "resolution": "Use tests/unit/test_controller_contract.py; the corrected focused suite passed."
+    },
+    {
+      "kind": "dirty-source-precondition",
+      "observed": "A broad pre-commit suite passed 304 tests and failed two Stage 16 subprocess tests because those tests intentionally require a named clean frozen commit.",
+      "resolution": "After the instrumentation commit made the worktree clean, both exact Stage 16 subprocess regressions passed without code changes to their mechanism."
+    },
+    {
+      "kind": "stale-profile-schema-assertion",
+      "observed": "One integration assertion still expected the superseded v0.1 profile schema after profiler hardening.",
+      "resolution": "Update the assertion to v0.2; the corrected 45-test suite passed."
+    }
+  ],
+  "command_receipts": [
+    {
+      "status": "PASS",
+      "exit_code": 0,
+      "command": "C:/a/arc3-b001-28c7a00/Scripts/python.exe scripts/measure_hot_path.py --seed 25 --repetitions 7 --actions 8 --output C:/a/arc3-b001/artifacts/stage02/hot-path-overhead.json --work-root C:/a/arc3-b001/artifacts/stage02/hot-path-overhead-work"
+    },
+    {
+      "status": "PASS",
+      "exit_code": 0,
+      "command": "C:/a/arc3-b001-28c7a00/Scripts/python.exe -m scripts.evaluate_public --partition development --game-ids ar25-0c556536 --hot-path-profile --agents full --seeds 7 --max-actions 8 --max-resets 8 --timeout-seconds 120 --frozen-commit 8168168ea224add5b8e296ee892866d75f1ca0b7 --manifest docs/evaluation/public-game-partitions.v0.1.json --environments-dir C:/a/arc3-s15-6a0f6e5/artifacts/stage15/public-environments --recordings-dir C:/a/arc3-b001/recordings/stage02 --output-root C:/a/arc3-b001/artifacts/stage02/evaluations --exposure-ledger C:/a/arc3-b001/artifacts/stage02/public-exposure.jsonl --evaluation-id build001-stage02-ar25-seed7-profile --milestone-id build-001-stage02-hot-path-v0.1"
+    },
+    {
+      "status": "PASS",
+      "exit_code": 0,
+      "command": "C:/a/arc3-b001-28c7a00/Scripts/python.exe -m scripts.evaluate_public --verify C:/a/arc3-b001/artifacts/stage02/evaluations/build001-stage02-ar25-seed7-profile"
+    }
+  ]
+}

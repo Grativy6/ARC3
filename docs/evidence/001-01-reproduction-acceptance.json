@@ -1,0 +1,108 @@
+{
+  "schema": "arc3.build-001.stage-01-reproduction-acceptance.v0.1",
+  "status": "PASS",
+  "evidence_label": "local-public",
+  "completed_at": "2026-08-22T03:26:00.887132Z",
+  "classification": "REPRODUCED_FAILURE",
+  "claim_boundary": "One predeclared development-game failure reproduction is mechanism evidence only; it is not a benchmark, holdout result, or hidden-game generalization claim.",
+  "frozen_source": {
+    "git_commit": "75482a994c00123ddb3942663a2c521b710116c4",
+    "first_party_source_hash": "sha256:aefbb966091d54be81f3e892880fac6d54358590c7d6652b3d321b5c4a170c9f",
+    "identity_hash": "sha256:b37c7c125e05defde30320a722c0ea2843f06c7e220ff9030674e6dd26f2693a",
+    "config_hash": "sha256:53ddcfc0b35a469d74b7f5623fa81ce0c56218f3c5cb29ba2c870801f7ce2c7c",
+    "worktree_clean_before_run": true,
+    "production_policy_matches_build_000_stage_18": true,
+    "production_policy_changed_before_reproduction": false
+  },
+  "declaration": {
+    "predeclaration": "docs/evidence/001-01-reproduction-predeclaration.json",
+    "partition": "development",
+    "game_id": "ar25-0c556536",
+    "agent": "full",
+    "baseline_id": "B4",
+    "seed": 7,
+    "max_actions": 80,
+    "max_resets": 8,
+    "timeout_seconds": 120.0,
+    "environment_mode": "LOCAL",
+    "network_mode": "offline-evaluation",
+    "acquire_missing": false,
+    "public_partition_manifest_hash": "sha256:682d5891c2aface54803d9bd1173c55ed21e89856e13b8a478fb9276ee963f2f",
+    "asset_aggregate_sha256": "sha256:e796e615d2e10c93b849f9bf150308fbf84d624725deaf995d7ec2d1c2f86b22"
+  },
+  "result": {
+    "evaluation_id": "build001-stage01-ar25-seed7-full",
+    "run_id": "ar25-0c556536-B4-full-seed-7",
+    "terminal_status": "timeout",
+    "failure_kind": "wall_clock_timeout",
+    "wall_clock_seconds": 120.11965939996298,
+    "environment_actions": 21,
+    "resets": 0,
+    "levels_completed": 0,
+    "score": 0.0,
+    "scorecard_verified": false,
+    "trace_events": 617,
+    "trace_bytes": 1545054,
+    "trace_replay_verified": true,
+    "trace_manifest_hash": "sha256:2251e5061c981ba13fe2bd8378fd377bc76b71796e8321aca19e954322214770",
+    "trace_tail_event_hash": "sha256:66def4f7b84d567031904c71d933c5a52b80c7f9b3f76d053a637bcf05e26e12",
+    "run_receipt_hash": "sha256:57a2686c51d87bedb80647c3fd820d34ec2ac09e3ba9dd853c7b12549d8aae34"
+  },
+  "historical_comparison": {
+    "build_000_wall_clock_seconds": 120.110601900029,
+    "build_001_wall_clock_seconds": 120.11965939996298,
+    "wall_clock_delta_seconds": 0.009057499933987856,
+    "wall_clock_ratio": 1.0000754096623505,
+    "build_000_environment_actions": 19,
+    "build_001_environment_actions": 21,
+    "environment_action_delta": 2,
+    "environment_action_ratio": 1.105263157894737,
+    "both_zero_completed_levels": true,
+    "predeclared_wall_envelope_pass": true,
+    "predeclared_action_envelope_pass": true,
+    "timing_and_action_shape_reproduced": true
+  },
+  "raw_evidence": {
+    "directory": "C:/a/arc3-b001/artifacts/stage01/evaluations/build001-stage01-ar25-seed7-full",
+    "artifact_verifier": {
+      "verified": true,
+      "artifact_count": 56,
+      "run_count": 1,
+      "errors": []
+    },
+    "manifest_file_sha256": "sha256:684cccf4731cf9e6163e51f121438fed4ba496bc9e6986ccb61aa4155b3592b4",
+    "manifest_self_hash": "sha256:fdb5cb83a9c5b897f7795500f4df60727765340405db25b36b089518176cf23c",
+    "summary_file_sha256": "sha256:769d50937f5d2fb6d8a9fcc3c258960318d2a404dc0060ef601a050a3f2222e7",
+    "results_jsonl_sha256": "sha256:a06e788f17800f1e7da7acf00fd32496ed4cb070d920398b8f356f1d56bb7ee2",
+    "exposure_ledger_sha256": "sha256:25d86acbca2c4ab36945b602900f18b46ab7a6377e5a2b73c7053c202940fff8",
+    "exposure_event_count": 2,
+    "exposure_tail_sequence": 1,
+    "exposure_tail_hash": "sha256:2c90d788e08204c307ecf289c1c480b133adb2ec3a02a9c5f49952859d5ba827"
+  },
+  "holdout": {
+    "status": "SEALED_UNCONSUMED",
+    "selected_game_count": 0,
+    "gameplay_event_count": 0,
+    "locally_acquired_asset_count": 0
+  },
+  "command_receipts": [
+    {
+      "status": "RESOLVED_PRELAUNCH_FAILURE",
+      "exit_code": 1,
+      "gameplay_opened": false,
+      "failure": "The manually expanded expected short SHA was wrong; Git reported 75482a994c00123ddb3942663a2c521b710116c4 before the evaluator was invoked.",
+      "repair": "Use the exact value returned by git rev-parse HEAD."
+    },
+    {
+      "status": "EXPECTED_NONZERO_MECHANISM_RESULT",
+      "exit_code": 1,
+      "command": "C:/a/arc3-b001-28c7a00/Scripts/python.exe -m scripts.evaluate_public --partition development --game-ids ar25-0c556536 --agents full --seeds 7 --max-actions 80 --max-resets 8 --timeout-seconds 120 --frozen-commit 75482a994c00123ddb3942663a2c521b710116c4 --manifest docs/evaluation/public-game-partitions.v0.1.json --environments-dir C:/a/arc3-s15-6a0f6e5/artifacts/stage15/public-environments --recordings-dir C:/a/arc3-b001/recordings/stage01 --output-root C:/a/arc3-b001/artifacts/stage01/evaluations --exposure-ledger C:/a/arc3-b001/artifacts/stage01/public-exposure.jsonl --evaluation-id build001-stage01-ar25-seed7-full --milestone-id build-001-stage01-reproduction-v0.1",
+      "note": "The generic evaluator reports all-timeout runs as FAILED_INFRASTRUCTURE; Stage 01 classifies the verified timeout itself as the successfully reproduced target pathology."
+    },
+    {
+      "status": "PASS",
+      "exit_code": 0,
+      "command": "C:/a/arc3-b001-28c7a00/Scripts/python.exe -m scripts.evaluate_public --verify C:/a/arc3-b001/artifacts/stage01/evaluations/build001-stage01-ar25-seed7-full"
+    }
+  ]
+}

@@ -87,8 +87,9 @@ def test_planning_failed_prediction_emits_recovery_not_blind_continuation() -> N
 def test_planning_recovery_modes_cover_probe_undo_reopen_and_reset() -> None:
     problem, plan = _plan()
     probe = ActionRequest(ActionName.ACTION3)
+    restore = ActionRequest(ActionName.ACTION5)
     scenarios = (
-        ({"undo_supported": True}, RecoveryMode.SUPPORTED_UNDO, ActionName.ACTION7),
+        ({"restore_action": restore}, RecoveryMode.SUPPORTED_UNDO, ActionName.ACTION5),
         (
             {"models_disagree": True, "discriminating_probe": probe},
             RecoveryMode.DISCRIMINATING_PROBE,

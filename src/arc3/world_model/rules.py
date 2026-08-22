@@ -105,6 +105,22 @@ class MovementRule:
 
 
 @dataclass(frozen=True, slots=True)
+class NoOpRule:
+    """An action-scoped identity consequence, not a model-wide empty program."""
+
+    rule_id: str
+    action: ActionName
+    entity_id: str | None = None
+    entity_kind: str | None = None
+    conditions: tuple[RuleCondition, ...] = ()
+
+    def __post_init__(self) -> None:
+        _validate_rule(self.rule_id, self.conditions)
+        if self.entity_id is None and self.entity_kind is None:
+            raise WorldModelError("no-op rule requires an entity ID or kind")
+
+
+@dataclass(frozen=True, slots=True)
 class CollisionRule:
     rule_id: str
     moving_kind: str
@@ -218,6 +234,7 @@ class CoordinateEffectRule:
 
 type RulePrimitive = (
     MovementRule
+    | NoOpRule
     | CollisionRule
     | ToggleRule
     | TransformationRule
@@ -267,6 +284,8 @@ def execute_rules(
         before_id = current.state_id
         if isinstance(rule, MovementRule):
             current, new_effects = _move(current, rule, collisions, contacts)
+        elif isinstance(rule, NoOpRule):
+            new_effects = (RuleEffect("no_op", rule.action.value, "unchanged", "unchanged"),)
         elif isinstance(rule, ToggleRule):
             current, new_effects = _toggle(current, rule)
         elif isinstance(rule, TransformationRule):
@@ -331,8 +350,8 @@ def _move(
                 (
                     candidate
                     for candidate in collision_rules
-                    if candidate.moving_kind == entity.kind
-                    and candidate.obstacle_kind == obstacle.kind
+                    if _matches_entity_kind(entity, candidate.moving_kind)
+                    and _matches_entity_kind(obstacle, candidate.obstacle_kind)
                     and conditions_match(candidate.conditions, current)
                 ),
                 None,
@@ -368,6 +387,12 @@ def _move(
         current, contact_effects = _apply_contacts(current, moved, contact_rules)
         effects.extend(contact_effects)
     return current, tuple(effects)
+
+
+def _matches_entity_kind(entity: SymbolicEntity, expected: str) -> bool:
+    """Match either an interpreted kind or an anonymous palette-role identity."""
+
+    return entity.kind == expected or dict(entity.attributes).get("palette_role") == expected
 
 
 def _follow_attachments(
@@ -604,6 +629,7 @@ def _rule_order(rule: RulePrimitive) -> tuple[int, str]:
         SelectionRule: 0,
         AttachmentRule: 1,
         MovementRule: 2,
+        NoOpRule: 2,
         ToggleRule: 3,
         TransformationRule: 4,
         CounterRule: 5,
@@ -627,6 +653,7 @@ __all__ = [
     "CoordinateEffectRule",
     "CounterRule",
     "MovementRule",
+    "NoOpRule",
     "RuleCondition",
     "RuleEffect",
     "RuleExecution",

@@ -10,9 +10,9 @@ checkpoints exact state.
 
 **Build 000: PARTIAL.** The typed agent, deterministic evaluation system, trace/replay/checkpoint
 machinery, procedural environments, ablations, runtime profile, integrity checks, and offline
-Kaggle package candidate are implemented on `build/000-arc3-end-to-end`. Review remains in
-[draft PR #3](https://github.com/Grativy6/ARC3/pull/3); nothing has been merged, released, licensed,
-or submitted.
+Kaggle package candidate were implemented on `build/000-arc3-end-to-end` and merged by the owner
+through [PR #3](https://github.com/Grativy6/ARC3/pull/3). Build 001 local-public recovery is in
+progress on `build/001-local-public-recovery`; no release or official submission has occurred.
 
 “PARTIAL” describes the measured agent result, not missing evidence:
 
@@ -37,7 +37,7 @@ Requirements: Git, uv 0.12.5, and a uv-managed CPython 3.12.14 runtime.
 ```powershell
 git clone https://github.com/Grativy6/ARC3.git
 Set-Location ARC3
-git switch build/000-arc3-end-to-end
+git switch build/001-local-public-recovery
 uv sync --frozen --all-extras --dev --python 3.12.14
 uv run arc3 doctor
 uv run pytest -q
@@ -100,7 +100,8 @@ proof that every possible shortcut is absent.
 | [`docs/evidence/`](docs/evidence/) | Compact measured acceptance receipts |
 | [`docs/reports/`](docs/reports/) | Stage methods and reproduction commands |
 | [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md) | Complete locked dependency/license inventory |
-| [`docs/legal/candidates/MIT-0-CANDIDATE.md`](docs/legal/candidates/MIT-0-CANDIDATE.md) | Nonoperative owner-review candidate; no license granted |
+| [`LICENSE`](LICENSE) | Operative MIT-0 grant for ARC3 first-party source |
+| [`docs/legal/candidates/MIT-0-CANDIDATE.md`](docs/legal/candidates/MIT-0-CANDIDATE.md) | Preserved nonoperative pre-decision candidate |
 
 The repository-wide execution and integrity contract remains [`AGENTS.md`](AGENTS.md). The frozen
 bootstrap copy under `docs/reference/` is provenance, not a competing instruction set.
@@ -121,9 +122,10 @@ preserved. Packaging success does not revise gameplay results.
 
 ## Human gates
 
-Only Christopher D. Pang may accept competition terms, grant a public license, supply or disclose
-credentials, spend money, make an official submission, publish a release/DOI, communicate
-externally as the owner, or merge the draft PR. There is intentionally no root `LICENSE`.
+Christopher D. Pang explicitly approved MIT-0 for ARC3 first-party source on 2026-08-21. Only
+Christopher may accept competition terms, supply or disclose credentials, spend money, make an
+official submission, publish a release/DOI, communicate externally as the owner, or merge the
+draft PR.
 
 ## Authorship and claim boundary
 

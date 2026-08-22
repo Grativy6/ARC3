@@ -1,0 +1,65 @@
+{
+  "schema": "arc3.build-001.stage-07-premeasurement-audit.v0.1",
+  "status": "PASS_WITH_RESIDUALS",
+  "label": "synthetic",
+  "source_commit": "1cf1945c42bb7da42e63b423c4a986d72fd24ead",
+  "source_tree": "58d39af079a2d579aa435f5ac92a2a174fae27c7",
+  "official_measurement_started": false,
+  "public_gameplay_started": false,
+  "holdout_status": "SEALED_UNCONSUMED",
+  "frozen_contract": {
+    "predeclaration_sha256": "sha256:d4eb82f2e0c04e1c94be4d6fbaa8862aa808cc07932042a02d0c5fbcc02dc608",
+    "amendment_sha256": "sha256:5c8ff0c91602d86ecaadd61197dfb80681f618ad4e6c810c26933ca337fdcc3b",
+    "false_rule_manifest_sha256": "sha256:ffd4c2f71647ace31095e4f1727eb45cd44865a130cf04fb273d8ee2b67d7f08",
+    "matrix_cells": 280,
+    "microbenchmark_cells": 60
+  },
+  "failed_preflight": {
+    "classification": "FAILED_MECHANISM",
+    "mechanism": "PRE_TRIGGER checkpointing with production memory enabled for the reused Stage 06 cell",
+    "observed_result": "checkpoint_valid=false after one approximately 50.26-second test",
+    "original_stdout_preserved": false,
+    "preserved_work_root": "C:/a/arc3-b001/pytest-stage07-audit-20260822c",
+    "preserved_file_count": 57,
+    "preserved_bytes": 5074716,
+    "preserved_inventory_hash": "sha256:7166ea6c9d0be44530bd50d15aea28cddbaf3f68b4ca1aec001331bbf6054631",
+    "checkpoint_file_count": 39,
+    "checkpoint_bytes": 3448862,
+    "evidence_limitation": "The exploratory worker did not preserve its exact original stdout or command receipt; the durable directory inventory and failure classification are preserved without promoting the timing narrative into benchmark evidence."
+  },
+  "accepted_replacement": {
+    "mechanism": "one content-addressed terminal checkpoint with exact typed restore",
+    "policy_semantics_changed": false,
+    "official_harness_commit": "1cf1945c42bb7da42e63b423c4a986d72fd24ead",
+    "focused_harness_tests": "PASS:69/69",
+    "expanded_stage07_tests": "PASS:139/139",
+    "all_mode_controller_adapter_tests": "PASS:48/48",
+    "typed_artifact_and_asset_repair_tests": "PASS:87/87",
+    "ruff": "PASS",
+    "ruff_format": "PASS",
+    "mypy_strict_touched_source": "PASS"
+  },
+  "resolved_findings": [
+    "restored prediction authority omitted action, decision, and mechanics-epoch binding",
+    "cache access ordinals and trigger generations were not derived exactly from immutable receipt order",
+    "retrodiction profiling excluded plan and commit and NONE/RECENT full-audit semantics drifted",
+    "Build 001 holdout manifest binding was not recognized by the integrity scanner",
+    "initial C-cell checkpoint strategy made valid rows ineligible",
+    "cache-hit attribution used aggregate rather than retrodiction-phase counters",
+    "cached parity was self-roundtrip rather than paired FULL parity",
+    "official filesystem paths and source ancestry were not all fail-closed",
+    "per-cell resource and verification failures could retain a replacement decision",
+    "artifact receipts were asserted rather than reconstructed for every mode",
+    "development environment bytes were recorded but not frozen across all D cells"
+  ],
+  "open_residuals": [
+    "an in-process third-party call that never returns requires process-level supervision",
+    "a coherent trace-plus-checkpoint rewrite can forge a no-longer-current historical candidate rank until rank is derived from a prefix hypothesis-event fold"
+  ],
+  "official_targets": {
+    "result": "ABSENT:C:/a/arc3-b001/artifacts/stage07/retrodiction-decision-attempt-01.json",
+    "work_root": "ABSENT:C:/a/arc3-b001/artifacts/stage07/retrodiction-decision-work-attempt-01",
+    "exposure_ledger": "ABSENT:C:/a/arc3-b001/artifacts/stage07/public-exposure.jsonl",
+    "recordings": "ABSENT:C:/a/arc3-b001/artifacts/stage07/development-recordings"
+  }
+}

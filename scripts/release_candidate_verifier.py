@@ -2021,12 +2021,24 @@ def run_release_verification(
     results.append(package_result)
     prior[package_result.check_id] = package_result
 
+    verified_license_status: str | None = None
+    verified_license_sha256: str | None = None
     if prior["competition-integrity"].status == "PASS":
         try:
             integrity = _verified_self_hashed_object(
                 output_root / "integrity-receipt.json", hash_field=RECEIPT_HASH_FIELD
             )
             integrity_passed = integrity.get("passed") is True
+            license_summary = integrity.get("license_summary")
+            if isinstance(license_summary, dict):
+                raw_license_status = license_summary.get("first_party_license_status")
+                if isinstance(raw_license_status, str):
+                    verified_license_status = raw_license_status
+            source_hashes = integrity.get("source_hashes")
+            if isinstance(source_hashes, dict):
+                raw_license_sha256 = source_hashes.get("LICENSE")
+                if isinstance(raw_license_sha256, str):
+                    verified_license_sha256 = raw_license_sha256
             integrity_result = internal_result(
                 "integrity-receipt-validation",
                 "integrity",
@@ -2034,6 +2046,8 @@ def run_release_verification(
                 reason=None if integrity_passed else "integrity receipt did not pass",
                 details={
                     "finding_count": integrity.get("finding_count"),
+                    "first_party_license_status": verified_license_status,
+                    "first_party_license_sha256": verified_license_sha256,
                     "passed": integrity.get("passed"),
                     "schema": integrity.get("schema"),
                 },
@@ -2166,7 +2180,9 @@ def run_release_verification(
         "claim": "NO_GENERALIZATION_CLAIM",
         "completed_at": completed_at,
         "human_gates": {
-            "license_granted": False,
+            "license_granted": verified_license_status == "MIT-0",
+            "license_expression": verified_license_status,
+            "license_sha256": verified_license_sha256,
             "official_submission_performed": False,
             "terms_accepted_by_verifier": False,
         },

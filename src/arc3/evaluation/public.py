@@ -21,7 +21,10 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Protocol, cast
+from typing import TYPE_CHECKING, Any, Protocol, cast
+
+if TYPE_CHECKING:
+    from arc3.profiling.hot_path import HotPathProfiler
 
 from arc3.adapters import (
     EnvironmentDescriptor,
@@ -312,6 +315,10 @@ class PublicEvaluationConfig:
     agents: tuple[str, ...]
     seeds: tuple[int, ...]
     frozen_commit: str
+    game_ids: tuple[str, ...] | None = None
+    hot_path_profile: bool = False
+    python_allocation_tracing: bool = True
+    automatic_checkpointing: bool = True
     max_actions: int = FROZEN_COMPETITION_RUNTIME.max_actions
     max_resets: int = FROZEN_COMPETITION_RUNTIME.max_resets
     # Stage 15 public development is a predeclared 120-second measurement
@@ -359,6 +366,32 @@ class PublicEvaluationConfig:
             raise ValueError("frozen_commit must be a lowercase hexadecimal commit identity")
         if not self.milestone_id.strip():
             raise ValueError("milestone_id must not be empty")
+        if self.game_ids is not None:
+            if not self.game_ids or len(set(self.game_ids)) != len(self.game_ids):
+                raise ValueError("game_ids must be non-empty and unique when supplied")
+            if any(not game_id or game_id != game_id.strip() for game_id in self.game_ids):
+                raise ValueError("game_ids must contain non-empty normalized identifiers")
+            if self.partition == "public-holdout":
+                raise ValueError("public holdout evaluation cannot select a subset of games")
+        if not isinstance(self.hot_path_profile, bool):
+            raise ValueError("hot_path_profile must be boolean")
+        if not isinstance(self.python_allocation_tracing, bool):
+            raise ValueError("python_allocation_tracing must be boolean")
+        if not isinstance(self.automatic_checkpointing, bool):
+            raise ValueError("automatic_checkpointing must be boolean")
+        if self.partition == "public-holdout" and self.hot_path_profile:
+            raise ValueError("public holdout evaluation cannot enable diagnostic profiling")
+        if self.hot_path_profile and self.agents != ("full",):
+            raise ValueError("diagnostic profiling requires the FULL policy only")
+        diagnostic_intervention = (
+            not self.python_allocation_tracing or not self.automatic_checkpointing
+        )
+        if diagnostic_intervention and self.partition == "public-holdout":
+            raise ValueError("public holdout evaluation cannot enable diagnostic interventions")
+        if diagnostic_intervention and self.agents != ("full",):
+            raise ValueError("diagnostic interventions require the FULL policy only")
+        if diagnostic_intervention and not self.hot_path_profile:
+            raise ValueError("diagnostic interventions require hot-path profiling")
         if self.evaluation_id is not None and (
             not self.evaluation_id
             or any(
@@ -371,6 +404,10 @@ class PublicEvaluationConfig:
     def declaration(self) -> dict[str, object]:
         return {
             "partition": self.partition,
+            "game_ids": list(self.game_ids) if self.game_ids is not None else None,
+            "hot_path_profile": self.hot_path_profile,
+            "python_allocation_tracing": self.python_allocation_tracing,
+            "automatic_checkpointing": self.automatic_checkpointing,
             "agents": list(self.agents),
             "seeds": list(self.seeds),
             "max_actions": self.max_actions,
@@ -394,6 +431,20 @@ class PublicEvaluationConfig:
                 else None
             ),
         }
+
+    def selected_games(self, manifest: PublicPartitionManifest) -> tuple[PublicGameEntry, ...]:
+        """Resolve a declared development/smoke subset without changing the manifest."""
+
+        partition_games = manifest.games(self.partition)
+        if self.game_ids is None:
+            return partition_games
+        by_id = {entry.game_id: entry for entry in partition_games}
+        missing = [game_id for game_id in self.game_ids if game_id not in by_id]
+        if missing:
+            raise EvaluationError(
+                f"selected games are outside partition {self.partition}: {missing}"
+            )
+        return tuple(by_id[game_id] for game_id in self.game_ids)
 
     @property
     def surface(self) -> str:
@@ -487,7 +538,7 @@ def validate_public_gate(
     """Enforce source freeze and the one-shot public-holdout boundary."""
 
     validate_frozen_source(config.frozen_commit)
-    selected = manifest.games(config.partition)
+    selected = config.selected_games(manifest)
     if not selected:
         raise EvaluationError("selected public partition is empty")
     if config.partition != "public-holdout":
@@ -843,6 +894,7 @@ def run_public_episode(
     max_actions: int,
     max_resets: int,
     trace_sink: BaselineTraceSink | None = None,
+    hot_path_profiler: HotPathProfiler | None = None,
 ) -> tuple[ScoreSummary | None, dict[str, object]]:
     """Execute one normalized official session with no game-specific behavior."""
 
@@ -878,20 +930,32 @@ def run_public_episode(
         if trace_sink is not None:
             trace_sink.record_submitted(before, action)
         try:
-            observation = session.step(
-                action,
-                reasoning={
-                    "category": "stage15-local-public",
-                    "summary": "generic typed policy selection; no game-specific rule",
-                },
-            )
+            if hot_path_profiler is not None and hot_path_profiler.enabled:
+                with hot_path_profiler.span("environment_step"):
+                    observation = session.step(
+                        action,
+                        reasoning={
+                            "category": "stage15-local-public",
+                            "summary": "generic typed policy selection; no game-specific rule",
+                        },
+                    )
+            else:
+                observation = session.step(
+                    action,
+                    reasoning={
+                        "category": "stage15-local-public",
+                        "summary": "generic typed policy selection; no game-specific rule",
+                    },
+                )
         except Exception:
             invalid_actions += 1
             raise
-        policy.accept_consequence(observation)
         if trace_sink is not None:
             trace_sink.record_consequence(before, action, observation)
             trace_sink.record_observation(observation)
+        # The returned environment receipt is an authority boundary. Preserve it
+        # before any derived policy fold that can fail.
+        policy.accept_consequence(observation)
         if action.name is ActionName.RESET:
             resets += 1
         else:
@@ -913,7 +977,13 @@ def run_public_episode(
             first_progress = time.perf_counter() - started
             actions_to_first_level = actions
         state_visits.append(f"{observation.state.value}:{after_hash}")
-    scorecard = session.close()
+        if hot_path_profiler is not None:
+            hot_path_profiler.boundary("episode_action", actions=actions)
+    if hot_path_profiler is not None and hot_path_profiler.enabled:
+        with hot_path_profiler.span("finalize"):
+            scorecard = session.close()
+    else:
+        scorecard = session.close()
     unique_states = len(set(state_visits))
     metrics: dict[str, object] = {
         "environment_actions": actions,

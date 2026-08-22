@@ -24,6 +24,7 @@ def _initialize_fixture_git(root: Path) -> None:
             "--",
             "agent",
             "docs",
+            "LICENSE",
             "uv.lock",
             "pyproject.toml",
             "upstream.lock.json",

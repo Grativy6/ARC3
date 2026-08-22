@@ -56,6 +56,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--partition", choices=("smoke", "development", "public-holdout"), default="smoke"
     )
     parser.add_argument(
+        "--game-ids",
+        type=_csv_strings,
+        help="optional ordered subset of the selected smoke/development partition",
+    )
+    parser.add_argument(
         "--agents",
         type=_csv_strings,
         default=("random", "cycle", "novelty", "trace", "full"),
@@ -64,6 +69,19 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--max-actions", type=int, default=80)
     parser.add_argument("--max-resets", type=int, default=8)
     parser.add_argument("--timeout-seconds", type=float, default=120.0)
+    parser.add_argument("--hot-path-profile", action="store_true")
+    parser.add_argument(
+        "--python-allocation-tracing",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="diagnostic Python allocation tracing (enabled by default)",
+    )
+    parser.add_argument(
+        "--automatic-checkpointing",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="FULL-controller automatic checkpoints (enabled by default)",
+    )
     parser.add_argument("--frozen-commit")
     parser.add_argument(
         "--manifest", type=Path, default=Path("docs/evaluation/public-game-partitions.v0.1.json")
@@ -132,6 +150,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         outcome = run_public_evaluation(
             PublicEvaluationConfig(
                 partition=args.partition,
+                game_ids=args.game_ids,
+                hot_path_profile=args.hot_path_profile,
+                python_allocation_tracing=args.python_allocation_tracing,
+                automatic_checkpointing=args.automatic_checkpointing,
                 agents=args.agents,
                 seeds=args.seeds,
                 frozen_commit=frozen_commit,

@@ -7,17 +7,20 @@ import json
 import multiprocessing
 import os
 import shlex
+import socket
 import subprocess
 import sys
 import time
 import tracemalloc
 import uuid
+from contextlib import nullcontext
 from pathlib import Path
 from typing import Any, cast
 
 from arc3.adapters.arc_agi import ARC_AGI_VERSION, ARCENGINE_VERSION, ArcAGIAdapter
 from arc3.config import ARC3Config
 from arc3.errors import EvaluationError, TraceError
+from arc3.profiling.runtime import process_memory_sample
 from arc3.trace import BaselineTraceSink, CodeIdentity, EventJournal, SourceIdentity
 from arc3.types import EnvironmentMode, EvaluationSurface
 
@@ -40,6 +43,7 @@ from .public import (
     LocalAssetIdentity,
     PublicEvaluationConfig,
     PublicExposureLedger,
+    PublicGameEntry,
     PublicPartitionManifest,
     _first_party_source_hash,
     _hardware,
@@ -57,6 +61,8 @@ from .public import (
 )
 
 _TERMINAL_STATUSES = frozenset({"PASS", "PARTIAL", "FAILED_INFRASTRUCTURE"})
+_PUBLIC_SUMMARY_SCHEMA = "arc3.public-evaluation.summary.v0.2"
+_LEGACY_PUBLIC_SUMMARY_SCHEMA = "arc3.public-evaluation.summary.v0.1"
 
 
 def _as_int(value: object, *, field: str) -> int:
@@ -86,7 +92,7 @@ def _identity(
 ) -> dict[str, object]:
     root = Path(__file__).resolve().parents[3]
     lock = root / "upstream.lock.json"
-    selected = manifest.games(config.partition)
+    selected = config.selected_games(manifest)
     declaration = config.declaration()
     identity: dict[str, object] = {
         "git_commit": config.frozen_commit,
@@ -129,7 +135,9 @@ def _specifications(
     identity: dict[str, object],
 ) -> list[dict[str, object]]:
     specifications: list[dict[str, object]] = []
-    for entry in manifest.games(config.partition):
+    raw_assets = identity.get("asset_identities")
+    asset_identities = raw_assets if isinstance(raw_assets, dict) else {}
+    for entry in config.selected_games(manifest):
         for agent in config.agents:
             for seed in config.seeds:
                 specification: dict[str, object] = {
@@ -144,9 +152,17 @@ def _specifications(
                     "max_actions": config.max_actions,
                     "max_resets": config.max_resets,
                     "timeout_seconds": config.timeout_seconds,
+                    "hot_path_profile": config.hot_path_profile,
+                    "python_allocation_tracing": config.python_allocation_tracing,
+                    "automatic_checkpointing": config.automatic_checkpointing,
                     "surface": config.surface,
                     "network_mode": config.network_mode,
                     "identity_hash": identity["identity_hash"],
+                    "asset_aggregate_sha256_before": (
+                        expected_asset.get("aggregate_sha256")
+                        if isinstance((expected_asset := asset_identities.get(entry.game_id)), dict)
+                        else None
+                    ),
                 }
                 specification["run_spec_hash"] = sha256_bytes(canonical_json_bytes(specification))
                 specifications.append(specification)
@@ -180,8 +196,47 @@ def _empty_metrics() -> dict[str, object]:
         "state_revisitation_rate": 0.0,
         "decision_latency_seconds": {"p50": None, "p95": None, "p99": None},
         "total_wall_clock_seconds": 0.0,
+        "total_cpu_seconds": None,
         "peak_python_allocation_bytes": None,
+        "process_memory_before": None,
+        "process_memory_after": None,
+        "peak_rss_bytes": None,
+        "network_attempt_count": None,
+        "policy_close_status": "not-opened",
+        "session_close_status": "not-opened",
+        "journal_close_status": "not-opened",
         "fault_count": 1,
+    }
+
+
+def _asset_identity_check(
+    specification: dict[str, object],
+    asset_identity_after: dict[str, object] | None,
+) -> dict[str, object]:
+    """Project the local asset boundary without converting drift into success."""
+
+    expected = specification.get("asset_aggregate_sha256_before")
+    observed = (
+        asset_identity_after.get("aggregate_sha256")
+        if isinstance(asset_identity_after, dict)
+        else None
+    )
+    if specification.get("surface") == "online-public":
+        status = "not-applicable"
+    elif not isinstance(observed, str):
+        status = "unavailable"
+    elif not isinstance(expected, str):
+        status = "recorded-uncompared"
+    elif observed == expected:
+        status = "matched"
+    else:
+        status = "changed"
+    return {
+        "schema": "arc3.evaluation.asset-boundary-check.v0.1",
+        "status": status,
+        "expected_aggregate_sha256": expected if isinstance(expected, str) else None,
+        "observed_aggregate_sha256": observed if isinstance(observed, str) else None,
+        "integrity_failure": status in {"changed", "unavailable"},
     }
 
 
@@ -196,12 +251,30 @@ def _failure_result(
     metrics: dict[str, object] | None = None,
     trace: dict[str, object] | None = None,
     asset_identity_after: dict[str, object] | None = None,
+    recovered_score: dict[str, object] | None = None,
 ) -> dict[str, Any]:
     expected_surface = (
         EvaluationSurface.ONLINE_PUBLIC
         if specification.get("surface") == "online-public"
         else EvaluationSurface.LOCAL_PUBLIC
     )
+    resolved_metrics = metrics or _empty_metrics()
+    if "python_allocation_tracing" in specification:
+        resolved_metrics["python_allocation_tracing_enabled"] = specification[
+            "python_allocation_tracing"
+        ]
+    if "automatic_checkpointing" in specification:
+        resolved_metrics["automatic_checkpointing_enabled"] = specification[
+            "automatic_checkpointing"
+        ]
+    if specification.get("hot_path_profile") is True and not isinstance(
+        resolved_metrics.get("hot_path_profile"), dict
+    ):
+        resolved_metrics["hot_path_profile"] = {
+            "enabled": False,
+            "reason": kind,
+            "schema": "arc3.hot-path-profile-unavailable.v0.1",
+        }
     return seal_object(
         {
             "schema": PUBLIC_RUN_SCHEMA,
@@ -214,18 +287,34 @@ def _failure_result(
             "seed": specification["seed"],
             "surface": specification["surface"],
             "partition": specification["partition"],
+            **(
+                {
+                    "python_allocation_tracing": specification["python_allocation_tracing"],
+                    "automatic_checkpointing": specification["automatic_checkpointing"],
+                }
+                if "python_allocation_tracing" in specification
+                and "automatic_checkpointing" in specification
+                else {}
+            ),
             "status": status,
             "started_at": started_at,
             "completed_at": _utc_now(),
             "identity_hash": identity["identity_hash"],
-            "score": _score_payload(None, expected_surface=expected_surface),
-            "metrics": metrics or _empty_metrics(),
+            "score": recovered_score
+            if recovered_score is not None
+            else _score_payload(None, expected_surface=expected_surface),
+            "metrics": resolved_metrics,
             "trace": trace,
             "asset_identity_after": asset_identity_after,
+            "asset_identity_check": _asset_identity_check(specification, asset_identity_after),
             "asset_identity_after_reason": (
                 "official ONLINE mode evaluates remotely and does not download game source"
                 if specification.get("surface") == "online-public"
-                else "asset identity is frozen in the evaluation manifest"
+                else (
+                    "local asset bytes were rehashed after the terminal or failure boundary"
+                    if asset_identity_after is not None
+                    else "local asset identity was unavailable after the boundary"
+                )
             ),
             "environment_transport": specification.get("network_mode"),
             "failure": {"kind": kind, "message": message[:500]},
@@ -265,12 +354,12 @@ def _salvage_trace(
     return trace, metrics
 
 
-def _holdout_asset_after(
+def _local_asset_after(
     manifest: PublicPartitionManifest,
     config: PublicEvaluationConfig,
     game_id: str,
 ) -> dict[str, object] | None:
-    if config.partition != "public-holdout":
+    if config.surface == "online-public":
         return None
     entry = next(
         (item for item in manifest.games(config.partition) if item.game_id == game_id), None
@@ -284,9 +373,83 @@ def _holdout_asset_after(
     return identity.to_dict() if identity is not None else None
 
 
+def _worker_asset_after(spec: dict[str, Any]) -> dict[str, object] | None:
+    """Hash the selected local asset without inspecting its semantic source."""
+
+    specification = cast(dict[str, object], spec["specification"])
+    if specification.get("surface") == "online-public":
+        return None
+    game_id = str(specification["game_id"])
+    stable_name = str(specification["stable_name"])
+    entry = PublicGameEntry(
+        game_id=game_id,
+        stable_name=stable_name,
+        assignment_hash="worker-content-identity-only",
+        partition=str(specification["partition"]),
+        exposure="worker-content-identity-only",
+    )
+    identity = local_asset_identity(str(spec["environments_dir"]), entry)
+    if identity is None:
+        raise EvaluationError("local asset identity is unavailable after the run boundary")
+    return identity.to_dict()
+
+
+class _OfflineSocketGuard:
+    """Count and deny process-local socket entry points during local evaluation."""
+
+    def __init__(self, *, enabled: bool) -> None:
+        self.enabled = enabled
+        self.attempt_count = 0
+        self._originals: dict[tuple[object, str], object] = {}
+
+    def install(self) -> None:
+        if not self.enabled or self._originals:
+            return
+
+        def deny(*_args: object, **_kwargs: object) -> Any:
+            self.attempt_count += 1
+            raise EvaluationError("offline local evaluation blocked a network attempt")
+
+        try:
+            for owner, name in (
+                (socket, "create_connection"),
+                (socket, "getaddrinfo"),
+                (socket.socket, "connect"),
+                (socket.socket, "connect_ex"),
+                (socket.socket, "sendto"),
+            ):
+                self._originals[(owner, name)] = getattr(owner, name)
+                setattr(owner, name, deny)
+        except Exception:
+            self.restore()
+            raise
+
+    def restore(self) -> None:
+        for (owner, name), original in self._originals.items():
+            setattr(owner, name, original)
+        self._originals.clear()
+
+
 def _worker(spec: dict[str, Any], receipt_path: str) -> None:
+    specification = cast(dict[str, object], spec["specification"])
+    network_guard = _OfflineSocketGuard(enabled=specification.get("surface") != "online-public")
+    network_guard.install()
+    try:
+        _worker_body(spec, receipt_path, network_guard=network_guard)
+    finally:
+        network_guard.restore()
+
+
+def _worker_body(
+    spec: dict[str, Any],
+    receipt_path: str,
+    *,
+    network_guard: _OfflineSocketGuard,
+) -> None:
     started_at = _utc_now()
     started = time.perf_counter()
+    cpu_started = time.process_time()
+    memory_before = process_memory_sample()
     specification = cast(dict[str, object], spec["specification"])
     identity = cast(dict[str, object], spec["identity"])
     run_id = str(specification["run_id"])
@@ -297,30 +460,47 @@ def _worker(spec: dict[str, Any], receipt_path: str) -> None:
     journal: EventJournal | None = None
     trace: dict[str, object] | None = None
     metrics = _empty_metrics()
+    hot_path_profiler = None
+    python_allocation_tracing = specification.get("python_allocation_tracing", True) is True
+    automatic_checkpointing = specification.get("automatic_checkpointing", True) is True
     caught: Exception | None = None
     scorecard = None
     score_payload: dict[str, object] | None = None
     asset_identity_after: dict[str, object] | None = None
-    tracemalloc.start()
+    close_status = {
+        "policy_close_status": "not-opened",
+        "session_close_status": "not-opened",
+        "journal_close_status": "not-opened",
+    }
+    if python_allocation_tracing:
+        tracemalloc.start()
     try:
+        if specification.get("hot_path_profile") is True:
+            from arc3.profiling.hot_path import HotPathProfiler
+
+            hot_path_profiler = HotPathProfiler()
         surface = str(specification["surface"])
         online_one_shot = surface == "online-public"
-        adapter = ArcAGIAdapter(
-            ARC3Config.for_mode(
-                EnvironmentMode.ONLINE if online_one_shot else EnvironmentMode.LOCAL,
+        startup_span = (
+            hot_path_profiler.span("startup") if hot_path_profiler is not None else nullcontext()
+        )
+        with startup_span:
+            adapter = ArcAGIAdapter(
+                ARC3Config.for_mode(
+                    EnvironmentMode.ONLINE if online_one_shot else EnvironmentMode.LOCAL,
+                    seed=_as_int(specification["seed"], field="seed"),
+                    network_enabled=online_one_shot,
+                ),
+                environments_dir=str(spec["environments_dir"]),
+                recordings_dir=str(spec["recordings_dir"]),
+                save_recording=True,
+                include_frame_data=True,
+                environ={},
+            )
+            session = adapter.open(
+                str(specification["game_id"]),
                 seed=_as_int(specification["seed"], field="seed"),
-                network_enabled=online_one_shot,
-            ),
-            environments_dir=str(spec["environments_dir"]),
-            recordings_dir=str(spec["recordings_dir"]),
-            save_recording=True,
-            include_frame_data=True,
-            environ={},
-        )
-        session = adapter.open(
-            str(specification["game_id"]),
-            seed=_as_int(specification["seed"], field="seed"),
-        )
+            )
         if str(session.observation.game_id) != str(specification["game_id"]):
             raise EvaluationError(
                 "official initial observation game identity does not match the run declaration"
@@ -330,7 +510,11 @@ def _worker(spec: dict[str, Any], receipt_path: str) -> None:
             agent,
             seed=_as_int(specification["seed"], field="seed"),
             run_context=cast(Any, _run_context(spec)) if agent == "full" else None,
+            hot_path_profiler=hot_path_profiler,
+            automatic_checkpointing=automatic_checkpointing,
         )
+        if policy.manages_trace:
+            close_status["journal_close_status"] = "policy-managed-pending"
         sink: BaselineTraceSink | None = None
         if not policy.manages_trace:
             journal = EventJournal(trace_path, run_id=run_id)
@@ -358,43 +542,126 @@ def _worker(spec: dict[str, Any], receipt_path: str) -> None:
             max_actions=_as_int(specification["max_actions"], field="max_actions"),
             max_resets=_as_int(specification["max_resets"], field="max_resets"),
             trace_sink=sink,
+            hot_path_profiler=hot_path_profiler,
         )
     except Exception as error:
         caught = error
     finally:
         if policy is not None:
             try:
-                policy.close()
+                finalize_span = (
+                    hot_path_profiler.span("finalize")
+                    if hot_path_profiler is not None
+                    else nullcontext()
+                )
+                with finalize_span:
+                    policy.close()
+                close_status["policy_close_status"] = "closed"
+                if policy.manages_trace:
+                    close_status["journal_close_status"] = "closed-by-policy"
             except Exception as error:
+                close_status["policy_close_status"] = f"failed:{type(error).__name__}"
+                if policy.manages_trace:
+                    close_status["journal_close_status"] = (
+                        f"policy-close-failed:{type(error).__name__}"
+                    )
                 caught = caught or error
         if session is not None and scorecard is None:
             try:
-                scorecard = session.close()
+                finalize_span = (
+                    hot_path_profiler.span("finalize")
+                    if hot_path_profiler is not None
+                    else nullcontext()
+                )
+                with finalize_span:
+                    scorecard = session.close()
+                close_status["session_close_status"] = "closed"
             except Exception as error:
+                close_status["session_close_status"] = f"failed:{type(error).__name__}"
                 caught = caught or error
+        elif session is not None:
+            close_status["session_close_status"] = "closed-by-episode-runner"
         if journal is not None:
             try:
-                journal.close()
+                trace_span = (
+                    hot_path_profiler.span("trace_serialization")
+                    if hot_path_profiler is not None
+                    else nullcontext()
+                )
+                with trace_span:
+                    journal.close()
+                close_status["journal_close_status"] = "closed"
             except Exception as error:
+                close_status["journal_close_status"] = f"failed:{type(error).__name__}"
                 caught = caught or error
         try:
             if trace_path.is_dir():
-                trace = _trace_receipt(trace_path, run_id=run_id, relative_path=trace_relative)
+                trace_span = (
+                    hot_path_profiler.span("trace_serialization")
+                    if hot_path_profiler is not None
+                    else nullcontext()
+                )
+                with trace_span:
+                    trace = _trace_receipt(
+                        trace_path,
+                        run_id=run_id,
+                        relative_path=trace_relative,
+                    )
         except (OSError, TraceError, ValueError) as error:
             caught = caught or error
-        _current, peak = tracemalloc.get_traced_memory()
-        tracemalloc.stop()
+        try:
+            asset_identity_after = _worker_asset_after(spec)
+            expected_asset_hash = specification.get("asset_aggregate_sha256_before")
+            if (
+                isinstance(expected_asset_hash, str)
+                and asset_identity_after is not None
+                and asset_identity_after.get("aggregate_sha256") != expected_asset_hash
+            ):
+                raise EvaluationError("local asset identity changed during the run")
+        except (EvaluationError, OSError) as error:
+            caught = caught or error
+        telemetry_span = (
+            hot_path_profiler.span("profiler_telemetry")
+            if hot_path_profiler is not None
+            else nullcontext()
+        )
+        peak: int | None
+        with telemetry_span:
+            if python_allocation_tracing:
+                _current, peak = tracemalloc.get_traced_memory()
+                tracemalloc.stop()
+            else:
+                peak = None
         metrics["peak_python_allocation_bytes"] = peak
+        metrics["python_allocation_tracing_enabled"] = python_allocation_tracing
+        metrics["automatic_checkpointing_enabled"] = automatic_checkpointing
         metrics["total_wall_clock_seconds"] = time.perf_counter() - started
+        metrics["total_cpu_seconds"] = time.process_time() - cpu_started
+        memory_after = process_memory_sample()
+        metrics["process_memory_before"] = memory_before
+        metrics["process_memory_after"] = memory_after
+        metrics["peak_rss_bytes"] = memory_after.get("peak_rss_bytes")
+        metrics["network_attempt_count"] = (
+            network_guard.attempt_count if network_guard.enabled else None
+        )
+        metrics.update(close_status)
+        if hot_path_profiler is not None:
+            metrics["hot_path_profile"] = hot_path_profiler.summary()
         if trace is not None:
             counts_value = trace.get("event_type_counts")
             counts = counts_value if isinstance(counts_value, dict) else {}
-            metrics["fault_count"] = int(counts.get("run.environment_fault", 0))
+            metrics["environment_actions"] = _as_int(
+                trace["environment_action_count"], field="environment_action_count"
+            )
+            metrics["resets"] = _as_int(trace["reset_count"], field="reset_count")
+            metrics["fault_count"] = max(
+                int(counts.get("run.environment_fault", 0)), int(caught is not None)
+            )
             consequences = int(cast(int, trace["consequence_count"]))
             metrics["trace_bytes_per_action"] = (
                 int(cast(int, trace["byte_length"])) / consequences if consequences else None
             )
-        if scorecard is not None and caught is None:
+        if scorecard is not None:
             try:
                 expected_surface = (
                     EvaluationSurface.ONLINE_PUBLIC
@@ -407,7 +674,9 @@ def _worker(spec: dict[str, Any], receipt_path: str) -> None:
                     expected_surface=expected_surface,
                 )
             except EvaluationError as error:
-                caught = error
+                caught = caught or error
+        if caught is not None:
+            metrics["fault_count"] = max(1, int(cast(int, metrics["fault_count"])))
     if caught is not None or scorecard is None or score_payload is None:
         result = _failure_result(
             specification,
@@ -423,6 +692,7 @@ def _worker(spec: dict[str, Any], receipt_path: str) -> None:
             metrics=metrics,
             trace=trace,
             asset_identity_after=asset_identity_after,
+            recovered_score=score_payload,
         )
     else:
         result = seal_object(
@@ -437,6 +707,8 @@ def _worker(spec: dict[str, Any], receipt_path: str) -> None:
                 "seed": specification["seed"],
                 "surface": specification["surface"],
                 "partition": specification["partition"],
+                "python_allocation_tracing": python_allocation_tracing,
+                "automatic_checkpointing": automatic_checkpointing,
                 "status": "success",
                 "started_at": started_at,
                 "completed_at": _utc_now(),
@@ -445,11 +717,12 @@ def _worker(spec: dict[str, Any], receipt_path: str) -> None:
                 "metrics": metrics,
                 "trace": trace,
                 "asset_identity_after": asset_identity_after,
+                "asset_identity_check": _asset_identity_check(specification, asset_identity_after),
                 "environment_transport": specification["network_mode"],
                 "asset_identity_after_reason": (
                     "official ONLINE mode evaluates remotely and does not download game source"
                     if specification["surface"] == "online-public"
-                    else "asset identity is frozen in the evaluation manifest"
+                    else "local asset bytes were rehashed after the terminal boundary"
                 ),
                 "failure": None,
             },
@@ -484,6 +757,117 @@ def _receipt_valid(
     metrics = receipt.get("metrics")
     if not isinstance(score, dict) or not isinstance(metrics, dict):
         return False
+    score_verified = score.get("verified")
+    if not isinstance(score_verified, bool):
+        return False
+    if score_verified:
+        if score.get("official_run_game_id") != specification.get("game_id"):
+            return False
+    elif score.get("official_run_game_id") is not None:
+        return False
+    for field, metric_field in (
+        ("python_allocation_tracing", "python_allocation_tracing_enabled"),
+        ("automatic_checkpointing", "automatic_checkpointing_enabled"),
+    ):
+        if field in specification and (
+            receipt.get(field) != specification[field]
+            or metrics.get(metric_field) != specification[field]
+        ):
+            return False
+    asset_identity_after = receipt.get("asset_identity_after")
+    if "asset_aggregate_sha256_before" in specification:
+        if specification.get("surface") == "online-public":
+            if asset_identity_after is not None:
+                return False
+        elif asset_identity_after is not None and (
+            not isinstance(asset_identity_after, dict)
+            or asset_identity_after.get("game_id") != specification.get("game_id")
+            or not isinstance(asset_identity_after.get("aggregate_sha256"), str)
+            or not isinstance(asset_identity_after.get("files"), list)
+            or asset_identity_after.get("source_semantically_inspected") is not False
+        ):
+            return False
+        expected_asset_check = _asset_identity_check(
+            specification,
+            cast(dict[str, object] | None, asset_identity_after),
+        )
+        if receipt.get("asset_identity_check") != expected_asset_check:
+            return False
+        acceptable_success_statuses = (
+            {"not-applicable"}
+            if specification.get("surface") == "online-public"
+            else {"matched", "recorded-uncompared"}
+        )
+        if status == "success" and expected_asset_check["status"] not in (
+            acceptable_success_statuses
+        ):
+            return False
+        required_metric_fields = {
+            "total_cpu_seconds",
+            "process_memory_before",
+            "process_memory_after",
+            "peak_rss_bytes",
+            "network_attempt_count",
+            "policy_close_status",
+            "session_close_status",
+            "journal_close_status",
+        }
+        if not required_metric_fields.issubset(metrics):
+            return False
+        cpu_seconds = metrics.get("total_cpu_seconds")
+        if cpu_seconds is not None and (
+            isinstance(cpu_seconds, bool)
+            or not isinstance(cpu_seconds, (int, float))
+            or cpu_seconds < 0
+        ):
+            return False
+        memory_before = metrics.get("process_memory_before")
+        memory_after = metrics.get("process_memory_after")
+        if memory_before is not None and not _process_memory_sample_valid(memory_before):
+            return False
+        if memory_after is not None and not _process_memory_sample_valid(memory_after):
+            return False
+        peak_rss = metrics.get("peak_rss_bytes")
+        if peak_rss is not None and (
+            isinstance(peak_rss, bool) or not isinstance(peak_rss, int) or peak_rss < 0
+        ):
+            return False
+        network_attempts = metrics.get("network_attempt_count")
+        if specification.get("surface") == "online-public":
+            if network_attempts is not None:
+                return False
+        elif network_attempts is not None and (
+            isinstance(network_attempts, bool)
+            or not isinstance(network_attempts, int)
+            or network_attempts < 0
+        ):
+            return False
+        close_fields = (
+            metrics.get("policy_close_status"),
+            metrics.get("session_close_status"),
+            metrics.get("journal_close_status"),
+        )
+        if any(not isinstance(item, str) or not item for item in close_fields):
+            return False
+        expected_success_network_attempts = (
+            None if specification.get("surface") == "online-public" else 0
+        )
+        if status == "success" and (
+            cpu_seconds is None
+            or memory_before is None
+            or memory_after is None
+            or network_attempts != expected_success_network_attempts
+            or metrics.get("policy_close_status") != "closed"
+            or metrics.get("session_close_status") != "closed-by-episode-runner"
+            or metrics.get("journal_close_status") not in {"closed", "closed-by-policy"}
+        ):
+            return False
+    if not _hot_path_profile_valid(
+        metrics,
+        specification=specification,
+        status=status,
+    ):
+        return False
     if status == "success":
         trace = receipt.get("trace")
         if (
@@ -505,6 +889,114 @@ def _receipt_valid(
     )
 
 
+def _process_memory_sample_valid(value: object) -> bool:
+    if not isinstance(value, dict):
+        return False
+    for field in ("current_rss_bytes", "peak_rss_bytes"):
+        item = value.get(field)
+        if item is not None and (isinstance(item, bool) or not isinstance(item, int) or item < 0):
+            return False
+    return bool(
+        isinstance(value.get("measurement_source"), str)
+        and value.get("measurement_source")
+        and (value.get("reason") is None or isinstance(value.get("reason"), str))
+    )
+
+
+def _hot_path_profile_valid(
+    metrics: dict[str, object],
+    *,
+    specification: dict[str, object],
+    status: object,
+) -> bool:
+    """Verify requested derived diagnostics without weakening run evidence."""
+
+    profile = metrics.get("hot_path_profile")
+    requested = specification.get("hot_path_profile") is True
+    if not requested:
+        return profile is None
+    if not isinstance(profile, dict):
+        return False
+    schema = profile.get("schema")
+    if schema == "arc3.hot-path-profile-unavailable.v0.1":
+        return bool(
+            status != "success"
+            and profile.get("enabled") is False
+            and isinstance(profile.get("reason"), str)
+            and profile.get("reason")
+        )
+    if schema != "arc3.hot-path-profile.v0.2" or profile.get("enabled") is not True:
+        return False
+    if profile.get("active_span_count") != 0:
+        return False
+    phases = profile.get("phases")
+    boundaries = profile.get("boundaries")
+    cache_totals = profile.get("cache_totals")
+    required_phases = {
+        "startup",
+        "observation_normalization",
+        "perception",
+        "correspondence",
+        "hypothesis_update",
+        "world_model_compilation",
+        "retrodiction",
+        "goal_inference",
+        "planning",
+        "action_selection",
+        "trace_serialization",
+        "environment_step",
+        "checkpointing",
+        "rendering_debug",
+        "finalize",
+        "controller_orchestration",
+        "profiler_telemetry",
+        "runtime_remainder",
+    }
+    if not isinstance(phases, dict) or set(phases) != required_phases:
+        return False
+    if not isinstance(boundaries, list) or profile.get("boundary_count") != len(boundaries):
+        return False
+    if not isinstance(cache_totals, dict):
+        return False
+    previous_sequence = -1
+    segment_actions: dict[int, int] = {}
+    for boundary in boundaries:
+        if not isinstance(boundary, dict):
+            return False
+        sequence = boundary.get("sequence")
+        segment = boundary.get("segment_index")
+        actions = boundary.get("actions")
+        cumulative = boundary.get("phase_cumulative")
+        if (
+            isinstance(sequence, bool)
+            or not isinstance(sequence, int)
+            or sequence != previous_sequence + 1
+            or isinstance(segment, bool)
+            or not isinstance(segment, int)
+            or segment < 0
+            or isinstance(actions, bool)
+            or not isinstance(actions, int)
+            or actions < segment_actions.get(segment, 0)
+            or not isinstance(cumulative, dict)
+            or set(cumulative) != required_phases
+        ):
+            return False
+        previous_sequence = sequence
+        segment_actions[segment] = actions
+    measured_actions = metrics.get("environment_actions")
+    max_actions = profile.get("max_actions_observed")
+    return bool(
+        isinstance(max_actions, int)
+        and not isinstance(max_actions, bool)
+        and max_actions >= 0
+        and (
+            not isinstance(measured_actions, int)
+            or isinstance(measured_actions, bool)
+            or max_actions <= measured_actions
+        )
+    )
+
+
 def _preserve(path: Path, failures: Path) -> None:
     if not path.exists():
         return
@@ -512,7 +1004,9 @@ def _preserve(path: Path, failures: Path) -> None:
     path.replace(failures / f"{path.stem}.invalid-{uuid.uuid4().hex}{path.suffix}")
 
 
-def _aggregate(results: list[dict[str, Any]], *, partition: str) -> dict[str, object]:
+def _legacy_aggregate(results: list[dict[str, Any]], *, partition: str) -> dict[str, object]:
+    """Reproduce v0.1 summaries so immutable historical evaluations remain verifiable."""
+
     policies: dict[str, dict[str, object]] = {}
     failures = 0
     for result in results:
@@ -595,10 +1089,152 @@ def _aggregate(results: list[dict[str, Any]], *, partition: str) -> dict[str, ob
         else "FAILED_INFRASTRUCTURE"
     )
     return {
-        "schema": "arc3.public-evaluation.summary.v0.1",
+        "schema": _LEGACY_PUBLIC_SUMMARY_SCHEMA,
         "status": status,
         "claim": claim,
         "claim_boundary": "NO_GENERALIZATION_CLAIM",
+        "result_count": len(results),
+        "failure_count": failures,
+        "policies": {agent: policies[agent] for agent in sorted(policies)},
+    }
+
+
+def _empty_score_metrics(*, evidence_scope: str) -> dict[str, object]:
+    return {
+        "evidence_scope": evidence_scope,
+        "run_count": 0,
+        "score_sum": 0.0,
+        "mean_score": None,
+        "levels_completed": 0,
+        "completed_runs": 0,
+    }
+
+
+def _add_score_metrics(metrics: dict[str, object], score: dict[str, object]) -> None:
+    metrics["run_count"] = int(cast(int, metrics["run_count"])) + 1
+    metrics["score_sum"] = float(cast(float, metrics["score_sum"])) + _as_float(
+        score["score"], field="score"
+    )
+    metrics["levels_completed"] = int(cast(int, metrics["levels_completed"])) + _as_int(
+        score["levels_completed"], field="levels_completed"
+    )
+    metrics["completed_runs"] = int(cast(int, metrics["completed_runs"])) + int(
+        bool(score["completed"])
+    )
+
+
+def _finalize_score_metrics(metrics: dict[str, object]) -> None:
+    run_count = int(cast(int, metrics["run_count"]))
+    score_sum = float(cast(float, metrics["score_sum"]))
+    metrics["mean_score"] = score_sum / run_count if run_count else None
+
+
+def _aggregate(results: list[dict[str, Any]], *, partition: str) -> dict[str, object]:
+    """Aggregate successful outcomes without promoting recovered failure evidence."""
+
+    policies: dict[str, dict[str, object]] = {}
+    failures = 0
+    for result in results:
+        agent = str(result["agent"])
+        row = policies.setdefault(
+            agent,
+            {
+                "baseline_id": result["baseline_id"],
+                "runs": 0,
+                "successes": 0,
+                "failures": 0,
+                "successful_score_metrics": _empty_score_metrics(
+                    evidence_scope="terminal-success-receipts"
+                ),
+                "recovered_failure_score_metrics": _empty_score_metrics(
+                    evidence_scope="verified-scorecards-on-failed-receipts"
+                ),
+                "unscored_failure_runs": 0,
+                "environment_actions": 0,
+                "resets": 0,
+                "faults": 0,
+            },
+        )
+        row["runs"] = int(cast(int, row["runs"])) + 1
+        score = cast(dict[str, object], result["score"])
+        if result["status"] == "success":
+            row["successes"] = int(cast(int, row["successes"])) + 1
+            _add_score_metrics(cast(dict[str, object], row["successful_score_metrics"]), score)
+        else:
+            row["failures"] = int(cast(int, row["failures"])) + 1
+            failures += 1
+            if score.get("verified") is True:
+                _add_score_metrics(
+                    cast(dict[str, object], row["recovered_failure_score_metrics"]),
+                    score,
+                )
+            else:
+                row["unscored_failure_runs"] = int(cast(int, row["unscored_failure_runs"])) + 1
+        metrics = cast(dict[str, object], result["metrics"])
+        row["environment_actions"] = int(cast(int, row["environment_actions"])) + _as_int(
+            metrics["environment_actions"], field="environment_actions"
+        )
+        row["resets"] = int(cast(int, row["resets"])) + _as_int(metrics["resets"], field="resets")
+        row["faults"] = int(cast(int, row["faults"])) + _as_int(
+            metrics.get("fault_count", 0), field="fault_count"
+        )
+
+    for row in policies.values():
+        successful_metrics = cast(dict[str, object], row["successful_score_metrics"])
+        recovered_metrics = cast(dict[str, object], row["recovered_failure_score_metrics"])
+        _finalize_score_metrics(successful_metrics)
+        _finalize_score_metrics(recovered_metrics)
+        # Flat fields remain for consumers of the public summary, but their scope is now
+        # explicitly and exclusively successful terminal receipts.
+        row["levels_completed"] = successful_metrics["levels_completed"]
+        row["completed_runs"] = successful_metrics["completed_runs"]
+        row["mean_score"] = successful_metrics["mean_score"]
+
+    claim = "MECHANISM_NOT_OBSERVED"
+    full = policies.get("full")
+    baselines = [row for agent, row in policies.items() if agent != "full"]
+    if failures == 0 and full is not None and baselines:
+        full_mean = full["mean_score"]
+        baseline_means = [row["mean_score"] for row in baselines]
+        if isinstance(full_mean, (int, float)) and all(
+            isinstance(value, (int, float)) for value in baseline_means
+        ):
+            full_rank = (
+                int(cast(int, full["levels_completed"])),
+                float(full_mean),
+                -int(cast(int, full["environment_actions"])),
+            )
+            best_baseline = max(
+                (
+                    int(cast(int, row["levels_completed"])),
+                    float(cast(float, row["mean_score"])),
+                    -int(cast(int, row["environment_actions"])),
+                )
+                for row in baselines
+            )
+            full_has_positive_progress = (
+                int(cast(int, full["levels_completed"])) > 0 or float(full_mean) > 0.0
+            )
+            if full_has_positive_progress and full_rank > best_baseline:
+                claim = (
+                    "PUBLIC_HOLDOUT_IMPROVEMENT"
+                    if partition == "public-holdout"
+                    else "LOCAL_PUBLIC_IMPROVEMENT"
+                )
+    status = (
+        "PASS"
+        if failures == 0
+        else "PARTIAL"
+        if failures < len(results)
+        else "FAILED_INFRASTRUCTURE"
+    )
+    return {
+        "schema": _PUBLIC_SUMMARY_SCHEMA,
+        "status": status,
+        "claim": claim,
+        "claim_boundary": "NO_GENERALIZATION_CLAIM",
+        "score_metric_scope": "SUCCESSFUL_RUNS_ONLY",
+        "recovered_failure_evidence_scope": "FAILED_RECEIPTS_ONLY_NOT_FOR_IMPROVEMENT",
         "result_count": len(results),
         "failure_count": failures,
         "policies": {agent: policies[agent] for agent in sorted(policies)},
@@ -620,19 +1256,78 @@ def _render_report(
         f"- Manifest: `{manifest['public_partition_manifest_hash']}`",
         f"- Network during evaluation: `{manifest['network_mode']}`",
         "",
-        "| policy | game | seed | status | levels | score | actions | resets | faults |",
-        "|---|---|---:|---|---:|---:|---:|---:|---:|",
     ]
+    if summary.get("schema") == _PUBLIC_SUMMARY_SCHEMA:
+        lines.extend(
+            [
+                "Successful-run score and level aggregates exclude every failed receipt. "
+                "Verified scorecards recovered from failed receipts remain visible only as "
+                "failed evidence and never enter an improvement gate.",
+                "",
+                "## Policy aggregates",
+                "",
+                "| policy | runs | successes | failures | successful levels | "
+                "successful mean score | recovered failed scores | recovered failed levels | "
+                "recovered failed mean score | actions |",
+                "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
+            ]
+        )
+        policies = cast(dict[str, dict[str, object]], summary["policies"])
+        for agent in sorted(policies):
+            row = policies[agent]
+            successful = cast(dict[str, object], row["successful_score_metrics"])
+            recovered = cast(dict[str, object], row["recovered_failure_score_metrics"])
+            successful_mean = successful["mean_score"]
+            recovered_mean = recovered["mean_score"]
+            lines.append(
+                "| {agent} | {runs} | {successes} | {failures} | "
+                "{successful_levels} | {successful_mean} | {recovered_runs} | "
+                "{recovered_levels} | {recovered_mean} | {actions} |".format(
+                    agent=agent,
+                    runs=row["runs"],
+                    successes=row["successes"],
+                    failures=row["failures"],
+                    successful_levels=successful["levels_completed"],
+                    successful_mean=(
+                        "n/a"
+                        if successful_mean is None
+                        else f"{float(cast(float, successful_mean)):.6f}"
+                    ),
+                    recovered_runs=recovered["run_count"],
+                    recovered_levels=recovered["levels_completed"],
+                    recovered_mean=(
+                        "n/a"
+                        if recovered_mean is None
+                        else f"{float(cast(float, recovered_mean)):.6f}"
+                    ),
+                    actions=row["environment_actions"],
+                )
+            )
+        lines.extend(["", "## Run receipts", ""])
+    lines.extend(
+        [
+            "| policy | game | seed | status | score evidence | levels | score | actions | "
+            "resets | faults |",
+            "|---|---|---:|---|---|---:|---:|---:|---:|---:|",
+        ]
+    )
     for result in results:
         score = cast(dict[str, object], result["score"])
         metrics = cast(dict[str, object], result["metrics"])
+        if result["status"] == "success":
+            score_evidence = "successful-run"
+        elif score.get("verified") is True:
+            score_evidence = "recovered-failure"
+        else:
+            score_evidence = "unscored-failure"
         lines.append(
-            "| {agent} | {game} | {seed} | {status} | {levels} | {score} | "
+            "| {agent} | {game} | {seed} | {status} | {score_evidence} | {levels} | {score} | "
             "{actions} | {resets} | {faults} |".format(
                 agent=result["agent"],
                 game=result["game_id"],
                 seed=result["seed"],
                 status=result["status"],
+                score_evidence=score_evidence,
                 levels=score["levels_completed"],
                 score=score["score"],
                 actions=metrics["environment_actions"],
@@ -687,6 +1382,20 @@ def _reproduction_argv(config: PublicEvaluationConfig) -> list[str]:
         "--milestone-id",
         config.milestone_id,
     ]
+    if config.game_ids is not None:
+        argv.extend(["--game-ids", ",".join(config.game_ids)])
+    if config.hot_path_profile:
+        argv.append("--hot-path-profile")
+    argv.append(
+        "--python-allocation-tracing"
+        if config.python_allocation_tracing
+        else "--no-python-allocation-tracing"
+    )
+    argv.append(
+        "--automatic-checkpointing"
+        if config.automatic_checkpointing
+        else "--no-automatic-checkpointing"
+    )
     if config.evaluation_id is not None:
         argv.extend(["--evaluation-id", config.evaluation_id])
     if config.acquire_missing:
@@ -814,7 +1523,13 @@ def verify_public_evaluation(directory: str | Path) -> dict[str, object]:
             errors.append("manifest partition is invalid")
         else:
             try:
-                expected_summary = _aggregate(results, partition=partition)
+                summary_schema = summary.get("schema")
+                if summary_schema == _LEGACY_PUBLIC_SUMMARY_SCHEMA:
+                    expected_summary = _legacy_aggregate(results, partition=partition)
+                elif summary_schema == _PUBLIC_SUMMARY_SCHEMA:
+                    expected_summary = _aggregate(results, partition=partition)
+                else:
+                    raise EvaluationError("public summary schema is unsupported")
             except (EvaluationError, KeyError, TypeError, ValueError):
                 errors.append("run receipts cannot be aggregated")
             else:
@@ -875,7 +1590,7 @@ def _acquire_missing_assets(
     directory: Path,
     assets: dict[str, LocalAssetIdentity],
 ) -> dict[str, LocalAssetIdentity]:
-    selected = manifest.games(config.partition)
+    selected = config.selected_games(manifest)
     missing = [entry for entry in selected if entry.game_id not in assets]
     if not missing:
         return assets
@@ -1014,7 +1729,7 @@ def run_public_evaluation(config: PublicEvaluationConfig) -> EvaluationOutcome:
     )
     directory.mkdir(parents=True, exist_ok=True)
     assets = inventory_local_assets(manifest, config.environments_dir)
-    selected_ids = {entry.game_id for entry in manifest.games(config.partition)}
+    selected_ids = {entry.game_id for entry in config.selected_games(manifest)}
     if config.partition == "public-holdout":
         # Holdout acquisition and evaluation are deliberately inseparable.  A
         # content identity is recorded after each one-shot NORMAL-mode run.
@@ -1137,7 +1852,7 @@ def run_public_evaluation(config: PublicEvaluationConfig) -> EvaluationOutcome:
                 status="interrupted",
                 kind="holdout_run_already_opened",
                 message="holdout run had an exposure receipt but no valid terminal run receipt",
-                asset_identity_after=_holdout_asset_after(
+                asset_identity_after=_local_asset_after(
                     manifest, config, str(specification["game_id"])
                 ),
             )
@@ -1225,7 +1940,7 @@ def run_public_evaluation(config: PublicEvaluationConfig) -> EvaluationOutcome:
                     message=f"worker exceeded {config.timeout_seconds} seconds",
                     metrics=metrics,
                     trace=trace,
-                    asset_identity_after=_holdout_asset_after(
+                    asset_identity_after=_local_asset_after(
                         manifest, config, str(specification["game_id"])
                     ),
                 )
@@ -1246,7 +1961,7 @@ def run_public_evaluation(config: PublicEvaluationConfig) -> EvaluationOutcome:
                     message=f"isolated worker exited with code {process.exitcode}",
                     metrics=metrics,
                     trace=trace,
-                    asset_identity_after=_holdout_asset_after(
+                    asset_identity_after=_local_asset_after(
                         manifest, config, str(specification["game_id"])
                     ),
                 )
@@ -1262,7 +1977,7 @@ def run_public_evaluation(config: PublicEvaluationConfig) -> EvaluationOutcome:
                 kind="process_start_failed",
                 message=f"{type(error).__name__}: {error}",
                 metrics=metrics,
-                asset_identity_after=_holdout_asset_after(
+                asset_identity_after=_local_asset_after(
                     manifest, config, str(specification["game_id"])
                 ),
             )
@@ -1285,7 +2000,7 @@ def run_public_evaluation(config: PublicEvaluationConfig) -> EvaluationOutcome:
                 message="worker receipt could not be loaded",
                 metrics=metrics,
                 trace=trace,
-                asset_identity_after=_holdout_asset_after(
+                asset_identity_after=_local_asset_after(
                     manifest, config, str(specification["game_id"])
                 ),
             )
@@ -1307,7 +2022,7 @@ def run_public_evaluation(config: PublicEvaluationConfig) -> EvaluationOutcome:
                 message="worker receipt failed its hash or frozen run identity",
                 metrics=metrics,
                 trace=trace,
-                asset_identity_after=_holdout_asset_after(
+                asset_identity_after=_local_asset_after(
                     manifest, config, str(specification["game_id"])
                 ),
             )

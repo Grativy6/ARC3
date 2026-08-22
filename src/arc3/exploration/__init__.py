@@ -1,7 +1,18 @@
 """Action semantics and information-efficient generic exploration."""
 
+from .action_registry import (
+    ActionEffectCandidate,
+    ActionEffectObservation,
+    ActionEffectRegistry,
+    ActionEffectStatus,
+    CanonicalActionEffect,
+    CanonicalEffectKind,
+    CoordinateRelation,
+    action_condition_signature,
+    derive_action_effect_observation,
+)
 from .coordinates import generate_coordinate_candidates
-from .effects import classify_effect, state_features
+from .effects import classify_effect, movement_displacements, state_features
 from .evaluation import (
     ExplorationComparison,
     MechanismStatus,
@@ -30,8 +41,15 @@ from .policy import (
 from .statistics import ActionEffectStatistics, EffectEstimate
 
 __all__ = [
+    "ActionEffectCandidate",
+    "ActionEffectObservation",
+    "ActionEffectRegistry",
     "ActionEffectStatistics",
+    "ActionEffectStatus",
+    "CanonicalActionEffect",
+    "CanonicalEffectKind",
     "CoordinateCandidate",
+    "CoordinateRelation",
     "CoordinateSource",
     "EffectClassification",
     "EffectEstimate",
@@ -48,10 +66,13 @@ __all__ = [
     "RankedProbe",
     "SemanticIdentificationCase",
     "StateFeatures",
+    "action_condition_signature",
     "classify_effect",
     "compare_exploration_baselines",
+    "derive_action_effect_observation",
     "discrimination_information",
     "generate_coordinate_candidates",
     "held_out_semantic_cases",
+    "movement_displacements",
     "state_features",
 ]

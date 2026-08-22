@@ -3,17 +3,18 @@
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING, Protocol
 
 from arc3.adapters import Observation
 from arc3.errors import PolicyError
 from arc3.perception.delta import measure_delta
 from arc3.policy.baselines import RandomValidPolicy
-from arc3.types import ActionName, ActionRequest, Coordinate, GameStateName
+from arc3.types import ActionName, ActionRequest, Coordinate, GameStateName, JSONValue
 
 if TYPE_CHECKING:
     from arc3.policy import RunContext
+    from arc3.profiling.hot_path import HotPathProfiler
 
 
 class EvaluationPolicy(Protocol):
@@ -195,10 +196,26 @@ class FullARC3EvaluationPolicy:
 
     manages_trace = True
 
-    def __init__(self, context: RunContext) -> None:
-        from arc3.policy import ARC3Controller, ControllerPreset
+    def __init__(
+        self,
+        context: RunContext,
+        *,
+        hot_path_profiler: HotPathProfiler | None = None,
+        automatic_checkpointing: bool = True,
+    ) -> None:
+        from arc3.policy import ARC3Controller, ControllerPreset, preset_features
 
-        self._controller = ARC3Controller(ControllerPreset.FULL)
+        if not isinstance(automatic_checkpointing, bool):
+            raise ValueError("automatic_checkpointing must be boolean")
+        features = preset_features(ControllerPreset.FULL)
+        if not automatic_checkpointing:
+            features = replace(features, use_memory=False)
+
+        self._controller = ARC3Controller(
+            ControllerPreset.FULL,
+            features=features,
+            hot_path_profiler=hot_path_profiler,
+        )
         self._context = context
         self._started = False
 
@@ -216,6 +233,10 @@ class FullARC3EvaluationPolicy:
 
     def close(self) -> None:
         self._controller.close()
+
+    @property
+    def hot_path_profile(self) -> dict[str, JSONValue] | None:
+        return self._controller.hot_path_profile
 
 
 BASELINES: tuple[BaselineDescriptor, ...] = (
@@ -277,12 +298,18 @@ def make_evaluation_policy(
     *,
     seed: int,
     run_context: RunContext | None = None,
+    hot_path_profiler: HotPathProfiler | None = None,
+    automatic_checkpointing: bool = True,
 ) -> EvaluationPolicy:
     """Construct a supported policy without silently substituting another baseline."""
 
     descriptor = baseline_descriptor(agent)
     if descriptor.status != "supported":
         raise PolicyError(descriptor.limitation or f"{descriptor.baseline_id} is unsupported")
+    if not isinstance(automatic_checkpointing, bool):
+        raise ValueError("automatic_checkpointing must be boolean")
+    if not automatic_checkpointing and descriptor.baseline_id != "B4":
+        raise PolicyError("automatic-checkpoint diagnostic is available only for B4 FULL")
     if descriptor.baseline_id == "B0":
         return _ManagedBaselinePolicy(RandomValidPolicy(seed))
     if descriptor.baseline_id == "B1":
@@ -294,7 +321,11 @@ def make_evaluation_policy(
     if descriptor.baseline_id == "B4":
         if run_context is None:
             raise PolicyError("B4 evaluation requires an explicit offline RunContext")
-        return FullARC3EvaluationPolicy(run_context)
+        return FullARC3EvaluationPolicy(
+            run_context,
+            hot_path_profiler=hot_path_profiler,
+            automatic_checkpointing=automatic_checkpointing,
+        )
     if descriptor.baseline_id == "TEST-CRASH":
         return _ManagedBaselinePolicy(_CrashTestPolicy())
     raise PolicyError(f"no policy factory exists for {descriptor.baseline_id}")

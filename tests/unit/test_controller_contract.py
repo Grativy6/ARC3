@@ -8,7 +8,13 @@ import pytest
 from arc3.adapters import GridFrame, Observation
 from arc3.adapters.synthetic import SYNTHETIC_GAME_ID, SyntheticAdapter
 from arc3.config import ARC3Config, BudgetConfig
-from arc3.errors import CompetitionIntegrityError, EnvironmentStateError, PolicyError
+from arc3.errors import (
+    CompetitionIntegrityError,
+    EnvironmentStateError,
+    PolicyError,
+    WorldModelError,
+)
+from arc3.hypotheses import ActionSemanticsStatement
 from arc3.policy import (
     ARC3Controller,
     ControllerPhase,
@@ -22,11 +28,13 @@ from arc3.trace import EventJournal
 from arc3.types import (
     ActionName,
     ActionRequest,
+    DisplacementEvidenceKind,
     EnvironmentMode,
     GameId,
     GameStateName,
     JSONScalar,
 )
+from arc3.world_model import Cell
 
 
 class _Provider:
@@ -247,12 +255,14 @@ def test_game_over_only_selects_reset_and_accepts_reset_consequence(tmp_path: Pa
 
     first = controller.choose_action()
     controller.apply_consequence(session.step(first.action))
-    assert controller.phase is ControllerPhase.GAME_OVER
+    game_over_phase = controller.snapshot.phase
+    assert game_over_phase is ControllerPhase.GAME_OVER
 
     reset = controller.choose_action()
     assert reset.action.name is ActionName.RESET
     controller.apply_consequence(session.step(reset.action))
-    assert controller.phase is ControllerPhase.OBSERVED
+    resumed_phase = controller.snapshot.phase
+    assert resumed_phase is ControllerPhase.OBSERVED
 
 
 def test_unknown_state_is_not_authorized_to_act(tmp_path: Path) -> None:
@@ -272,6 +282,69 @@ def test_unknown_state_is_not_authorized_to_act(tmp_path: Path) -> None:
         controller.choose_action()
 
 
+def test_full_controller_calibrates_each_advertised_handle_once_in_wire_order(
+    tmp_path: Path,
+) -> None:
+    advertised = (
+        ActionName.ACTION7,
+        ActionName.ACTION6,
+        ActionName.ACTION2,
+        ActionName.ACTION5,
+    )
+    observation = Observation(
+        game_id=GameId(SYNTHETIC_GAME_ID),
+        frames=(GridFrame.from_rows(((0, 1, 0), (0, 0, 2), (0, 0, 0))),),
+        state=GameStateName.NOT_FINISHED,
+        levels_completed=0,
+        win_levels=1,
+        available_actions=advertised,
+    )
+    controller = ARC3Controller(ControllerPreset.FULL)
+    controller.reset(_context(tmp_path))
+    controller.observe(observation)
+
+    selected: list[ActionRequest] = []
+    for expected_name in (
+        ActionName.ACTION2,
+        ActionName.ACTION5,
+        ActionName.ACTION6,
+        ActionName.ACTION7,
+    ):
+        decision = controller.choose_action()
+        selected.append(decision.action)
+        assert decision.action.name is expected_name
+        assert decision.rationale_summary == "frozen one-receipt opaque-handle calibration"
+        controller.apply_consequence(
+            Observation(
+                game_id=observation.game_id,
+                frames=observation.frames,
+                state=observation.state,
+                levels_completed=0,
+                win_levels=1,
+                available_actions=advertised,
+                returned_action=decision.action,
+            )
+        )
+
+    assert selected[2].coordinate is not None
+    assert (selected[2].coordinate.x, selected[2].coordinate.y) == (3, 3)
+    assert all(action.coordinate is None for index, action in enumerate(selected) if index != 2)
+    assert controller.snapshot.actions_used == 4
+    assert controller.action_calibration_projection == {
+        "level_index": 0,
+        "handles": ["ACTION2", "ACTION5", "ACTION6", "ACTION7"],
+        "completed_handles": ["ACTION2", "ACTION5", "ACTION6", "ACTION7"],
+        "cursor": 4,
+        "pending_handle": None,
+    }
+    assert controller.action_effect_projection["observation_counts"] == {
+        "ACTION2": 1,
+        "ACTION5": 1,
+        "ACTION6": 1,
+        "ACTION7": 1,
+    }
+
+
 def _manual_observation(
     *,
     state: GameStateName,
@@ -287,6 +360,41 @@ def _manual_observation(
         available_actions=(ActionName.ACTION1, ActionName.ACTION2),
         returned_action=returned_action,
     )
+
+
+def test_mechanics_membership_failure_precedes_transition_collection_mutation(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    controller = ARC3Controller(ControllerPreset.TRACE)
+    controller.reset(_context(tmp_path, max_actions=1))
+    active = _manual_observation(state=GameStateName.NOT_FINISHED)
+    controller.observe(active)
+    decision = controller.choose_action()
+
+    def reject_membership(transition_id: str, *, epoch_id: str) -> None:
+        assert transition_id == f"transition:{decision.submitted_event_id}"
+        assert epoch_id == "mechanics-epoch:L0:0000"
+        raise WorldModelError("injected mechanics membership failure")
+
+    monkeypatch.setattr(controller._mechanics, "register_transition", reject_membership)
+    with pytest.raises(WorldModelError, match="injected mechanics membership failure"):
+        controller.apply_consequence(
+            _manual_observation(
+                state=GameStateName.NOT_FINISHED,
+                returned_action=decision.action,
+            )
+        )
+
+    assert controller._transitions == []
+    assert controller._transition_levels == {}
+    assert controller._transition_epochs == {}
+    assert controller._transition_summaries == {}
+    assert any(
+        event.event_type == "consequence.received"
+        for event in controller.journal.verify_manifest(include_active=True)
+    )
+    controller.journal.close()
 
 
 def test_action_and_reset_budgets_are_enforced_independently(tmp_path: Path) -> None:
@@ -388,3 +496,241 @@ def test_returned_action_mismatch_preserves_raw_receipts_before_fault(tmp_path: 
     auditor = EventJournal(context.trace_root, run_id=context.run_id)
     assert sum(event.event_type == "run.completed" for event in auditor.verify_manifest()) == 1
     auditor.close()
+
+
+def test_long_relocation_is_direct_evidence_not_an_invented_wrap() -> None:
+    candidates = ARC3Controller._controlled_translation_candidates(
+        before=Cell(1, 2),
+        after=Cell(8, 2),
+        width=10,
+        height=6,
+    )
+
+    assert [(item.translation, item.evidence_kind) for item in candidates] == [
+        ((7, 0), DisplacementEvidenceKind.DIRECT_OBSERVATION)
+    ]
+
+
+def test_boundary_jump_keeps_wrap_as_an_unpromoted_alternative() -> None:
+    candidates = ARC3Controller._controlled_translation_candidates(
+        before=Cell(0, 2),
+        after=Cell(9, 2),
+        width=10,
+        height=6,
+    )
+
+    assert {(item.translation, item.evidence_kind) for item in candidates} == {
+        ((9, 0), DisplacementEvidenceKind.DIRECT_OBSERVATION),
+        ((-1, 0), DisplacementEvidenceKind.WRAP_TOPOLOGY_CANDIDATE),
+    }
+
+
+def _moving_component_observation(
+    rows: list[list[int]],
+    *,
+    returned_action: ActionRequest | None = None,
+) -> Observation:
+    return Observation(
+        game_id=GameId(SYNTHETIC_GAME_ID),
+        frames=(GridFrame.from_rows(rows),),
+        state=GameStateName.NOT_FINISHED,
+        levels_completed=0,
+        win_levels=1,
+        available_actions=(ActionName.ACTION1, ActionName.ACTION2),
+        returned_action=returned_action,
+    )
+
+
+def _singleton_rows(
+    positions: dict[int, tuple[int, int]], *, width: int = 7, height: int = 5
+) -> list[list[int]]:
+    rows = [[0 for _ in range(width)] for _ in range(height)]
+    for color, (x, y) in positions.items():
+        rows[y][x] = color
+    return rows
+
+
+def test_contact_goal_binding_defers_while_established_mover_is_occluded(
+    tmp_path: Path,
+) -> None:
+    controller = ARC3Controller(ControllerPreset.FULL)
+    controller.reset(_context(tmp_path))
+    positions = {1: (1, 1), 2: (5, 3), 3: (3, 4)}
+    controller.observe(_moving_component_observation(_singleton_rows(positions)))
+    mover_id = cast(str, controller._provisional_mover_id)
+    assert controller._latest_view is not None
+    mover = controller._latest_view.symbolic_state.entity(mover_id)
+    assert mover is not None and mover.color is not None
+
+    # Let generic transition-based goal acquisition establish its ordinary
+    # candidates before the occlusion boundary, so any later creation would be
+    # attributable to the stale-mover reseeding path under test.
+    prelude = controller.choose_action()
+    controller.apply_consequence(
+        _moving_component_observation(
+            _singleton_rows(positions),
+            returned_action=prelude.action,
+        )
+    )
+    initial_bindings = tuple(
+        event
+        for event in controller.journal.verify_manifest()
+        if event.event_type == "goal.target_bound"
+    )
+    initial_candidates = tuple(
+        event
+        for event in controller.journal.verify_manifest()
+        if event.event_type == "goal.candidate_created"
+    )
+
+    decision = controller.choose_action()
+    visible_positions = {
+        color: position for color, position in positions.items() if color != mover.color
+    }
+    controller.apply_consequence(
+        _moving_component_observation(
+            _singleton_rows(visible_positions),
+            returned_action=decision.action,
+        )
+    )
+
+    assert controller.phase is ControllerPhase.OBSERVED
+    assert controller._latest_view is not None
+    assert len(controller._latest_view.symbolic_state.entities) == 2
+    assert controller._provisional_mover_id == mover_id
+    assert controller._latest_view.symbolic_state.entity(mover_id) is None
+    assert (
+        controller._select_contact_target(controller._latest_view.symbolic_state, mover_id) is None
+    )
+    assert (
+        tuple(
+            event
+            for event in controller.journal.verify_manifest()
+            if event.event_type == "goal.target_bound"
+        )
+        == initial_bindings
+    )
+    assert (
+        tuple(
+            event
+            for event in controller.journal.verify_manifest()
+            if event.event_type == "goal.candidate_created"
+        )
+        == initial_candidates
+    )
+
+
+def test_mover_authority_waits_for_two_diverse_continuous_receipts(tmp_path: Path) -> None:
+    controller = ARC3Controller(ControllerPreset.FULL)
+    controller.reset(_context(tmp_path))
+    positions = {1: (1, 1), 2: (5, 3)}
+    controller.observe(_moving_component_observation(_singleton_rows(positions)))
+    assert controller._latest_view is not None
+    provisional = controller._latest_view.symbolic_state.entity(
+        cast(str, controller._provisional_mover_id)
+    )
+    assert provisional is not None and provisional.color is not None
+    mover_color = next(color for color in positions if color != provisional.color)
+
+    first = controller.choose_action()
+    x, y = positions[mover_color]
+    positions[mover_color] = (x + 1, y)
+    controller.apply_consequence(
+        _moving_component_observation(
+            _singleton_rows(positions),
+            returned_action=first.action,
+        )
+    )
+    mover_reassignment_candidate_id = controller._mover_reassignment_candidate_id
+    assert mover_reassignment_candidate_id is not None
+    assert not any(
+        isinstance(record.statement, ActionSemanticsStatement)
+        for record in controller._hypotheses.all()
+    )
+    assert not any(
+        event.event_type == "action.controlled_effect_interpreted"
+        and event.payload.get("interpretation_timing")
+        == "retrospective-after-mover-lineage-confirmation"
+        for event in controller.journal.verify_manifest()
+    )
+
+    second = controller.choose_action()
+    x, y = positions[mover_color]
+    positions[mover_color] = (x, y - 1)
+    controller.apply_consequence(
+        _moving_component_observation(
+            _singleton_rows(positions),
+            returned_action=second.action,
+        )
+    )
+
+    assert controller._mover_reassignment_candidate_id is None
+    assert controller._latest_view is not None
+    established = controller._latest_view.symbolic_state.entity(
+        cast(str, controller._provisional_mover_id)
+    )
+    assert established is not None and established.color == mover_color
+    action_statements = tuple(
+        statement
+        for record in controller._hypotheses.all()
+        if isinstance((statement := record.statement), ActionSemanticsStatement)
+        and record.is_ensemble_eligible
+    )
+    assert action_statements
+    assert {statement.parameters.get("entity_id") for statement in action_statements} == {
+        established.entity_id
+    }
+    retrospective = tuple(
+        event
+        for event in controller.journal.verify_manifest()
+        if event.event_type == "action.controlled_effect_interpreted"
+        and event.payload.get("interpretation_timing")
+        == "retrospective-after-mover-lineage-confirmation"
+    )
+    assert len(retrospective) == 1
+    assert len(retrospective[0].payload["confirmation_consequence_event_ids"]) == 2
+    assert retrospective[0].payload["authority_event_ids"]
+    assert any(
+        event.event_type == "perception.salience_computed"
+        and event.payload.get("salience_kind") == "provisional-controllability-revision"
+        for event in controller.journal.verify_manifest(include_active=True)
+    )
+
+
+def test_repeated_large_terrain_fragment_motion_never_gains_mover_authority(
+    tmp_path: Path,
+) -> None:
+    controller = ARC3Controller(ControllerPreset.FULL)
+    controller.reset(_context(tmp_path))
+
+    def terrain_rows(left: int, top: int) -> list[list[int]]:
+        rows = _singleton_rows({1: (1, 1)}, width=16, height=8)
+        for y in range(top, top + 4):
+            for x in range(left, left + 6):
+                rows[y][x] = 2
+        return rows
+
+    controller.observe(_moving_component_observation(terrain_rows(9, 3)))
+    original_mover = controller._provisional_mover_id
+    first = controller.choose_action()
+    controller.apply_consequence(
+        _moving_component_observation(terrain_rows(8, 3), returned_action=first.action)
+    )
+    second = controller.choose_action()
+    controller.apply_consequence(
+        _moving_component_observation(terrain_rows(8, 2), returned_action=second.action)
+    )
+
+    assert controller._provisional_mover_id == original_mover
+    assert controller._mover_reassignment_candidate_id is None
+    assert not any(
+        isinstance(record.statement, ActionSemanticsStatement)
+        for record in controller._hypotheses.all()
+    )
+    rejected = tuple(
+        event
+        for event in controller.journal.verify_manifest(include_active=True)
+        if event.event_type == "perception.object_correspondence_rejected"
+    )
+    assert len(rejected) >= 2
+    assert all("bounded mover footprint" in str(event.payload.get("reason")) for event in rejected)

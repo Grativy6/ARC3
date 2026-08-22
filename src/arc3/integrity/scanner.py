@@ -1253,6 +1253,11 @@ def _declared_manifest_binding(
             value = artifact.get("sha256")
             if isinstance(value, str):
                 declarations.append(value)
+    holdout = document.get("holdout")
+    if isinstance(holdout, dict) and holdout.get("manifest") == manifest_label:
+        value = holdout.get("manifest_sha256")
+        if isinstance(value, str):
+            declarations.append(value)
     try:
         declared_digests = {_normalize_sha256(value) for value in declarations}
     except ValueError as error:
@@ -1400,6 +1405,7 @@ def build_integrity_receipt(
         ("manifest", manifest),
         ("dependency-lock", dependency_lock),
         ("run-state", run_state),
+        ("first-party-license", repository / "LICENSE"),
         ("pyproject", repository / "pyproject.toml"),
         ("upstream-lock", repository / "upstream.lock.json"),
         ("third-party-notices", repository / "THIRD_PARTY_NOTICES.md"),
@@ -1503,6 +1509,7 @@ def build_integrity_receipt(
                 )
             )
     third_party = tuple(item for item in dependencies if item.name != "arc3")
+    first_party = next((item for item in dependencies if item.name == "arc3"), None)
     unknown_dependencies = tuple(
         item for item in third_party if item.license_status in {"UNKNOWN", "MISSING_DISTRIBUTION"}
     )
@@ -1514,6 +1521,18 @@ def build_integrity_receipt(
         for item in third_party
         if item.installed_version is not None and item.installed_version != item.locked_version
     )
+    if first_party is not None and first_party.license_status != "MIT-0":
+        supply_findings.append(
+            _finding(
+                root=repository,
+                path=repository / "LICENSE",
+                line=1,
+                category=FindingCategory.SUPPLY_CHAIN,
+                rule_id="first-party-license-invalid",
+                evidence=first_party.license_status,
+                message="ARC3 first-party license does not match the owner-approved MIT-0 identity",
+            )
+        )
     for item in unknown_dependencies:
         supply_findings.append(
             _finding(
@@ -1670,10 +1689,9 @@ def build_integrity_receipt(
         },
         "license_summary": {
             "dependency_count": len(dependencies),
-            "first_party_license_status": (
-                "OWNER_DECISION_REQUIRED"
-                if any(item.name == "arc3" for item in dependencies)
-                else "FIRST_PARTY_NOT_PRESENT"
+            "first_party_license_status": next(
+                (item.license_status for item in dependencies if item.name == "arc3"),
+                "FIRST_PARTY_NOT_PRESENT",
             ),
             "installed_version_mismatch_count": len(version_mismatches),
             "not_evaluated_count": len(not_queried_dependencies),

@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from enum import StrEnum
 
 from arc3.hypotheses import CandidateGoalStatement, HypothesisScope
-from arc3.types import ActionRequest, GameStateName
+from arc3.types import ActionRequest, GameStateName, JSONValue
 
 
 class GoalKind(StrEnum):
@@ -85,6 +85,19 @@ class GoalEvidence:
             raise ValueError("rank_impact must be a positive integer")
         object.__setattr__(self, "source_event_ids", sources)
 
+    def to_dict(self) -> dict[str, JSONValue]:
+        """Return the complete immutable evidence projection."""
+
+        return {
+            "evidence_id": self.evidence_id,
+            "direction": self.direction.value,
+            "source_event_ids": list(self.source_event_ids),
+            "observed_step": self.observed_step,
+            "level_index": self.level_index,
+            "summary": self.summary,
+            "rank_impact": self.rank_impact,
+        }
+
 
 @dataclass(frozen=True, slots=True)
 class GoalCandidate:
@@ -126,6 +139,21 @@ class GoalCandidate:
             terminal_indicators=terminal,
         )
 
+    def to_dict(self) -> dict[str, JSONValue]:
+        """Return the complete immutable candidate projection."""
+
+        return {
+            "goal_id": self.goal_id,
+            "kind": self.kind.value,
+            "role": self.role.value,
+            "scope": self.scope.value,
+            "scope_ref": self.scope_ref,
+            "target_state": self.target_state,
+            "source_evidence": [evidence.to_dict() for evidence in self.source_evidence],
+            "created_step": self.created_step,
+            "initial_rank": self.initial_rank,
+        }
+
 
 @dataclass(frozen=True, slots=True)
 class GoalRecord:
@@ -150,6 +178,21 @@ class GoalRecord:
             and self.status is GoalStatus.ACTIVE
             and self.rank >= 3
         )
+
+    def to_dict(self) -> dict[str, JSONValue]:
+        """Return the exact revisable view over immutable goal evidence."""
+
+        return {
+            "goal_id": self.candidate.goal_id,
+            "kind": self.candidate.kind.value,
+            "status": self.status.value,
+            "rank": self.rank,
+            "candidate": self.candidate.to_dict(),
+            "evidence": [evidence.to_dict() for evidence in self.evidence],
+            "support_levels": list(self.support_levels),
+            "contradiction_count": self.contradiction_count,
+            "reopen_count": self.reopen_count,
+        }
 
 
 @dataclass(frozen=True, slots=True)

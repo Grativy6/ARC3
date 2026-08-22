@@ -83,7 +83,7 @@ def test_repeated_noop_is_suppressed_but_changed_condition_reopens_probe() -> No
     assert reopened.action.name is ActionName.ACTION2
 
 
-def test_undo_requires_supported_receipt_and_current_availability() -> None:
+def test_opaque_action7_is_probe_eligible_without_an_undo_prior() -> None:
     planner = ExplorationPlanner()
     context = ProbeContext(_state(), actions_used=0, action_budget=20)
     undo = ActionRequest(ActionName.ACTION7)
@@ -92,16 +92,16 @@ def test_undo_requires_supported_receipt_and_current_availability() -> None:
         ProbeOption(undo, progress=1.0, novelty=1.0),
     )
 
-    unsupported = planner.select(options, context=context)
+    selected = planner.select(options, context=context)
     planner.record_outcome(
         context,
         undo,
-        EffectClassification(frozenset({EffectKind.UNDO}), changed_cells=2),
+        EffectClassification(frozenset({EffectKind.INTERACTION}), changed_cells=2),
     )
-    supported = planner.select(options, context=context)
+    selected_after_non_restore = planner.select(options, context=context)
 
-    assert unsupported.action.name is ActionName.ACTION1
-    assert supported.action.name is ActionName.ACTION7
+    assert selected.action.name is ActionName.ACTION7
+    assert selected_after_non_restore.action.name is ActionName.ACTION7
 
 
 def test_budget_fallback_prefers_progress_and_game_over_forces_reset() -> None:

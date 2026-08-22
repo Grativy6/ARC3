@@ -11,6 +11,7 @@ from pathlib import Path, PurePosixPath
 from typing import cast
 from urllib.parse import unquote, urlparse
 
+from arc3.licensing import MIT0_LICENSE_SHA256
 from arc3.packaging.models import PackagingError
 from arc3.packaging.notebook import validate_kernel_metadata, validate_notebook
 from arc3.packaging.requirements import (
@@ -198,8 +199,12 @@ def _validate_runtime_sbom(
             raise PackagingError(f"candidate SBOM repeats package identity {package_id}")
         packages[package_id] = raw
     first_party = packages.get(_spdx_id("arc3"))
-    if first_party is None or first_party.get("licenseDeclared") != "NOASSERTION":
-        raise PackagingError("first-party ARC3 license must remain NOASSERTION")
+    if (
+        first_party is None
+        or first_party.get("licenseDeclared") != "MIT-0"
+        or first_party.get("licenseConcluded") != "MIT-0"
+    ):
+        raise PackagingError("first-party ARC3 license must declare MIT-0")
     extracted_licenses = sbom.get("hasExtractedLicensingInfos")
     if not isinstance(extracted_licenses, list) or not any(
         isinstance(item, dict)
@@ -365,6 +370,8 @@ def validate_candidate_archive(path: Path) -> dict[str, JSONValue]:
             with zipfile.ZipFile(candidate.open("arc3-first-party.zip")) as payload:
                 payload_names = _safe_unique_names(payload, label="first-party payload")
                 required_runtime_members = {
+                    "LICENSE",
+                    "THIRD_PARTY_NOTICES.md",
                     "src/arc3/competition-runtime.v0.1.json",
                     "src/arc3/competition_runtime.py",
                 }
@@ -372,6 +379,8 @@ def validate_candidate_archive(path: Path) -> dict[str, JSONValue]:
                     raise PackagingError(
                         "first-party payload omits the frozen competition runtime declaration"
                     )
+                if sha256_bytes(payload.read("LICENSE")) != f"sha256:{MIT0_LICENSE_SHA256}":
+                    raise PackagingError("payload LICENSE does not match owner-approved MIT-0")
                 payload_manifest = manifest.get("payload")
                 if not isinstance(payload_manifest, dict):
                     raise PackagingError("manifest payload record is missing")
@@ -385,15 +394,21 @@ def validate_candidate_archive(path: Path) -> dict[str, JSONValue]:
                 except (UnicodeDecodeError, tomllib.TOMLDecodeError) as error:
                     raise PackagingError(f"payload pyproject.toml is invalid: {error}") from error
                 build_system = project.get("build-system")
+                project_metadata = project.get("project")
                 tool = project.get("tool")
                 uv = tool.get("uv") if isinstance(tool, dict) else None
                 if (
                     not isinstance(build_system, dict)
                     or build_system.get("requires") != ["hatchling==1.32.0"]
+                    or not isinstance(project_metadata, dict)
+                    or project_metadata.get("license") != "MIT-0"
+                    or project_metadata.get("license-files") != ["LICENSE"]
                     or not isinstance(uv, dict)
                     or uv.get("required-version") != "==0.12.5"
                 ):
-                    raise PackagingError("payload build-system or uv version is not exactly pinned")
+                    raise PackagingError(
+                        "payload build-system, license, or uv version is not exactly pinned"
+                    )
     except (OSError, zipfile.BadZipFile, KeyError) as error:
         raise PackagingError(f"candidate archive cannot be decoded: {error}") from error
 

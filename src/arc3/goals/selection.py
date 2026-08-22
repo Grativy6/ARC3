@@ -62,7 +62,10 @@ def select_goal_action(
         by_id.values(), threshold=strong_progress_threshold
     )
 
-    def rank(option: ActionGoalEstimate) -> tuple[float, int, int, str, str]:
+    def rank(
+        indexed_option: tuple[int, ActionGoalEstimate],
+    ) -> tuple[float, int, int, int]:
+        index, option = indexed_option
         record = by_id.get(option.goal_id) if option.goal_id is not None else None
         desirability = (
             record.rank + _role_bonus(record.candidate.role) + option.goal_advance_rank
@@ -80,11 +83,10 @@ def select_goal_action(
             total,
             desirability,
             option.reachability_rank,
-            option.action.name.value,
-            repr(option.action.coordinate),
+            -index,
         )
 
-    selected = max(options, key=rank)
+    _, selected = max(enumerate(options), key=rank)
     record = by_id.get(selected.goal_id) if selected.goal_id is not None else None
     desirability = (
         record.rank + _role_bonus(record.candidate.role) + selected.goal_advance_rank

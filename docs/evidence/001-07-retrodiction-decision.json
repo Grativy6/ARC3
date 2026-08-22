@@ -1,0 +1,129 @@
+{
+  "schema": "arc3.build-001.stage-07-acceptance.v0.1",
+  "stage": "07",
+  "status": "FAILED_INFRASTRUCTURE",
+  "evidence_labels": [
+    "synthetic",
+    "local-public"
+  ],
+  "objective": "Resolve the Build 000 retrodiction conflict through the one frozen paired decision protocol.",
+  "objective_result": "NOT_RESOLVED_BY_COMPLETE_MATRIX",
+  "production_decision": "KEEP_FULL",
+  "production_decision_reason": "No replacement candidate was eligible because the exact matrix, microbenchmarks, resource receipts, and four replacement gates were not completed or evaluated.",
+  "frozen_contract": {
+    "predeclaration": "docs/evidence/001-07-retrodiction-predeclaration.json",
+    "predeclaration_sha256": "sha256:d4eb82f2e0c04e1c94be4d6fbaa8862aa808cc07932042a02d0c5fbcc02dc608",
+    "amendment": "docs/evidence/001-07-retrodiction-predeclaration-amendment-01.json",
+    "amendment_sha256": "sha256:5c8ff0c91602d86ecaadd61197dfb80681f618ad4e6c810c26933ca337fdcc3b",
+    "premeasurement_audit": "docs/evidence/001-07-premeasurement-audit.json",
+    "premeasurement_audit_sha256": "sha256:c0520173e58dbc1b994169e858e09a36d0f03003eb5953e2f0583d8c93a4478c",
+    "evaluation_cells": 280,
+    "microbenchmark_cells": 60,
+    "modes": [
+      "FULL",
+      "NONE",
+      "RECENT_WINDOW_8",
+      "EVENT_TRIGGERED",
+      "CACHED_INCREMENTAL"
+    ],
+    "overall_wall_limit_seconds": 3600,
+    "peak_rss_limit_bytes": 2147483648
+  },
+  "official_attempt_01": {
+    "source_commit": "f683dbc672213e804ddc6120b0be2762e6c66a08",
+    "source_tree": "0e05672f7d2cf488b66f7dc21b67b9110a27352f",
+    "exit_code": 1,
+    "result_file_created": false,
+    "failure_receipt": "docs/evidence/001-07-failed-infrastructure-attempt-01.json",
+    "failure_receipt_sha256": "sha256:3c4bb0d9599907d48cb6193082732e2244dcc40e8c6ca23dfa7e237485a3657e",
+    "cell_directories": "279/280",
+    "synthetic_cell_directories": 270,
+    "local_public_cells_attempted": 9,
+    "local_public_cells_completed_without_exception": 0,
+    "missing_cell": "stage07-cell-279-D-3ded77000d47d823",
+    "microbenchmarks": "0/60",
+    "replacement_gates_evaluated": false,
+    "terminal_failure": "KeyError during global integrity application after the explicit overall wall-limit break",
+    "exact_process_wall_cpu_rss_recoverable": false
+  },
+  "recovered_partial_evidence": {
+    "false_rule_group_b": {
+      "label": "synthetic",
+      "sealed_receipts": 40,
+      "checkpoint_roundtrips": "80/80",
+      "receipt_inventory_sha256": "sha256:7c7f2f36f7ad0b17df85007f0c4e64c5865481c92cc4f7f34f818a089c00a533",
+      "FULL": "TRUE promoted 8/8; FALSE rejected 8/8",
+      "NONE": "TRUE and FALSE ungated_ablation 8/8 each",
+      "RECENT_WINDOW_8": "TRUE promoted 8/8; FALSE incorrectly promoted 8/8",
+      "EVENT_TRIGGERED": "TRUE promoted 8/8; FALSE rejected 8/8",
+      "CACHED_INCREMENTAL": "TRUE promoted 8/8; FALSE rejected 8/8"
+    },
+    "local_public_group_d": {
+      "label": "local-public",
+      "valid_trace_prefixes": "9/9",
+      "events_per_prefix": 1702,
+      "total_events": 15318,
+      "actions_and_consequences_per_prefix": 65,
+      "total_actions_and_consequences": 585,
+      "levels_completed_per_prefix": 0,
+      "terminal_outcomes": 0,
+      "retrodiction_or_model_events": 0,
+      "common_failure": "WorldModelError: mechanics transition bound exceeded for epoch",
+      "trace_projection_sha256": "sha256:95ec8fddc04499f8f68411d5ba112670f219d87a74b5a8511cd6fdab2be364e6",
+      "interpretation": "The fixed 64-transition mechanics-epoch bound failed mode-independently before any D row completed or any retrodiction/model path became active. This is bounded controller-failure evidence, not a retrodiction comparison, completed replay, or scorecard."
+    },
+    "unclaimed": [
+      "aggregate A or C outcomes",
+      "per-cell wall, CPU, or RSS values lost with process memory",
+      "D terminal scorecards or after-episode asset snapshots",
+      "any replacement-mode benefit or cost gate",
+      "public-game completion or RHAE",
+      "holdout or hidden-game generalization"
+    ]
+  },
+  "partial_work": {
+    "path": "C:/a/arc3-b001/artifacts/stage07/retrodiction-decision-work-attempt-01",
+    "file_count": 6615,
+    "total_bytes": 1854364170,
+    "inventory_sha256": "sha256:fa79526cc91c096fa38868fe4aa11e52cad6c8f0fe8c804ebe00806ee6f4f62e",
+    "immutable": true
+  },
+  "repair": {
+    "commit": "85a0782e77e0549814363cbeefd50bb5eec6ca3c",
+    "tree": "7db029736c24071acbc12938c3032fd5cd362320",
+    "scope": "Skip absent measurements during derived global-integrity projection; retain exact-count gates so incomplete execution serializes PARTIAL, selects KEEP_FULL, and exits nonzero.",
+    "official_attempt_rerun": false,
+    "verification": {
+      "focused_stage07_tests": "PASS:150",
+      "focused_stage07_wall_seconds": 57.95,
+      "partial_prefix_regression": "PASS:279-measurement-prefix-preserved",
+      "partial_cli_serialization": "PASS:artifact-written+exit1+KEEP_FULL",
+      "ruff_lint": "PASS",
+      "ruff_format": "PASS",
+      "mypy_strict": "PASS:scripts/measure_retrodiction_decision.py",
+      "competition_integrity": "PASS:0-findings",
+      "competition_integrity_receipt_sha256": "sha256:f896df1ea646d7c8c532cec35508ec8b31f6e80e0e53524ed11abbea6313d321",
+      "action_semantics": "PASS:0-findings",
+      "action_semantics_receipt_sha256": "sha256:6308c5d115fead85a3420f9c010f646fd2b8e40b853e3c7ddd785f57da0c3729"
+    }
+  },
+  "holdout": {
+    "status": "SEALED_UNCONSUMED",
+    "development_exposure_events": 9,
+    "development_exposure_ledger_sha256": "sha256:4f924df44b11decb392022a927b3296e0248a02edac2c87c53899d374045f0c7",
+    "public_holdout_gameplay_events": 0,
+    "locally_acquired_holdout_assets": 0
+  },
+  "burdens": {
+    "resolved": [
+      "B-001-0041"
+    ],
+    "open": [
+      "B-001-0039",
+      "B-001-0040",
+      "B-001-0042",
+      "B-001-0043"
+    ]
+  },
+  "claim_boundary": "Stage 07 is FAILED_INFRASTRUCTURE. Its recovered receipts show a false-rule weakness for RECENT_WINDOW_8 and a mode-independent local-public epoch-bound failure, but the declared paired cost/benefit decision did not complete. FULL is retained by the predeclared fail-closed rule, not selected as a measured winner."
+}

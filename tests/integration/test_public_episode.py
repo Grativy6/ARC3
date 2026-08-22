@@ -3,9 +3,13 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+from pathlib import Path
+
+import pytest
 
 from arc3.adapters import GridFrame, Observation, ScoreRunSummary, ScoreSummary
 from arc3.evaluation.public import run_public_episode
+from arc3.trace import BaselineTraceSink, CodeIdentity, EventJournal, SourceIdentity
 from arc3.types import (
     ActionName,
     ActionRequest,
@@ -127,3 +131,39 @@ def test_public_episode_uses_only_observation_action_consequence_boundary() -> N
     assert metrics["actions_to_first_completed_level"] == 1
     assert metrics["invalid_action_rate"] == 0.0
     assert metrics["final_state"] == GameStateName.WIN.value
+
+
+def test_baseline_trace_preserves_returned_consequence_before_policy_fault(
+    tmp_path: Path,
+) -> None:
+    class RaisingPolicy(_OneStepPolicy):
+        def accept_consequence(self, observation: Observation) -> None:
+            super().accept_consequence(observation)
+            raise RuntimeError("injected derived-policy fault")
+
+    session = _OneStepOfficialSession()
+    policy = RaisingPolicy()
+    journal = EventJournal(tmp_path / "trace", run_id="baseline-fault")
+    sink = BaselineTraceSink(
+        journal=journal,
+        episode_id="episode:baseline-fault",
+        source=SourceIdentity("baseline_fault_fixture", "1"),
+        code_identity=CodeIdentity("fixture-commit", "sha256:" + "1" * 64),
+    )
+
+    with pytest.raises(RuntimeError, match="derived-policy fault"):
+        run_public_episode(
+            session,
+            policy,
+            max_actions=10,
+            max_resets=2,
+            trace_sink=sink,
+        )
+
+    events = journal.verify_manifest(include_active=True)
+    journal.close()
+    event_types = [event.event_type for event in events]
+    assert session.steps == [ActionRequest(ActionName.ACTION1)]
+    assert event_types.count("action.submitted") == 1
+    assert event_types.count("consequence.received") == 1
+    assert event_types[-1] == "observation.received"

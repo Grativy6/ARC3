@@ -7,6 +7,16 @@ from pathlib import Path
 import pytest
 
 from arc3.integrity import build_integrity_receipt, inventory_locked_dependencies
+from arc3.licensing import MIT0_LICENSE_SHA256
+
+
+def _write_owner_approved_license(root: Path) -> None:
+    project_root = Path(__file__).resolve().parents[2]
+    (root / "LICENSE").write_bytes((project_root / "LICENSE").read_bytes())
+    (root / "pyproject.toml").write_text(
+        '[project]\nname="arc3"\nlicense="MIT-0"\nlicense-files=["LICENSE"]\n',
+        encoding="utf-8",
+    )
 
 
 @pytest.mark.competition
@@ -32,9 +42,14 @@ source = { registry = "https://example.invalid/simple" }
 """,
         encoding="utf-8",
     )
+    _write_owner_approved_license(tmp_path)
     records = inventory_locked_dependencies(lock, include_installed_metadata=False)
     assert [record.name for record in records] == ["alpha-fixture", "arc3", "zeta-fixture"]
-    assert records[1].license_status == "OWNER_DECISION_REQUIRED"
+    assert records[1].license_status == "MIT-0"
+    assert records[1].license_evidence == (
+        "license-expression:MIT-0",
+        f"license-sha256:{MIT0_LICENSE_SHA256}",
+    )
     assert records[0].license_status == "NOT_QUERIED"
 
 

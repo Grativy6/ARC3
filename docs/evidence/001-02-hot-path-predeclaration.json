@@ -1,0 +1,104 @@
+{
+  "schema": "arc3.build-001.stage-02-hot-path-predeclaration.v0.1",
+  "status": "PREDECLARED",
+  "created_at": "2026-08-22T03:59:41.6472069Z",
+  "workflow": "docs/workflows/001-local-public-failure-recovery.md",
+  "objective": "Attribute FULL controller runtime before optimization, quantify diagnostic overhead, and prove that timing does not steer seeded policy decisions.",
+  "source_freeze": {
+    "resolution": "HEAD_OF_THIS_PREDECLARATION_CHECKPOINT",
+    "resolution_rule": "Execute both measurements only from the clean commit containing this declaration; record that exact commit, tree, first-party source hash, and worktree status in the resulting artifacts.",
+    "instrumentation_commit": "84854c4ada25684f5248fe7bd8725d3b6301c2d5",
+    "instrumentation_tree": "1647efcc4dfa00b3cfd472c9d9cf4f9a73367904",
+    "profile_schema": "arc3.hot-path-profile.v0.2",
+    "semantic_boundary": "Profiling is derived diagnostic state. No timing, RSS, cache counter, or phase result may enter action selection."
+  },
+  "synthetic_overhead_experiment": {
+    "evidence_label": "synthetic",
+    "command": "C:/a/arc3-b001-28c7a00/Scripts/python.exe scripts/measure_hot_path.py --seed 25 --repetitions 7 --actions 8 --output C:/a/arc3-b001/artifacts/stage02/hot-path-overhead.json --work-root C:/a/arc3-b001/artifacts/stage02/hot-path-overhead-work",
+    "seed": 25,
+    "repetitions_per_mode": 7,
+    "trial_order": [
+      "disabled",
+      "enabled",
+      "disabled",
+      "enabled",
+      "disabled",
+      "enabled",
+      "disabled",
+      "enabled",
+      "disabled",
+      "enabled",
+      "disabled",
+      "enabled",
+      "disabled",
+      "enabled"
+    ],
+    "action_budget": 8,
+    "grid_size": 8,
+    "network_enabled": false,
+    "public_assets_accessed": false,
+    "acceptance": {
+      "exact_action_decision_signatures_match": true,
+      "exact_outcomes_match": true,
+      "median_enabled_to_disabled_wall_ratio_max": 1.15,
+      "measurement_note": "The ratio is host-local synthetic overhead evidence, not a public-game performance claim."
+    }
+  },
+  "development_profile_experiment": {
+    "evidence_label": "local-public",
+    "partition": "development",
+    "game_ids": [
+      "ar25-0c556536"
+    ],
+    "manifest_assignment_hash": "90423451e4cc21a85da6aed98ef9359685517addec73ab8e71a8b351d4940cda",
+    "agent": "full",
+    "baseline_id": "B4",
+    "seed": 7,
+    "max_actions": 8,
+    "max_resets": 8,
+    "worker_timeout_seconds": 120.0,
+    "hot_path_profile": true,
+    "python_allocation_tracing": true,
+    "environment_mode": "LOCAL",
+    "network_during_evaluation": false,
+    "acquire_missing": false,
+    "environment_asset_root": "C:/a/arc3-s15-6a0f6e5/artifacts/stage15/public-environments",
+    "selected_asset_aggregate_sha256": "sha256:e796e615d2e10c93b849f9bf150308fbf84d624725deaf995d7ec2d1c2f86b22",
+    "output_root": "C:/a/arc3-b001/artifacts/stage02/evaluations",
+    "exposure_ledger": "C:/a/arc3-b001/artifacts/stage02/public-exposure.jsonl",
+    "evaluation_id": "build001-stage02-ar25-seed7-profile",
+    "milestone_id": "build-001-stage02-hot-path-v0.1",
+    "acceptance": {
+      "artifact_verifier": "PASS",
+      "profile_schema": "arc3.hot-path-profile.v0.2",
+      "profile_enabled": true,
+      "active_span_count": 0,
+      "minimum_named_attribution_coverage": 0.9,
+      "minimum_environment_actions_for_ranking": 1,
+      "required_measurements": [
+        "wall_time",
+        "cpu_time",
+        "current_and_peak_rss",
+        "action_count",
+        "phase_call_counts",
+        "cache_hits_misses_and_opportunities",
+        "startup_separation",
+        "per_boundary_phase_snapshots"
+      ]
+    }
+  },
+  "decision_rule": {
+    "pass": "Synthetic decisions/outcomes are identical, median wall overhead is at most 15 percent, the development artifact verifies, and at least 90 percent of profiler-lifetime wall time is named while any remainder is explicitly labeled runtime_remainder.",
+    "partial": "The profile is structurally valid and behavior preserving but the overhead or attribution threshold is missed; preserve the measurements and use only rankings supported by the receipt.",
+    "failed_mechanism": "Enabled profiling changes seeded decisions or outcomes, corrupts controller reuse, or produces internally inconsistent phase accounting.",
+    "failed_infrastructure": "The clean-source gate, pinned local asset, worker, or measurement harness cannot execute; preserve the exact failure without substituting holdout evidence."
+  },
+  "integrity": {
+    "public_partition_manifest_sha256": "sha256:682d5891c2aface54803d9bd1173c55ed21e89856e13b8a478fb9276ee963f2f",
+    "build_000_exposure_ledger_sha256": "sha256:cd9af42ed3a5ef9fa0dc201ddb10e32d2bcccee9df729aa0c7d53077c04c9ad4",
+    "public_holdout_allowed": false,
+    "public_holdout_game_ids_selected": 0,
+    "hosted_inference_allowed": false,
+    "game_source_available_to_policy": false
+  }
+}

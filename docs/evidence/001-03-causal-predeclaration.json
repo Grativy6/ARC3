@@ -1,0 +1,190 @@
+{
+  "schema": "arc3.build-001.stage-03-causal-predeclaration.v0.1",
+  "status": "PREDECLARED",
+  "created_at": "2026-08-22T04:22:27.6622458Z",
+  "workflow": "docs/workflows/001-local-public-failure-recovery.md",
+  "objective": "Distinguish the dominant Build 001 throughput causes with factor-isolated intervention evidence before changing production policy semantics.",
+  "source_freeze": {
+    "resolution": "HEAD_OF_THIS_PREDECLARATION_CHECKPOINT",
+    "resolution_rule": "Run every declared experiment only from the clean commit containing this declaration; bind that exact commit, tree, first-party source hash, worktree state, and intervention flags into each artifact.",
+    "stage_02_profile_commit": "8168168ea224add5b8e296ee892866d75f1ca0b7",
+    "stage_02_profile_receipt_hash": "sha256:306906edc7225359a885a04df6ac303c71207f50ce68058ff3da5baa16707275",
+    "semantic_boundary": "Allocator tracing and automatic-checkpoint switches exist only on the diagnostic evaluation surface, default on, require FULL plus hot-path profiling when disabled, and are forbidden on public-holdout. Checkpoint suppression is an intervention, not a production repair."
+  },
+  "ranked_prechange_baseline": {
+    "evidence_label": "local-public",
+    "game_id": "ar25-0c556536",
+    "seed": 7,
+    "environment_actions": 8,
+    "levels_completed": 0,
+    "total_wall_seconds": 38.334538700059056,
+    "profile_total_wall_ns": 38303050300,
+    "named_attribution_coverage": 0.999783265303,
+    "exclusive_phase_wall_ns": {
+      "action_selection": 18407804300,
+      "checkpointing": 6499125100,
+      "startup": 4151448300,
+      "goal_inference": 3532356600,
+      "trace_serialization": 2342465200,
+      "perception": 981261400,
+      "retrodiction": 901480900,
+      "planning": 423179000
+    },
+    "boundaries": {
+      "action_selection_after_first_action_median_ns": 2595648000,
+      "checkpoint_action_2_ns": 346869100,
+      "checkpoint_action_8_ns": 1239666700,
+      "retrodiction_action_2_ns": 50246200,
+      "retrodiction_action_8_ns": 194310900
+    },
+    "trace": {
+      "event_count": 241,
+      "bytes": 593206,
+      "bytes_per_environment_action": 74150.75
+    }
+  },
+  "synthetic_factorial": {
+    "evidence_label": "synthetic",
+    "command": "C:/a/arc3-b001-28c7a00/Scripts/python.exe scripts/diagnose_hot_path.py --seed 25 --repetitions 5 --actions 8 --output C:/a/arc3-b001/artifacts/stage03/hot-path-diagnosis.json --work-root C:/a/arc3-b001/artifacts/stage03/hot-path-diagnosis-work",
+    "seed": 25,
+    "repetitions_per_cell": 5,
+    "factor_cells": [
+      {
+        "python_allocation_tracing": false,
+        "automatic_checkpointing": false
+      },
+      {
+        "python_allocation_tracing": true,
+        "automatic_checkpointing": false
+      },
+      {
+        "python_allocation_tracing": true,
+        "automatic_checkpointing": true
+      },
+      {
+        "python_allocation_tracing": false,
+        "automatic_checkpointing": true
+      }
+    ],
+    "order": "rotated Gray-code orders; every repetition contains all four cells, complete four-repetition blocks balance position, and later blocks reverse direction",
+    "action_budget": 8,
+    "network_enabled": false,
+    "public_assets_accessed": false,
+    "embedded_action_selection_microbenchmark": {
+      "method": "read-only ARC3Controller._candidate_actions on an unchanged post-transition synthetic state with an active world-model ensemble",
+      "minimum_iterations_per_timing_pass": 32,
+      "factors": [
+        "python_allocation_tracing_off",
+        "python_allocation_tracing_on"
+      ],
+      "required_controls": [
+        "exact_candidate_signatures",
+        "policy_state_identity",
+        "active_ensemble",
+        "prediction_cprofile_rows",
+        "state_identity_cprofile_rows"
+      ]
+    }
+  },
+  "development_factorial": {
+    "evidence_label": "local-public",
+    "partition": "development",
+    "game_ids": [
+      "ar25-0c556536"
+    ],
+    "manifest_assignment_hash": "90423451e4cc21a85da6aed98ef9359685517addec73ab8e71a8b351d4940cda",
+    "agent": "full",
+    "baseline_id": "B4",
+    "seed": 7,
+    "max_actions": 8,
+    "max_resets": 8,
+    "worker_timeout_seconds": 120.0,
+    "hot_path_profile": true,
+    "environment_mode": "LOCAL",
+    "network_during_evaluation": false,
+    "acquire_missing": false,
+    "environment_asset_root": "C:/a/arc3-s15-6a0f6e5/artifacts/stage15/public-environments",
+    "selected_asset_aggregate_sha256": "sha256:e796e615d2e10c93b849f9bf150308fbf84d624725deaf995d7ec2d1c2f86b22",
+    "output_root": "C:/a/arc3-b001/artifacts/stage03/evaluations",
+    "recordings_root": "C:/a/arc3-b001/recordings/stage03",
+    "exposure_ledger": "C:/a/arc3-b001/artifacts/stage03/public-exposure.jsonl",
+    "milestone_id": "build-001-stage03-causal-v0.1",
+    "cells": [
+      {
+        "cell": "control",
+        "evaluation_id": "build001-stage03-ar25-seed7-trace-on-checkpoint-on",
+        "python_allocation_tracing": true,
+        "automatic_checkpointing": true
+      },
+      {
+        "cell": "allocator_intervention",
+        "evaluation_id": "build001-stage03-ar25-seed7-trace-off-checkpoint-on",
+        "python_allocation_tracing": false,
+        "automatic_checkpointing": true
+      },
+      {
+        "cell": "checkpoint_intervention",
+        "evaluation_id": "build001-stage03-ar25-seed7-trace-on-checkpoint-off",
+        "python_allocation_tracing": true,
+        "automatic_checkpointing": false
+      },
+      {
+        "cell": "joint_interaction",
+        "evaluation_id": "build001-stage03-ar25-seed7-trace-off-checkpoint-off",
+        "python_allocation_tracing": false,
+        "automatic_checkpointing": false
+      }
+    ],
+    "execution_order": [
+      "control",
+      "allocator_intervention",
+      "checkpoint_intervention",
+      "joint_interaction"
+    ],
+    "command_template": "C:/a/arc3-b001-28c7a00/Scripts/python.exe -m scripts.evaluate_public --partition development --agents full --seeds 7 --max-actions 8 --max-resets 8 --timeout-seconds 120.0 --frozen-commit <PREDECLARATION_COMMIT> --manifest <REPOSITORY>/docs/evaluation/public-game-partitions.v0.1.json --environments-dir C:/a/arc3-s15-6a0f6e5/artifacts/stage15/public-environments --recordings-dir C:/a/arc3-b001/recordings/stage03 --output-root C:/a/arc3-b001/artifacts/stage03/evaluations --exposure-ledger C:/a/arc3-b001/artifacts/stage03/public-exposure.jsonl --milestone-id build-001-stage03-causal-v0.1 --game-ids ar25-0c556536 --hot-path-profile <EXPLICIT_TRACING_FLAG> <EXPLICIT_CHECKPOINT_FLAG> --evaluation-id <CELL_EVALUATION_ID>"
+  },
+  "causal_decision_rules": {
+    "behavior_control": "A cell is interpretable only if its exact action-decision signature and environment outcome match the control at the same seed and budget; otherwise preserve it as a behavioral difference and do not attribute the timing delta to pure implementation cost.",
+    "material_cause": "Supported when the one-factor intervention saves at least 15 percent of matched total wall time or at least 0.25 seconds per environment action in local-public evidence, with the behavior control satisfied and the synthetic factorial direction not materially contradictory.",
+    "interaction": "Report both additive difference-of-differences and multiplicative cross-ratio; never sum marginal savings when interaction is material.",
+    "action_selection_internal_candidate": "Supported as a concrete implementation-cost candidate only if active-ensemble cProfile rows show repeated prediction and state-id work with exact read-only output/state identity. It remains unresolved as an end-to-end repair until a later behavior-preserving cache/reuse intervention exists.",
+    "contradicted": "Classify a proposed dominant cause as contradicted on this measured episode when direct phase accounting or intervention evidence is below the material threshold; this does not prove absence on other games or longer histories.",
+    "unresolved": "Use when the experiment does not isolate the factor, changes behavior, lacks enough calls/actions, or conflicts across synthetic and local-public surfaces."
+  },
+  "required_candidate_map": [
+    "combinatorial_hypothesis_growth",
+    "repeated_full_history_retrodiction",
+    "planning_expansion_explosion",
+    "component_correspondence",
+    "synchronous_trace_and_blob_writes",
+    "automatic_checkpoint_frequency",
+    "repeated_frame_transformations",
+    "python_object_validation_and_allocator_overhead",
+    "redundant_world_model_prediction_and_state_identity"
+  ],
+  "acceptance": {
+    "minimum_material_causes_with_intervention_evidence": 2,
+    "required_public_artifact_verification": "PASS",
+    "required_profiles": "enabled in all four local-public cells",
+    "required_controls": [
+      "exact action-decision signature comparison",
+      "exact environment outcome comparison",
+      "wall and CPU time",
+      "RSS and allocator state",
+      "action and reset counts",
+      "per-phase calls and exclusive times",
+      "trace bytes and replay",
+      "checkpoint bytes and file counts",
+      "frozen source and asset identity",
+      "holdout exposure count remains zero"
+    ]
+  },
+  "integrity": {
+    "public_partition_manifest_sha256": "sha256:682d5891c2aface54803d9bd1173c55ed21e89856e13b8a478fb9276ee963f2f",
+    "build_000_exposure_ledger_sha256": "sha256:cd9af42ed3a5ef9fa0dc201ddb10e32d2bcccee9df729aa0c7d53077c04c9ad4",
+    "public_holdout_allowed": false,
+    "public_holdout_game_ids_selected": 0,
+    "hosted_inference_allowed": false,
+    "game_source_available_to_policy": false
+  }
+}

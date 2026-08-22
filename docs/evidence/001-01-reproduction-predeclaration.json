@@ -1,0 +1,101 @@
+{
+  "schema": "arc3.build-001.stage-01-reproduction-predeclaration.v0.1",
+  "status": "PREDECLARED",
+  "evidence_label": "local-public",
+  "created_at": "2026-08-22T03:20:48.066868Z",
+  "workflow": "docs/workflows/001-local-public-failure-recovery.md",
+  "objective": "Test whether the frozen Build 000 production FULL policy reproduces its local-public timeout pathology before any production-policy repair.",
+  "source_freeze": {
+    "resolution": "HEAD_OF_THIS_PREDECLARATION_CHECKPOINT",
+    "resolution_rule": "After this file and the generic evaluation selector are committed, execute only from that clean commit and record its exact SHA in every run artifact.",
+    "build_000_stage_18_commit": "90ecf7267d5bb23d751d6f7ce3e8aa75f2f1a130",
+    "production_identity": [
+      {
+        "path": "src/arc3/policy/controller.py",
+        "git_blob": "f3ebc607a8190564c3e9ae6028fa014d92cb2a31",
+        "matches_stage_18": true
+      },
+      {
+        "path": "src/arc3/policy/models.py",
+        "git_blob": "ed34fcbd81679e5c46d8bf2bce69fa07acee3fc0",
+        "matches_stage_18": true
+      },
+      {
+        "path": "src/arc3/evaluation/baselines.py",
+        "git_blob": "52d2011d43455212977f26db46a265c4cf2a4760",
+        "matches_stage_18": true
+      },
+      {
+        "path": "src/arc3/competition_runtime.py",
+        "git_blob": "d8d21be0fbd1398100360274491359965388f831",
+        "matches_stage_18": true
+      },
+      {
+        "path": "src/arc3/competition-runtime.v0.1.json",
+        "git_blob": "fd610dc6bb11a6e3f292934df504abb0e9655671",
+        "matches_stage_18": true
+      }
+    ],
+    "permitted_pre_run_change": "Generic evaluation-only game selector with partition validation; no production policy change.",
+    "production_policy_changed": false
+  },
+  "experiment": {
+    "partition": "development",
+    "game_ids": [
+      "ar25-0c556536"
+    ],
+    "manifest_assignment_hash": "90423451e4cc21a85da6aed98ef9359685517addec73ab8e71a8b351d4940cda",
+    "agent": "full",
+    "baseline_id": "B4",
+    "seeds": [
+      7
+    ],
+    "max_actions": 80,
+    "max_resets": 8,
+    "worker_timeout_seconds": 120.0,
+    "decision_timeout_seconds": 2.0,
+    "memory_megabytes": 2048,
+    "max_coordinate_candidates": 24,
+    "max_search_nodes": 10000,
+    "max_search_depth": 32,
+    "max_trace_bytes": 268435456,
+    "environment_mode": "LOCAL",
+    "network_during_evaluation": false,
+    "acquire_missing": false,
+    "environment_asset_root": "C:/a/arc3-s15-6a0f6e5/artifacts/stage15/public-environments",
+    "selected_asset_aggregate_sha256": "sha256:e796e615d2e10c93b849f9bf150308fbf84d624725deaf995d7ec2d1c2f86b22",
+    "output_root": "C:/a/arc3-b001/artifacts/stage01/evaluations",
+    "exposure_ledger": "C:/a/arc3-b001/artifacts/stage01/public-exposure.jsonl",
+    "evaluation_id": "build001-stage01-ar25-seed7-full",
+    "milestone_id": "build-001-stage01-reproduction-v0.1"
+  },
+  "historical_comparator": {
+    "build_000_stage_15_commit": "6a0f6e5b9cf076f7d755675ece0fa46379202161",
+    "evaluation_id": "stage15-development-6a0f6e5b9cf0",
+    "run_id": "ar25-0c556536-B4-full-seed-7",
+    "status": "timeout",
+    "wall_clock_seconds": 120.110601900029,
+    "environment_actions": 19,
+    "levels_completed": 0,
+    "scorecard_verified": false,
+    "trace_events": 759,
+    "trace_bytes": 1679940,
+    "trace_replay_verified": true,
+    "run_receipt_hash": "sha256:edee6bc4da0ffcf466c32cf202ef86b9db7f80c943c5422c57bc6c73d9fc41f8",
+    "evaluation_manifest_sha256": "sha256:156b1f1bbd185d336068d5dc3b3c6b2241ff651c60107e9694df995eac85a592",
+    "results_jsonl_sha256": "sha256:87e4d0fe9468be2f10354a261705955e0e5cfdab90c6a572f506265dbd0ba450"
+  },
+  "decision_rule": {
+    "reproduced": "Terminal status timeout, zero completed levels, wall time in [118,123] seconds, and 1-40 environment actions.",
+    "timing_shape_drift": "Timeout and zero completed levels but wall time or action count outside the predeclared envelope.",
+    "mechanism_not_reproduced": "Normal termination or any completed level under the same frozen production policy and declared budgets.",
+    "failed_infrastructure": "The pinned asset, SDK, clean-source gate, or process-isolated evaluator cannot execute; preserve the exact failure and attempt only an identity-preserving repair.",
+    "claim_boundary": "One development-game reproduction is local-public mechanism evidence only, not a benchmark or hidden-game generalization claim."
+  },
+  "integrity": {
+    "public_holdout_allowed": false,
+    "public_holdout_game_ids_selected": 0,
+    "game_source_available_to_policy": false,
+    "hosted_inference_allowed": false
+  }
+}
