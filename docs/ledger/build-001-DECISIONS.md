@@ -510,3 +510,32 @@ independent authorities.
 - Reopening condition: none within Build 001. A future separately predeclared workflow may execute
   a new comparison under a new attempt identity, but it cannot revise or supersede this attempt's
   immutable status.
+
+## D-001-0029 — Freeze evidence-preserving two-speed reasoning before implementation
+
+- Recorded: 2026-08-22T19:00:22.4554283Z
+- Status: accepted
+- Decision: Keep the raw consequence/observation boundary, prediction assessment, local action
+  effects, immutable transition membership, contradiction/reopening, goal progress, plan/cache
+  invalidation, and both exactly-once checkpoints always on. Defer only expensive model
+  compilation, retrodiction, goal revision, candidate-wide simulation, and new-plan search behind
+  typed deterministic triggers. Use no elapsed-time value as a policy input. Derive the mechanics
+  transition capacity from the already config-hashed `max_actions`, persist and verify it at
+  restore, and never invent an epoch rollover to escape storage pressure.
+- Evidence: `docs/evidence/001-08-two-speed-predeclaration.json`, SHA-256
+  `3342b6e2635c0606391c9aea02b2fec0cf4c5642a3d38b95768a1b77b4520878`; Stage 07's nine
+  65-action local-public prefixes; Stage 02/03 hot-path profiles; frozen Build 000 Stage 13/14 and
+  Build 001 Stage 04/05/06 mechanism receipts.
+- Measurement: compare frozen Build 000 FULL, contemporary always-deep, production two-speed, and
+  two-speed without prediction cache in five matched balanced repetitions on only the already
+  exposed `ar25-0c556536` seed-7 eight-action surface. Require at least 25% median paired
+  per-action wall reduction against both controls and at least 70% non-regressing pairs, while
+  reporting behavior, censoring, and failures separately. Freeze the Stage 10 mechanism floors in
+  the same declaration before observing Stage 08 results.
+- Boundary: cache entries are revisable pure computation, never receipts or authority. A timing
+  win cannot override action/score/fault differences, regression failure, incomplete deep
+  receipts, resource failure, or holdout exposure. The unique Stage 07 attempt remains immutable.
+- Reopening condition: implementation evidence shows that an always-on fold is itself the material
+  bottleneck, a declared trigger is not deterministically trace-derived, a cache affects semantics
+  or restart behavior, or a stronger predeclared generic design preserves every authority and
+  regression boundary at lower measured cost.

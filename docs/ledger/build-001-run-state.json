@@ -7,12 +7,12 @@
   "build_status": "IN_PROGRESS",
   "status": "IN_PROGRESS",
   "current_stage": "08",
-  "current_task": "Freeze and implement the Stage 08 two-speed controller while preserving the Stage 07 epoch-bound failure",
+  "current_task": "Implement the frozen Stage 08 two-speed controller and budget-derived mechanics capacity",
   "implementation_branch": "build/001-local-public-recovery",
   "pull_request": "https://github.com/Grativy6/ARC3/pull/5",
   "started_at": "2026-08-21T15:41:02Z",
   "last_checkpoint_at": "2026-08-22T18:45:54.7898565Z",
-  "last_checkpoint_commit": "85a0782e77e0549814363cbeefd50bb5eec6ca3c",
+  "last_checkpoint_commit": "d0052555e721453746e4c443efea441da2cb4789",
   "base": {
     "main_commit": "28c7a00732ce48e5c231211b01bc6eba7d0d71b4",
     "main_tree": "4586299448e9b1b585a0878674ed5f9afa60c384",
@@ -366,6 +366,27 @@
         "B-001-0043"
       ],
       "public_holdout_consumed": false
+    },
+    "08": {
+      "status": "IN_PROGRESS",
+      "labels": [
+        "synthetic",
+        "local-public"
+      ],
+      "predeclaration": "docs/evidence/001-08-two-speed-predeclaration.json",
+      "predeclaration_sha256": "sha256:3342b6e2635c0606391c9aea02b2fec0cf4c5642a3d38b95768a1b77b4520878",
+      "source_baseline_commit": "d0052555e721453746e4c443efea441da2cb4789",
+      "source_baseline_tree": "37cb602a2aa9fa61ec20eee84eb8c226bd8bc432",
+      "production_mode": "TWO_SPEED",
+      "control_mode": "LEGACY_ALWAYS_DEEP",
+      "maximum_fast_streak": 4,
+      "repeated_no_progress_threshold": 2,
+      "prediction_cache_capacity": 256,
+      "public_repetitions_per_variant": 5,
+      "public_variants": 4,
+      "mechanics_capacity": "ARC3Config.budgets.max_actions",
+      "implementation_status": "FROZEN_PREIMPLEMENTATION",
+      "public_holdout_consumed": false
     }
   },
   "artifacts": {
@@ -488,10 +509,14 @@
     "stage_07_report": {
       "path": "docs/reports/001-07-retrodiction-decision.md",
       "sha256": "53b43726a1e2205df157d1fe4cb3005b265fa23737f9a581792ed41636dc21e8"
+    },
+    "stage_08_predeclaration": {
+      "path": "docs/evidence/001-08-two-speed-predeclaration.json",
+      "sha256": "3342b6e2635c0606391c9aea02b2fec0cf4c5642a3d38b95768a1b77b4520878"
     }
   },
   "blocked_items": [],
-  "next_action": "Freeze the Stage 08 two-speed trigger, budget, cache, regression, and epoch-capacity contract before implementation measurement.",
+  "next_action": "Implement and verify the budget-derived mechanics capacity, then the typed Stage 08 cadence, receipts, checkpoint state, and pure prediction cache before measurement.",
   "notes": [
     "Build 000 ledgers and reports are immutable historical evidence and are not overwritten by Build 001.",
     "The owner explicitly approved MIT-0 for ARC3 first-party source in the active Build 001 instruction.",
