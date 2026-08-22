@@ -936,7 +936,7 @@ does not erase earlier uncertainty or failed mechanisms.
 
 ## B-001-0045 — Legacy cadence migration cannot honestly cross source identity
 
-- Status: OPEN_IN_REPAIR
+- Status: RESOLVED
 - Stage: 08
 - Opened: 2026-08-22
 - Burden: a cadence-less checkpoint generated at commit
@@ -952,10 +952,15 @@ does not erase earlier uncertainty or failed mechanisms.
   `f0eb87b174443acb9c805c0e3c4ca4b8c52c65a689769fb9c2c8d462bc67597f`; envelope hash
   `7e96ceddd19c4d078b8a172a45e02987e7bfc3f43107b03ed54cc8308bb654d7`. Honest current restore
   fails with `checkpoint commitment receipt is not exactly bound to its prior trace tail`.
-- Next discriminating action: add an explicit dual-identity migration API that validates the old
-  artifact under an exact caller-supplied legacy identity, rejects cadence-bearing or wrong-identity
-  inputs, and emits one activation plus all subsequent commitments under current identity.
+- Resolution: `ARC3Controller.restore` now requires paired exact legacy code/source identities for
+  cadence-less migration, validates the untouched checkpoint and commitment under that identity,
+  rejects wrong, partial, current-commit, configuration-drifted, or cadence-bearing inputs, and
+  writes one activation plus all later checkpoints under the honest current identity. Ordinary
+  restore now also validates the current source identity rather than only Git/config identity.
 - Resolution condition: pristine legacy bytes remain unchanged; pending action and exact replay are
   preserved without resubmission; wrong/missing legacy identity fails; activation occurs once under
   current source; and later checkpoint/continuation receipts validate under current identity.
-- Resolution receipt: none.
+- Resolution receipt: commit `7f994fc`; 21 focused legacy/controller checkpoint replay tests,
+  Ruff, format, and strict mypy pass. A copied real `df961c7` artifact preserved the known trace,
+  checkpoint-file, and envelope hashes while migrating once and then restoring normally; its final
+  clean-commit receipt remains part of the Stage 08 premeasurement audit.

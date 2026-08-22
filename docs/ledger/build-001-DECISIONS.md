@@ -622,3 +622,39 @@ independent authorities.
 - Reopening condition: any FAST/DEEP transition cannot replay exactly; cache reuse changes an
   environment action; a reopening leaves stale cache authority; a non-revisable receipt enters the
   abandoned suffix; or the measured harness violates behavior, resource, or receipt parity.
+
+## D-001-0034 — Cross cadence-less checkpoints through two explicit identities
+
+- Recorded: 2026-08-22T21:58:38.4359590Z
+- Status: accepted
+- Decision: Keep normal checkpoint restore strict to the current code and source identities. Permit
+  cadence-less migration only when the caller supplies both exact legacy identities, the legacy
+  commitment validates under them, the configuration identity is unchanged, and the Git commit is
+  different. Preserve the legacy bytes and pending action, then emit exactly one cadence activation
+  and every new commitment under the current identities.
+- Evidence: commit `7f994fc`; 21 focused migration and controller-checkpoint tests, Ruff, format,
+  and strict mypy pass. The copied real `df961c7` artifact retained trace SHA-256
+  `b3878c197f25693ab64893a1c2a774dba89264cde8c63d719ca3b94fe33e8aca` and checkpoint-file
+  SHA-256 `f0eb87b174443acb9c805c0e3c4ca4b8c52c65a689769fb9c2c8d462bc67597f`.
+- Boundary: migration never resubmits a pending action and never rewrites or relabels the legacy
+  prefix. It does not relax cadence-bearing or ordinary restore.
+- Reopening condition: any caller can migrate with a partial or wrong identity, legacy bytes change,
+  a pending action can cross twice, or a new receipt carries the legacy identity.
+
+## D-001-0035 — Make Stage 08 timing, behavior, resource, and cadence gates jointly fail closed
+
+- Recorded: 2026-08-22T21:58:38.4359590Z
+- Status: accepted
+- Decision: Define whole-controller time as choose plus consequence plus both measured checkpoint
+  boundaries; compare all four variants by exact ordered environment actions, resets, terminal
+  state, verified score/levels/completion, and ordered canonical controller faults; enforce the
+  frozen RSS, trace-size, and decision-time limits; and require typed selected-to-terminal cadence
+  receipts with priority-ordered trigger source IDs. Keep Build 000 work/cadence telemetry null.
+- Evidence: commit `2646cd3`; 37 focused contract tests, Ruff, format, and strict mypy pass while the
+  frozen 20-cell matrix and plan hashes remain unchanged.
+- Boundary: these are executable premeasurement gates, not observed performance. A faster cell
+  cannot pass with semantic divergence, missing receipts, a resource violation, or inferred Build
+  000 telemetry.
+- Reopening condition: the process harness can serialize an invalid cell into a passing typed result,
+  whole-controller accounting excludes an authority checkpoint, or exact paired behavior can drift
+  without blocking materiality.

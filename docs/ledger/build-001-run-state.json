@@ -7,12 +7,12 @@
   "build_status": "IN_PROGRESS",
   "status": "IN_PROGRESS",
   "current_stage": "08",
-  "current_task": "Repair explicit legacy-checkpoint migration provenance, then seal the Stage 08 harness",
+  "current_task": "Seal and preflight the process-isolated Stage 08 measurement harness",
   "implementation_branch": "build/001-local-public-recovery",
   "pull_request": "https://github.com/Grativy6/ARC3/pull/5",
   "started_at": "2026-08-21T15:41:02Z",
-  "last_checkpoint_at": "2026-08-22T21:37:59.6950190Z",
-  "last_checkpoint_commit": "df0cf75c63c37a784f6ca2df8b87e24d6404a6cb",
+  "last_checkpoint_at": "2026-08-22T21:58:38.4359590Z",
+  "last_checkpoint_commit": "2646cd3cb6923107a7e8e817b1072497e2094ad9",
   "base": {
     "main_commit": "28c7a00732ce48e5c231211b01bc6eba7d0d71b4",
     "main_tree": "4586299448e9b1b585a0878674ed5f9afa60c384",
@@ -385,7 +385,7 @@
       "public_repetitions_per_variant": 5,
       "public_variants": 4,
       "mechanics_capacity": "ARC3Config.budgets.max_actions",
-      "implementation_status": "CONTROLLER_INTEGRATION_VERIFIED_PENDING_EXPLICIT_LEGACY_MIGRATION_AND_HARNESS",
+      "implementation_status": "CONTROLLER_AND_EXPLICIT_LEGACY_MIGRATION_VERIFIED_PENDING_HARNESS",
       "mechanics_capacity_checkpoint_commit": "5d1a67840bf75a939e25832d8300fa9c835c0e1d",
       "mechanics_capacity_verification": "PASS:82-focused+lifecycle+controller+all-retrodiction-modes+replay+ruff+format+mypy-strict",
       "failure_sealing_source_commit": "b4b033b4206a2c0044544c992bd02b709d1c59ad",
@@ -401,16 +401,20 @@
       "controller_integration_tree": "4eb163c09b5ac80513dfdacfdf18f318b79813c4",
       "controller_integration_verification": "PASS:19-rule-change-reopening+76-cadence-replay-checkpoint-unit+ruff+format+mypy-strict-9-source-files",
       "legacy_migration_audit": "FAILED_MECHANISM:honest-current-identity-rejected-before-cadence-migration;compatibility-only-old-identity-falsely-stamps-new-receipts",
+      "legacy_migration_repair_commit": "7f994fc5a520707be780ee0a11405535626eaee0",
+      "legacy_migration_repair_verification": "PASS:21-legacy+controller-checkpoint-replay+ruff+format+mypy-strict;real-df961c7-artifact-requires-final-committed-identity-rerun",
+      "measurement_contract_audit_commit": "2646cd3cb6923107a7e8e817b1072497e2094ad9",
+      "measurement_contract_audit_verification": "PASS:37-unit+whole-controller-checkpoint-inclusive-timing+exact-behavior-parity+resource-gates+typed-cadence-receipts+ruff+format+mypy-strict",
       "resolved_burdens": [
         "B-001-0043",
-        "B-001-0044"
+        "B-001-0044",
+        "B-001-0045"
       ],
       "open_burdens": [
         "B-001-0014",
         "B-001-0039",
         "B-001-0040",
-        "B-001-0042",
-        "B-001-0045"
+        "B-001-0042"
       ],
       "public_holdout_consumed": false
     }
@@ -542,7 +546,7 @@
     }
   },
   "blocked_items": [],
-  "next_action": "Complete explicit dual-identity legacy checkpoint migration, close the Stage 08 measurement-contract audit gaps, then run the frozen 20-cell harness.",
+  "next_action": "Complete static audit and mock verification of the Stage 08 process harness, seal a clean committed premeasurement identity, then run the frozen 20-cell development-only matrix once.",
   "notes": [
     "Build 000 ledgers and reports are immutable historical evidence and are not overwritten by Build 001.",
     "The owner explicitly approved MIT-0 for ARC3 first-party source in the active Build 001 instruction.",
