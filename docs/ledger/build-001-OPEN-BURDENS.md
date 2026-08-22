@@ -485,6 +485,11 @@ does not erase earlier uncertainty or failed mechanisms.
   receipt vector, strengthen restore to compare that order directly, reject partial duplicate
   aliasing, and add non-lexicographic, repeated-context, transformed-handle, checkpoint, and tamper
   regressions without weakening the harness.
+- Independent-audit expansion: the lifecycle summary fold also ignored the support events and
+  trusted terminal arrays, so it could false-pass a terminal-only invented confirmation. The
+  repair must reconstruct from contiguous support indices and compare the terminal payload
+  exactly. Predecessor-recovery event IDs are likewise trace-ordered and must not be lexically
+  normalized. Derived candidate mutation must remain downstream of its immutable support append.
 - Resolution condition: the exact failed case and adversarial regressions pass from clean source;
   preflight 058 remains immutable and a new path preflight receipt is created rather than replacing
   it.

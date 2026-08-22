@@ -313,3 +313,24 @@ independent authorities.
 - Reopening condition: any support dimension loses index alignment, a partial duplicate is
   silently deduplicated, restore accepts an independently permuted dimension, or receipt order is
   confused with raw/canonical action order.
+
+## D-001-0020 — Reconstruct lifecycle folds from support receipts, not terminal narrative
+
+- Recorded: 2026-08-22T13:53:00Z
+- Status: accepted
+- Decision: Strengthen the independent Stage 06 lifecycle fold so it consumes
+  `mechanics.successor_evidence_supported` events in immutable trace arrival order, requires
+  contiguous one-based support indices, reconstructs the aligned support vector, and compares the
+  terminal confirmation arrays exactly. A terminal `mechanics.change_confirmed` payload cannot
+  invent or replace absent support receipts. Preserve predecessor-recovery receipt IDs in arrival
+  order for the same reason.
+- Evidence: the independent audit of preflight 058 found that the existing summary fold ignored
+  support events and could accept a terminal-only confirmation, even though the stricter linked
+  causal predicate later rejected the real misalignment.
+- Boundary: this strengthens evidence reconstruction only. It does not change the frozen schedule,
+  decision threshold, policy truth access, or terminal outcome. Derived candidate mutation follows
+  the immutable support append; pure duplicate validation must occur first so partial aliases fail
+  without emitting or mutating evidence.
+- Reopening condition: a fold passes with missing, duplicated, noncontiguous, reordered, or
+  terminal-invented support; recovery order is normalized lexically; or derived state can advance
+  when its immutable support append fails.
