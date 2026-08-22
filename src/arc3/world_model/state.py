@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 
 from arc3.errors import WorldModelError
 from arc3.trace.canonical import sha256_json
@@ -76,6 +76,7 @@ class SymbolicState:
     toggles: tuple[tuple[str, str], ...] = ()
     selected_id: str | None = None
     attachments: tuple[Attachment, ...] = ()
+    _state_id: str = field(init=False, repr=False, compare=False)
 
     def __post_init__(self) -> None:
         if self.width < 1 or self.height < 1:
@@ -97,6 +98,10 @@ class SymbolicState:
         for attachment in self.attachments:
             if attachment.child_id not in identifiers or attachment.parent_id not in identifiers:
                 raise WorldModelError("attachment endpoints must exist")
+        # This state is frozen after canonicalization. Prediction, retrodiction,
+        # and planning request its content identity repeatedly, so compute that
+        # pure derived value once without adding it to serialized semantics.
+        object.__setattr__(self, "_state_id", sha256_json(self.to_dict()))
 
     def contains(self, cell: Cell) -> bool:
         return 0 <= cell.x < self.width and 0 <= cell.y < self.height
@@ -191,7 +196,7 @@ class SymbolicState:
 
     @property
     def state_id(self) -> str:
-        return sha256_json(self.to_dict())
+        return self._state_id
 
 
 def _unique_pairs[T](pairs: tuple[tuple[str, T], ...], *, field: str) -> tuple[tuple[str, T], ...]:
