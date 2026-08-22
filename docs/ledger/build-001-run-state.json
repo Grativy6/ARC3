@@ -1,0 +1,103 @@
+{
+  "schema": "arc3.build-001-run-state.v0.1",
+  "workflow": "docs/workflows/001-local-public-failure-recovery.md",
+  "workflow_version": "0.1",
+  "repository": "Grativy6/ARC3",
+  "owner": "Christopher D. Pang",
+  "build_status": "IN_PROGRESS",
+  "status": "IN_PROGRESS",
+  "current_stage": "01",
+  "current_task": "Predeclare and reproduce the frozen Build 000 FULL failure on a development-only subset",
+  "implementation_branch": "build/001-local-public-recovery",
+  "pull_request": null,
+  "started_at": "2026-08-21T15:41:02Z",
+  "last_checkpoint_at": "2026-08-22T03:11:34Z",
+  "last_checkpoint_commit": null,
+  "base": {
+    "main_commit": "28c7a00732ce48e5c231211b01bc6eba7d0d71b4",
+    "main_tree": "4586299448e9b1b585a0878674ed5f9afa60c384",
+    "build_000_merge_commit": "cf321c3e0e1aa782076491ee84015d24d0fe28ce",
+    "build_000_final_seal": "ee4938b4fdba8bcea9fa3660d32d7b9597644896",
+    "workflow_merge_commit": "28c7a00732ce48e5c231211b01bc6eba7d0d71b4"
+  },
+  "holdout": {
+    "status": "SEALED_UNCONSUMED",
+    "opening_gate": "NOT_EVALUATED",
+    "manifest": "docs/evaluation/public-game-partitions.v0.1.json",
+    "manifest_sha256": "sha256:682d5891c2aface54803d9bd1173c55ed21e89856e13b8a478fb9276ee963f2f",
+    "game_count": 10,
+    "gameplay_events": 0,
+    "locally_acquired_assets": 0
+  },
+  "completed_stages": [
+    "00"
+  ],
+  "stage_status": {
+    "00": "PASS",
+    "01": "PENDING",
+    "02": "PENDING",
+    "03": "PENDING",
+    "04": "PENDING",
+    "05": "PENDING",
+    "06": "PENDING",
+    "07": "PENDING",
+    "08": "PENDING",
+    "09": "PENDING",
+    "10": "PENDING",
+    "11": "PENDING",
+    "12": "PENDING",
+    "13": "PENDING",
+    "14": "PENDING"
+  },
+  "evidence": {
+    "00": {
+      "status": "PASS",
+      "label": "synthetic",
+      "report": "docs/reports/001-00-preflight-identity-license.md",
+      "report_sha256": "sha256:323f0ded31ccfb107b6bb2821ec748f27c925b2cff2ec7930a4ee1f4226c03b1",
+      "acceptance": "docs/evidence/001-00-preflight-acceptance.json",
+      "acceptance_sha256": "sha256:65eb293aff43fb50f7ab5b52bef3af99331fd5f02f8b5197e1f8a10e2a2a68ff",
+      "integrity_receipt_sha256": "sha256:abca6b103f8cbef43cd206baaac6d25f50367081e80375f56c6a31d7fe6cd162",
+      "checkpoint_commit": null,
+      "verification": {
+        "base_and_branch": "PASS",
+        "build_000_artifacts": "PASS:48-hashes+22-commit-objects",
+        "upstream_static_identity": "PASS:5-repositories+2-packages+8-documents",
+        "upstream_dynamic_pages": "DRIFT_RECORDED:2-pages",
+        "owner_mit0_gate": "PASS:explicit-approval+exact-root-license",
+        "holdout": "PASS:sealed+0-events+0-assets",
+        "focused_tests": "PASS:35",
+        "ruff": "PASS:29-files",
+        "mypy_strict": "PASS:19-source-files",
+        "integrity_secret_scan": "PASS:0-findings",
+        "git_fsck": "PASS:dangling-objects-only"
+      }
+    }
+  },
+  "artifacts": {
+    "stage_00_report": {
+      "path": "docs/reports/001-00-preflight-identity-license.md",
+      "sha256": "323f0ded31ccfb107b6bb2821ec748f27c925b2cff2ec7930a4ee1f4226c03b1"
+    },
+    "stage_00_acceptance": {
+      "path": "docs/evidence/001-00-preflight-acceptance.json",
+      "sha256": "65eb293aff43fb50f7ab5b52bef3af99331fd5f02f8b5197e1f8a10e2a2a68ff"
+    },
+    "operative_license": {
+      "path": "LICENSE",
+      "sha256": "7f433e520d07d56ad14d92e9da9f580771479c30a2bfccc8024eed308f21bbe8"
+    },
+    "license_decision": {
+      "path": "docs/legal/LICENSE-DECISION.md",
+      "sha256": "45a6c3bbb9b0ead940b9b2c1c628295d8c4b0a317ea28dc8a09b840f5f55bddf"
+    }
+  },
+  "blocked_items": [],
+  "next_action": "Commit and bind the Stage 00 checkpoint, then predeclare the frozen-policy Stage 01 development-only reproduction without opening holdout games.",
+  "notes": [
+    "Build 000 ledgers and reports are immutable historical evidence and are not overwritten by Build 001.",
+    "The owner explicitly approved MIT-0 for ARC3 first-party source in the active Build 001 instruction.",
+    "No public-holdout episode may be opened before the Stage 11 gate is earned.",
+    "Two dynamic organizer-page hashes drifted on 2026-08-22; executable and static documentation pins remain unchanged and the drift is not silently adopted."
+  ]
+}

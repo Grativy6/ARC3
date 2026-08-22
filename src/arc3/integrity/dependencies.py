@@ -15,6 +15,7 @@ from typing import Any, cast
 
 from arc3.integrity.hashes import canonical_json_bytes, sha256_bytes
 from arc3.integrity.models import DependencyRecord
+from arc3.licensing import first_party_license_identity
 from arc3.types import JSONValue
 
 _SIMPLE_PLATFORM_MARKER = re.compile(
@@ -166,14 +167,15 @@ def inventory_locked_dependencies(
         if not isinstance(name, str) or not isinstance(version, str):
             raise ValueError("uv lock package entry must have string name and version")
         if name == "arc3":
+            license_status, license_evidence = first_party_license_identity(lock_path.parent)
             records.append(
                 DependencyRecord(
                     name=name,
                     locked_version=version,
                     source_kind=_source_kind(package.get("source")),
                     installed_version=version,
-                    license_status="OWNER_DECISION_REQUIRED",
-                    license_evidence=(),
+                    license_status=license_status,
+                    license_evidence=license_evidence,
                     metadata_sha256=None,
                 )
             )

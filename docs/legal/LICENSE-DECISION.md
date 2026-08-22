@@ -1,12 +1,34 @@
 # ARC3 license decision — owner gate
 
-Status: **NO LICENSE GRANTED**  
-Owner: **Christopher D. Pang**  
+Status: **APPROVED — MIT-0 OPERATIVE FOR ARC3 FIRST-PARTY SOURCE**
+
+Owner: **Christopher D. Pang**
+
 Last updated: **2026-08-21**
 
-This document is a decision surface, not a license grant. The absence of a root `LICENSE` file is intentional during workflow bootstrap.
+The owner explicitly approved MIT-0 for ARC3 first-party source in the active Build 001 handoff.
+The operative grant is the root `LICENSE`; the candidate remains preserved as pre-decision
+provenance and third-party works remain under their own terms.
 
-## Why this remains open
+## Operative owner decision
+
+```text
+Decision date: 2026-08-21
+Recorded at: 2026-08-21T15:41:02Z
+Selected license: MIT-0
+Scope: ARC3 first-party source
+Owner instruction/source: Active Build 001 Codex handoff — "I approve MIT-0 for ARC3 first-party source."
+Implementing branch: build/001-local-public-recovery
+Implementing commit: recorded by the Build 001 Stage 00 ledger after checkpoint
+Competition-rule source and access date: ARC Prize 2026 rules and ARC-AGI-3 competition page, accessed 2026-08-21
+```
+
+This decision does not accept competition terms, make an official submission, alter third-party
+licenses, publish a release, or authorize any other owner-gated action.
+
+## Pre-decision record (preserved)
+
+### Why the gate was originally open
 
 ARC Prize eligibility requires the eventual competition method to be released under an eligible open-source license, but choosing a license determines what other people may copy, modify, redistribute, patent-license, or incorporate into other systems. Codex may research and prepare the options; only Christopher may select and grant the final license.
 
@@ -64,7 +86,7 @@ Before granting a license, review:
 6. whether the public repository contains anything intended to remain proprietary;
 7. the exact copyright holder/year wording.
 
-## Codex boundary
+## Historical Codex boundary before approval
 
 Codex may:
 
@@ -74,16 +96,16 @@ Codex may:
 - prepare candidate `LICENSE` and `NOTICE` files under `docs/legal/candidates/`;
 - test that packaging includes required notices.
 
-Codex may not:
+Before the explicit Build 001 owner approval, Codex could not:
 
 - place a final license at repository root;
 - state that ARC3 is licensed under a candidate;
 - submit the project as prize-eligible;
 - infer consent from the public repository or this workflow.
 
-## Resolution receipt
+## Historical resolution-receipt template
 
-When Christopher explicitly chooses a license, append:
+The pre-decision template was:
 
 ```text
 Decision date:

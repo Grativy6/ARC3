@@ -127,12 +127,12 @@ def test_missing_required_notices_is_explicit_supply_failure(
 
 
 @pytest.mark.competition
-def test_owner_license_boundary_is_status_not_an_assumed_license(
+def test_owner_approved_license_is_reported_from_first_party_inventory(
     integrity_repo: tuple[Path, str, str],
 ) -> None:
     root, _, _ = integrity_repo
     receipt = build_integrity_receipt(root, include_installed_metadata=False)
     summary = receipt.body["license_summary"]
     assert isinstance(summary, dict)
-    assert summary["first_party_license_status"] == "OWNER_DECISION_REQUIRED"
+    assert summary["first_party_license_status"] == "MIT-0"
     assert "owner_license_decision_pending" not in summary

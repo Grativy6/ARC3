@@ -32,6 +32,7 @@ from arc3.packaging.util import (
 from arc3.types import JSONValue
 
 _METADATA_FILES = (
+    "LICENSE",
     "THIRD_PARTY_NOTICES.md",
     "pyproject.toml",
     "upstream.lock.json",
@@ -395,7 +396,7 @@ def build_kaggle_candidate(
         "evidence_label": "synthetic",
         "human_gates": [
             "accept Kaggle or ARC Prize terms",
-            "choose or grant a public license",
+            "alter or replace the owner-approved first-party license",
             "upload or submit the candidate",
         ],
         "offline_rehearsal": {

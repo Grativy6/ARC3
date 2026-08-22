@@ -103,6 +103,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         manifest,
         lock,
         run_state,
+        root / "LICENSE",
         root / "pyproject.toml",
         root / "upstream.lock.json",
         root / "THIRD_PARTY_NOTICES.md",

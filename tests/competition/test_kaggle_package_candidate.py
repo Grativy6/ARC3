@@ -112,7 +112,7 @@ def test_stage17_candidate_is_cpu_only_secret_free_and_offline(tmp_path: Path) -
     assert packages["pyarrow"]["licenseDeclared"] == "Apache-2.0"
     assert packages["ARC-AGI-3-Agents"]["licenseDeclared"] == "MIT"
     assert packages["requests"]["licenseDeclared"] == "Apache-2.0"
-    assert packages["arc3"]["licenseDeclared"] == "NOASSERTION"
+    assert packages["arc3"]["licenseDeclared"] == "MIT-0"
 
     requirements = result.runtime_requirements.read_text(encoding="utf-8")
     assert "arc-agi==0.9.9 --hash=sha256:" in requirements
@@ -141,6 +141,7 @@ def test_stage17_payload_excludes_build_tools_from_runtime_reachability(tmp_path
 
     with zipfile.ZipFile(result.payload_archive) as payload:
         members = set(payload.namelist())
+        assert "LICENSE" in members
         assert "agent/my_agent.py" in members
         assert "src/arc3/competition-runtime.v0.1.json" in members
         assert "src/arc3/competition_runtime.py" in members
