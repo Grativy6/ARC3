@@ -16,6 +16,7 @@ from arc3.trace import (
     CheckpointStore,
     CodeIdentity,
     EventJournal,
+    SourceIdentity,
     TraceEvent,
 )
 from arc3.trace.authority import is_revisable_interruption_event_type
@@ -417,6 +418,7 @@ class ControllerCheckpointManager:
         journal: EventJournal,
         episode_id: str,
         code_identity: CodeIdentity,
+        source_identity: SourceIdentity | None = None,
     ) -> tuple[TraceEvent, tuple[TraceEvent, ...]]:
         events = journal.verify_manifest()
         if not events:
@@ -470,6 +472,7 @@ class ControllerCheckpointManager:
             or events[receipt_index - 1].event_id != prior_event_id
             or receipt.game_id != prior.game_id
             or receipt.source != prior.source
+            or (source_identity is not None and receipt.source != source_identity)
             or receipt.code_identity != code_identity
             or payload.get("git_commit") != code_identity.git_commit
             or payload.get("config_hash") != code_identity.config_hash
@@ -621,6 +624,7 @@ class ControllerCheckpointManager:
         journal: EventJournal,
         episode_id: str,
         code_identity: CodeIdentity,
+        source_identity: SourceIdentity | None = None,
         path: str | Path | None = None,
         defer_payload_commitment: bool = False,
     ) -> RestoredController:
@@ -628,6 +632,7 @@ class ControllerCheckpointManager:
             journal=journal,
             episode_id=episode_id,
             code_identity=code_identity,
+            source_identity=source_identity,
         )
         raw_sequence = commitment_event.payload.get("checkpoint_sequence")
         assert isinstance(raw_sequence, int) and not isinstance(raw_sequence, bool)

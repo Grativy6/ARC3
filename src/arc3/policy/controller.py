@@ -6848,8 +6848,16 @@ class ARC3Controller:
         hot_path_profiler: _HotPathProfiler | None = None,
         retrodiction_config: RetrodictionConfig | None = None,
         cadence_config: CadenceConfig | None = None,
+        legacy_checkpoint_code_identity: CodeIdentity | None = None,
+        legacy_checkpoint_source_identity: SourceIdentity | None = None,
     ) -> ARC3Controller:
         """Restore a compatible checkpoint without emitting a pending action again."""
+
+        if (legacy_checkpoint_code_identity is None) != (legacy_checkpoint_source_identity is None):
+            raise PolicyError(
+                "legacy checkpoint migration requires both exact code and source identities"
+            )
+        legacy_migration_requested = legacy_checkpoint_code_identity is not None
 
         controller = cls(
             preset,
@@ -6859,12 +6867,36 @@ class ARC3Controller:
             cadence_config=cadence_config,
         )
         controller._initialize_context(context)
-        if controller._checkpoint_manager is None or controller._code is None:
+        if (
+            controller._checkpoint_manager is None
+            or controller._code is None
+            or controller._source is None
+        ):
             raise PolicyError("checkpoint manager did not initialize")
+        current_code_identity = controller._code
+        current_source_identity = controller._source
+        if legacy_checkpoint_code_identity is not None and (
+            legacy_checkpoint_code_identity.git_commit == current_code_identity.git_commit
+            or legacy_checkpoint_code_identity.config_hash != current_code_identity.config_hash
+            or legacy_checkpoint_code_identity.details != current_code_identity.details
+        ):
+            raise PolicyError(
+                "legacy checkpoint migration may cross only to a different git commit under "
+                "the same configuration identity"
+            )
         restored = controller._checkpoint_manager.restore(
             journal=controller.journal,
             episode_id=context.episode_id,
-            code_identity=controller._code,
+            code_identity=(
+                legacy_checkpoint_code_identity
+                if legacy_checkpoint_code_identity is not None
+                else current_code_identity
+            ),
+            source_identity=(
+                legacy_checkpoint_source_identity
+                if legacy_checkpoint_source_identity is not None
+                else current_source_identity
+            ),
             path=checkpoint_path,
             defer_payload_commitment=True,
         )
@@ -6872,6 +6904,15 @@ class ARC3Controller:
             restored.abandoned_suffix_events
         )
         state = restored.state
+        checkpoint_has_cadence = "cadence_config" in state.planner_state
+        if legacy_migration_requested and checkpoint_has_cadence:
+            raise PolicyError(
+                "explicit legacy checkpoint migration is restricted to cadence-less checkpoints"
+            )
+        if not legacy_migration_requested and not checkpoint_has_cadence:
+            raise PolicyError(
+                "cadence-less checkpoint restore requires explicit legacy code and source identities"
+            )
         controller._rng = restored.rng
         controller._step_index = state.step_index
         controller._level_index = state.level_index
@@ -7037,7 +7078,9 @@ class ARC3Controller:
                 scope="run",
             )
             wrote_recovery_receipt = True
-        if "cadence_config" not in state.planner_state:
+        if legacy_migration_requested:
+            assert legacy_checkpoint_code_identity is not None
+            assert legacy_checkpoint_source_identity is not None
             activation = controller._append(
                 context.game_id,
                 "reasoning.cadence_activated",
@@ -7045,9 +7088,18 @@ class ARC3Controller:
                     "cadence_config": controller._cadence_config.to_dict(),
                     "cadence_configuration_hash": (controller._cadence_config.configuration_hash),
                     "source_checkpoint_commitment_event_id": (restored.commitment_event.event_id),
+                    "source_checkpoint_hash": restored.envelope.checkpoint_hash,
+                    "legacy_checkpoint_source_identity": (
+                        legacy_checkpoint_source_identity.to_dict()
+                    ),
+                    "legacy_checkpoint_code_identity": (legacy_checkpoint_code_identity.to_dict()),
+                    "current_activation_source_identity": current_source_identity.to_dict(),
+                    "current_activation_code_identity": current_code_identity.to_dict(),
                     "migration_policy": (
-                        "historical actions remain pre-cadence evidence; typed cadence "
-                        "authority begins at this immutable activation receipt"
+                        "validate the cadence-less checkpoint under its explicit legacy "
+                        "source/code identity; preserve historical actions as pre-cadence "
+                        "evidence; begin typed cadence authority under the current source/code "
+                        "identity at this immutable activation receipt"
                     ),
                 },
                 scope="run",
@@ -7301,6 +7353,16 @@ class ARC3Controller:
                     or source_commitment is None
                     or source_commitment.event_type != "run.checkpoint_written"
                     or event_order[source_commitment.event_id] >= event_order[activation.event_id]
+                    or activation.payload.get("source_checkpoint_hash")
+                    != source_commitment.payload.get("checkpoint_hash")
+                    or activation.payload.get("legacy_checkpoint_source_identity")
+                    != source_commitment.source.to_dict()
+                    or activation.payload.get("legacy_checkpoint_code_identity")
+                    != source_commitment.code_identity.to_dict()
+                    or activation.payload.get("current_activation_source_identity")
+                    != activation.source.to_dict()
+                    or activation.payload.get("current_activation_code_identity")
+                    != activation.code_identity.to_dict()
                 ):
                     raise PolicyError("immutable migrated cadence activation is malformed")
             else:
