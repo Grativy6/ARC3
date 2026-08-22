@@ -49,8 +49,14 @@ def search(
     algorithm: SearchAlgorithm = SearchAlgorithm.A_STAR,
     budget: SearchBudget | None = None,
     score_weights: PlanScoreWeights | None = None,
+    enforce_time_budget: bool = True,
 ) -> SearchResult:
-    """Find one bounded plan using stable priorities and action tie-breaks."""
+    """Find one bounded plan using stable priorities and action tie-breaks.
+
+    ``enforce_time_budget=False`` retains elapsed time as output telemetry but
+    removes it from search termination and therefore from policy semantics.
+    Deterministic callers must still supply finite node and depth budgets.
+    """
 
     budget = budget or SearchBudget()
     score_weights = score_weights or PlanScoreWeights()
@@ -66,7 +72,7 @@ def search(
 
     while frontier:
         elapsed_ms = (time.perf_counter() - started) * 1_000.0
-        if elapsed_ms >= budget.max_time_ms:
+        if enforce_time_budget and elapsed_ms >= budget.max_time_ms:
             return _result(
                 SearchStatus.TIME_BUDGET,
                 algorithm,

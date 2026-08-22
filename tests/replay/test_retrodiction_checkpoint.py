@@ -12,7 +12,14 @@ import pytest
 from arc3.adapters.synthetic import SYNTHETIC_GAME_ID, SyntheticAdapter
 from arc3.config import ARC3Config, BudgetConfig
 from arc3.errors import PolicyError
-from arc3.policy import ARC3Controller, ControllerPhase, ControllerPreset, RunContext
+from arc3.policy import (
+    ARC3Controller,
+    CadenceConfig,
+    ControllerPhase,
+    ControllerPreset,
+    DeliberationMode,
+    RunContext,
+)
 from arc3.trace import sha256_json
 from arc3.types import EnvironmentMode
 from arc3.world_model import RetrodictionConfig, RetrodictionMode
@@ -20,6 +27,7 @@ from arc3.world_model import RetrodictionConfig, RetrodictionMode
 _CACHED = RetrodictionConfig(mode=RetrodictionMode.CACHED_INCREMENTAL)
 _EVENT_TRIGGERED = RetrodictionConfig(mode=RetrodictionMode.EVENT_TRIGGERED)
 _FULL = RetrodictionConfig(mode=RetrodictionMode.FULL)
+_LEGACY_CADENCE = CadenceConfig(mode=DeliberationMode.LEGACY_ALWAYS_DEEP)
 
 
 def _context(tmp_path: Path, *, label: str) -> RunContext:
@@ -43,7 +51,6 @@ def _drive_cached(
     tmp_path: Path,
     *,
     label: str,
-    awaiting_prediction: bool = False,
     retrodiction_config: RetrodictionConfig = _CACHED,
 ) -> tuple[ARC3Controller, RunContext, SyntheticAdapter]:
     context = _context(tmp_path, label=label)
@@ -51,6 +58,7 @@ def _drive_cached(
     controller = ARC3Controller(
         ControllerPreset.FULL,
         retrodiction_config=retrodiction_config,
+        cadence_config=_LEGACY_CADENCE,
     )
     controller.reset(context)
     controller.observe(session.observation)
@@ -65,10 +73,9 @@ def _drive_cached(
             )
             controller._transitions[0] = marked
             controller._transition_summaries[0][0] = marked
-    if awaiting_prediction:
-        decision = controller.choose_action()
-        assert decision.prediction_receipt_id is not None
-        assert controller.phase is ControllerPhase.AWAITING_CONSEQUENCE
+    decision = controller.choose_action()
+    assert decision.prediction_receipt_id is not None
+    assert controller.phase is ControllerPhase.AWAITING_CONSEQUENCE
     return controller, context, session
 
 
@@ -105,6 +112,7 @@ def _drive_event_reuse(
     controller = ARC3Controller(
         ControllerPreset.FULL,
         retrodiction_config=_EVENT_TRIGGERED,
+        cadence_config=_LEGACY_CADENCE,
     )
     controller.reset(context)
     controller.observe(session.observation)
@@ -127,6 +135,8 @@ def _drive_event_reuse(
     assert second.prediction_receipt_id is not None
     controller.apply_consequence(session.step(second.action))
     controller.features = original_features
+    third = controller.choose_action()
+    assert third.prediction_receipt_id is not None
 
     completed = [
         event
@@ -235,7 +245,6 @@ def test_cached_runtime_and_prediction_receipts_restore_exactly(tmp_path: Path) 
     controller, context, _ = _drive_cached(
         tmp_path,
         label="exact",
-        awaiting_prediction=True,
     )
     checkpoint = controller.checkpoint()
     expected_state = controller.retrodiction_state
@@ -247,6 +256,7 @@ def test_cached_runtime_and_prediction_receipts_restore_exactly(tmp_path: Path) 
         preset=ControllerPreset.FULL,
         checkpoint_path=checkpoint.path,
         retrodiction_config=_CACHED,
+        cadence_config=_LEGACY_CADENCE,
     )
     assert restored.retrodiction_state == expected_state
     assert restored._pending_prediction_event_id == expected_prediction_event_id
@@ -254,6 +264,39 @@ def test_cached_runtime_and_prediction_receipts_restore_exactly(tmp_path: Path) 
     prediction_event = restored.journal.get_event(expected_prediction_event_id)
     assert prediction_event is not None
     assert prediction_event.event_type == "simulation.prediction_emitted"
+
+
+@pytest.mark.replay
+def test_rehashed_active_model_receipt_binding_tamper_is_rejected(
+    tmp_path: Path,
+) -> None:
+    controller, context, _ = _drive_cached(tmp_path, label="active-model-receipt-tamper")
+    checkpoint = controller.checkpoint()
+    controller.journal.close()
+
+    def tamper(raw: dict[str, object]) -> None:
+        state = cast(dict[str, object], raw["state"])
+        derived = cast(dict[str, object], state["derived_controller_state"])
+        world = cast(dict[str, object], derived["world_model_ensemble"])
+        bindings = cast(dict[str, str], world["active_model_receipt_event_ids"])
+        assert bindings
+        model_id = next(iter(sorted(bindings)))
+        bindings[model_id] = "E-forged-retrodiction-completion"
+
+    tampered = _rewrite_checkpoint_and_commitment(
+        checkpoint_path=checkpoint.path,
+        trace_path=context.trace_root / "active.jsonl",
+        target=tmp_path / "tampered-active-model-receipt.json",
+        mutate=tamper,
+    )
+    with pytest.raises(PolicyError, match="exact immutable retrodiction authority"):
+        ARC3Controller.restore(
+            context,
+            preset=ControllerPreset.FULL,
+            checkpoint_path=tampered,
+            retrodiction_config=_CACHED,
+            cadence_config=_LEGACY_CADENCE,
+        )
 
 
 @pytest.mark.replay
@@ -267,6 +310,7 @@ def test_cached_checkpoint_rejects_omitted_or_wrong_mode(tmp_path: Path) -> None
             context,
             preset=ControllerPreset.FULL,
             checkpoint_path=checkpoint.path,
+            cadence_config=_LEGACY_CADENCE,
         )
     with pytest.raises(PolicyError, match="retrodiction runtime"):
         ARC3Controller.restore(
@@ -277,6 +321,7 @@ def test_cached_checkpoint_rejects_omitted_or_wrong_mode(tmp_path: Path) -> None
                 mode=RetrodictionMode.CACHED_INCREMENTAL,
                 capacity=32,
             ),
+            cadence_config=_LEGACY_CADENCE,
         )
 
 
@@ -313,6 +358,7 @@ def test_checkpoint_rejects_mechanics_capacity_outside_the_run_contract(
             preset=ControllerPreset.FULL,
             checkpoint_path=tampered,
             retrodiction_config=_CACHED,
+            cadence_config=_LEGACY_CADENCE,
         )
 
 
@@ -350,6 +396,7 @@ def test_rehashed_full_artifact_receipt_must_reconstruct_from_typed_history(
             preset=ControllerPreset.FULL,
             checkpoint_path=tampered,
             retrodiction_config=_FULL,
+            cadence_config=_LEGACY_CADENCE,
         )
 
 
@@ -390,6 +437,7 @@ def test_rehashed_full_artifact_projection_tamper_is_rejected(tmp_path: Path) ->
             preset=ControllerPreset.FULL,
             checkpoint_path=tampered,
             retrodiction_config=_FULL,
+            cadence_config=_LEGACY_CADENCE,
         )
 
 
@@ -421,6 +469,7 @@ def test_rehashed_cache_entry_tamper_fails_receipt_reconstruction(tmp_path: Path
             preset=ControllerPreset.FULL,
             checkpoint_path=tampered,
             retrodiction_config=_CACHED,
+            cadence_config=_LEGACY_CADENCE,
         )
 
 
@@ -452,6 +501,7 @@ def test_event_triggered_suffix_authorization_restores_in_exact_order(
         preset=ControllerPreset.FULL,
         checkpoint_path=checkpoint.path,
         retrodiction_config=_EVENT_TRIGGERED,
+        cadence_config=_LEGACY_CADENCE,
     )
     assert restored.retrodiction_state == expected_state
 
@@ -483,6 +533,7 @@ def test_rehashed_event_authorization_order_tamper_is_rejected(tmp_path: Path) -
             preset=ControllerPreset.FULL,
             checkpoint_path=tampered,
             retrodiction_config=_EVENT_TRIGGERED,
+            cadence_config=_LEGACY_CADENCE,
         )
 
 
@@ -532,6 +583,7 @@ def test_rehashed_authorizing_prediction_boundary_tamper_is_rejected(
             preset=ControllerPreset.FULL,
             checkpoint_path=tampered,
             retrodiction_config=_EVENT_TRIGGERED,
+            cadence_config=_LEGACY_CADENCE,
         )
 
 
@@ -572,6 +624,7 @@ def test_checkpoint_cache_access_ordinal_must_match_receipt_order(tmp_path: Path
             preset=ControllerPreset.FULL,
             checkpoint_path=tampered,
             retrodiction_config=_CACHED,
+            cadence_config=_LEGACY_CADENCE,
         )
 
 
@@ -636,4 +689,5 @@ def test_rehashed_trigger_generation_must_be_derived_from_receipt_order(
             preset=ControllerPreset.FULL,
             checkpoint_path=tampered,
             retrodiction_config=_CACHED,
+            cadence_config=_LEGACY_CADENCE,
         )

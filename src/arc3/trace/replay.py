@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from arc3.errors import ARC3ValidationError, ReplayError, TraceIntegrityError
 from arc3.types import JSONValue
 
+from .authority import authoritative_events as project_authoritative_events
 from .blob import BlobStore
 from .canonical import canonical_bytes, normalize_json, require_sha256, sha256_bytes
 from .index import DerivedIndex, rebuild_index
@@ -293,7 +294,7 @@ class ReplayEngine:
     ) -> tuple[DecisionInputs, ...]:
         """Recover the concise, explicit inputs recorded for action selection."""
 
-        events = self.verify_integrity(verify_blobs=False)
+        events = project_authoritative_events(self.verify_integrity(verify_blobs=False))
         prior_observation: dict[tuple[str, int], str] = {}
         decisions: list[DecisionInputs] = []
         for event in events:
@@ -367,7 +368,7 @@ class ReplayEngine:
     ) -> TraceSummary:
         """Build a source-cited summary and validate all cited event IDs."""
 
-        events = self.verify_integrity(verify_blobs=False)
+        events = project_authoritative_events(self.verify_integrity(verify_blobs=False))
         if not events:
             raise ReplayError("cannot summarize an empty trace")
         chunk_hashes = self.journal.chunk_hashes()

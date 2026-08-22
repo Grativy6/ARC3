@@ -18,6 +18,7 @@ from arc3.trace import (
     EventJournal,
     TraceEvent,
 )
+from arc3.trace.authority import is_revisable_interruption_event_type
 from arc3.trace.canonical import normalize_json, require_sha256, sha256_json
 from arc3.types import ActionName, ActionRequest, Coordinate, JSONValue
 
@@ -294,6 +295,7 @@ class RestoredController:
     rng: random.Random
     envelope: CheckpointEnvelope
     commitment_event: TraceEvent
+    abandoned_suffix_events: tuple[TraceEvent, ...] = ()
 
     @property
     def restart_directive(self) -> RestartDirective:
@@ -333,7 +335,7 @@ class ControllerCheckpointManager:
             tail = journal.tail_event
             if (
                 tail is None
-                or tail.event_type != "run.checkpoint_written"
+                or tail.event_type not in {"reasoning.checkpoint_state", "run.checkpoint_written"}
                 or tail.payload.get("pending_submitted_event_id") != pending.submitted_event_id
             ):
                 raise MemoryContractError(
@@ -415,11 +417,24 @@ class ControllerCheckpointManager:
         journal: EventJournal,
         episode_id: str,
         code_identity: CodeIdentity,
-    ) -> TraceEvent:
+    ) -> tuple[TraceEvent, tuple[TraceEvent, ...]]:
         events = journal.verify_manifest()
         if not events:
             raise MemoryContractError("controller restore requires a non-empty verified trace")
-        receipt = events[-1]
+        checkpoint_events = tuple(
+            event
+            for event in events
+            if event.episode_id == episode_id and event.event_type == "run.checkpoint_written"
+        )
+        if not checkpoint_events:
+            raise MemoryContractError(
+                "controller restore requires a current checkpoint commitment receipt"
+            )
+        receipt = checkpoint_events[-1]
+        receipt_index = next(
+            index for index, event in enumerate(events) if event.event_id == receipt.event_id
+        )
+        suffix = events[receipt_index + 1 :]
         if (
             receipt.event_type != "run.checkpoint_written"
             or receipt.episode_id != episode_id
@@ -428,11 +443,6 @@ class ControllerCheckpointManager:
             raise MemoryContractError(
                 "controller restore requires a current checkpoint commitment receipt"
             )
-        checkpoint_events = tuple(
-            event
-            for event in events
-            if event.episode_id == episode_id and event.event_type == "run.checkpoint_written"
-        )
         observed_sequences = tuple(
             event.payload.get("checkpoint_sequence") for event in checkpoint_events
         )
@@ -456,8 +466,8 @@ class ControllerCheckpointManager:
             or prior is None
             or prior.event_hash != prior_hash
             or receipt.previous_event_hash != prior_hash
-            or len(events) < 2
-            or events[-2].event_id != prior_event_id
+            or receipt_index < 1
+            or events[receipt_index - 1].event_id != prior_event_id
             or receipt.game_id != prior.game_id
             or receipt.source != prior.source
             or receipt.code_identity != code_identity
@@ -467,6 +477,18 @@ class ControllerCheckpointManager:
             raise MemoryContractError(
                 "checkpoint commitment receipt is not exactly bound to its prior trace tail"
             )
+        if suffix:
+            if receipt.payload.get("pending_submitted_event_id") is not None or any(
+                event.episode_id != episode_id
+                or event.level_index != receipt.level_index
+                or event.step_index != receipt.step_index
+                or not is_revisable_interruption_event_type(event.event_type)
+                for event in suffix
+            ):
+                raise MemoryContractError(
+                    "checkpoint suffix crosses an action, consequence, observation, run, "
+                    "checkpoint, evaluation, migration, or other non-revisable boundary"
+                )
         for field_name in (
             "checkpoint_hash",
             "derived_controller_state_hash",
@@ -479,7 +501,7 @@ class ControllerCheckpointManager:
                 require_sha256(value, field=field_name)
             except ARC3ValidationError as error:
                 raise MemoryContractError(str(error)) from error
-        return receipt
+        return receipt, suffix
 
     @staticmethod
     def validate_restored_commitment(restored: RestoredController) -> None:
@@ -602,7 +624,7 @@ class ControllerCheckpointManager:
         path: str | Path | None = None,
         defer_payload_commitment: bool = False,
     ) -> RestoredController:
-        commitment_event = self._validate_commitment_receipt(
+        commitment_event, abandoned_suffix_events = self._validate_commitment_receipt(
             journal=journal,
             episode_id=episode_id,
             code_identity=code_identity,
@@ -634,6 +656,7 @@ class ControllerCheckpointManager:
             rng=restored.rng,
             envelope=restored.envelope,
             commitment_event=commitment_event,
+            abandoned_suffix_events=abandoned_suffix_events,
         )
         self._validate_pending_tail(state, journal, commitment_event=commitment_event)
         if not defer_payload_commitment:

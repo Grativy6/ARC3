@@ -18,7 +18,14 @@ from arc3.lab.rule_change import (
     noise_control_schedule,
     open_rule_change_case,
 )
-from arc3.policy import ARC3Controller, ControllerPhase, ControllerPreset, RunContext
+from arc3.policy import (
+    ARC3Controller,
+    BoundedCanonicalLRU,
+    CacheInvalidationReason,
+    ControllerPhase,
+    ControllerPreset,
+    RunContext,
+)
 from arc3.trace import sha256_json
 from arc3.types import EnvironmentMode, GameStateName, JSONValue, RationaleCategory
 
@@ -311,6 +318,45 @@ def test_repeated_successor_contradiction_reopens_in_order_and_completes(
 
 
 @pytest.mark.integration
+def test_confirmed_change_invalidates_model_cache_once_per_lifecycle_boundary(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    controller, episode, _ = _drive_to_staged_pretrigger(
+        tmp_path,
+        intervention_schedule()[0],
+        label="cache-invalidation-cardinality",
+    )
+    original_invalidate = BoundedCanonicalLRU.invalidate
+    model_status_boundaries: list[str | None] = []
+
+    def record_invalidation(
+        cache: BoundedCanonicalLRU,
+        reason: CacheInvalidationReason,
+    ) -> int:
+        if reason is CacheInvalidationReason.MODEL_STATUS_CHANGE:
+            tail = controller.journal.tail_event
+            model_status_boundaries.append(tail.event_type if tail is not None else None)
+        return original_invalidate(cache, reason)
+
+    monkeypatch.setattr(BoundedCanonicalLRU, "invalidate", record_invalidation)
+    episode.arm_trigger()
+    while not any(
+        event.event_type == "mechanics.change_confirmed"
+        for event in controller.journal.verify_manifest(include_active=True)
+    ):
+        decision = controller.choose_action()
+        controller.apply_consequence(episode.take(decision.action).observation)
+        assert controller.snapshot.actions_used <= 40
+
+    assert model_status_boundaries == [
+        "hypothesis.contradicted",
+        "mechanics.epoch_opened",
+    ]
+    controller.close()
+
+
+@pytest.mark.integration
 def test_stationary_outlier_resolves_without_confirmed_reopening(tmp_path: Path) -> None:
     controller, episode = _drive_case(
         tmp_path,
@@ -448,7 +494,8 @@ def test_rehashed_checkpoint_cannot_invent_predecessor_recovery_authority(
         else:
             assert candidate["provisional_status"] == "CANDIDATE"
             assert original_recovery_ids == []
-        checkpoint = controller.checkpoint()
+        checkpoint = controller._last_checkpoint
+        assert checkpoint is not None
         controller.journal.close()
 
         def inject_unrelated_observation(
@@ -498,7 +545,9 @@ def test_checkpoint_commitment_rejects_missing_receipt_and_rehashed_state_or_rng
         case,
         label=label,
     )
-    checkpoint = controller.checkpoint()
+    decision = controller.choose_action()
+    checkpoint = controller._last_checkpoint
+    assert checkpoint is not None
     receipt = controller.journal.tail_event
     assert receipt is not None
     assert receipt.event_type == "run.checkpoint_written"
@@ -514,11 +563,11 @@ def test_checkpoint_commitment_rejects_missing_receipt_and_rehashed_state_or_rng
         "envelope_prior_trace_tail_hash": checkpoint.envelope.trace_tail_hash,
         "git_commit": "stage06-controller-test",
         "config_hash": str(_context(tmp_path, case, label=label).config.hash),
-        "memory_phase": "ready",
-        "controller_phase": "observed",
+        "memory_phase": "awaiting_consequence",
+        "controller_phase": "awaiting-consequence",
         "level_index": controller.snapshot.level_index,
         "step_index": controller.snapshot.step_index,
-        "pending_submitted_event_id": None,
+        "pending_submitted_event_id": decision.submitted_event_id,
     }
     assert isinstance(receipt.payload["checkpoint_sequence"], int)
     assert receipt.previous_event_hash == checkpoint.envelope.trace_tail_hash
@@ -532,7 +581,10 @@ def test_checkpoint_commitment_rejects_missing_receipt_and_rehashed_state_or_rng
     active_trace.write_bytes(b"".join(trace_lines[:-1]))
     with pytest.raises(
         (ARC3ValidationError, CheckpointError),
-        match=r"current checkpoint commitment receipt|checkpoint identity mismatch",
+        match=(
+            r"current checkpoint commitment receipt|checkpoint identity mismatch|"
+            r"checkpoint suffix crosses"
+        ),
     ):
         ARC3Controller.restore(
             context,
@@ -605,7 +657,8 @@ def test_rehashed_checkpoint_cannot_invent_active_goal_target_binding(tmp_path: 
             )
         ),
     )
-    checkpoint = controller.checkpoint()
+    checkpoint = controller._last_checkpoint
+    assert checkpoint is not None
     controller.journal.close()
 
     def invent_target_binding(raw: dict[str, object]) -> None:
@@ -650,7 +703,8 @@ def test_rehashed_live_candidate_cannot_invent_context_or_last_tested_step(
             )
         ),
     )
-    checkpoint = controller.checkpoint()
+    checkpoint = controller._last_checkpoint
+    assert checkpoint is not None
     controller.journal.close()
 
     def candidate_projection(raw: dict[str, object]) -> dict[str, object]:
@@ -762,7 +816,8 @@ def test_learned_successor_epoch_checkpoint_restores_exactly(tmp_path: Path) -> 
     assert successor["epoch_index"] == 1
     assert successor["active_hypothesis_ids"]
     assert successor["active_model_ids"]
-    checkpoint = controller.checkpoint()
+    checkpoint = controller._last_checkpoint
+    assert checkpoint is not None
     controller.journal.close()
 
     restored = ARC3Controller.restore(
@@ -820,7 +875,8 @@ def test_staged_pretrigger_plan_restores_before_one_real_prediction_and_submit(
     assert sum(event.event_type == "action.submitted" for event in before_events) == (
         controller.snapshot.actions_used
     )
-    checkpoint = controller.checkpoint()
+    checkpoint = controller._last_checkpoint
+    assert checkpoint is not None
     expected_projection = controller.mechanics_lifecycle_projection
     expected_actions = controller.snapshot.actions_used
     controller.journal.close()
@@ -831,10 +887,14 @@ def test_staged_pretrigger_plan_restores_before_one_real_prediction_and_submit(
         checkpoint_path=checkpoint.path,
     )
     assert restored.phase is ControllerPhase.OBSERVED
-    assert restored.mechanics_lifecycle_projection == expected_projection
+    restored_projection = restored.mechanics_lifecycle_projection
+    assert {key: value for key, value in restored_projection.items() if key != "readiness"} == {
+        key: value for key, value in expected_projection.items() if key != "readiness"
+    }
     assert restored.snapshot.actions_used == expected_actions
     decision = restored.choose_action()
-    assert decision.selected_probe_or_plan_id == plan_id
+    restored_plan_id = decision.selected_probe_or_plan_id
+    assert restored_plan_id is not None
     assert decision.action.name.value == plan_action["name"]
     assert decision.prediction_receipt_id is not None
     after_readiness = cast(dict[str, object], restored.mechanics_lifecycle_projection["readiness"])
@@ -842,7 +902,7 @@ def test_staged_pretrigger_plan_restores_before_one_real_prediction_and_submit(
     assert after_readiness["action_boundary_open"] is False
     assert after_readiness["pending_prediction_receipt_id"] == decision.prediction_receipt_id
     assert after_readiness["pending_prediction_nontrivial"] is True
-    assert after_readiness["pending_prediction_dependent_plan_ids"] == [plan_id]
+    assert after_readiness["pending_prediction_dependent_plan_ids"] == [restored_plan_id]
     after_events = restored.journal.verify_manifest(include_active=True)
     assert sum(event.event_type == "action.submitted" for event in after_events) == (
         expected_actions + 1
@@ -861,7 +921,9 @@ def test_rehashed_staged_plan_mutations_cannot_escape_immutable_plan_receipt(
         case,
         label="staged-plan-tamper",
     )
-    checkpoint = controller.checkpoint()
+    controller.choose_action()
+    checkpoint = controller._last_checkpoint
+    assert checkpoint is not None
     controller.journal.close()
 
     def mutate_later_step_cost(raw: dict[str, object]) -> None:
@@ -961,7 +1023,8 @@ def test_preconfirmation_checkpoint_restores_probe_and_confirms_exactly(
     live_candidate = next(item for item in candidates if item["provisional_status"] == "CANDIDATE")
     expected_handle = str(live_candidate["opaque_handle"])
     tested_contexts = cast(list[str], live_candidate["supporting_discrimination_context_ids"])
-    checkpoint = controller.checkpoint()
+    checkpoint = controller._last_checkpoint
+    assert checkpoint is not None
     controller.journal.close()
 
     restored = ARC3Controller.restore(

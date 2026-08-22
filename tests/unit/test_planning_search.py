@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+from importlib import import_module
+
+import pytest
+
 from arc3.planning import (
     PlanProblem,
     SearchAlgorithm,
@@ -92,3 +96,25 @@ def test_planning_reports_node_and_depth_budget_exhaustion() -> None:
     assert depth_limited.status is SearchStatus.DEPTH_BUDGET
     assert node_limited.plan is None
     assert depth_limited.plan is None
+
+
+def test_deterministic_search_disables_elapsed_time_as_a_termination_input(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    problem = _line_problem()
+    tick = 0
+
+    def advanced_clock() -> float:
+        nonlocal tick
+        tick += 10
+        return float(tick)
+
+    search_module = import_module("arc3.planning.search")
+    monkeypatch.setattr(search_module.time, "perf_counter", advanced_clock)
+    result = search(
+        problem,
+        budget=SearchBudget(max_nodes=32, max_depth=8, max_time_ms=1),
+        enforce_time_budget=False,
+    )
+
+    assert result.status is SearchStatus.FOUND

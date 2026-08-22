@@ -10,9 +10,16 @@ import pytest
 from arc3.adapters import GridFrame, Observation
 from arc3.adapters.synthetic import SYNTHETIC_GAME_ID, SyntheticAdapter
 from arc3.config import ARC3Config, BudgetConfig
-from arc3.errors import PolicyError
+from arc3.errors import PolicyError, TraceIntegrityError
+from arc3.memory import MemoryContractError
 from arc3.policy import ARC3Controller, ControllerPhase, ControllerPreset, RunContext
-from arc3.trace import CheckpointStore, EventJournal, verify_event_chain
+from arc3.trace import (
+    CheckpointStore,
+    EventJournal,
+    ReplayEngine,
+    authoritative_events,
+    verify_event_chain,
+)
 from arc3.types import ActionName, EnvironmentMode, GameId, GameStateName, JSONValue
 
 
@@ -104,6 +111,7 @@ def test_restore_ignores_orphan_newer_latest_without_commitment_receipt(
         SyntheticAdapter(seed=23, size=8, max_steps=32).open(SYNTHETIC_GAME_ID).observation
     )
     controller.observe(observation)
+    controller.choose_action()
     checkpoint = controller.checkpoint()
     committed_receipt = controller.journal.tail_event
     assert committed_receipt is not None
@@ -132,9 +140,259 @@ def test_restore_ignores_orphan_newer_latest_without_commitment_receipt(
     controller.journal.close()
 
     restored = ARC3Controller.restore(context, preset=ControllerPreset.FULL)
-    assert restored.snapshot.phase is ControllerPhase.OBSERVED
+    assert restored.snapshot.phase is ControllerPhase.AWAITING_CONSEQUENCE
     assert restored.journal.tail_event_id == committed_receipt.event_id
     assert restored.journal.tail_hash == committed_receipt.event_hash
+
+
+@pytest.mark.replay
+def test_interrupted_derived_suffix_is_preserved_reopened_and_excluded_from_replay(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    context = _context(tmp_path)
+    session = SyntheticAdapter(seed=23, size=8, max_steps=32).open(SYNTHETIC_GAME_ID)
+    controller = ARC3Controller(ControllerPreset.FULL)
+    controller.reset(context)
+    controller.observe(session.observation)
+    original_append = controller._append
+
+    def interrupt_after_selection(
+        game_id: str,
+        event_type: str,
+        payload: object,
+        **kwargs: object,
+    ) -> object:
+        event = original_append(game_id, event_type, cast(dict[str, object], payload), **kwargs)
+        if event_type == "action.validated":
+            raise RuntimeError("injected interruption after action.validated")
+        return event
+
+    monkeypatch.setattr(controller, "_append", interrupt_after_selection)
+    with pytest.raises(RuntimeError, match="injected interruption"):
+        controller.choose_action()
+    interrupted_events = controller.journal.verify_manifest()
+    old_selected = tuple(
+        event for event in interrupted_events if event.event_type == "action.selected"
+    )
+    old_validated = tuple(
+        event for event in interrupted_events if event.event_type == "action.validated"
+    )
+    assert len(old_selected) == 1
+    assert len(old_validated) == 1
+    assert interrupted_events[-1].event_id == old_validated[0].event_id
+    controller.close()
+    closed_events = EventJournal(context.trace_root, run_id=context.run_id).verify_manifest()
+    assert closed_events == interrupted_events
+    assert all(event.event_type != "run.completed" for event in closed_events)
+
+    restored = ARC3Controller.restore(context, preset=ControllerPreset.FULL)
+    all_events = restored.journal.verify_manifest()
+    recovery = next(
+        event for event in all_events if event.event_type == "reasoning.interruption_reopened"
+    )
+    assert old_selected[0].event_id in recovery.payload["abandoned_event_ids"]
+    assert old_validated[0].event_id in recovery.payload["abandoned_event_ids"]
+    authoritative_ids = {event.event_id for event in authoritative_events(all_events)}
+    assert old_selected[0].event_id not in authoritative_ids
+    assert old_validated[0].event_id not in authoritative_ids
+    assert ReplayEngine(restored.journal).decision_inputs(step_index=0) == ()
+    assert (
+        old_selected[0].event_id not in ReplayEngine(restored.journal).rebuild_index().event_offsets
+    )
+
+    replacement = restored.choose_action()
+    replayed = ReplayEngine(restored.journal).decision_inputs(step_index=0)
+    assert tuple(item.action_event_id for item in replayed) == (replacement.selected_event_id,)
+
+
+@pytest.mark.replay
+def test_restore_refuses_uncertain_submitted_action_suffix(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    context = _context(tmp_path)
+    session = SyntheticAdapter(seed=23, size=8, max_steps=32).open(SYNTHETIC_GAME_ID)
+    controller = ARC3Controller(ControllerPreset.FULL)
+    controller.reset(context)
+    controller.observe(session.observation)
+
+    def interrupt_checkpoint() -> object:
+        raise RuntimeError("injected interruption before pending-action checkpoint")
+
+    monkeypatch.setattr(controller, "checkpoint", interrupt_checkpoint)
+    with pytest.raises(RuntimeError, match="pending-action checkpoint"):
+        controller.choose_action()
+    assert controller.journal.tail_event is not None
+    assert controller.journal.tail_event.event_type == "action.submitted"
+    controller.journal.close()
+
+    with pytest.raises(MemoryContractError, match="crosses an action"):
+        ARC3Controller.restore(context, preset=ControllerPreset.FULL)
+
+
+@pytest.mark.replay
+def test_restore_refuses_run_lifecycle_suffix(tmp_path: Path) -> None:
+    context = _context(tmp_path)
+    session = SyntheticAdapter(seed=23, size=8, max_steps=32).open(SYNTHETIC_GAME_ID)
+    controller = ARC3Controller(ControllerPreset.FULL)
+    controller.reset(context)
+    controller.observe(session.observation)
+    controller._append(
+        context.game_id,
+        "run.aborted",
+        {"reason": "test-only interrupted lifecycle boundary"},
+        scope="run",
+    )
+    controller.journal.close()
+
+    with pytest.raises(MemoryContractError, match="non-revisable boundary"):
+        ARC3Controller.restore(context, preset=ControllerPreset.FULL)
+
+
+@pytest.mark.replay
+def test_partial_initial_observation_close_never_checkpoints_transient_state(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    context = _context(tmp_path)
+    observation = (
+        SyntheticAdapter(seed=23, size=8, max_steps=32).open(SYNTHETIC_GAME_ID).observation
+    )
+    controller = ARC3Controller(ControllerPreset.FULL)
+    controller.reset(context)
+    original_append = controller._append
+
+    def interrupt_after_raw_observation(
+        game_id: str,
+        event_type: str,
+        payload: object,
+        **kwargs: object,
+    ) -> object:
+        event = original_append(game_id, event_type, cast(dict[str, object], payload), **kwargs)
+        if event_type == "observation.received":
+            raise RuntimeError("injected interruption after raw observation")
+        return event
+
+    monkeypatch.setattr(controller, "_append", interrupt_after_raw_observation)
+    with pytest.raises(RuntimeError, match="raw observation"):
+        controller.observe(observation)
+    interrupted_events = controller.journal.verify_manifest()
+    assert interrupted_events[-1].event_type == "observation.received"
+    controller.close()
+
+    closed_events = EventJournal(context.trace_root, run_id=context.run_id).verify_manifest()
+    assert closed_events == interrupted_events
+    assert all(event.event_type != "run.completed" for event in closed_events)
+    assert all(event.event_type != "run.checkpoint_written" for event in closed_events)
+
+
+@pytest.mark.replay
+def test_partial_consequence_close_preserves_uncertain_raw_suffix_without_checkpoint(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    context = _context(tmp_path)
+    session = SyntheticAdapter(seed=23, size=8, max_steps=32).open(SYNTHETIC_GAME_ID)
+    controller = ARC3Controller(ControllerPreset.FULL)
+    controller.reset(context)
+    controller.observe(session.observation)
+    decision = controller.choose_action()
+    after = session.step(decision.action)
+    checkpoint = controller._last_checkpoint
+    assert checkpoint is not None
+
+    def interrupt_before_returned_observation(*args: object, **kwargs: object) -> object:
+        del args, kwargs
+        raise RuntimeError("injected interruption after consequence receipt")
+
+    monkeypatch.setattr(controller, "_record_observation", interrupt_before_returned_observation)
+    with pytest.raises(RuntimeError, match="consequence receipt"):
+        controller.apply_consequence(after)
+    interrupted_events = controller.journal.verify_manifest()
+    assert interrupted_events[-1].event_type == "consequence.received"
+    controller.close()
+    closed_events = EventJournal(context.trace_root, run_id=context.run_id).verify_manifest()
+    assert closed_events == interrupted_events
+
+    with pytest.raises(MemoryContractError):
+        ARC3Controller.restore(
+            context,
+            preset=ControllerPreset.FULL,
+            checkpoint_path=checkpoint.path,
+        )
+
+
+@pytest.mark.replay
+def test_malformed_pending_consequence_close_preserves_parse_failure_boundary(
+    tmp_path: Path,
+) -> None:
+    context = _context(tmp_path)
+    session = SyntheticAdapter(seed=23, size=8, max_steps=32).open(SYNTHETIC_GAME_ID)
+    controller = ARC3Controller(ControllerPreset.FULL)
+    controller.reset(context)
+    controller.observe(session.observation)
+    controller.choose_action()
+    checkpoint = controller._last_checkpoint
+    assert checkpoint is not None
+
+    with pytest.raises(PolicyError, match="malformed observation"):
+        controller.apply_consequence(object())
+    interrupted_events = controller.journal.verify_manifest()
+    assert interrupted_events[-1].event_type == "observation.parse_failed"
+    controller.close()
+    closed_events = EventJournal(context.trace_root, run_id=context.run_id).verify_manifest()
+    assert closed_events == interrupted_events
+
+    with pytest.raises(MemoryContractError):
+        ARC3Controller.restore(
+            context,
+            preset=ControllerPreset.FULL,
+            checkpoint_path=checkpoint.path,
+        )
+
+
+@pytest.mark.replay
+def test_authority_projection_refuses_recovery_that_hides_a_raw_observation(
+    tmp_path: Path,
+) -> None:
+    context = _context(tmp_path)
+    session = SyntheticAdapter(seed=23, size=8, max_steps=32).open(SYNTHETIC_GAME_ID)
+    controller = ARC3Controller(ControllerPreset.FULL)
+    controller.reset(context)
+    controller.observe(session.observation)
+    events = controller.journal.verify_manifest()
+    checkpoint_index = max(
+        index for index, event in enumerate(events) if event.event_type == "run.checkpoint_written"
+    )
+    checkpoint = events[checkpoint_index]
+    source_observation = next(
+        event for event in events if event.event_type == "observation.received"
+    )
+    controller._append(
+        context.game_id,
+        "observation.received",
+        source_observation.payload,
+        scope=source_observation.scope,
+    )
+    before_recovery = controller.journal.verify_manifest()
+    suffix = before_recovery[checkpoint_index + 1 :]
+    controller._append(
+        context.game_id,
+        "reasoning.interruption_reopened",
+        {
+            "checkpoint_commitment_event_id": checkpoint.event_id,
+            "abandoned_event_ids": [event.event_id for event in suffix],
+            "abandoned_event_hashes": [event.event_hash for event in suffix],
+            "abandoned_tail_hash": suffix[-1].event_hash,
+            "recovery_policy": "malicious test fixture",
+        },
+        scope="run",
+    )
+
+    with pytest.raises(TraceIntegrityError, match="exact safe derived suffix"):
+        authoritative_events(controller.journal.verify_manifest())
+    controller.journal.close()
 
 
 @pytest.mark.replay
@@ -198,7 +456,9 @@ def test_close_checkpoint_restores_complete_phase_without_duplicate_completion(
     before = before_auditor.verify_manifest()
     before_auditor.close()
     assert before[-1].event_type == "run.checkpoint_written"
-    assert before[-2].event_type == "run.completed"
+    assert before[-2].event_type == "reasoning.checkpoint_state"
+    assert before[-2].payload["pending_submitted_event_id"] is None
+    assert before[-3].event_type == "run.completed"
     assert sum(event.event_type == "run.completed" for event in before) == 1
 
     restored = ARC3Controller.restore(context, preset=ControllerPreset.FULL)

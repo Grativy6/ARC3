@@ -1,5 +1,6 @@
 """Immutable ARC3 trace, replay, blob, index, migration, and checkpoint APIs."""
 
+from .authority import abandoned_event_ids, authoritative_events
 from .blob import BlobReceipt, BlobStore, FrameBlobReceipt
 from .canonical import canonical_bytes, canonical_json, sha256_bytes, sha256_json
 from .checkpoint import (
@@ -90,7 +91,9 @@ __all__ = [
     "TraceEvent",
     "TraceJournal",
     "TraceSummary",
+    "abandoned_event_ids",
     "apply_frame_delta",
+    "authoritative_events",
     "build_index",
     "canonical_bytes",
     "canonical_json",

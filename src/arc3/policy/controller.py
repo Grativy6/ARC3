@@ -55,8 +55,13 @@ from arc3.goals import (
     GoalKind,
     GoalRegistry,
     GoalRole,
+    GoalStatus,
     GoalTransition,
     IntrinsicExplorationUtility,
+    ProgressSignal,
+    detect_progress_signals,
+    positive_external_progress,
+    progress_snapshot,
     select_goal_action,
 )
 from arc3.hypotheses import (
@@ -101,7 +106,14 @@ from arc3.planning import (
     SearchStatus,
     search,
 )
-from arc3.trace import CodeIdentity, EventJournal, SourceIdentity, TraceEvent
+from arc3.trace import (
+    CodeIdentity,
+    EventJournal,
+    SourceIdentity,
+    TraceEvent,
+    abandoned_event_ids,
+    authoritative_events,
+)
 from arc3.trace.canonical import normalize_json, sha256_json
 from arc3.types import (
     ActionName,
@@ -122,6 +134,7 @@ from arc3.world_model import (
     Cell,
     CollisionBehavior,
     CollisionRule,
+    EnsemblePrediction,
     MatchedPredictionEvidence,
     MechanicsChangeCandidate,
     MechanicsChangeDomain,
@@ -148,10 +161,26 @@ from arc3.world_model import (
     WorldModelEnsemble,
     compile_hypotheses,
     gated_ensemble,
+    model_semantic_fingerprint,
     retrodict,
 )
 from arc3.world_model.rules import rule_action
 
+from .cadence import (
+    BoundedCanonicalLRU,
+    CacheInvalidationReason,
+    CacheValueKind,
+    CadenceConfig,
+    CadenceSelection,
+    CadenceSignals,
+    CadenceState,
+    CanonicalCacheKey,
+    DeliberationStatus,
+    DerivedCacheValue,
+    ModelCacheIdentity,
+    ReasoningPath,
+    select_reasoning_path,
+)
 from .models import (
     ActionDecision,
     CandidateAction,
@@ -383,6 +412,7 @@ class ARC3Controller:
         features: PresetFeatures | None = None,
         hot_path_profiler: _HotPathProfiler | None = None,
         retrodiction_config: RetrodictionConfig | None = None,
+        cadence_config: CadenceConfig | None = None,
     ) -> None:
         self.preset = preset if isinstance(preset, ControllerPreset) else ControllerPreset(preset)
         selected_features = preset_features(self.preset) if features is None else features
@@ -400,6 +430,10 @@ class ARC3Controller:
         if self.preset is ControllerPreset.COMPETITION and retrodiction_config is not None:
             raise CompetitionIntegrityError(
                 "competition preset forbids explicit retrodiction overrides"
+            )
+        if self.preset is ControllerPreset.COMPETITION and cadence_config is not None:
+            raise CompetitionIntegrityError(
+                "competition preset forbids explicit reasoning-cadence overrides"
             )
         if local_proposal_provider is not None and not self.features.allow_local_proposals:
             raise PolicyError("local proposals are disabled by the selected controller preset")
@@ -422,6 +456,38 @@ class ARC3Controller:
         self._hot_path_profiler = hot_path_profiler
         self._retrodiction_config_explicit = retrodiction_config is not None
         self._retrodiction_runtime = RetrodictionRuntime(selected_retrodiction)
+        self._cadence_config_explicit = cadence_config is not None
+        self._cadence_config = cadence_config or CadenceConfig()
+        self._cadence_state = CadenceState.initial(self._cadence_config)
+        self._prediction_cache = BoundedCanonicalLRU(self._cadence_config.cache_capacity)
+        self._reasoning_selection: CadenceSelection | None = None
+        self._reasoning_selected_event_id: str | None = None
+        self._reasoning_completed_event_id: str | None = None
+        self._reasoning_force_fallback = False
+        self._reasoning_terminal_status = DeliberationStatus.COMPLETED
+        self._reasoning_fault_type: str | None = None
+        self._reasoning_before_artifacts: tuple[set[str], set[str], set[str]] = (
+            set(),
+            set(),
+            set(),
+        )
+        self._reasoning_before_hypotheses = 0
+        self._reasoning_before_cache_hits = 0
+        self._reasoning_before_cache_misses = 0
+        self._reasoning_work_counts: dict[str, int] = {}
+        self._reasoning_budget_exhaustions: list[str] = []
+        self._cadence_reopening_event_ids: list[str] = []
+        self._cadence_contradiction_event_ids: list[str] = []
+        self._collect_cadence_trigger_events = False
+        self._cadence_folded_observation_event_id: str | None = None
+        self._cadence_checkpoint_state_event_id: str | None = None
+        self._cadence_activation_event_id: str | None = None
+        self._pending_goal_transitions: list[GoalTransition] = []
+        self._abandoned_trace_event_ids: set[str] = set()
+        # Names a raw/derived fold that has not reached a fully represented
+        # controller boundary.  Interrupted folds are preserved in the journal,
+        # but their transient in-memory state must never become authoritative.
+        self._transient_fold_boundary: str | None = None
         self._retrodiction_force_full_source_event_ids: list[str] = []
         self._matched_prediction_evidence: dict[tuple[str, str], MatchedPredictionEvidence] = {}
         self._context: RunContext | None = None
@@ -530,6 +596,24 @@ class ARC3Controller:
         """Return a derived checkpoint projection without granting action authority."""
 
         return self._retrodiction_runtime.to_dict()
+
+    @property
+    def cadence_config(self) -> CadenceConfig:
+        """Return the complete typed reasoning-cadence identity."""
+
+        return self._cadence_config
+
+    @property
+    def cadence_state(self) -> dict[str, JSONValue]:
+        """Expose current cadence counters as non-authoritative telemetry."""
+
+        return self._cadence_state.to_dict()
+
+    @property
+    def prediction_cache_state(self) -> dict[str, JSONValue]:
+        """Expose the bounded pure-computation cache for verification."""
+
+        return self._prediction_cache.to_dict()
 
     @property
     def palette_role_projection(self) -> tuple[tuple[str, int, bool], ...]:
@@ -836,6 +920,7 @@ class ARC3Controller:
         selected_retrodiction = (
             self._retrodiction_runtime.config if self._retrodiction_config_explicit else None
         )
+        selected_cadence = self._cadence_config if self._cadence_config_explicit else None
         ARC3Controller.__init__(
             self,
             self.preset,
@@ -843,9 +928,15 @@ class ARC3Controller:
             features=selected_features,
             hot_path_profiler=profiler,
             retrodiction_config=selected_retrodiction,
+            cadence_config=selected_cadence,
         )
         self._initialize_context(context)
-        self._append(
+        # A reset establishes fresh source/configuration and lifecycle
+        # boundaries.  The cache is empty, but typed causal counters still
+        # preserve why no reusable value crossed either boundary.
+        self._prediction_cache.invalidate(CacheInvalidationReason.SOURCE_OR_CONFIGURATION_CHANGE)
+        self._prediction_cache.invalidate(CacheInvalidationReason.LEVEL_TRANSITION_OR_RESET)
+        started = self._append(
             context.game_id,
             "run.started",
             {
@@ -856,9 +947,12 @@ class ARC3Controller:
                 "retrodiction_configuration_hash": sha256_json(
                     self._retrodiction_runtime.config.to_dict()
                 ),
+                "cadence_config": self._cadence_config.to_dict(),
+                "cadence_configuration_hash": self._cadence_config.configuration_hash,
             },
             scope="run",
         )
+        self._cadence_activation_event_id = started.event_id
 
     def _initialize_context(self, context: RunContext) -> None:
         self._context = context
@@ -876,6 +970,8 @@ class ARC3Controller:
                 "retrodiction_configuration_hash": sha256_json(
                     self._retrodiction_runtime.config.to_dict()
                 ),
+                "cadence_config": self._cadence_config.to_dict(),
+                "cadence_configuration_hash": self._cadence_config.configuration_hash,
             },
         )
         self._code = CodeIdentity(
@@ -919,7 +1015,448 @@ class ARC3Controller:
         )
         if event_type in _RETRODICTION_FORCE_FULL_EVENTS:
             self._retrodiction_force_full_source_event_ids.append(event.event_id)
+        if self._collect_cadence_trigger_events:
+            if event_type in {
+                "hypothesis.reopened",
+                "model.rule_demoted",
+                "mechanics.change_confirmed",
+                "mechanics.epoch_opened",
+                "goal.reopened",
+            }:
+                self._cadence_reopening_event_ids.append(event.event_id)
+            if event_type in {
+                "consequence.mismatched_prediction",
+                "hypothesis.contradicted",
+                "goal.contradicted",
+                "mechanics.change_candidate_created",
+            }:
+                self._cadence_contradiction_event_ids.append(event.event_id)
+        if self._cadence_state.deliberation_in_progress:
+            if event_type == "model.retrodiction_started":
+                raw_transition_ids = event.payload.get("transition_ids")
+                transition_count = (
+                    len(raw_transition_ids) if isinstance(raw_transition_ids, list) else 0
+                )
+                self._reasoning_work_counts["retrodiction_invocations"] += 1
+                self._reasoning_work_counts["retrodicted_transitions"] += transition_count
+                self._reasoning_work_counts["prediction_invocations"] += transition_count
+            elif event_type == "simulation.plan_evaluated":
+                expanded = event.payload.get("expanded_nodes")
+                generated = event.payload.get("generated_transitions")
+                self._reasoning_work_counts["simulation_invocations"] += 1
+                if isinstance(expanded, int) and not isinstance(expanded, bool):
+                    self._reasoning_work_counts["search_expanded_nodes"] += expanded
+                if isinstance(generated, int) and not isinstance(generated, bool):
+                    self._reasoning_work_counts["search_generated_transitions"] += generated
+                    self._reasoning_work_counts["prediction_invocations"] += generated
+                status = event.payload.get("status")
+                if status in {
+                    SearchStatus.NODE_BUDGET.value,
+                    SearchStatus.DEPTH_BUDGET.value,
+                    SearchStatus.TIME_BUDGET.value,
+                }:
+                    self._reasoning_budget_exhaustions.append(str(status))
+                    self._reasoning_terminal_status = DeliberationStatus.BUDGET_EXHAUSTED
         return event
+
+    def _policy_events(self) -> tuple[TraceEvent, ...]:
+        """Return verified receipts excluding explicitly reopened derived suffixes."""
+
+        return tuple(
+            event
+            for event in authoritative_events(self.journal.verify_manifest())
+            if event.event_id not in self._abandoned_trace_event_ids
+        )
+
+    def _validated_abandoned_trace_event_ids(
+        self,
+        current_suffix: Sequence[TraceEvent],
+    ) -> set[str]:
+        """Rebuild every immutable interrupted-deliberation exclusion."""
+
+        historical = set(abandoned_event_ids(self.journal.verify_manifest()))
+        historical.update(event.event_id for event in current_suffix)
+        return historical
+
+    def _cache_source_identity(self) -> str:
+        if self._source is None:
+            raise PolicyError("reasoning cache source identity is unavailable")
+        return sha256_json(self._source.to_dict())
+
+    def _cache_configuration_identity(self) -> str:
+        if self._code is None:
+            raise PolicyError("reasoning cache configuration identity is unavailable")
+        return sha256_json(
+            {
+                "cadence_configuration_hash": self._cadence_config.configuration_hash,
+                "controller_config_hash": self._code.config_hash,
+                "features": self.features.to_dict(),
+                "retrodiction_configuration_hash": (
+                    self._retrodiction_runtime.config.configuration_hash
+                ),
+            }
+        )
+
+    def _action_registry_identity(self) -> str:
+        return sha256_json(self._action_effects.projection())
+
+    @staticmethod
+    def _structural_identity(view: _PerceptionView) -> str:
+        """Hash palette-anonymous topology while ignoring ordinary translation."""
+
+        entities: list[dict[str, JSONValue]] = []
+        for entity in view.symbolic_state.entities:
+            anchor = entity.anchor
+            entities.append(
+                {
+                    "kind": entity.kind,
+                    "relative_cells": [
+                        [cell.x - anchor.x, cell.y - anchor.y] for cell in entity.cells
+                    ],
+                    "attributes": [
+                        [key, value]
+                        for key, value in entity.attributes
+                        if key not in {"palette_anonymous_identity", "palette_role"}
+                    ],
+                }
+            )
+        return sha256_json(
+            {
+                "width": view.symbolic_state.width,
+                "height": view.symbolic_state.height,
+                "entities": sorted(entities, key=sha256_json),
+                "facts": list(view.symbolic_state.facts),
+                "toggles": [list(item) for item in view.symbolic_state.toggles],
+                "attachments": [
+                    {
+                        "child_id": item.child_id,
+                        "parent_id": item.parent_id,
+                        "dx": item.dx,
+                        "dy": item.dy,
+                    }
+                    for item in view.symbolic_state.attachments
+                ],
+            }
+        )
+
+    def _current_plan_id(self, view: _PerceptionView) -> str | None:
+        plan = self._plan_executor.plan
+        if (
+            plan is None
+            or self._ensemble is None
+            or self._active_goal_id is None
+            or plan.plan_id in self._invalidated_plan_ids
+            or self._plan_executor.cursor >= len(plan.steps)
+            or plan.steps[self._plan_executor.cursor].before_state_id
+            != view.symbolic_state.state_id
+        ):
+            return None
+        model = next(
+            (item for item in self._ensemble.candidates if item.model_id == plan.model_id),
+            None,
+        )
+        if model is None or self._active_goal_id != plan.goal_id:
+            return None
+        try:
+            goal = self._goals.get(plan.goal_id)
+        except KeyError:
+            return None
+        revision = f"{goal.status.value}:{goal.rank}:{goal.reopen_count}"
+        if not plan.is_current(
+            model_id=model.model_id,
+            goal_id=goal.candidate.goal_id,
+            goal_revision=revision,
+        ):
+            return None
+        return plan.plan_id
+
+    def _reasoning_budget_limits(self) -> dict[str, int]:
+        budgets = self.context.config.budgets
+        return {
+            "cache_capacity": self._cadence_config.cache_capacity,
+            "coordinate_candidates": budgets.max_coordinate_candidates,
+            "fast_streak": self._cadence_config.maximum_fast_streak,
+            "retrodicted_transitions": budgets.max_actions,
+            "search_depth": budgets.max_search_depth,
+            "search_nodes": budgets.max_search_nodes,
+        }
+
+    def _reasoning_artifacts(self) -> tuple[set[str], set[str], set[str]]:
+        models = (
+            {item.model_id for item in self._ensemble.candidates}
+            if self._ensemble is not None
+            else set()
+        )
+        goals = {item.candidate.goal_id for item in self._goals.records(include_retired=False)}
+        plan = self._plan_executor.plan
+        plans = {plan.plan_id} if plan is not None else set()
+        return models, goals, plans
+
+    def _run_reasoning_cycle(
+        self,
+        observation: Observation,
+        receipt: ObservationReceipt,
+        view: _PerceptionView,
+        *,
+        initial: bool,
+        progress_made: bool,
+        evidence_already_folded: bool = False,
+        goal_revision_transition: PreservedTransition | None = None,
+        goal_revision_consequence_event_id: str | None = None,
+    ) -> None:
+        """Select and perform one deterministic path, deferring its terminal receipt."""
+
+        structural_identity = self._structural_identity(view)
+        if (goal_revision_transition is None) != (goal_revision_consequence_event_id is None):
+            raise PolicyError("goal revision requires a complete consequence boundary")
+        prior_structural_identity = self._cadence_state.last_structural_identity
+        structural_novelty = (
+            not initial
+            and prior_structural_identity is not None
+            and prior_structural_identity != structural_identity
+        )
+        if not evidence_already_folded:
+            self._cadence_state = self._cadence_state.fold_consequence(
+                progress_made=progress_made,
+                structural_identity=structural_identity,
+            )
+            self._cadence_folded_observation_event_id = receipt.observation_event_id
+        self._reasoning_selection = None
+        self._reasoning_selected_event_id = None
+        self._reasoning_completed_event_id = None
+        self._reasoning_force_fallback = False
+        if self.features.use_memory and not evidence_already_folded:
+            # Persist the complete always-on evidence fold while cadence is
+            # checkpointable.  Deliberation may be recomputed after recovery;
+            # a half-completed path is never serialized as finished work.
+            self._last_checkpoint = self.checkpoint()
+        if observation.state is GameStateName.WIN:
+            self._collect_cadence_trigger_events = False
+            self._cadence_reopening_event_ids.clear()
+            self._cadence_contradiction_event_ids.clear()
+            return
+        plan_id = self._current_plan_id(view)
+        high_goal_uncertainty = False
+        if self._active_goal_id is not None:
+            try:
+                goal = self._goals.get(self._active_goal_id)
+            except KeyError:
+                high_goal_uncertainty = True
+            else:
+                # Candidate status alone does not block a source-bound plan:
+                # goal desirability remains revisable, while executable model,
+                # state, and plan authority are validated separately.
+                high_goal_uncertainty = goal.status is GoalStatus.RETIRED or goal.rank <= 0
+        signals = CadenceSignals(
+            observation_event_id=receipt.observation_event_id,
+            state_id=view.symbolic_state.state_id,
+            mechanics_epoch_id=self._mechanics.active_epoch(self._level_index).epoch_id,
+            goal_id=self._active_goal_id,
+            goal_revision=self._goal_event_sequence_offset + len(self._goals.events),
+            plan_id=plan_id,
+            has_valid_plan=plan_id is not None,
+            startup_unknown_action_event_ids=((receipt.observation_event_id,) if initial else ()),
+            reopening_event_ids=tuple(self._cadence_reopening_event_ids),
+            meaningful_contradiction_event_ids=tuple(self._cadence_contradiction_event_ids),
+            structural_novelty_event_ids=(
+                (receipt.observation_event_id,) if structural_novelty else ()
+            ),
+            high_goal_uncertainty_event_ids=(
+                (receipt.observation_event_id,) if high_goal_uncertainty else ()
+            ),
+        )
+        selection = select_reasoning_path(
+            self._cadence_config,
+            self._cadence_state,
+            signals,
+        )
+        self._collect_cadence_trigger_events = False
+        self._cadence_reopening_event_ids.clear()
+        self._cadence_contradiction_event_ids.clear()
+        selected_event = self._append(
+            str(observation.game_id),
+            "reasoning.path_selected",
+            {
+                **selection.to_dict(),
+                "observation_event_id": receipt.observation_event_id,
+                "cadence_mode": self._cadence_config.mode.value,
+                "budget_limits": self._reasoning_budget_limits(),
+                "cache_projection_hash": self._prediction_cache.projection_hash,
+                "action_registry_identity": self._action_registry_identity(),
+            },
+        )
+        self._cadence_state = self._cadence_state.begin(selection)
+        self._reasoning_selection = selection
+        self._reasoning_selected_event_id = selected_event.event_id
+        self._reasoning_force_fallback = False
+        self._reasoning_terminal_status = DeliberationStatus.COMPLETED
+        self._reasoning_fault_type = None
+        self._reasoning_before_artifacts = self._reasoning_artifacts()
+        self._reasoning_before_hypotheses = len(self._hypotheses.all())
+        self._reasoning_before_cache_hits = self._prediction_cache.hits
+        self._reasoning_before_cache_misses = self._prediction_cache.misses
+        self._reasoning_budget_exhaustions = []
+        self._reasoning_work_counts = {
+            "compilation_invocations": 0,
+            "deep_invocations": int(selection.path is ReasoningPath.DEEP),
+            "prediction_invocations": 0,
+            "retrodicted_transitions": 0,
+            "retrodiction_invocations": 0,
+            "search_expanded_nodes": 0,
+            "search_generated_transitions": 0,
+            "simulation_invocations": 0,
+        }
+        try:
+            if selection.path is ReasoningPath.DEEP:
+                prior_model_projection = tuple(
+                    (
+                        model_semantic_fingerprint(item),
+                        item.rank_weight,
+                    )
+                    for item in (self._ensemble.candidates if self._ensemble is not None else ())
+                )
+                prior_goal_projection = sha256_json(
+                    {
+                        "active_goal_id": self._active_goal_id,
+                        "records": [item.to_dict() for item in self._goals.records()],
+                    }
+                )
+                if self.features.use_goals:
+                    self._drain_pending_goal_updates(observation)
+                if (
+                    goal_revision_transition is not None
+                    and goal_revision_consequence_event_id is not None
+                    and self.features.use_goals
+                ):
+                    self._retarget_contact_goal_after_progress(
+                        observation,
+                        receipt,
+                        view,
+                        goal_revision_transition,
+                        consequence_event_id=goal_revision_consequence_event_id,
+                    )
+                if self.features.use_world_model:
+                    self._reasoning_work_counts["compilation_invocations"] += 1
+                    self._update_world_models(observation)
+                if self.features.use_goals:
+                    self._seed_contact_goal(observation, receipt, view)
+                if self.features.use_planning:
+                    self._stage_plan_for_next_choice(
+                        observation,
+                        view,
+                        propagate_failure=True,
+                    )
+                current_model_projection = tuple(
+                    (
+                        model_semantic_fingerprint(item),
+                        item.rank_weight,
+                    )
+                    for item in (self._ensemble.candidates if self._ensemble is not None else ())
+                )
+                if current_model_projection != prior_model_projection:
+                    self._prediction_cache.invalidate(CacheInvalidationReason.MODEL_STATUS_CHANGE)
+                if (
+                    sha256_json(
+                        {
+                            "active_goal_id": self._active_goal_id,
+                            "records": [item.to_dict() for item in self._goals.records()],
+                        }
+                    )
+                    != prior_goal_projection
+                ):
+                    self._prediction_cache.invalidate(CacheInvalidationReason.GOAL_REVISION)
+        except Exception as error:
+            self._reasoning_terminal_status = DeliberationStatus.FALLBACK_USED
+            self._reasoning_fault_type = type(error).__name__
+            self._reasoning_force_fallback = True
+            self._fault_count += 1
+            self._append(
+                str(observation.game_id),
+                "run.environment_fault",
+                {
+                    "fault_type": self._reasoning_fault_type,
+                    "boundary": "reasoning-deliberation",
+                    "recovery": "deterministic legal action fallback",
+                },
+                scope="run",
+            )
+
+    def _complete_reasoning_cycle(self, observation: Observation) -> TraceEvent:
+        """Emit the one terminal receipt after current-decision cache work."""
+
+        selection = self._reasoning_selection
+        selected_event_id = self._reasoning_selected_event_id
+        if selection is None or selected_event_id is None:
+            raise PolicyError("reasoning completion lacks its selected path")
+        if not self._cadence_state.deliberation_in_progress:
+            raise PolicyError("reasoning completion has no in-progress cadence state")
+        before_models, before_goals, before_plans = self._reasoning_before_artifacts
+        after_models, after_goals, after_plans = self._reasoning_artifacts()
+        produced_models = tuple(sorted(after_models - before_models))
+        produced_goals = tuple(sorted(after_goals - before_goals))
+        produced_plans = tuple(sorted(after_plans - before_plans))
+        work_counts = {
+            **self._reasoning_work_counts,
+            "goal_records_after": len(after_goals),
+            "hypothesis_records_after": len(self._hypotheses.all()),
+            "hypothesis_records_before": self._reasoning_before_hypotheses,
+            "model_records_after": len(after_models),
+            "preserved_transitions_available": (
+                len(self._transitions) if selection.path is ReasoningPath.DEEP else 0
+            ),
+            "produced_plans": len(produced_plans),
+        }
+        status = self._reasoning_terminal_status
+        terminal_payload: dict[str, object] = {
+            "path_selected_event_id": selected_event_id,
+            "path": selection.path.value,
+            "status": status.value,
+            "integer_work_counts": work_counts,
+            "budget_exhaustions": sorted(set(self._reasoning_budget_exhaustions)),
+            "cache_hits": self._prediction_cache.hits - self._reasoning_before_cache_hits,
+            "cache_misses": self._prediction_cache.misses - self._reasoning_before_cache_misses,
+            "cache_invalidation_counts": {
+                reason.value: self._prediction_cache.invalidation_counts[reason]
+                for reason in CacheInvalidationReason
+            },
+            "produced_model_ids": list(produced_models),
+            "produced_goal_ids": list(produced_goals),
+            "produced_plan_ids": list(produced_plans),
+            "artifact_projection_hash": sha256_json(
+                {
+                    "cache_projection_hash": self._prediction_cache.projection_hash,
+                    "goal_ids": sorted(after_goals),
+                    "model_ids": sorted(after_models),
+                    "plan_ids": sorted(after_plans),
+                    "selection_hash": selection.selection_hash,
+                    "work_counts": work_counts,
+                }
+            ),
+        }
+        if self._reasoning_fault_type is not None:
+            terminal_payload["fault_type"] = self._reasoning_fault_type
+            terminal_payload["recovery"] = (
+                "deterministic legal action fallback"
+                if status is DeliberationStatus.FALLBACK_USED
+                else "no action crossed the adapter boundary"
+            )
+        event_type = (
+            "reasoning.fallback_used"
+            if status is DeliberationStatus.FALLBACK_USED
+            else "reasoning.deliberation_completed"
+        )
+        terminal = self._append(
+            str(observation.game_id),
+            event_type,
+            terminal_payload,
+        )
+        self._cadence_state = self._cadence_state.complete(
+            selection,
+            completed_event_id=terminal.event_id,
+            status=status,
+        )
+        self._reasoning_completed_event_id = terminal.event_id
+        return terminal
 
     @_profiled("controller_orchestration", "observe")
     def observe(self, frames: Observation | object) -> ObservationReceipt:
@@ -931,6 +1468,16 @@ class ARC3Controller:
             )
         if self._phase in {ControllerPhase.COMPLETE, ControllerPhase.CLOSED}:
             raise PolicyError(f"cannot observe while controller is {self._phase.value}")
+        if self._transient_fold_boundary is not None:
+            raise PolicyError("interrupted controller fold requires checkpoint recovery")
+        if self._cadence_state.deliberation_in_progress:
+            previous = self._latest_observation
+            if previous is None:
+                raise PolicyError("superseded reasoning lacks its observation boundary")
+            self._reasoning_terminal_status = DeliberationStatus.FAILED
+            self._reasoning_fault_type = "ObservationSupersededBeforeAction"
+            self._complete_reasoning_cycle(previous)
+        self._transient_fold_boundary = "observation-processing"
         observation = self._require_observation(frames)
         self._level_index = observation.levels_completed
         receipt, view = self._record_observation(observation, previous=None)
@@ -941,15 +1488,15 @@ class ARC3Controller:
         self._prepare_action_level(observation)
         self._remember_frame(observation.frames[-1].digest)
         self._set_provisional_mover(view)
-        if self.features.use_hypotheses:
-            self._update_world_models(observation)
-        if self.features.use_goals:
-            self._seed_contact_goal(observation, receipt, view)
-        if self.features.use_planning and observation.state is not GameStateName.WIN:
-            self._stage_plan_for_next_choice(observation, view)
         self._emit_local_proposals_if_enabled(observation, receipt, view)
-        if self.features.use_memory:
-            self._last_checkpoint = self.checkpoint()
+        self._transient_fold_boundary = None
+        self._run_reasoning_cycle(
+            observation,
+            receipt,
+            view,
+            initial=True,
+            progress_made=True,
+        )
         return receipt
 
     @_profiled("observation_normalization")
@@ -1446,7 +1993,7 @@ class ARC3Controller:
 
         matches = tuple(
             event
-            for event in self.journal.verify_manifest()
+            for event in self._policy_events()
             if event.event_type == "action.effect_observed"
             and event.payload.get("source_consequence_event_id") == consequence_event_id
         )
@@ -2769,7 +3316,13 @@ class ARC3Controller:
             or {
                 key: item
                 for key, item in prediction_event.payload.items()
-                if key != "mechanics_epoch_id"
+                if key
+                not in {
+                    "cache_hit",
+                    "cache_key_hash",
+                    "cache_projection_hash",
+                    "mechanics_epoch_id",
+                }
             }
             != prediction_payload
             or consequence_event is None
@@ -2828,7 +3381,7 @@ class ARC3Controller:
     def _rebuild_matched_prediction_evidence_from_trace(self) -> None:
         """Reconstruct event-triggered evidence from immutable source receipts."""
 
-        events = self.journal.verify_manifest()
+        events = self._policy_events()
         event_by_id = {event.event_id: event for event in events}
         event_order = {event.event_id: index for index, event in enumerate(events)}
         predictions: dict[str, TraceEvent] = {}
@@ -3081,6 +3634,13 @@ class ARC3Controller:
             },
             scope="run",
         )
+        if self._cadence_state.deliberation_in_progress:
+            latest = self._latest_observation
+            if latest is None:
+                raise PolicyError("budget exhaustion lacks its observation boundary")
+            self._reasoning_terminal_status = DeliberationStatus.BUDGET_EXHAUSTED
+            self._reasoning_budget_exhaustions.append(budget)
+            self._complete_reasoning_cycle(latest)
         if self.features.use_memory:
             self._last_checkpoint = self.checkpoint()
         raise PolicyError(f"{budget} budget exhausted ({used}/{limit})")
@@ -3114,11 +3674,16 @@ class ARC3Controller:
             self._explored_coordinates.add(action.coordinate)
 
     def _goal_option(
-        self, action: ActionRequest, state: SymbolicState
+        self,
+        action: ActionRequest,
+        state: SymbolicState,
+        *,
+        allow_model_simulation: bool,
     ) -> tuple[str | None, float, int]:
         goal_id = self._active_goal_id
         if (
             not self.features.use_world_model_simulation
+            or not allow_model_simulation
             or goal_id is None
             or self._ensemble is None
             or goal_id not in self._goal_targets
@@ -3126,6 +3691,9 @@ class ARC3Controller:
             return None, 0.0, 0
         mover_id, target_id = self._goal_targets[goal_id]
         before_distance = _entity_distance(state, mover_id, target_id)
+        if self._cadence_state.deliberation_in_progress:
+            self._reasoning_work_counts["prediction_invocations"] += 1
+            self._reasoning_work_counts["simulation_invocations"] += 1
         prediction = self._ensemble.candidates[0].predict(state, action)
         after_distance = _entity_distance(prediction.after_state, mover_id, target_id)
         if before_distance is None or after_distance is None:
@@ -3134,7 +3702,11 @@ class ARC3Controller:
         return goal_id, min(1.0, float(advance)), advance
 
     def _candidate_actions(
-        self, observation: Observation, view: _PerceptionView
+        self,
+        observation: Observation,
+        view: _PerceptionView,
+        *,
+        allow_model_simulation: bool,
     ) -> tuple[CandidateAction, ...]:
         legal = self._legal_actions(observation, view)
         if not legal:
@@ -3149,12 +3721,23 @@ class ARC3Controller:
         )
         options: list[CandidateAction] = []
         for action in legal:
-            _goal_id, progress, _advance = self._goal_option(action, view.symbolic_state)
+            _goal_id, progress, _advance = self._goal_option(
+                action,
+                view.symbolic_state,
+                allow_model_simulation=allow_model_simulation,
+            )
             estimate = self._exploration.statistics.estimate(context.state, action)
             failure = 0.25 if estimate.kind is EffectKind.NO_OP and not estimate.prior_only else 0.0
             novelty = 1.0 / (1.0 + self._action_counts[action])
             information = 0.0
-            if self.features.use_information_gain and self._ensemble is not None:
+            if (
+                allow_model_simulation
+                and self.features.use_information_gain
+                and self._ensemble is not None
+            ):
+                if self._cadence_state.deliberation_in_progress:
+                    self._reasoning_work_counts["prediction_invocations"] += 1
+                    self._reasoning_work_counts["simulation_invocations"] += 1
                 information = float(
                     len(self._ensemble.predict(view.symbolic_state, action).alternatives) > 1
                 )
@@ -3182,6 +3765,9 @@ class ARC3Controller:
             return ()
         alternatives: list[ExplorationAlternative] = []
         for candidate in self._ensemble.candidates:
+            if self._cadence_state.deliberation_in_progress:
+                self._reasoning_work_counts["prediction_invocations"] += len(actions)
+                self._reasoning_work_counts["simulation_invocations"] += len(actions)
             predictions = tuple(
                 ExplorationPrediction(
                     action,
@@ -3206,6 +3792,7 @@ class ARC3Controller:
         view: _PerceptionView,
         *,
         stage_only: bool = False,
+        allow_new_search: bool = True,
     ) -> tuple[ActionRequest, str, str] | None:
         if (
             not self.features.use_planning
@@ -3281,6 +3868,9 @@ class ARC3Controller:
             # an environment consequence.
             self._plan_executor = PlanExecutor()
 
+        if not allow_new_search:
+            return None
+
         def goal_test(state: SymbolicState) -> bool:
             # Adjacency is the model-supported edge of an unknown collision/contact
             # rule.  Entering the target remains a separate falsifying live probe.
@@ -3307,14 +3897,14 @@ class ARC3Controller:
             budget=SearchBudget(
                 max_nodes=self.context.config.budgets.max_search_nodes,
                 max_depth=self.context.config.budgets.max_search_depth,
+                # Retained in the typed budget and trace for compatibility;
+                # this production call disables elapsed-time termination below.
                 max_time_ms=max(
                     1,
-                    min(
-                        int(self.context.config.budgets.decision_seconds * 1_000),
-                        5_000,
-                    ),
+                    math.ceil(self.context.config.budgets.decision_seconds * 1_000),
                 ),
             ),
+            enforce_time_budget=False,
         )
         payload = result.to_trace_payload()
         payload.update(
@@ -3368,6 +3958,8 @@ class ARC3Controller:
         self,
         observation: Observation,
         view: _PerceptionView,
+        *,
+        propagate_failure: bool = False,
     ) -> None:
         """Load a checkpointable plan without selecting or predicting an action.
 
@@ -3404,6 +3996,8 @@ class ARC3Controller:
                 },
                 scope="run",
             )
+            if propagate_failure:
+                raise
 
     def _contact_probe_action(
         self, observation: Observation, view: _PerceptionView
@@ -3444,6 +4038,8 @@ class ARC3Controller:
         observation: Observation,
         view: _PerceptionView,
         candidates: tuple[CandidateAction, ...],
+        *,
+        allow_model_simulation: bool,
     ) -> tuple[ActionRequest, str | None, str]:
         context = ProbeContext(
             state=state_features(
@@ -3485,8 +4081,12 @@ class ARC3Controller:
         ranked = self._exploration.select(
             options,
             context=context,
-            alternatives=self._exploration_alternatives(
-                view.symbolic_state, tuple(item.action for item in candidates)
+            alternatives=(
+                self._exploration_alternatives(
+                    view.symbolic_state, tuple(item.action for item in candidates)
+                )
+                if allow_model_simulation
+                else ()
             ),
         )
         return ranked.action, None, "bounded information-efficient generic probe"
@@ -3684,6 +4284,45 @@ class ARC3Controller:
             return None
         return min(probes, key=lambda item: item[:3])[3], epoch.caused_by_change_candidate_id
 
+    def _prediction_for_action(
+        self,
+        state: SymbolicState,
+        action: ActionRequest,
+    ) -> tuple[EnsemblePrediction, bool | None, CanonicalCacheKey | None]:
+        """Return pure prediction computation; receipt authority is minted later."""
+
+        ensemble = self._ensemble
+        if ensemble is None:
+            raise PolicyError("prediction requested without an active ensemble")
+        if not self._cadence_config.prediction_cache_enabled:
+            self._reasoning_work_counts["prediction_invocations"] += 1
+            self._reasoning_work_counts["simulation_invocations"] += 1
+            return ensemble.predict(state, action), None, None
+        key = CanonicalCacheKey(
+            source_identity=self._cache_source_identity(),
+            configuration_identity=self._cache_configuration_identity(),
+            symbolic_state_id=state.state_id,
+            action=action,
+            ordered_models=tuple(
+                ModelCacheIdentity(
+                    semantic_identity=model_semantic_fingerprint(candidate),
+                    rank_weight=candidate.rank_weight,
+                )
+                for candidate in ensemble.candidates
+            ),
+            mechanics_epoch_id=self._mechanics.active_epoch(self._level_index).epoch_id,
+            action_registry_identity=self._action_registry_identity(),
+            value_kind=CacheValueKind.PREDICTION,
+        )
+        cached = self._prediction_cache.get(key)
+        if cached is not None:
+            return cached.prediction, True, key
+        self._reasoning_work_counts["prediction_invocations"] += 1
+        self._reasoning_work_counts["simulation_invocations"] += 1
+        prediction = ensemble.predict(state, action)
+        self._prediction_cache.put(key, DerivedCacheValue(prediction=prediction))
+        return prediction, False, key
+
     @_profiled("action_selection", "choose_action")
     def choose_action(self) -> ActionDecision:
         """Select, validate, predict, and deliver exactly one action to the adapter."""
@@ -3703,8 +4342,31 @@ class ARC3Controller:
         view = self._latest_view
         if observation is None or receipt is None or view is None:
             raise PolicyError("controller derived state is incomplete")
+        if self._transient_fold_boundary is not None:
+            raise PolicyError("interrupted action construction requires checkpoint recovery")
+        self._transient_fold_boundary = "action-construction"
+        if self._reasoning_selection is None or not self._cadence_state.deliberation_in_progress:
+            # Historical checkpoints predate cadence state.  Reconstruct one
+            # current-observation reasoning boundary before permitting action.
+            self._run_reasoning_cycle(
+                observation,
+                receipt,
+                view,
+                initial=self._step_index == 0,
+                progress_made=True,
+                evidence_already_folded=(
+                    self._cadence_folded_observation_event_id == receipt.observation_event_id
+                ),
+            )
+        if self._reasoning_selection is None or not self._cadence_state.deliberation_in_progress:
+            raise PolicyError("action selection lacks an in-progress reasoning boundary")
+        allow_deep_work = self._reasoning_selection.path is ReasoningPath.DEEP
 
-        candidates = self._candidate_actions(observation, view)
+        candidates = self._candidate_actions(
+            observation,
+            view,
+            allow_model_simulation=allow_deep_work,
+        )
         candidate_event = self._append(
             str(observation.game_id),
             "action.candidates_generated",
@@ -3739,6 +4401,8 @@ class ARC3Controller:
         self._pending_change_candidate_id = None
         self._pending_reexploration_candidate_id = None
         try:
+            if self._reasoning_force_fallback:
+                raise PolicyError("reasoning deliberation selected deterministic fallback")
             if self.preset in {ControllerPreset.BASELINE, ControllerPreset.TRACE}:
                 action = self._baseline_action(observation)
             elif self._phase is ControllerPhase.GAME_OVER:
@@ -3760,7 +4424,11 @@ class ARC3Controller:
                     if change_probe is not None
                     or calibration is not None
                     or contact_probe is not None
-                    else self._plan_action(observation, view)
+                    else self._plan_action(
+                        observation,
+                        view,
+                        allow_new_search=allow_deep_work,
+                    )
                 )
                 successor_revalidation = (
                     None
@@ -3806,11 +4474,17 @@ class ARC3Controller:
                     rationale_category = RationaleCategory.REEXPLORATION
                 else:
                     action, plan_or_probe_id, rationale = self._probe_action(
-                        observation, view, candidates
+                        observation,
+                        view,
+                        candidates,
+                        allow_model_simulation=allow_deep_work,
                     )
                     rationale_category = RationaleCategory.DISCRIMINATE_MODELS
         except Exception as error:
             self._fault_count += 1
+            self._reasoning_terminal_status = DeliberationStatus.FALLBACK_USED
+            if self._reasoning_fault_type is None:
+                self._reasoning_fault_type = type(error).__name__
             _, fallback = min(
                 enumerate(candidates),
                 key=lambda item: (self._action_counts[item[1].action], item[0]),
@@ -3874,47 +4548,8 @@ class ARC3Controller:
             ).removeprefix("sha256:")[:24]
         )
         predicted_ids: tuple[str, ...] = ()
-        selected = self._append(
-            str(observation.game_id),
-            "action.selected",
-            {
-                "decision_id": decision_id,
-                "source_observation_event_id": receipt.observation_event_id,
-                "selected_action": _action_payload(action),
-                "selected_canonical_effect": (
-                    self._pending_canonical_effect.projection()
-                    if self._pending_canonical_effect is not None
-                    else None
-                ),
-                "raw_resolution_kind": self._pending_resolution_kind,
-                "candidate_utilities": [item.to_trace_payload() for item in candidates],
-                "selected_probe_or_plan_id": plan_or_probe_id,
-                "active_hypothesis_ids": list(active_hypothesis_ids),
-                "predicted_outcome_ids": [],
-                "active_goal_ids": list(active_goal_ids),
-                "active_world_model_ids": list(active_model_ids),
-                "mechanics_epoch_id": self._mechanics.active_epoch(self._level_index).epoch_id,
-                "reexploration": (rationale_category is RationaleCategory.REEXPLORATION),
-                "rationale_category": rationale_category.value,
-                "rationale_summary": rationale,
-                "alternatives_summary": f"{len(candidates)} legal candidate(s) retained",
-            },
-        )
-        selected_id = selected.event_id
-        validated = self._append(
-            str(observation.game_id),
-            "action.validated",
-            {
-                "decision_id": decision_id,
-                "selected_event_id": selected_id,
-                "action": _action_payload(action),
-                "available_actions": [item.value for item in observation.available_actions],
-                "validation": "first-party legality check passed",
-            },
-        )
-        validated_id = validated.event_id
-
         prediction_receipt_id: str | None = None
+        prediction_event_payload: dict[str, JSONValue] | None = None
         self._pending_prediction = None
         self._pending_prediction_event_id = None
         self._restored_prediction_state_ids = ()
@@ -3924,11 +4559,12 @@ class ARC3Controller:
             and self._ensemble is not None
             and action.name is not ActionName.RESET
         ):
-            prediction = self._prediction_book.emit(
+            prediction_value, prediction_cache_hit, prediction_cache_key = (
+                self._prediction_for_action(view.symbolic_state, action)
+            )
+            prediction = self._prediction_book.emit_prediction(
                 action_decision_id=decision_id,
-                ensemble=self._ensemble,
-                state=view.symbolic_state,
-                action=action,
+                prediction=prediction_value,
                 dependent_plan_ids=(
                     (plan_or_probe_id,)
                     if plan_or_probe_id is not None and plan_or_probe_id.startswith("plan:")
@@ -3946,13 +4582,63 @@ class ARC3Controller:
                 alternative.after_state_id for alternative in prediction.prediction.alternatives
             )
             self._restored_prediction_plan_ids = prediction.dependent_plan_ids
+            prediction_event_payload = {
+                **prediction.to_dict(),
+                "mechanics_epoch_id": self._mechanics.active_epoch(self._level_index).epoch_id,
+                "cache_hit": prediction_cache_hit,
+                "cache_key_hash": (
+                    prediction_cache_key.key_hash if prediction_cache_key is not None else None
+                ),
+                "cache_projection_hash": self._prediction_cache.projection_hash,
+            }
+        self._complete_reasoning_cycle(observation)
+        if self._reasoning_completed_event_id is None:
+            raise PolicyError("current action lacks a completed reasoning receipt")
+        selected = self._append(
+            str(observation.game_id),
+            "action.selected",
+            {
+                "decision_id": decision_id,
+                "source_observation_event_id": receipt.observation_event_id,
+                "selected_action": _action_payload(action),
+                "selected_canonical_effect": (
+                    self._pending_canonical_effect.projection()
+                    if self._pending_canonical_effect is not None
+                    else None
+                ),
+                "raw_resolution_kind": self._pending_resolution_kind,
+                "candidate_utilities": [item.to_trace_payload() for item in candidates],
+                "selected_probe_or_plan_id": plan_or_probe_id,
+                "active_hypothesis_ids": list(active_hypothesis_ids),
+                "predicted_outcome_ids": list(predicted_ids),
+                "active_goal_ids": list(active_goal_ids),
+                "active_world_model_ids": list(active_model_ids),
+                "mechanics_epoch_id": self._mechanics.active_epoch(self._level_index).epoch_id,
+                "reexploration": (rationale_category is RationaleCategory.REEXPLORATION),
+                "rationale_category": rationale_category.value,
+                "rationale_summary": rationale,
+                "alternatives_summary": f"{len(candidates)} legal candidate(s) retained",
+                "reasoning_completed_event_id": self._reasoning_completed_event_id,
+            },
+        )
+        selected_id = selected.event_id
+        validated = self._append(
+            str(observation.game_id),
+            "action.validated",
+            {
+                "decision_id": decision_id,
+                "selected_event_id": selected_id,
+                "action": _action_payload(action),
+                "available_actions": [item.value for item in observation.available_actions],
+                "validation": "first-party legality check passed",
+            },
+        )
+        validated_id = validated.event_id
+        if prediction_event_payload is not None:
             prediction_event = self._append(
                 str(observation.game_id),
                 "simulation.prediction_emitted",
-                {
-                    **prediction.to_dict(),
-                    "mechanics_epoch_id": self._mechanics.active_epoch(self._level_index).epoch_id,
-                },
+                prediction_event_payload,
             )
             self._pending_prediction_event_id = prediction_event.event_id
         submitted = self._append(
@@ -3996,6 +4682,11 @@ class ARC3Controller:
             action_budget=self.context.config.budgets.max_actions,
         )
         self._phase = ControllerPhase.AWAITING_CONSEQUENCE
+        # All state needed to represent the submitted action is now present.
+        # Clearing this before the pending-action checkpoint lets a checkpoint
+        # write failure be retried without treating a complete decision as an
+        # abandonable derived-only suffix.
+        self._transient_fold_boundary = None
         decision = ActionDecision(
             decision_id=decision_id,
             action=action,
@@ -4029,11 +4720,17 @@ class ARC3Controller:
         before_context = self._before_action_features
         if pending is None or before is None or before_state is None or before_context is None:
             raise PolicyError("pending action state is incomplete")
+        if self._transient_fold_boundary is not None:
+            raise PolicyError("interrupted controller fold requires checkpoint recovery")
+        self._transient_fold_boundary = "consequence-application"
         after = self._require_observation(frames)
         returned_action_mismatch = (
             after.returned_action is not None and after.returned_action != pending.action
         )
         previous_level = self._level_index
+        self._collect_cadence_trigger_events = True
+        self._cadence_reopening_event_ids.clear()
+        self._cadence_contradiction_event_ids.clear()
 
         returned_frames = self._store_frames(after.frames)
         consequence = self._append(
@@ -4116,6 +4813,11 @@ class ARC3Controller:
             self._pending_resolution_kind = None
             self._plan_executor = PlanExecutor()
             self._phase = ControllerPhase.FAULTED
+            self._collect_cadence_trigger_events = False
+            self._prediction_cache.invalidate(
+                CacheInvalidationReason.ACTION_SPACE_OR_CALIBRATION_CHANGE
+            )
+            self._transient_fold_boundary = None
             if self.features.use_memory:
                 self._last_checkpoint = self.checkpoint()
             raise PolicyError(
@@ -4126,6 +4828,7 @@ class ARC3Controller:
         action_effect_observation: ActionEffectObservation | None = None
         prior_accepted_translation: tuple[int, int] | None = None
         prior_models = self._ensemble.candidates if self._ensemble is not None else ()
+        prior_action_registry_identity = self._action_registry_identity()
         if pending.action.name is not ActionName.RESET:
             before_condition = action_condition_signature(before)
             prior_accepted_translation = self._action_effects.accepted_translation(
@@ -4168,6 +4871,10 @@ class ARC3Controller:
                     "registry_level_index": self._action_effects.level_index,
                 },
             )
+            if self._action_registry_identity() != prior_action_registry_identity:
+                self._prediction_cache.invalidate(
+                    CacheInvalidationReason.ACTION_SPACE_OR_CALIBRATION_CHANGE
+                )
 
         effect = classify_effect(
             before,
@@ -4197,6 +4904,7 @@ class ARC3Controller:
             )
             matched_prediction = assessment.matched_any or bool(controlled_match_model_ids)
             if not matched_prediction:
+                self._prediction_cache.invalidate(CacheInvalidationReason.PREDICTION_MISMATCH)
                 invalidated_plans.update(
                     plan_id
                     for item in assessment.reopenings
@@ -4247,6 +4955,7 @@ class ARC3Controller:
         elif self._restored_prediction_state_ids:
             matched_prediction = observed_state.state_id in self._restored_prediction_state_ids
             if not matched_prediction:
+                self._prediction_cache.invalidate(CacheInvalidationReason.PREDICTION_MISMATCH)
                 invalidated_plans.update(self._restored_prediction_plan_ids)
             self._append(
                 str(after.game_id),
@@ -4332,6 +5041,10 @@ class ARC3Controller:
                     action_hypothesis_update,
                     traversability_update,
                 )
+                if hypothesis_update.contradicted_hypothesis_ids:
+                    self._prediction_cache.invalidate(
+                        CacheInvalidationReason.HYPOTHESIS_CONTRADICTION_OR_REOPENING
+                    )
                 if (
                     interpreted_action_effect is not None
                     and after.levels_completed == previous_level
@@ -4345,58 +5058,74 @@ class ARC3Controller:
                         prior_models=prior_models,
                         invalidated_plan_ids=invalidated_plans,
                     )
+                    if reopened_models:
+                        self._prediction_cache.invalidate(
+                            CacheInvalidationReason.MODEL_STATUS_CHANGE
+                        )
 
         progress_ids: tuple[str, ...] = ()
+        progress_signals: tuple[ProgressSignal, ...] = ()
+        goal_update_transition: GoalTransition | None = None
         if self.features.use_goals:
-            acquisition = self._acquire_goal_transition(
-                GoalTransition(
-                    before=before,
-                    after=after,
-                    before_event_ids=(
-                        self._latest_receipt.observation_event_id
-                        if self._latest_receipt is not None
-                        else pending.selected_event_id,
-                    ),
-                    after_event_ids=(consequence_id, observation_receipt.observation_event_id),
-                    step=self._step_index,
-                    level_scope_ref=f"level:{after.levels_completed}",
-                    game_scope_ref="game:opaque-current-run",
-                )
+            goal_update_transition = GoalTransition(
+                before=before,
+                after=after,
+                before_event_ids=(
+                    self._latest_receipt.observation_event_id
+                    if self._latest_receipt is not None
+                    else pending.selected_event_id,
+                ),
+                after_event_ids=(consequence_id, observation_receipt.observation_event_id),
+                step=self._step_index,
+                level_scope_ref=f"level:{after.levels_completed}",
+                game_scope_ref="game:opaque-current-run",
             )
-            progress_ids = tuple(item.evidence.evidence_id for item in acquisition.progress_signals)
-            if acquisition.progress_signals:
+            progress_signals = self._measure_goal_progress(goal_update_transition)
+            progress_ids = tuple(item.evidence.evidence_id for item in progress_signals)
+            self._pending_goal_transitions.append(goal_update_transition)
+            if progress_signals:
                 self._append(
                     str(after.game_id),
                     "consequence.progress_detected",
                     {
                         "signal_ids": list(progress_ids),
-                        "signal_kinds": [item.kind.value for item in acquisition.progress_signals],
+                        "signal_kinds": [item.kind.value for item in progress_signals],
                         "source_consequence_event_id": consequence_id,
                     },
                 )
-            if self._active_goal_id is not None and after.state is GameStateName.WIN:
-                self._goal_acquirer.record_goal_test(
-                    self._active_goal_id,
-                    GoalTransition(
-                        before=before,
-                        after=after,
-                        before_event_ids=(pending.selected_event_id,),
-                        after_event_ids=(consequence_id,),
-                        step=self._step_index,
-                        level_scope_ref=f"level:{after.levels_completed}",
-                        game_scope_ref="game:opaque-current-run",
-                    ),
-                    target_condition_reached=True,
+            if after.state is GameStateName.WIN:
+                prior_goal_projection = sha256_json(
+                    {
+                        "active_goal_id": self._active_goal_id,
+                        "records": [item.to_dict() for item in self._goals.records()],
+                    }
                 )
-            self._flush_goal_events(after)
-            if preserved_transition is not None and after.state is not GameStateName.WIN:
-                self._retarget_contact_goal_after_progress(
-                    after,
-                    observation_receipt,
-                    view,
-                    preserved_transition,
-                    consequence_event_id=consequence_id,
-                )
+                self._drain_pending_goal_updates(after)
+                if self._active_goal_id is not None:
+                    self._goal_acquirer.record_goal_test(
+                        self._active_goal_id,
+                        GoalTransition(
+                            before=before,
+                            after=after,
+                            before_event_ids=(pending.selected_event_id,),
+                            after_event_ids=(consequence_id,),
+                            step=self._step_index,
+                            level_scope_ref=f"level:{after.levels_completed}",
+                            game_scope_ref="game:opaque-current-run",
+                        ),
+                        target_condition_reached=True,
+                    )
+                self._flush_goal_events(after)
+                if (
+                    sha256_json(
+                        {
+                            "active_goal_id": self._active_goal_id,
+                            "records": [item.to_dict() for item in self._goals.records()],
+                        }
+                    )
+                    != prior_goal_projection
+                ):
+                    self._prediction_cache.invalidate(CacheInvalidationReason.GOAL_REVISION)
 
         self._latest_observation = after
         self._latest_receipt = observation_receipt
@@ -4423,21 +5152,30 @@ class ARC3Controller:
                 previous_level=previous_level,
                 consequence_event_id=consequence_id,
             )
+            self._prediction_cache.invalidate(CacheInvalidationReason.LEVEL_TRANSITION_OR_RESET)
         else:
             self._prepare_action_level(after)
             self._remember_frame(after.frames[-1].digest)
-        if self.features.use_world_model and after.state is not GameStateName.WIN:
-            self._update_world_models(after)
-        if self.features.use_goals and after.state is not GameStateName.WIN:
-            # A reached one-cell guide can be occluded by the mover in the
-            # exact consequence that retires it.  Reconsider goal seeding on
-            # every later ordinary observation so a newly visible successor
-            # guide can become a source-linked target without fixture hints.
-            self._seed_contact_goal(after, observation_receipt, view)
-        if self.features.use_planning and after.state is not GameStateName.WIN:
-            self._stage_plan_for_next_choice(after, view)
-        if self.features.use_memory:
-            self._last_checkpoint = self.checkpoint()
+        if pending.action.name is ActionName.RESET:
+            self._prediction_cache.invalidate(CacheInvalidationReason.LEVEL_TRANSITION_OR_RESET)
+        self._transient_fold_boundary = None
+        self._run_reasoning_cycle(
+            after,
+            observation_receipt,
+            view,
+            initial=False,
+            progress_made=positive_external_progress(progress_signals)
+            or after.levels_completed > previous_level
+            or after.state is GameStateName.WIN,
+            goal_revision_transition=(
+                preserved_transition if after.state is not GameStateName.WIN else None
+            ),
+            goal_revision_consequence_event_id=(
+                consequence_id
+                if preserved_transition is not None and after.state is not GameStateName.WIN
+                else None
+            ),
+        )
         return ConsequenceReceipt(
             consequence_event_id=consequence_id,
             consequence_event_hash=consequence_hash,
@@ -4448,6 +5186,31 @@ class ARC3Controller:
             progress_signal_ids=progress_ids,
             phase=self._phase,
         )
+
+    @staticmethod
+    def _measure_goal_progress(transition: GoalTransition) -> tuple[ProgressSignal, ...]:
+        """Measure explicit progress without seeding or revising goal hypotheses."""
+
+        before = progress_snapshot(
+            transition.before,
+            step=max(0, transition.step - 1),
+            source_event_ids=transition.before_event_ids,
+        )
+        after = progress_snapshot(
+            transition.after,
+            step=transition.step,
+            source_event_ids=transition.after_event_ids,
+        )
+        return detect_progress_signals(before, after)
+
+    def _drain_pending_goal_updates(self, observation: Observation) -> None:
+        """Apply receipt-backed goal revisions only inside a DEEP/terminal boundary."""
+
+        while self._pending_goal_transitions:
+            transition = self._pending_goal_transitions[0]
+            self._acquire_goal_transition(transition)
+            del self._pending_goal_transitions[0]
+        self._flush_goal_events(observation)
 
     @_profiled("goal_inference")
     def _acquire_goal_transition(self, transition: GoalTransition) -> GoalAcquisitionResult:
@@ -4546,8 +5309,6 @@ class ARC3Controller:
             return
 
         self._set_provisional_mover(view)
-        if self.features.use_goals:
-            self._seed_contact_goal(observation, receipt, view)
 
     @staticmethod
     def _merge_hypothesis_updates(
@@ -5348,6 +6109,7 @@ class ARC3Controller:
         self._invalidated_plan_ids.update(candidate.invalidated_plan_ids)
         if self._ensemble is not None:
             self._ensemble = self._ensemble.without(candidate.affected_model_ids)
+        self._prediction_cache.invalidate(CacheInvalidationReason.MODEL_STATUS_CHANGE)
         self._plan_executor = PlanExecutor()
         self._pending_plan_emission = False
 
@@ -5454,6 +6216,10 @@ class ARC3Controller:
                 "history_policy": "prior receipts retained; only successor epoch has authority",
             },
         )
+        self._prediction_cache.invalidate(
+            CacheInvalidationReason.HYPOTHESIS_CONTRADICTION_OR_REOPENING
+        )
+        self._prediction_cache.invalidate(CacheInvalidationReason.MECHANICS_EPOCH_CHANGE)
 
         self._action_effect_epoch_history[predecessor_epoch.epoch_id] = (
             self._action_effects.projection()
@@ -5850,6 +6616,42 @@ class ARC3Controller:
 
         if self._checkpoint_manager is None or self._code is None or self._source is None:
             raise PolicyError("controller checkpoint identity is unavailable")
+        if self._transient_fold_boundary is not None:
+            raise PolicyError(f"checkpoint refused during partial {self._transient_fold_boundary}")
+        if self._cadence_activation_event_id is None:
+            raise PolicyError("controller cadence activation identity is unavailable")
+        if self._cadence_state.deliberation_in_progress:
+            raise PolicyError("checkpoint refused while reasoning deliberation is in progress")
+        pending_goal_transitions = [
+            self._serialize_goal_transition(item) for item in self._pending_goal_transitions
+        ]
+        cadence_commitment = self._append(
+            self.context.game_id,
+            "reasoning.checkpoint_state",
+            {
+                "cadence_configuration_hash": (self._cadence_config.configuration_hash),
+                "cadence_activation_event_id": self._cadence_activation_event_id,
+                "cadence_folded_observation_event_id": (self._cadence_folded_observation_event_id),
+                "cadence_state": self._cadence_state.to_checkpoint_dict(),
+                "prediction_cache_projection_hash": (self._prediction_cache.projection_hash),
+                "prediction_cache_telemetry_hash": sha256_json(self._prediction_cache.to_dict()),
+                "pending_goal_transitions_hash": sha256_json(pending_goal_transitions),
+                "pending_submitted_event_id": (
+                    self._pending_action.submitted_event_id
+                    if self._pending_action is not None
+                    else None
+                ),
+                "reasoning_completed_event_id": (self._reasoning_completed_event_id),
+                "reasoning_selected_event_id": self._reasoning_selected_event_id,
+                "reasoning_selection": (
+                    self._reasoning_selection.to_dict()
+                    if self._reasoning_selection is not None
+                    else None
+                ),
+            },
+            scope="run",
+        )
+        self._cadence_checkpoint_state_event_id = cadence_commitment.event_id
         latest = self._latest_observation
         normalized_hash = (
             str(latest.frames[-1].digest)
@@ -5933,6 +6735,9 @@ class ARC3Controller:
                     if self._ensemble is not None
                     else []
                 ),
+                "active_model_receipt_event_ids": cast(
+                    dict[str, JSONValue], self._active_model_receipt_event_ids()
+                ),
                 "preserved_transitions": [
                     self._serialize_transition(item) for item in self._transitions
                 ],
@@ -5983,6 +6788,21 @@ class ARC3Controller:
             },
             planner_state={
                 "controller_features": self.features.to_dict(),
+                "cadence_config": self._cadence_config.to_dict(),
+                "cadence_activation_event_id": self._cadence_activation_event_id,
+                "cadence_state": self._cadence_state.to_checkpoint_dict(),
+                "cadence_folded_observation_event_id": (self._cadence_folded_observation_event_id),
+                "cadence_checkpoint_state_event_id": (self._cadence_checkpoint_state_event_id),
+                "prediction_cache": self._prediction_cache.to_dict(),
+                "pending_goal_transitions": cast(list[JSONValue], pending_goal_transitions),
+                "reasoning_selection": (
+                    self._reasoning_selection.to_dict()
+                    if self._reasoning_selection is not None
+                    else None
+                ),
+                "reasoning_selected_event_id": self._reasoning_selected_event_id,
+                "reasoning_completed_event_id": self._reasoning_completed_event_id,
+                "reasoning_force_fallback": self._reasoning_force_fallback,
                 "plan": (
                     self._serialize_plan(self._plan_executor.plan)
                     if self._plan_executor.plan is not None
@@ -6027,6 +6847,7 @@ class ARC3Controller:
         features: PresetFeatures | None = None,
         hot_path_profiler: _HotPathProfiler | None = None,
         retrodiction_config: RetrodictionConfig | None = None,
+        cadence_config: CadenceConfig | None = None,
     ) -> ARC3Controller:
         """Restore a compatible checkpoint without emitting a pending action again."""
 
@@ -6035,6 +6856,7 @@ class ARC3Controller:
             features=features,
             hot_path_profiler=hot_path_profiler,
             retrodiction_config=retrodiction_config,
+            cadence_config=cadence_config,
         )
         controller._initialize_context(context)
         if controller._checkpoint_manager is None or controller._code is None:
@@ -6045,6 +6867,9 @@ class ARC3Controller:
             code_identity=controller._code,
             path=checkpoint_path,
             defer_payload_commitment=True,
+        )
+        controller._abandoned_trace_event_ids = controller._validated_abandoned_trace_event_ids(
+            restored.abandoned_suffix_events
         )
         state = restored.state
         controller._rng = restored.rng
@@ -6193,6 +7018,46 @@ class ARC3Controller:
             restored.envelope,
             controller._phase,
         )
+        wrote_recovery_receipt = False
+        if restored.abandoned_suffix_events:
+            suffix = restored.abandoned_suffix_events
+            controller._append(
+                context.game_id,
+                "reasoning.interruption_reopened",
+                {
+                    "checkpoint_commitment_event_id": restored.commitment_event.event_id,
+                    "abandoned_event_ids": [event.event_id for event in suffix],
+                    "abandoned_event_hashes": [event.event_hash for event in suffix],
+                    "abandoned_tail_hash": suffix[-1].event_hash,
+                    "recovery_policy": (
+                        "preserve immutable receipts; remove interrupted derived suffix "
+                        "from policy authority; recompute from checkpointed evidence fold"
+                    ),
+                },
+                scope="run",
+            )
+            wrote_recovery_receipt = True
+        if "cadence_config" not in state.planner_state:
+            activation = controller._append(
+                context.game_id,
+                "reasoning.cadence_activated",
+                {
+                    "cadence_config": controller._cadence_config.to_dict(),
+                    "cadence_configuration_hash": (controller._cadence_config.configuration_hash),
+                    "source_checkpoint_commitment_event_id": (restored.commitment_event.event_id),
+                    "migration_policy": (
+                        "historical actions remain pre-cadence evidence; typed cadence "
+                        "authority begins at this immutable activation receipt"
+                    ),
+                },
+                scope="run",
+            )
+            controller._cadence_activation_event_id = activation.event_id
+            wrote_recovery_receipt = True
+        if wrote_recovery_receipt:
+            controller._flush_trace()
+            if controller.features.use_memory:
+                controller._last_checkpoint = controller.checkpoint()
         if hot_path_profiler is not None:
             hot_path_profiler.boundary("restore", actions=controller._actions_used)
         return controller
@@ -6315,10 +7180,192 @@ class ARC3Controller:
     def _validate_restored_evidence_state(self, state: DerivedControllerState) -> None:
         """Reject checkpoint authority that cannot be re-derived from the trace."""
 
-        events = self.journal.verify_manifest()
+        events = self._policy_events()
         self.journal.verify_referenced_blobs()
         event_by_id = {event.event_id: event for event in events}
         event_order = {event.event_id: index for index, event in enumerate(events)}
+
+        def traced_cadence_selection(event: TraceEvent) -> CadenceSelection:
+            selection_keys = {
+                "configuration_hash",
+                "goal_id",
+                "goal_revision",
+                "mechanics_epoch_id",
+                "ordered_triggers",
+                "path",
+                "plan_id",
+                "schema",
+                "state_id",
+                "trigger_source_event_ids",
+                "trigger_sources",
+            }
+            try:
+                selection = CadenceSelection.from_dict(
+                    {key: event.payload.get(key) for key in selection_keys}
+                )
+            except PolicyError as error:
+                raise PolicyError("immutable cadence selection payload is malformed") from error
+            observation_id = event.payload.get("observation_event_id")
+            observation_event = (
+                event_by_id.get(observation_id) if isinstance(observation_id, str) else None
+            )
+            if (
+                selection.configuration_hash != self._cadence_config.configuration_hash
+                or event.payload.get("cadence_mode") != self._cadence_config.mode.value
+                or event.payload.get("budget_limits") != self._reasoning_budget_limits()
+                or observation_event is None
+                or observation_event.event_type != "observation.received"
+                or event_order[observation_event.event_id] >= event_order[event.event_id]
+                or any(
+                    source_id not in event_order
+                    or event_order[source_id] >= event_order[event.event_id]
+                    for source_id in selection.trigger_source_event_ids
+                )
+                or (
+                    self._cadence_config.mode.value == "TWO_SPEED"
+                    and selection.path is ReasoningPath.DEEP
+                    and not selection.ordered_triggers
+                )
+            ):
+                raise PolicyError("immutable cadence selection lacks trace-derived authority")
+            return selection
+
+        if "cadence_config" in state.planner_state:
+            commitment_id = self._cadence_checkpoint_state_event_id
+            commitment = event_by_id.get(commitment_id) if isinstance(commitment_id, str) else None
+            cadence_commitments = tuple(
+                event for event in events if event.event_type == "reasoning.checkpoint_state"
+            )
+            expected_commitment_payload: dict[str, object] = {
+                "cadence_activation_event_id": self._cadence_activation_event_id,
+                "cadence_configuration_hash": (self._cadence_config.configuration_hash),
+                "cadence_folded_observation_event_id": (self._cadence_folded_observation_event_id),
+                "cadence_state": self._cadence_state.to_checkpoint_dict(),
+                "pending_goal_transitions_hash": sha256_json(
+                    [
+                        self._serialize_goal_transition(item)
+                        for item in self._pending_goal_transitions
+                    ]
+                ),
+                "prediction_cache_projection_hash": (self._prediction_cache.projection_hash),
+                "prediction_cache_telemetry_hash": sha256_json(self._prediction_cache.to_dict()),
+                "pending_submitted_event_id": (
+                    self._pending_action.submitted_event_id
+                    if self._pending_action is not None
+                    else None
+                ),
+                "reasoning_completed_event_id": (self._reasoning_completed_event_id),
+                "reasoning_selected_event_id": self._reasoning_selected_event_id,
+                "reasoning_selection": (
+                    self._reasoning_selection.to_dict()
+                    if self._reasoning_selection is not None
+                    else None
+                ),
+            }
+            if (
+                commitment is None
+                or commitment.event_type != "reasoning.checkpoint_state"
+                or not cadence_commitments
+                or cadence_commitments[-1].event_id != commitment.event_id
+                or commitment.payload != expected_commitment_payload
+                or len(events) < 2
+                or events[-1].event_type != "run.checkpoint_written"
+                or event_order[commitment.event_id] != len(events) - 2
+            ):
+                raise PolicyError(
+                    "checkpoint cadence/cache state disagrees with immutable commitment"
+                )
+            activation = event_by_id.get(self._cadence_activation_event_id or "")
+            if activation is None:
+                raise PolicyError("immutable cadence activation receipt is absent")
+            if activation.event_type == "run.started":
+                if (
+                    activation.payload.get("cadence_config") != self._cadence_config.to_dict()
+                    or activation.payload.get("cadence_configuration_hash")
+                    != self._cadence_config.configuration_hash
+                ):
+                    raise PolicyError("immutable run cadence configuration is malformed")
+            elif activation.event_type == "reasoning.cadence_activated":
+                source_commitment_id = activation.payload.get(
+                    "source_checkpoint_commitment_event_id"
+                )
+                source_commitment = (
+                    event_by_id.get(source_commitment_id)
+                    if isinstance(source_commitment_id, str)
+                    else None
+                )
+                if (
+                    activation.payload.get("cadence_config") != self._cadence_config.to_dict()
+                    or activation.payload.get("cadence_configuration_hash")
+                    != self._cadence_config.configuration_hash
+                    or source_commitment is None
+                    or source_commitment.event_type != "run.checkpoint_written"
+                    or event_order[source_commitment.event_id] >= event_order[activation.event_id]
+                ):
+                    raise PolicyError("immutable migrated cadence activation is malformed")
+            else:
+                raise PolicyError("immutable cadence activation event type is invalid")
+            for action_event in (
+                event
+                for event in events
+                if event.event_type == "action.selected"
+                and event_order[event.event_id] > event_order[activation.event_id]
+            ):
+                terminal_id = action_event.payload.get("reasoning_completed_event_id")
+                terminal = event_by_id.get(terminal_id) if isinstance(terminal_id, str) else None
+                selected_path_id = (
+                    terminal.payload.get("path_selected_event_id") if terminal is not None else None
+                )
+                selected_path = (
+                    event_by_id.get(selected_path_id) if isinstance(selected_path_id, str) else None
+                )
+                traced_selection = (
+                    traced_cadence_selection(selected_path) if selected_path is not None else None
+                )
+                if (
+                    terminal is None
+                    or terminal.event_type
+                    not in {
+                        "reasoning.deliberation_completed",
+                        "reasoning.fallback_used",
+                    }
+                    or selected_path is None
+                    or selected_path.event_type != "reasoning.path_selected"
+                    or not (
+                        event_order[selected_path.event_id]
+                        < event_order[terminal.event_id]
+                        < event_order[action_event.event_id]
+                    )
+                    or selected_path.payload.get("observation_event_id")
+                    != action_event.payload.get("source_observation_event_id")
+                    or terminal.payload.get("path") != selected_path.payload.get("path")
+                    or traced_selection is None
+                ):
+                    raise PolicyError(
+                        "immutable action selection lacks its completed reasoning chain"
+                    )
+            if self._reasoning_selection is not None:
+                selected_path = event_by_id.get(self._reasoning_selected_event_id or "")
+                terminal = event_by_id.get(self._reasoning_completed_event_id or "")
+                traced_selection = (
+                    traced_cadence_selection(selected_path) if selected_path is not None else None
+                )
+                if (
+                    selected_path is None
+                    or selected_path.event_type != "reasoning.path_selected"
+                    or terminal is None
+                    or terminal.event_type
+                    not in {
+                        "reasoning.deliberation_completed",
+                        "reasoning.fallback_used",
+                    }
+                    or terminal.payload.get("path_selected_event_id") != selected_path.event_id
+                    or terminal.payload.get("path") != self._reasoning_selection.path.value
+                    or traced_selection != self._reasoning_selection
+                    or selected_path.payload.get("action_registry_identity")
+                    != self._action_registry_identity()
+                ):
+                    raise PolicyError("checkpoint current reasoning receipt chain is invalid")
         observation_events = tuple(
             event
             for event in events
@@ -7880,7 +8927,7 @@ class ARC3Controller:
                 raise PolicyError("checkpoint plan prediction disagrees with its current model")
         plan_events = tuple(
             event
-            for event in self.journal.verify_manifest()
+            for event in self._policy_events()
             if event.event_type == "simulation.plan_evaluated"
             and event.payload.get("status") == SearchStatus.FOUND.value
             and event.payload.get("plan_id") == plan.plan_id
@@ -7896,6 +8943,142 @@ class ARC3Controller:
         raw_features = value.get("controller_features")
         if raw_features is not None and raw_features != self.features.to_dict():
             raise PolicyError("checkpoint controller feature identity does not match")
+        cadence_fields = {
+            "cadence_activation_event_id",
+            "cadence_checkpoint_state_event_id",
+            "cadence_config",
+            "cadence_folded_observation_event_id",
+            "cadence_state",
+            "pending_goal_transitions",
+            "prediction_cache",
+            "reasoning_selection",
+            "reasoning_selected_event_id",
+            "reasoning_completed_event_id",
+            "reasoning_force_fallback",
+        }
+        present_cadence_fields = cadence_fields & set(value)
+        if present_cadence_fields and present_cadence_fields != cadence_fields:
+            raise PolicyError("checkpoint cadence state is only partially present")
+        if present_cadence_fields:
+            try:
+                restored_config = CadenceConfig.from_dict(value.get("cadence_config"))
+                restored_state = CadenceState.from_checkpoint_dict(value.get("cadence_state"))
+                restored_cache = BoundedCanonicalLRU.from_dict(
+                    value.get("prediction_cache"),
+                    expected_capacity=self._cadence_config.cache_capacity,
+                )
+            except PolicyError as error:
+                raise PolicyError("checkpoint cadence/cache state is malformed") from error
+            if (
+                restored_config != self._cadence_config
+                or restored_state.configuration_hash != self._cadence_config.configuration_hash
+            ):
+                raise PolicyError("checkpoint cadence configuration does not match runtime")
+            raw_cache = value.get("prediction_cache")
+            if not isinstance(raw_cache, Mapping):
+                raise PolicyError("checkpoint prediction cache must be an object")
+            raw_entries = raw_cache.get("entries_lru_to_mru")
+            if not isinstance(raw_entries, list):
+                raise PolicyError("checkpoint prediction cache entries are malformed")
+            expected_source_identity = self._cache_source_identity()
+            expected_configuration_identity = self._cache_configuration_identity()
+            for raw_entry in raw_entries:
+                if not isinstance(raw_entry, Mapping):
+                    raise PolicyError("checkpoint prediction cache entry is malformed")
+                raw_key = raw_entry.get("key")
+                if (
+                    not isinstance(raw_key, Mapping)
+                    or raw_key.get("source_identity") != expected_source_identity
+                    or raw_key.get("configuration_identity") != expected_configuration_identity
+                ):
+                    raise PolicyError("checkpoint prediction cache source/configuration is stale")
+            raw_goal_transitions = value.get("pending_goal_transitions")
+            if (
+                not isinstance(raw_goal_transitions, list)
+                or len(raw_goal_transitions) > self.context.config.budgets.max_actions
+            ):
+                raise PolicyError("checkpoint pending goal transition queue is malformed")
+            pending_goal_transitions = [
+                self._deserialize_goal_transition(item) for item in raw_goal_transitions
+            ]
+            for transition in pending_goal_transitions:
+                before_events = tuple(
+                    self.journal.get_event(event_id) for event_id in transition.before_event_ids
+                )
+                after_events = tuple(
+                    self.journal.get_event(event_id) for event_id in transition.after_event_ids
+                )
+                if (
+                    len(before_events) != 1
+                    or before_events[0] is None
+                    or before_events[0].event_type != "observation.received"
+                    or len(after_events) != 2
+                    or after_events[0] is None
+                    or after_events[0].event_type != "consequence.received"
+                    or after_events[1] is None
+                    or after_events[1].event_type != "observation.received"
+                ):
+                    raise PolicyError(
+                        "checkpoint pending goal transition lacks immutable receipt sources"
+                    )
+                traced_before = self._observation_from_trace_event(before_events[0])
+                traced_after = self._observation_from_trace_event(after_events[1])
+                if (
+                    transition.before != traced_before
+                    or transition.after != traced_after
+                    or transition.step != after_events[1].step_index
+                    or transition.level_scope_ref != f"level:{transition.after.levels_completed}"
+                    or transition.game_scope_ref != "game:opaque-current-run"
+                ):
+                    raise PolicyError(
+                        "checkpoint pending goal transition disagrees with immutable receipts"
+                    )
+            raw_selection = value.get("reasoning_selection")
+            selection = None if raw_selection is None else CadenceSelection.from_dict(raw_selection)
+            selected_event_id = value.get("reasoning_selected_event_id")
+            completed_event_id = value.get("reasoning_completed_event_id")
+            force_fallback = value.get("reasoning_force_fallback")
+            folded_observation_event_id = value.get("cadence_folded_observation_event_id")
+            checkpoint_state_event_id = value.get("cadence_checkpoint_state_event_id")
+            activation_event_id = value.get("cadence_activation_event_id")
+            if selected_event_id is not None and (
+                not isinstance(selected_event_id, str) or not selected_event_id
+            ):
+                raise PolicyError("checkpoint reasoning selected event ID is malformed")
+            if completed_event_id is not None and (
+                not isinstance(completed_event_id, str) or not completed_event_id
+            ):
+                raise PolicyError("checkpoint reasoning completed event ID is malformed")
+            if not isinstance(force_fallback, bool):
+                raise PolicyError("checkpoint reasoning fallback marker is malformed")
+            if folded_observation_event_id is not None and (
+                not isinstance(folded_observation_event_id, str) or not folded_observation_event_id
+            ):
+                raise PolicyError("checkpoint cadence fold observation ID is malformed")
+            if not isinstance(checkpoint_state_event_id, str) or not checkpoint_state_event_id:
+                raise PolicyError("checkpoint cadence commitment event ID is malformed")
+            if not isinstance(activation_event_id, str) or not activation_event_id:
+                raise PolicyError("checkpoint cadence activation event ID is malformed")
+            if selection is None:
+                if selected_event_id is not None or completed_event_id is not None:
+                    raise PolicyError("checkpoint reasoning IDs lack their typed selection")
+            elif (
+                selection.configuration_hash != self._cadence_config.configuration_hash
+                or not isinstance(selected_event_id, str)
+                or not isinstance(completed_event_id, str)
+                or restored_state.last_completed_deliberation_event_id != completed_event_id
+            ):
+                raise PolicyError("checkpoint reasoning selection/completion is inconsistent")
+            self._cadence_state = restored_state
+            self._prediction_cache = restored_cache
+            self._reasoning_selection = selection
+            self._reasoning_selected_event_id = selected_event_id
+            self._reasoning_completed_event_id = completed_event_id
+            self._reasoning_force_fallback = force_fallback
+            self._cadence_folded_observation_event_id = folded_observation_event_id
+            self._cadence_checkpoint_state_event_id = checkpoint_state_event_id
+            self._cadence_activation_event_id = activation_event_id
+            self._pending_goal_transitions = pending_goal_transitions
         planning_disabled = value.get("planning_disabled_after_mismatch", False)
         if not isinstance(planning_disabled, bool):
             raise PolicyError("checkpoint planner-recovery ablation marker is malformed")
@@ -8005,7 +9188,13 @@ class ARC3Controller:
                 or {
                     key: item
                     for key, item in prediction_event.payload.items()
-                    if key != "mechanics_epoch_id"
+                    if key
+                    not in {
+                        "cache_hit",
+                        "cache_key_hash",
+                        "cache_projection_hash",
+                        "mechanics_epoch_id",
+                    }
                 }
                 != rebuilt.to_dict()
             ):
@@ -8039,7 +9228,7 @@ class ARC3Controller:
             or len(set(cast(list[str], raw_force_full_ids))) != len(raw_force_full_ids)
         ):
             raise PolicyError("checkpoint pending retrodiction triggers are malformed")
-        trace_events = self.journal.verify_manifest()
+        trace_events = self._policy_events()
         last_completed_index = max(
             (
                 index
@@ -8187,7 +9376,96 @@ class ARC3Controller:
         )
         compiled = compile_hypotheses(eligible)
         self._model_candidates = compiled.candidates
-        self._validate_retrodiction_runtime_receipts(compiled.candidates)
+        receipt_candidates = self._validate_retrodiction_runtime_receipts(compiled.candidates)
+        raw_active_ids = value.get("active_model_ids", [])
+        if (
+            not isinstance(raw_active_ids, list)
+            or not all(isinstance(item, str) for item in raw_active_ids)
+            or len(set(cast(list[str], raw_active_ids))) != len(raw_active_ids)
+        ):
+            raise PolicyError("checkpoint active model IDs are malformed")
+        active_ids = cast(list[str], raw_active_ids)
+        raw_active_receipts = value.get("active_model_receipt_event_ids")
+        if raw_active_receipts is not None:
+            if (
+                not isinstance(raw_active_receipts, Mapping)
+                or set(raw_active_receipts) != set(active_ids)
+                or not all(
+                    isinstance(model_id, str) and isinstance(event_id, str) and bool(event_id)
+                    for model_id, event_id in raw_active_receipts.items()
+                )
+                or len(set(raw_active_receipts.values())) != len(raw_active_receipts)
+            ):
+                raise PolicyError("checkpoint active model receipt binding is malformed")
+            trace_events = self._policy_events()
+            event_by_id = {event.event_id: event for event in trace_events}
+            promotion_pairs = {
+                (
+                    event.payload.get("model_id"),
+                    event.payload.get("retrodiction_completed_event_id"),
+                )
+                for event in trace_events
+                if event.event_type == "model.rule_promoted"
+            }
+            exact_candidates: list[ModelCandidate] = []
+            for model_id in active_ids:
+                completed_id = raw_active_receipts.get(model_id)
+                completed = event_by_id.get(completed_id) if isinstance(completed_id, str) else None
+                candidate = (
+                    receipt_candidates.get(completed.event_id) if completed is not None else None
+                )
+                if (
+                    completed is None
+                    or completed.event_type != "model.retrodiction_completed"
+                    or candidate is None
+                    or candidate.model_id != model_id
+                    or completed.payload.get("mechanics_epoch_id") != current_epoch_id
+                    or completed.payload.get("status")
+                    not in {
+                        PromotionStatus.PROMOTED.value,
+                        PromotionStatus.UNGATED_ABLATION.value,
+                    }
+                    or completed.payload.get("model_semantic_fingerprint")
+                    != model_semantic_fingerprint(candidate)
+                    or (model_id, completed.event_id) not in promotion_pairs
+                    or model_id in self._suspended_model_ids
+                    or model_id in self._demoted_model_ids
+                ):
+                    raise PolicyError(
+                        "checkpoint active model lacks exact immutable retrodiction authority"
+                    )
+                exact_candidates.append(candidate)
+            self._ensemble = (
+                WorldModelEnsemble(tuple(exact_candidates)) if exact_candidates else None
+            )
+            exact_by_id = {candidate.model_id: candidate for candidate in exact_candidates}
+            self._model_candidates = tuple(
+                exact_by_id.get(candidate.model_id, candidate) for candidate in compiled.candidates
+            )
+            if self._ensemble is not None:
+                self._mechanics.register_models(
+                    (candidate.model_id for candidate in self._ensemble.candidates),
+                    epoch_id=current_epoch_id,
+                )
+        else:
+            # Pre-cadence checkpoints did not bind the last compiled model
+            # weights to their promotion receipts.  Preserve the legacy exact
+            # recompilation path for one-way migration only.
+            self._restore_legacy_active_ensemble(
+                active_ids=active_ids,
+                compiled_candidates=compiled.candidates,
+                current_epoch_id=current_epoch_id,
+            )
+
+    def _restore_legacy_active_ensemble(
+        self,
+        *,
+        active_ids: Sequence[str],
+        compiled_candidates: tuple[ModelCandidate, ...],
+        current_epoch_id: str,
+    ) -> None:
+        """Reconstruct the active ensemble used by checkpoints before receipt binding."""
+
         level_transitions = (
             tuple(
                 item
@@ -8220,7 +9498,7 @@ class ARC3Controller:
                     )[0]
                 )
             ).artifact
-            for candidate in compiled.candidates
+            for candidate in compiled_candidates
         )
         if any(
             (
@@ -8248,7 +9526,7 @@ class ARC3Controller:
                 and artifact.model_id not in self._demoted_model_ids
             }
             self._ensemble = gated_ensemble(
-                tuple(item for item in compiled.candidates if item.model_id in accepted_ids),
+                tuple(item for item in compiled_candidates if item.model_id in accepted_ids),
                 tuple(item for item in artifacts if item.model_id in accepted_ids),
                 allow_ungated_ablation=not self.features.use_retrodiction_gate,
             )
@@ -8256,17 +9534,12 @@ class ARC3Controller:
                 (candidate.model_id for candidate in self._ensemble.candidates),
                 epoch_id=current_epoch_id,
             )
-        raw_active_ids = value.get("active_model_ids", [])
-        if not isinstance(raw_active_ids, list) or not all(
-            isinstance(item, str) for item in raw_active_ids
-        ):
-            raise PolicyError("checkpoint active model IDs are malformed")
         restored_active = (
             sorted(candidate.model_id for candidate in self._ensemble.candidates)
             if self._ensemble is not None
             else []
         )
-        if sorted(cast(list[str], raw_active_ids)) != restored_active:
+        if sorted(active_ids) != restored_active:
             raise PolicyError("checkpoint active model ensemble does not replay exactly")
 
     def _candidate_from_retrodiction_receipt(
@@ -8312,10 +9585,10 @@ class ARC3Controller:
     def _validate_retrodiction_runtime_receipts(
         self,
         candidates: Sequence[ModelCandidate],
-    ) -> None:
+    ) -> dict[str, ModelCandidate]:
         """Bind restored cache/cost state to reconstructible immutable receipts."""
 
-        events = self.journal.verify_manifest()
+        events = self._policy_events()
         event_by_id = {event.event_id: event for event in events}
         event_order = {event.event_id: index for index, event in enumerate(events)}
         completed_events = tuple(
@@ -8740,6 +10013,7 @@ class ARC3Controller:
                 }
             ):
                 raise PolicyError("immutable model promotion lacks retrodiction authority")
+        return receipt_candidates
 
     def _restore_goal_state(self, value: Mapping[str, JSONValue]) -> None:
         raw_records = value.get("records", [])
@@ -8888,6 +10162,53 @@ class ARC3Controller:
             )
         except ValueError as error:
             raise PolicyError("checkpoint goal candidate is invalid") from error
+
+    @classmethod
+    def _serialize_goal_transition(cls, transition: GoalTransition) -> dict[str, JSONValue]:
+        return {
+            "before": cls._serialize_observation(transition.before),
+            "after": cls._serialize_observation(transition.after),
+            "before_event_ids": list(transition.before_event_ids),
+            "after_event_ids": list(transition.after_event_ids),
+            "step": transition.step,
+            "level_scope_ref": transition.level_scope_ref,
+            "game_scope_ref": transition.game_scope_ref,
+        }
+
+    @classmethod
+    def _deserialize_goal_transition(cls, value: object) -> GoalTransition:
+        if not isinstance(value, Mapping):
+            raise PolicyError("checkpoint pending goal transition must be an object")
+        before_ids = value.get("before_event_ids")
+        after_ids = value.get("after_event_ids")
+        step = value.get("step")
+        level_scope_ref = value.get("level_scope_ref")
+        game_scope_ref = value.get("game_scope_ref")
+        if (
+            not isinstance(before_ids, list)
+            or not before_ids
+            or not all(isinstance(item, str) and item for item in before_ids)
+            or not isinstance(after_ids, list)
+            or not after_ids
+            or not all(isinstance(item, str) and item for item in after_ids)
+            or isinstance(step, bool)
+            or not isinstance(step, int)
+            or step < 0
+            or not isinstance(level_scope_ref, str)
+            or not level_scope_ref
+            or not isinstance(game_scope_ref, str)
+            or not game_scope_ref
+        ):
+            raise PolicyError("checkpoint pending goal transition fields are malformed")
+        return GoalTransition(
+            before=cls._deserialize_observation(value.get("before")),
+            after=cls._deserialize_observation(value.get("after")),
+            before_event_ids=tuple(cast(list[str], before_ids)),
+            after_event_ids=tuple(cast(list[str], after_ids)),
+            step=step,
+            level_scope_ref=level_scope_ref,
+            game_scope_ref=game_scope_ref,
+        )
 
     @staticmethod
     def _serialize_observation(observation: Observation) -> dict[str, JSONValue]:
@@ -9303,6 +10624,38 @@ class ARC3Controller:
             "mechanics_epoch_id": self._transition_epochs[value.transition_id],
         }
 
+    def _active_model_receipt_event_ids(self) -> dict[str, str]:
+        """Bind each live model to the exact promotion-producing audit receipt."""
+
+        if self._ensemble is None:
+            return {}
+        events = self._policy_events()
+        event_by_id = {event.event_id: event for event in events}
+        promotions = tuple(event for event in events if event.event_type == "model.rule_promoted")
+        receipt_ids: dict[str, str] = {}
+        for candidate in self._ensemble.candidates:
+            semantic_fingerprint = model_semantic_fingerprint(candidate)
+            for promotion in reversed(promotions):
+                if promotion.payload.get("model_id") != candidate.model_id:
+                    continue
+                completed_id = promotion.payload.get("retrodiction_completed_event_id")
+                completed = event_by_id.get(completed_id) if isinstance(completed_id, str) else None
+                if (
+                    completed is not None
+                    and completed.event_type == "model.retrodiction_completed"
+                    and completed.payload.get("model_semantic_fingerprint") == semantic_fingerprint
+                    and completed.payload.get("candidate_rank_weight") == candidate.rank_weight
+                    and completed.payload.get("candidate_hypothesis_ids")
+                    == list(candidate.hypothesis_ids)
+                    and completed.payload.get("candidate_compile_residuals")
+                    == list(candidate.compile_residuals)
+                ):
+                    receipt_ids[candidate.model_id] = completed.event_id
+                    break
+            if candidate.model_id not in receipt_ids:
+                raise PolicyError("active world model lacks an exact immutable promotion receipt")
+        return receipt_ids
+
     @classmethod
     def _deserialize_transition(cls, value: Mapping[str, object]) -> PreservedTransition:
         before = value.get("before")
@@ -9338,13 +10691,30 @@ class ARC3Controller:
 
         if self._journal is None or self._phase is ControllerPhase.CLOSED:
             return
+        if self._transient_fold_boundary is not None:
+            # Closing the journal flushes immutable receipts but deliberately
+            # adds neither a false run completion nor a snapshot of a partial
+            # observation, decision, or consequence fold.  Restore then either
+            # reopens an explicitly safe derived suffix or rejects an uncertain
+            # raw/external boundary.
+            self.journal.close()
+            self._phase = ControllerPhase.CLOSED
+            return
+        if self._cadence_state.deliberation_in_progress:
+            latest = self._latest_observation
+            if latest is None:
+                raise PolicyError("pending reasoning lacks its observation boundary")
+            self._reasoning_terminal_status = DeliberationStatus.FAILED
+            self._reasoning_fault_type = "ControllerClosedBeforeAction"
+            self._complete_reasoning_cycle(latest)
         if self._phase is not ControllerPhase.AWAITING_CONSEQUENCE:
-            events = self.journal.verify_manifest()
+            events = self._policy_events()
             last_material_event = next(
                 (
                     event
                     for event in reversed(events)
-                    if event.event_type != "run.checkpoint_written"
+                    if event.event_type
+                    not in {"reasoning.checkpoint_state", "run.checkpoint_written"}
                 ),
                 None,
             )
