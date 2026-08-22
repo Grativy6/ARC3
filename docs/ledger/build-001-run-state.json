@@ -7,12 +7,12 @@
   "build_status": "IN_PROGRESS",
   "status": "IN_PROGRESS",
   "current_stage": "05",
-  "current_task": "Predeclare Stage 05 opaque-action calibration, implement evidence-derived action effects, and run the paired action-equivariance suites",
+  "current_task": "Implement the frozen Stage 05 evidence-derived action registry and paired action-equivariance harness",
   "implementation_branch": "build/001-local-public-recovery",
   "pull_request": "https://github.com/Grativy6/ARC3/pull/5",
   "started_at": "2026-08-21T15:41:02Z",
-  "last_checkpoint_at": "2026-08-22T05:15:22Z",
-  "last_checkpoint_commit": "86134755f3f26a268585b14264946571592cd4a5",
+  "last_checkpoint_at": "2026-08-22T05:29:04Z",
+  "last_checkpoint_commit": "ed0c5e691ed09614a29f5bdb90cc1cc328254dbd",
   "base": {
     "main_commit": "28c7a00732ce48e5c231211b01bc6eba7d0d71b4",
     "main_tree": "4586299448e9b1b585a0878674ed5f9afa60c384",
@@ -166,6 +166,19 @@
       "seed_11_base_action_change": "1-to-3-open-burden",
       "verification": "PASS:68-broad+11-offline-integrity+ruff+format+mypy-148+replay",
       "public_holdout_consumed": false
+    },
+    "05": {
+      "status": "IN_PROGRESS",
+      "label": "synthetic",
+      "predeclaration": "docs/evidence/001-05-action-equivariance-predeclaration.json",
+      "predeclaration_sha256": "sha256:ec4ed1a8b3b8d4904a38bf4533d9fbd61975cac61aea05d4313d4b6a47119ce2",
+      "source_baseline_commit": "ed0c5e691ed09614a29f5bdb90cc1cc328254dbd",
+      "source_baseline_tree": "b44876452420251c0049b2c6cde5a1cae5d87d37",
+      "procedural_pairs_predeclared": 128,
+      "causal_controls_predeclared": 64,
+      "checkpoint_resume_pairs_predeclared": 16,
+      "historical_action_remap_cases": 2,
+      "public_holdout_consumed": false
     }
   },
   "artifacts": {
@@ -232,10 +245,14 @@
     "stage_04_report": {
       "path": "docs/reports/001-04-palette-equivariance.md",
       "sha256": "ab0cd441d0daa1701267256130a7ff99af1e02a006690c2958a84ebf7e6a4c29"
+    },
+    "stage_05_predeclaration": {
+      "path": "docs/evidence/001-05-action-equivariance-predeclaration.json",
+      "sha256": "ec4ed1a8b3b8d4904a38bf4533d9fbd61975cac61aea05d4313d4b6a47119ce2"
     }
   },
   "blocked_items": [],
-  "next_action": "Freeze the Stage 05 calibration-symmetry contract, remove fixed action-ID semantics from production policy, and run historical plus paired procedural action-remap evidence.",
+  "next_action": "Remove fixed action-ID semantics, integrate the bounded evidence-derived action registry, and run the frozen historical, procedural, causal-control, restart, replay, and static-scan suites.",
   "notes": [
     "Build 000 ledgers and reports are immutable historical evidence and are not overwritten by Build 001.",
     "The owner explicitly approved MIT-0 for ARC3 first-party source in the active Build 001 instruction.",

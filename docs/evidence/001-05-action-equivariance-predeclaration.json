@@ -1,0 +1,356 @@
+{
+  "schema": "arc3.build-001.stage-05-action-equivariance-predeclaration.v0.1",
+  "status": "PREDECLARED",
+  "created_at": "2026-08-22T05:23:24.1496309Z",
+  "workflow": "docs/workflows/001-local-public-failure-recovery.md",
+  "objective": "Learn gameplay effects from transition receipts independently of opaque raw action handles, then resolve canonical effects back to currently advertised handles without assuming cardinal, undo, or selection semantics from action IDs.",
+  "evidence_label": "synthetic",
+  "claim_limit": "NO_GENERALIZATION_CLAIM",
+  "source_baseline": {
+    "git_commit": "ed0c5e691ed09614a29f5bdb90cc1cc328254dbd",
+    "git_tree": "b44876452420251c0049b2c6cde5a1cae5d87d37",
+    "stage_04_acceptance": "docs/evidence/001-04-palette-equivariance.json",
+    "stage_04_acceptance_sha256": "sha256:eb45275fc82870fde999d7d914534d064568a1605276a52132ed6d0335f94a73",
+    "resolution": "IMPLEMENTATION_COMMIT_DESCENDING_FROM_THIS_PREDECLARATION",
+    "resolution_rule": "Run acceptance only from a clean implementation commit containing this declaration and the generic repair; bind that commit, tree, first-party source hash, commands, configuration, seeds, runtime identity, and raw artifact hash.",
+    "public_assets_allowed": false
+  },
+  "frozen_historical_failure": {
+    "source": "docs/evidence/016-competition-profile-acceptance.json",
+    "actual_action_remap_cases": 2,
+    "cases": [
+      {
+        "seed": 7,
+        "base_score": 1.0,
+        "base_actions": 7,
+        "remap_score": 0.0,
+        "remap_actions": 16
+      },
+      {
+        "seed": 11,
+        "base_score": 1.0,
+        "base_actions": 1,
+        "remap_score": 0.0,
+        "remap_actions": 16
+      }
+    ],
+    "diagnosed_leak": "Production seeds directional meanings for ACTION1 through ACTION4, maps target deltas back to those raw handles, treats ACTION7 as undo, and treats any consequential ACTION6 request as selection. These are hypotheses or interface arity facts, not gameplay truths."
+  },
+  "typed_repair_contract": {
+    "planned_module": "src/arc3/exploration/action_registry.py",
+    "canonical_effect_type": {
+      "name": "CanonicalActionEffect",
+      "required_fields": [
+        "effect_kind",
+        "translation",
+        "coordinate_relation",
+        "restore_digest",
+        "condition_signature"
+      ],
+      "prohibited_fields": [
+        "raw_action_id",
+        "game_id",
+        "cardinal_name"
+      ],
+      "rule": "Canonical equality and ordering must be independent of the raw action handle. Unknown, no-op, ambiguous multi-object displacement, conditional behavior, transform, terminal, and restore evidence remain distinguishable."
+    },
+    "candidate_type": {
+      "name": "ActionEffectCandidate",
+      "required_fields": [
+        "raw_handle",
+        "canonical_effect",
+        "support_count",
+        "contradiction_count",
+        "source_event_ids",
+        "status"
+      ],
+      "statuses": [
+        "CANDIDATE",
+        "ACCEPTED",
+        "AMBIGUOUS",
+        "CONTRADICTED",
+        "REOPENED"
+      ]
+    },
+    "registry_type": {
+      "name": "ActionEffectRegistry",
+      "scope": "episode level and level index",
+      "maximum_raw_handles": 7,
+      "maximum_candidates_per_handle": 32,
+      "raw_receipt_mutation": false,
+      "checkpoint_serialization_required": true,
+      "reopening_rule": "A contradictory returned consequence reopens or narrows the derived binding without rewriting its supporting or contradicting receipts."
+    },
+    "induction": {
+      "initial_semantic_prior": "All advertised point-free non-reset handles begin opaque and tied; no raw ordinal receives movement, wait, undo, transform, or progress preference.",
+      "transition_basis": "Bindings are induced only from immutable before/action/returned-consequence receipts and revisable derived interpretation.",
+      "ambiguity": "Multiple compatible translations or effects remain explicit candidates; a numeric handle or entity/color ordering may not break semantic ambiguity.",
+      "action6_interface_fact": "ACTION6 is the only coordinate-carrying wire shape in the pinned API. This permits coordinate construction only; selection, attachment, transformation, target relevance, or progress must be inferred from returned consequences.",
+      "action7_rule": "ACTION7 is an opaque point-free handle. Restore or undo may be learned for any handle only when its consequence matches a preserved prior state digest.",
+      "reset_rule": "RESET and the reset-only-after-GAME_OVER constraint remain upstream interface facts and are outside the gameplay-handle permutation domain."
+    },
+    "controller_integration": {
+      "planner_domain": "Choose among canonical learned effects plus explicit unknown probes; never plan a cardinal raw action directly.",
+      "resolution": "Resolve a selected canonical effect to an accepted currently advertised raw handle. If none is accepted, issue the least-repeated information probe under the frozen calibration order and budget.",
+      "tie_breaking": "Use evidence status, expected information/progress, bounded risk, then supplied seeded randomness; raw handle ordering is permitted only for the frozen calibration prefix or final wire-stability tie after semantic equality.",
+      "trace": "Every request records the pre-action observation, candidate bindings, selected canonical effect or probe, alternatives summary, raw handle resolution, returned consequence, and registry update.",
+      "checkpoint": "Persist registry candidates, evidence identities, calibration cursor, and resolver state so resume neither resubmits nor reassigns prior evidence."
+    }
+  },
+  "opaque_handle_calibration": {
+    "unavoidable_symmetry": {
+      "statement": "Before any differing transition receipt, two paired deterministic episodes with identical initial observations and the same seed must choose the same first raw handle. For any permutation pi that moves that handle, inverse-mapped request equality would require h = pi^-1(h), which is impossible.",
+      "formal_condition": "observation_base_0 == observation_permuted_0 and policy_seed_base == policy_seed_permuted implies request_base_0 == request_permuted_0; if pi(request_base_0) != request_base_0 then pi^-1(request_permuted_0) != request_base_0.",
+      "consequence": "No pre-evidence inverse-action claim is made. Exactly the frozen calibration prefix is excluded from the inverse-request numerator, never from action counts, efficiency, trace, wall time, or other acceptance predicates."
+    },
+    "prefix": {
+      "K_definition": "K is the number of initially advertised non-reset handles, including ACTION6 when advertised.",
+      "order": "Probe each advertised non-reset handle exactly once in stable wire order RESET,ACTION1,...,ACTION7 with RESET skipped.",
+      "coordinate_rule": "The ACTION6 calibration request uses the exact grid coordinate (3,3); all other calibration requests carry no coordinate.",
+      "same_raw_prefix_in_both_variants": true,
+      "prefix_excluded_from_inverse_request_metric_only": true,
+      "prefix_included_in_environment_action_budget": true,
+      "prefix_included_in_RHAE_or_efficiency_accounting": true,
+      "procedural_K": {
+        "full_four_handle": 4,
+        "partial_two_handle": 2,
+        "partial_three_handle": 3,
+        "mixed_coordinate": 4
+      },
+      "arena_constraint": "Calibration effects commute in the toroidal procedural arena; applying the same complete raw-handle multiset under any declared arity-preserving permutation produces the same canonical post-prefix state. No procedural case may terminate during the prefix.",
+      "historical_early_terminal_rule": "A historical variant may terminate before K. Such a case has no inverse-request numerator; it must still meet paired completion, score, terminal, budget, trace, and validity predicates."
+    },
+    "post_prefix_metric": {
+      "name": "post_calibration_inverse_request_equivariance",
+      "eligible_step": "Every paired procedural action after both variants have completed exactly K returned consequences.",
+      "numerator": "Eligible steps where pi^-1(permuted raw request) exactly equals the base raw request, including identical coordinate payloads.",
+      "denominator": "All eligible paired procedural action steps; no mismatches, missing steps, resets, invalid requests, or terminal asymmetry are discarded.",
+      "minimum_eligible_actions_per_procedural_pair": 4,
+      "required_rate": 1.0,
+      "zero_denominator": "Not assessable and therefore not a procedural pass."
+    }
+  },
+  "procedural_paired_suite": {
+    "evidence_label": "synthetic",
+    "total_pairs": 128,
+    "pair_order": "Family order below, then ascending environment seed, then listed permutation order.",
+    "pair_id_rule": "stage05-<family>-s<zero-padded-seed>-p<permutation-id>",
+    "environment_seed_derivation": "derive_seed(environment_seed, 'build-001-stage05-<family>') under Python 3.12; environment generation must reject degenerate layouts but may not change the declared handle set or permutation.",
+    "permutation_orientation": "pi maps a base raw handle to the raw handle in the paired environment that realizes the same latent effect; inverse comparison applies pi^-1 to the paired request.",
+    "arity_rule": "Only point-free handles are permuted with point-free handles. ACTION6 and RESET are fixed because their wire arities are API facts.",
+    "schedule": [
+      {
+        "family": "full_four_handle",
+        "seeds": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15],
+        "handles": ["ACTION1", "ACTION2", "ACTION3", "ACTION4"],
+        "expansion": "Cartesian product of the 16 seeds and all six permutations below.",
+        "permutations": [
+          {"id": "swap12", "pi": {"ACTION1": "ACTION2", "ACTION2": "ACTION1", "ACTION3": "ACTION3", "ACTION4": "ACTION4"}},
+          {"id": "swap34", "pi": {"ACTION1": "ACTION1", "ACTION2": "ACTION2", "ACTION3": "ACTION4", "ACTION4": "ACTION3"}},
+          {"id": "swap12_swap34", "pi": {"ACTION1": "ACTION2", "ACTION2": "ACTION1", "ACTION3": "ACTION4", "ACTION4": "ACTION3"}},
+          {"id": "cycle1234", "pi": {"ACTION1": "ACTION2", "ACTION2": "ACTION3", "ACTION3": "ACTION4", "ACTION4": "ACTION1"}},
+          {"id": "cycle1432", "pi": {"ACTION1": "ACTION4", "ACTION2": "ACTION1", "ACTION3": "ACTION2", "ACTION4": "ACTION3"}},
+          {"id": "reverse", "pi": {"ACTION1": "ACTION4", "ACTION2": "ACTION3", "ACTION3": "ACTION2", "ACTION4": "ACTION1"}}
+        ],
+        "pair_count": 96
+      },
+      {
+        "family": "partial_two_handle",
+        "permutation_rule": "For each assignment, pi swaps the two listed handles.",
+        "assignments": [
+          {"seed": 16, "handles": ["ACTION1", "ACTION2"], "permutation_id": "swap"},
+          {"seed": 17, "handles": ["ACTION2", "ACTION3"], "permutation_id": "swap"},
+          {"seed": 18, "handles": ["ACTION3", "ACTION4"], "permutation_id": "swap"},
+          {"seed": 19, "handles": ["ACTION4", "ACTION5"], "permutation_id": "swap"},
+          {"seed": 20, "handles": ["ACTION5", "ACTION7"], "permutation_id": "swap"},
+          {"seed": 21, "handles": ["ACTION1", "ACTION7"], "permutation_id": "swap"},
+          {"seed": 22, "handles": ["ACTION2", "ACTION5"], "permutation_id": "swap"},
+          {"seed": 23, "handles": ["ACTION3", "ACTION7"], "permutation_id": "swap"}
+        ],
+        "pair_count": 8
+      },
+      {
+        "family": "partial_three_handle",
+        "permutation_rule": "For ordered handles [a,b,c], forward is a->b,b->c,c->a and reverse is a->c,c->b,b->a.",
+        "assignments": [
+          {"seed": 24, "handles": ["ACTION1", "ACTION2", "ACTION3"], "permutation_id": "forward"},
+          {"seed": 25, "handles": ["ACTION2", "ACTION3", "ACTION4"], "permutation_id": "reverse"},
+          {"seed": 26, "handles": ["ACTION3", "ACTION4", "ACTION5"], "permutation_id": "forward"},
+          {"seed": 27, "handles": ["ACTION1", "ACTION4", "ACTION5"], "permutation_id": "reverse"},
+          {"seed": 28, "handles": ["ACTION2", "ACTION5", "ACTION7"], "permutation_id": "forward"},
+          {"seed": 29, "handles": ["ACTION1", "ACTION3", "ACTION7"], "permutation_id": "reverse"},
+          {"seed": 30, "handles": ["ACTION2", "ACTION4", "ACTION7"], "permutation_id": "forward"},
+          {"seed": 31, "handles": ["ACTION1", "ACTION5", "ACTION7"], "permutation_id": "reverse"}
+        ],
+        "pair_count": 8
+      },
+      {
+        "family": "mixed_coordinate",
+        "fixed_handles": ["ACTION6"],
+        "permutation_rule": "ACTION6 is fixed. For ordered point-free handles [a,b,c], forward is a->b,b->c,c->a and reverse is a->c,c->b,b->a.",
+        "assignments": [
+          {"seed": 32, "point_free_handles": ["ACTION1", "ACTION2", "ACTION3"], "permutation_id": "forward"},
+          {"seed": 33, "point_free_handles": ["ACTION1", "ACTION2", "ACTION3"], "permutation_id": "reverse"},
+          {"seed": 34, "point_free_handles": ["ACTION1", "ACTION2", "ACTION3"], "permutation_id": "forward"},
+          {"seed": 35, "point_free_handles": ["ACTION1", "ACTION2", "ACTION3"], "permutation_id": "reverse"},
+          {"seed": 36, "point_free_handles": ["ACTION2", "ACTION4", "ACTION5"], "permutation_id": "forward"},
+          {"seed": 37, "point_free_handles": ["ACTION2", "ACTION4", "ACTION5"], "permutation_id": "reverse"},
+          {"seed": 38, "point_free_handles": ["ACTION2", "ACTION4", "ACTION5"], "permutation_id": "forward"},
+          {"seed": 39, "point_free_handles": ["ACTION2", "ACTION4", "ACTION5"], "permutation_id": "reverse"},
+          {"seed": 40, "point_free_handles": ["ACTION1", "ACTION5", "ACTION7"], "permutation_id": "forward"},
+          {"seed": 41, "point_free_handles": ["ACTION1", "ACTION5", "ACTION7"], "permutation_id": "reverse"},
+          {"seed": 42, "point_free_handles": ["ACTION1", "ACTION5", "ACTION7"], "permutation_id": "forward"},
+          {"seed": 43, "point_free_handles": ["ACTION1", "ACTION5", "ACTION7"], "permutation_id": "reverse"},
+          {"seed": 44, "point_free_handles": ["ACTION3", "ACTION4", "ACTION7"], "permutation_id": "forward"},
+          {"seed": 45, "point_free_handles": ["ACTION3", "ACTION4", "ACTION7"], "permutation_id": "reverse"},
+          {"seed": 46, "point_free_handles": ["ACTION3", "ACTION4", "ACTION7"], "permutation_id": "forward"},
+          {"seed": 47, "point_free_handles": ["ACTION3", "ACTION4", "ACTION7"], "permutation_id": "reverse"}
+        ],
+        "pair_count": 16
+      }
+    ],
+    "preset": "FULL decision features; automatic checkpoint persistence omitted only in the bulk harness, with restart tested separately",
+    "grid_size": 8,
+    "max_actions_per_variant": 16,
+    "max_resets_per_variant": 2,
+    "max_coordinate_candidates": 24,
+    "acceptance": {
+      "pairs_required": 128,
+      "post_calibration_inverse_request_equivariance": 1.0,
+      "canonical_effect_trajectory_parity": 1.0,
+      "canonical_state_trajectory_parity_after_prefix": 1.0,
+      "terminal_phase_parity": 1.0,
+      "completion_parity": 1.0,
+      "score_parity": 1.0,
+      "mixed_coordinate_exact_coordinate_and_consequence_parity": "16/16",
+      "valid_trace_chain_and_replay": 1.0,
+      "invalid_requests": 0,
+      "controller_faults": 0,
+      "threshold_policy": "Any miss makes Stage 05 PARTIAL or FAILED_MECHANISM under the frozen decision rule; do not weaken the 100 percent predicates after observing results."
+    }
+  },
+  "causal_control_suite": {
+    "evidence_label": "synthetic",
+    "total_cases": 64,
+    "schedule": [
+      {
+        "family": "multi_displacement_ambiguity",
+        "seeds_inclusive": [1000, 1015],
+        "cases": 16,
+        "predicate": "When one request yields multiple equally supported object displacements, preserve AMBIGUOUS candidates and do not promote a cardinal effect from raw ID or component order."
+      },
+      {
+        "family": "conditional_noop_and_movement",
+        "seeds_inclusive": [1100, 1115],
+        "cases": 16,
+        "predicate": "The same opaque handle may move under one observed condition and no-op under another; retain conditioned candidates and do not collapse either observation into a universal rule."
+      },
+      {
+        "family": "restore_any_handle_and_action7_negative",
+        "seeds_inclusive": [1200, 1215],
+        "cases": 16,
+        "handles": ["ACTION2", "ACTION5", "ACTION7"],
+        "restore_handle_rule": "handles[(seed - 1200) mod 3] restores a preserved digest; when ACTION7 is not that handle, ACTION7 is an explicit negative control.",
+        "predicate": "Learn restore evidence for the observed handle only; never infer undo from ACTION7's name."
+      },
+      {
+        "family": "coordinate_related_and_unrelated_change",
+        "seeds_inclusive": [1300, 1315],
+        "cases": 16,
+        "case_rule": "Even seeds make the returned change causally local to the ACTION6 coordinate; odd seeds produce an unrelated change with the same coordinate wire shape.",
+        "predicate": "Only coordinate-related evidence supports a coordinate interaction candidate; ACTION6 identity alone never implies selection."
+      }
+    ],
+    "acceptance": "All 64 cases satisfy their family predicate, retain raw receipt provenance, serialize/replay, and produce zero invalid requests or controller faults."
+  },
+  "checkpoint_resume_suite": {
+    "evidence_label": "synthetic",
+    "paired_cases": 16,
+    "seeds": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15],
+    "family": "full_four_handle",
+    "permutation_rule": "For seed s, use full_four_handle permutation at listed index s mod 6.",
+    "checkpoint_boundary": "Immediately after K complete calibration consequences when the episode remains nonterminal.",
+    "acceptance": "16/16 registry projections, calibration cursor, next canonical choice, resolved raw request, final terminal result, immutable trace verification, replay, and no-resubmission invariant exactly match uninterrupted counterparts."
+  },
+  "historical_regression_suite": {
+    "evidence_label": "synthetic",
+    "seeds": [7, 11],
+    "variants": ["base", "action_remap"],
+    "preset": "FULL",
+    "max_actions_per_variant": 16,
+    "max_resets_per_variant": 2,
+    "wall_clock_seconds_per_variant": 60.0,
+    "acceptance": "2/2 paired cases complete in both variants with exact final terminal and score parity, valid traces/replay, zero invalid requests/faults, and no action-ID semantic exception. Full inverse-request equality is not required before the frozen calibration boundary or after an early terminal."
+  },
+  "production_static_scan": {
+    "planned_command": "uv run python scripts/check_action_semantics.py",
+    "scope": "src/arc3 production policy, exploration, planning, hypotheses, goals, perception, and world-model code; adapter wire mappings and explicitly marked synthetic evaluator fixtures may be allowlisted only as interface/test machinery.",
+    "baseline_findings_to_remove_or_narrow": [
+      "src/arc3/exploration/statistics.py:13-17 raw ACTION1..ACTION4 directional priors",
+      "src/arc3/policy/controller.py:133-138 raw ACTION1..ACTION4 directional priors",
+      "src/arc3/policy/controller.py:1490-1495 cardinal delta-to-action lookup",
+      "src/arc3/exploration/effects.py:100-113 ACTION7-implies-undo and ACTION6-implies-selection",
+      "src/arc3/exploration/policy.py:111 and 163 ACTION7-specific undo gating",
+      "src/arc3/planning/recovery.py:92-95 supported undo hard-resolves to ACTION7"
+    ],
+    "must_reject": [
+      "raw ACTION1..ACTION7 to cardinal vector tables",
+      "cardinal vector to raw ACTION1..ACTION7 tables",
+      "raw action ID paired with up, down, left, right, north, south, east, or west semantics",
+      "ACTION7 promoted or resolved as undo without handle-specific transition evidence",
+      "ACTION6 promoted as select, attach, toggle, transform, target, or progress from ID alone",
+      "game-ID keyed action tables or public-game action sequences"
+    ],
+    "permitted": [
+      "ActionName enum and integer wire serialization",
+      "RESET and reset-only-after-GAME_OVER interface handling",
+      "ACTION6 coordinate arity validation and coordinate construction",
+      "dynamic raw-handle bindings learned from immutable receipts",
+      "synthetic engine/evaluator fixtures whose fixed semantics are not imported by production policy"
+    ],
+    "acceptance": "Zero unjustified production findings and zero known public game IDs or game-specific action tables in production policy code."
+  },
+  "resource_and_integrity_limits": {
+    "action_effect_registry_max_handles": 7,
+    "action_effect_candidates_per_handle_max": 32,
+    "max_coordinate_candidates_per_decision": 24,
+    "maximum_wall_seconds_per_episode": 60.0,
+    "maximum_wall_seconds_for_full_measurement": 600.0,
+    "maximum_peak_rss_mib": 1024,
+    "maximum_parallel_workers": 1,
+    "hosted_inference_allowed": false,
+    "network_enabled": false,
+    "public_game_ids_allowed": false,
+    "game_specific_rules_allowed": false,
+    "public_game_assets_allowed": false,
+    "public_holdout_allowed": false,
+    "raw_observation_or_receipt_mutation_allowed": false,
+    "commands_versions_hardware_cpu_rss_wall_time_seed_budgets_and_hashes_required": true
+  },
+  "artifacts": {
+    "harness": "scripts/measure_action_equivariance.py",
+    "static_scan": "scripts/check_action_semantics.py",
+    "raw": "C:/a/arc3-b001/artifacts/stage05/action-equivariance.json",
+    "raw_work_root": "C:/a/arc3-b001/artifacts/stage05/action-equivariance-work",
+    "acceptance": "docs/evidence/001-05-action-equivariance.json",
+    "report": "docs/reports/001-05-action-equivariance.md"
+  },
+  "decision_rule": {
+    "pass": "Both historical remap failures meet their frozen paired predicates; all 128 procedural pairs, all 64 causal controls, all 16 restart pairs, static scan, replay, trace, registry bounds, and resource predicates pass exactly.",
+    "partial": "The generic typed repair fixes both historical cases and materially improves the procedural matrix, but at least one frozen procedural, control, restart, static, replay, trace, or resource predicate misses; preserve every failing seed, permutation, receipt, and output.",
+    "failed_mechanism": "Either historical remap remains broken, any unjustified raw cardinal prior remains in production, ambiguity is promoted using raw identity, ACTION7 is treated as undo without receipt evidence, ACTION6 is treated as selection from identity alone, or the learned resolver fails to improve paired inverse behavior.",
+    "failed_infrastructure": "The clean-source deterministic harness cannot execute within the declared local resource envelope; preserve exact command, exit code, stderr, and environment identity and do not substitute public-game evidence."
+  },
+  "integrity": {
+    "public_partition_manifest": "docs/evaluation/public-game-partitions.v0.1.json",
+    "public_partition_manifest_sha256": "sha256:682d5891c2aface54803d9bd1173c55ed21e89856e13b8a478fb9276ee963f2f",
+    "build_000_exposure_ledger": "C:/a/arc3-s15-6a0f6e5/artifacts/stage15/public-exposure.jsonl",
+    "build_000_exposure_ledger_sha256": "sha256:cd9af42ed3a5ef9fa0dc201ddb10e32d2bcccee9df729aa0c7d53077c04c9ad4",
+    "stage_03_exposure_ledger": "C:/a/arc3-b001/artifacts/stage03/public-exposure.jsonl",
+    "stage_03_exposure_ledger_sha256": "sha256:e02a9fa71206170a6fe2aeefb6935ae25141e2759937657475cead4389bb17aa",
+    "stage_05_public_gameplay_events_allowed": 0,
+    "public_holdout_gameplay_events": 0,
+    "locally_acquired_holdout_assets": 0,
+    "note": "All Stage 05 implementation and acceptance work declared here is synthetic-only. Integrity checks may read only the already-sealed partition manifest and exposure-ledger metadata."
+  }
+}

@@ -173,3 +173,23 @@ independent authorities.
 - Reopening condition: a paired palette mapping changes a derived action, identity tokens depend on
   numeric color order, an ambiguous role is falsely promoted to a unique semantic role, or a
   checkpoint changes the token-to-raw-color association.
+
+## D-001-0013 — Calibrate opaque action handles before claiming inverse equivariance
+
+- Recorded: 2026-08-22T05:29:04Z
+- Status: accepted
+- Decision: Begin every Stage 05 procedural episode by probing each initially advertised non-reset
+  handle exactly once in stable wire order, count every probe against the action and efficiency
+  budgets, and exclude only that complete prefix from the inverse-request numerator. After the
+  prefix, require exact inverse-mapped requests and canonical effect/state parity. Learn movement,
+  restore, conditional, and coordinate-related effects only from immutable transition receipts.
+- Evidence: `docs/evidence/001-05-action-equivariance-predeclaration.json`; its frozen matrix contains
+  128 paired procedural cases, 64 causal ambiguity controls, 16 checkpoint/resume pairs, and the two
+  historical Build 000 action-remap failures.
+- Boundary: deterministic paired policies cannot produce inverse raw requests before a permuted
+  opaque handle has supplied differentiating evidence. The calibration prefix is therefore an
+  explicit symmetry breaker, not free interaction and not an action-ID semantic prior. `ACTION6`
+  coordinate arity and reset-only-after-`GAME_OVER` remain API facts; selection and undo do not.
+- Reopening condition: any calibration action is omitted from action/efficiency accounting, a raw
+  identifier supplies gameplay meaning before evidence, ambiguity is broken by numeric identity,
+  or the post-prefix inverse-request rate is less than the frozen exact threshold.
