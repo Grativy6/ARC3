@@ -805,9 +805,10 @@ does not erase earlier uncertainty or failed mechanisms.
 
 ## B-001-0043 — Exceptional public-cell exit loses terminal measurement receipts
 
-- Status: OPEN
+- Status: RESOLVED_FOR_FUTURE_STAGE_09_CELLS
 - Stage: 07, 09
 - Opened: 2026-08-22
+- Last updated: 2026-08-22
 - Burden: `_run_public_cell` rethrows an episode exception before its after-episode asset snapshot,
   scorecard sealing, normal measurement projection, and explicit adapter close. The Stage 07
   fallback measurement therefore reports zeros and omits the durable trace tail even though each
@@ -820,10 +821,44 @@ does not erase earlier uncertainty or failed mechanisms.
   1,702-event trace prefixes with projection SHA-256
   `95ec8fddc04499f8f68411d5ba112670f219d87a74b5a8511cd6fdab2be364e6`; each reaches 65
   `action.submitted` and 65 `consequence.received` events, zero levels, and no terminal outcome.
-- Next discriminating action: before Stage 09's decisive public run, make exceptional episode exit
-  close the adapter and seal recoverable trace/action/resource/asset snapshots without converting
-  the policy failure into PASS. Add a fault-injection regression test.
+- Resolution: future public workers preserve the returned consequence before any derived baseline
+  fold, close the policy/session/journal boundary, fold exact action/reset counts from the replayed
+  trace, recover a game-bound official score when available, rehash local asset bytes, sample
+  wall/CPU/RSS, and seal an explicit failed receipt. Local workers also count and deny five
+  process-local Python socket entry points; this is not OS-level egress isolation.
 - Resolution condition: an injected post-action policy fault writes a terminal failure receipt with
   exact durable action/consequence counts, trace tail, after-failure asset identity, resources, and
   close outcome; the evaluator remains nonzero/failed and holdout exposure remains zero.
+- Resolution receipt: commits `b4b033b4206a2c0044544c992bd02b709d1c59ad` and
+  `f5a2bd28f91eab6c3e16e335ec9b6b232f4d1804`; 29 focused public-runner, baseline-boundary,
+  and evaluator tests passed with Ruff, format, and strict mypy. The existing Stage 07 development
+  exposure ledger remains zero-holdout evidence at SHA-256
+  `4f924df44b11decb392022a927b3296e0248a02edac2c87c53899d374045f0c7`.
+- Historical boundary: the nine immutable Stage 07 cells remain unrepaired historical failures;
+  their lost process-local terminal measurements are not reconstructed or claimed.
+- Guard scope: `socket.create_connection`, `socket.getaddrinfo`, `socket.socket.connect`,
+  `connect_ex`, and `sendto` during the local worker body. Preconnected descriptors, `send` or
+  `sendall`, subprocess/native/ctypes transports, pre-install activity, and alternate socket
+  implementations remain outside this metric.
+
+## B-001-0044 — Recovered failure scores share aggregate policy means
+
+- Status: OPEN
+- Stage: 08, 09
+- Opened: 2026-08-22
+- Burden: the public evaluator correctly preserves a verified scorecard recovered after a derived
+  policy failure, but `_aggregate` currently includes that failed run's score and completed levels
+  in the policy mean/total alongside successful runs.
+- Why it matters: any failure suppresses improvement claims and forces a failed or partial summary,
+  so this cannot manufacture a PASS; however, readers could misread the aggregate mean without a
+  separate recovered-failure field.
+- Current evidence: the injected post-action failure preserves one verified level and aggregates to
+  `FAILED_INFRASTRUCTURE` with `MECHANISM_NOT_OBSERVED`; 29 focused tests pass at
+  `f5a2bd28f91eab6c3e16e335ec9b6b232f4d1804`.
+- Next discriminating action: before Stage 09 reporting, split normally successful score metrics
+  from recovered-failure score metrics while retaining both and keeping any failure ineligible for
+  improvement claims.
+- Resolution condition: aggregate/report schemas label successful and recovered-failure score and
+  level totals separately, with regression coverage proving failures cannot enter the successful
+  mean or improvement gate.
 - Resolution receipt: none.

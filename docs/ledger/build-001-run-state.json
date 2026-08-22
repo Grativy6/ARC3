@@ -11,8 +11,8 @@
   "implementation_branch": "build/001-local-public-recovery",
   "pull_request": "https://github.com/Grativy6/ARC3/pull/5",
   "started_at": "2026-08-21T15:41:02Z",
-  "last_checkpoint_at": "2026-08-22T19:18:15.9658269Z",
-  "last_checkpoint_commit": "5d1a67840bf75a939e25832d8300fa9c835c0e1d",
+  "last_checkpoint_at": "2026-08-22T19:31:54.0741716Z",
+  "last_checkpoint_commit": "f5a2bd28f91eab6c3e16e335ec9b6b232f4d1804",
   "base": {
     "main_commit": "28c7a00732ce48e5c231211b01bc6eba7d0d71b4",
     "main_tree": "4586299448e9b1b585a0878674ed5f9afa60c384",
@@ -385,9 +385,18 @@
       "public_repetitions_per_variant": 5,
       "public_variants": 4,
       "mechanics_capacity": "ARC3Config.budgets.max_actions",
-      "implementation_status": "CAPACITY_REPAIR_VERIFIED_CADENCE_MODULE_PENDING_INTEGRATION",
+      "implementation_status": "CAPACITY_AND_FAILURE_SEALING_VERIFIED_CADENCE_MODULE_PENDING_INTEGRATION",
       "mechanics_capacity_checkpoint_commit": "5d1a67840bf75a939e25832d8300fa9c835c0e1d",
       "mechanics_capacity_verification": "PASS:82-focused+lifecycle+controller+all-retrodiction-modes+replay+ruff+format+mypy-strict",
+      "failure_sealing_source_commit": "b4b033b4206a2c0044544c992bd02b709d1c59ad",
+      "failure_sealing_checkpoint_commit": "f5a2bd28f91eab6c3e16e335ec9b6b232f4d1804",
+      "failure_sealing_verification": "PASS:29-public-runner+baseline-boundary+evaluator+ruff+format+mypy-strict",
+      "resolved_burdens": [
+        "B-001-0043"
+      ],
+      "open_burdens": [
+        "B-001-0044"
+      ],
       "public_holdout_consumed": false
     }
   },

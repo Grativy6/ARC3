@@ -539,3 +539,25 @@ independent authorities.
   bottleneck, a declared trigger is not deterministically trace-derived, a cache affects semantics
   or restart behavior, or a stronger predeclared generic design preserves every authority and
   regression boundary at lower measured cost.
+
+## D-001-0030 — Preserve exceptional public outcomes as failed evidence
+
+- Recorded: 2026-08-22T19:30:11.3606991Z
+- Status: accepted
+- Decision: on every future public-worker exit, preserve any durable returned consequence before
+  derived policy processing; close all opened policy, session, and trace ownership boundaries;
+  recover but never promote a verified game-bound score; rehash local assets; record wall, CPU,
+  RSS, and intercepted Python socket-entry attempts; and accept an explicitly integrity-marked
+  changed or unavailable asset only as failed evidence. A failed receipt remains ineligible for a
+  public improvement claim.
+- Evidence: commits `b4b033b4206a2c0044544c992bd02b709d1c59ad` and
+  `f5a2bd28f91eab6c3e16e335ec9b6b232f4d1804`; 29 focused tests prove full-policy and baseline
+  post-action faults preserve replayable consequence counts, score, asset, resource, close, and
+  failed aggregate boundaries; Ruff, format, and strict mypy pass.
+- Boundary: the socket guard is process-local Python interception of `create_connection`,
+  `getaddrinfo`, `connect`, `connect_ex`, and `sendto`, not an OS network namespace. The nine
+  immutable Stage 07 failure cells remain historically unrepaired, and their missing terminal
+  process measurements are not recreated. The holdout remains sealed.
+- Reopening condition: a future exception can escape without a sealed failed receipt, a verified
+  score is accepted for a different game, asset drift can enter a success, any opened trace owner
+  lacks an explicit close outcome, or a guarded socket entry point is neither denied nor counted.
