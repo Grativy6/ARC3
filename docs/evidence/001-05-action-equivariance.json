@@ -1,0 +1,481 @@
+{
+  "schema": "arc3.build-001.stage-05-action-equivariance-acceptance.v0.1",
+  "status": "PASS",
+  "evidence_label": "synthetic",
+  "completed_at": "2026-08-22T06:40:22Z",
+  "claim_boundary": "This receipt establishes exact learned-action equivariance on the frozen synthetic Stage 05 suites only. It is not local-public recovery, public-holdout evidence, hidden-game generalization, or an official competition result.",
+  "frozen_source": {
+    "git_commit": "43713f8add4495cb48e15d9edab402564ab8b8da",
+    "git_tree": "c002b634f5536839fc96b64e827e0a03c71e6c02",
+    "branch": "build/001-local-public-recovery",
+    "worktree_clean_before_measurement": true,
+    "first_party_source_file_count": 135,
+    "first_party_source_hash": "sha256:9edc1029698e7f091babcb6252c34adde9613db240ff7aec090ed4a92edaf463",
+    "source_identity_hash": "sha256:e0b3c8cd67254fd206bc407a87c88cb7ae32cbc6ea29fd403ff825d02a73e8f3",
+    "worktree_status_hash": "sha256:01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+    "predeclaration": "docs/evidence/001-05-action-equivariance-predeclaration.json",
+    "predeclaration_sha256": "sha256:ec4ed1a8b3b8d4904a38bf4533d9fbd61975cac61aea05d4313d4b6a47119ce2",
+    "predeclaration_is_ancestor": true
+  },
+  "raw_artifact": {
+    "path": "C:/a/arc3-b001/artifacts/stage05/action-equivariance.json",
+    "schema": "arc3.build-001.stage-05-action-equivariance.v0.1",
+    "file_sha256": "sha256:48141af44742c0955f30086f73b1983e6274362e150195ff88065be2b30ea797",
+    "artifact_core_hash": "sha256:b2ea83ff85f50f005e8630e34857741b70471b232781464fa8e3825d6f33bc07",
+    "artifact_core_hash_valid": true,
+    "source_identity_hash_valid": true,
+    "byte_length": 2630051,
+    "work_root": "C:/a/arc3-b001/artifacts/stage05/action-equivariance-work"
+  },
+  "superseded_official_run": {
+    "status": "SUPERSEDED_AFTER_CI_CONTRADICTION",
+    "source_commit": "291e73e197fb9425465c072923804b2a377fbfb8",
+    "source_tree": "bf847aa7b8ccb764b335b09a9a84248e44462c27",
+    "path": "C:/a/arc3-b001/artifacts/stage05/superseded-291e73e/action-equivariance.json",
+    "file_sha256": "sha256:6280fbe932fec3fa23fae6ba430093ca94a10135b052370673a801e38ff56a02",
+    "artifact_core_hash": "sha256:e40b4065765bda7c55d1a08e4f68b25c55fa3d9bb39ffeedf58b3b79d36154f1",
+    "file_and_core_hashes_valid": true,
+    "reason": "Remote CI exposed that prepending the frozen ACTION6 calibration coordinate could exceed max_coordinate_candidates and that two legacy ablation expectations described pre-Stage-05 behavior. Commit 43713f8 bounds the complete coordinate candidate sequence after prepending calibration, updates only the contradicted expectations, and reruns the unchanged frozen harness from clean source.",
+    "historical_evidence_preserved": true
+  },
+  "verification": {
+    "pre_correction_focused_tests": "PASS:67 in 89.77s at 291e73e",
+    "pre_correction_broad_regression_tests": "PASS:114 in 70.29s at 291e73e",
+    "pre_correction_post_trace_refinement_tests": "PASS:30 in 23.77s at 291e73e",
+    "pre_correction_offline_integrity_tests": "PASS:11 in 3.66s at 291e73e",
+    "corrected_dirty_source_full_suite": {
+      "result": "492 passed, 2 expected dirty-source guard failures in 502.18s",
+      "failed_test_nodes": [
+        "tests/integration/test_stage16_profile_cli.py::test_profile_cli_runs_in_fresh_process_and_self_hashes_receipt",
+        "tests/integration/test_stage16_profile_cli.py::test_profile_cli_hard_timeout_preserves_failure_receipt"
+      ],
+      "classification": "EXPECTED_SOURCE_IDENTITY_GUARD",
+      "reason": "The corrected controller and expectations were intentionally uncommitted during this full-suite run, while the two tests require a clean matching source identity."
+    },
+    "corrected_post_rerun_focused_tests": "PASS:17 in 6.57s",
+    "corrected_clean_source_guard_tests": "PASS:2 in 7.84s",
+    "pytest_basetemp": "fresh explicit short paths under C:/a/arc3-b001",
+    "ruff_check": "PASS:full-repository on ubuntu+windows push+pull-request CI",
+    "ruff_format_check": "PASS:full-repository on ubuntu+windows push+pull-request CI",
+    "mypy_strict": "PASS:full-repository on ubuntu+windows push+pull-request CI",
+    "full_test_suite": "PASS:ubuntu+windows push+pull-request CI",
+    "runtime_doctor": "PASS:ubuntu+windows push+pull-request CI",
+    "static_action_semantics": "PASS:0-findings",
+    "static_action_semantics_receipt_hash": "sha256:f050c5208445c9d0fd7679e539437c06338be0335076f7ec8f8a870a11d3098c",
+    "pre_correction_competition_integrity_secret_scan": "PASS:0-findings at 291e73e",
+    "raw_artifact_self_hash": "PASS",
+    "source_identity_recomputation": "PASS",
+    "diff_check": "PASS",
+    "remote_ci_at_evidence_seal": {
+      "status": "PASS",
+      "source_commit": "43713f8add4495cb48e15d9edab402564ab8b8da",
+      "push": {
+        "run": 32557369468,
+        "ubuntu_job": 96993584811,
+        "ubuntu_result": "PASS in 4m17s",
+        "windows_job": 96993584903,
+        "windows_result": "PASS in 7m4s"
+      },
+      "pull_request": {
+        "run": 32557371792,
+        "ubuntu_job": 96993590721,
+        "ubuntu_result": "PASS in 4m12s",
+        "windows_job": 96993590806,
+        "windows_result": "PASS in 7m21s"
+      },
+      "workflow_steps": "locked environment, Ruff lint, Ruff format, strict mypy, full pytest with coverage, runtime doctor"
+    }
+  },
+  "historical_regression": {
+    "cases": 2,
+    "passed_cases": 2,
+    "full_sequence_inverse_request_metric": "NOT_APPLICABLE_CALIBRATION_SYMMETRY",
+    "cases_detail": [
+      {
+        "seed": 7,
+        "build_000_base": {
+          "completed": true,
+          "score": 1.0,
+          "actions": 7
+        },
+        "build_000_action_remap": {
+          "completed": false,
+          "score": 0.0,
+          "actions": 16
+        },
+        "build_001_base": {
+          "completed": true,
+          "score": 1.0,
+          "actions": 9,
+          "resets": 0,
+          "wall_ns": 813177500,
+          "cpu_ns": 656250000
+        },
+        "build_001_action_remap": {
+          "completed": true,
+          "score": 1.0,
+          "actions": 9,
+          "resets": 0,
+          "wall_ns": 739754100,
+          "cpu_ns": 671875000
+        },
+        "case_passed": true
+      },
+      {
+        "seed": 11,
+        "build_000_base": {
+          "completed": true,
+          "score": 1.0,
+          "actions": 1
+        },
+        "build_000_action_remap": {
+          "completed": false,
+          "score": 0.0,
+          "actions": 16
+        },
+        "build_001_base": {
+          "completed": true,
+          "score": 1.0,
+          "actions": 3,
+          "resets": 0,
+          "wall_ns": 232895600,
+          "cpu_ns": 171875000
+        },
+        "build_001_action_remap": {
+          "completed": true,
+          "score": 1.0,
+          "actions": 5,
+          "resets": 0,
+          "wall_ns": 377024900,
+          "cpu_ns": 312500000
+        },
+        "case_passed": true
+      }
+    ],
+    "efficiency_accounting": {
+      "calibration_prefix_fully_charged": true,
+      "build_000_unpermuted_actions": 8,
+      "build_001_unpermuted_actions": 12,
+      "unpermuted_action_change": "+4 actions (+50%)",
+      "build_001_remapped_actions": 14,
+      "paired_build_001_action_difference": "+2 remapped versus base",
+      "interpretation": "Both remap failures are repaired, but action efficiency regresses on the historical base cases. Completion repair is not relabeled as an efficiency improvement."
+    }
+  },
+  "procedural_paired_suite": {
+    "pairs": 128,
+    "passed_pairs": 128,
+    "base_completions": 128,
+    "permuted_completions": 128,
+    "base_actions": 1016,
+    "permuted_actions": 1016,
+    "base_resets": 0,
+    "permuted_resets": 0,
+    "post_calibration_inverse_request_numerator": 528,
+    "post_calibration_inverse_request_denominator": 528,
+    "post_calibration_inverse_request_equivariance": 1.0,
+    "minimum_post_calibration_actions_per_pair": 4,
+    "calibration_prefix_fully_charged": true,
+    "family_results": {
+      "full_four_handle": {
+        "pairs": 96,
+        "passed": 96,
+        "calibration_length": 4,
+        "base_actions": 768,
+        "permuted_actions": 768,
+        "inverse_requests": "384/384"
+      },
+      "partial_two_handle": {
+        "pairs": 8,
+        "passed": 8,
+        "calibration_length": 2,
+        "base_actions": 48,
+        "permuted_actions": 48,
+        "inverse_requests": "32/32"
+      },
+      "partial_three_handle": {
+        "pairs": 8,
+        "passed": 8,
+        "calibration_length": 3,
+        "base_actions": 56,
+        "permuted_actions": 56,
+        "inverse_requests": "32/32"
+      },
+      "mixed_coordinate": {
+        "pairs": 16,
+        "passed": 16,
+        "calibration_length": 4,
+        "base_actions": 144,
+        "permuted_actions": 144,
+        "inverse_requests": "80/80",
+        "exact_coordinate_and_consequence_parity": "PASS:16"
+      }
+    },
+    "predicate_pass_counts": {
+      "calibration_prefix_base": 128,
+      "calibration_prefix_permuted": 128,
+      "canonical_effect_trajectory": 128,
+      "canonical_state_trajectory_after_prefix": 128,
+      "completion": 128,
+      "minimum_four_post_calibration_actions": 128,
+      "post_calibration_inverse_requests": 128,
+      "score": 128,
+      "terminal_phase": 128,
+      "traces_and_replay": 128,
+      "validity": 128
+    }
+  },
+  "causal_controls": {
+    "cases": 64,
+    "passed_cases": 64,
+    "raw_receipts": 91,
+    "registry_projection_roundtrips": "PASS:64",
+    "families": {
+      "multi_displacement_ambiguity": {
+        "cases": 16,
+        "passed": 16,
+        "raw_receipts": 16,
+        "result": "competing translations remained AMBIGUOUS"
+      },
+      "conditional_noop_and_movement": {
+        "cases": 16,
+        "passed": 16,
+        "raw_receipts": 32,
+        "result": "conditioned no-op and translation candidates remained distinct"
+      },
+      "restore_any_handle_and_action7_negative": {
+        "cases": 16,
+        "passed": 16,
+        "raw_receipts": 27,
+        "restore_handle_counts": {
+          "ACTION2": 6,
+          "ACTION5": 5,
+          "ACTION7": 5
+        },
+        "action7_negative_controls": 16
+      },
+      "coordinate_related_and_unrelated_change": {
+        "cases": 16,
+        "passed": 16,
+        "raw_receipts": 16,
+        "local_relations": 8,
+        "distant_relations": 8
+      }
+    }
+  },
+  "checkpoint_resume_suite": {
+    "paired_cases": 16,
+    "passed_cases": 16,
+    "uninterrupted_completions": 16,
+    "resumed_completions": 16,
+    "uninterrupted_actions": 128,
+    "resumed_actions": 128,
+    "registry_and_calibration_projection_parity": "PASS:16",
+    "next_canonical_choice_and_raw_resolution_parity": "PASS:16",
+    "final_trajectory_and_result_parity": "PASS:16",
+    "no_resubmission": "PASS:16",
+    "trace_verification_and_replay": "PASS:16"
+  },
+  "registry_and_trace_measurements": {
+    "maximum_declared_raw_handles": 7,
+    "maximum_observed_raw_handles": 4,
+    "maximum_declared_candidates_per_handle": 32,
+    "maximum_observed_candidates_per_handle": 2,
+    "maximum_observed_candidates_total": 5,
+    "registry_projection_count": 546,
+    "registry_bound_violations": 0,
+    "controller_episode_count": 292,
+    "environment_action_count": 2314,
+    "maximum_episode_action_count": 9,
+    "action_budget_violations": 0,
+    "reset_budget_violations": 0,
+    "invalid_request_count": 0,
+    "controller_fault_count": 0,
+    "trace_event_count": 55707,
+    "trace_file_count": 2187,
+    "trace_replay_failures": 0
+  },
+  "static_action_semantics": {
+    "finding_count": 0,
+    "fixed_cardinal_semantics_absent": true,
+    "action6_identity_assumption_absent": true,
+    "action7_identity_assumption_absent": true,
+    "game_specific_tables_absent": true,
+    "receipt_hash": "sha256:f050c5208445c9d0fd7679e539437c06338be0335076f7ec8f8a870a11d3098c"
+  },
+  "resource_measurement": {
+    "wall_ns": 238981780500,
+    "wall_seconds": 238.9817805,
+    "cpu_ns": 218109375000,
+    "median_episode_wall_ns": 386960500.0,
+    "maximum_episode_wall_ns": 952615800,
+    "maximum_process_peak_rss_bytes": 66064384,
+    "predeclared_full_measurement_wall_limit_seconds": 600.0,
+    "predeclared_episode_wall_limit_seconds": 60.0,
+    "predeclared_peak_rss_limit_bytes": 1073741824,
+    "within_all_limits": true,
+    "runtime": {
+      "platform": "Windows-10-10.0.19045-SP0",
+      "processor": "AMD64 Family 23 Model 8 Stepping 2, AuthenticAMD",
+      "logical_cpu_count": 12,
+      "python": "3.12.14",
+      "python_implementation": "CPython",
+      "arc3": "0.1.0",
+      "numpy": "2.5.2",
+      "pydantic": "2.13.4",
+      "psutil": "not-installed",
+      "memory_measurement_source": "windows-GetProcessMemoryInfo-working-set"
+    }
+  },
+  "resolved_failed_mechanisms": [
+    {
+      "name": "whole-effect identity fragmented a stable translation facet",
+      "status": "RESOLVED",
+      "failed_inverse_smoke": {
+        "path": "C:/a/arc3-b001/stage05-smoke-pair-02",
+        "result": "5/12 inverse requests"
+      },
+      "failed_integrated_case": {
+        "result": "15/16 compatibility seeds; seed 13 exhausted its action budget",
+        "bundle": "C:/a/arc3-b001/artifacts/stage05/failed-mechanisms/seed13-pre-translation-facet",
+        "bundle_files": 45,
+        "bundle_bytes": 3030753,
+        "trace": "C:/a/arc3-b001/artifacts/stage05/failed-mechanisms/seed13-pre-translation-facet/trace/active.jsonl",
+        "trace_sha256": "sha256:0f14f37dad736d3f279920949b4e2c54911d916a124a00493337efa7cdfc9c76"
+      },
+      "repair": "Retain the complete revisable effect while resolving a conditioned displacement facet only when every live candidate supports the same non-null translation.",
+      "resolving_evidence": [
+        "C:/a/arc3-b001/stage05-smoke-pair-04:PASS:4/4",
+        "C:/a/arc3-b001/stage05-seed13-after-translation-facet:PASS:6/6-permutations",
+        "focused-tests:PASS:67",
+        "official-matrix:PASS:128/128"
+      ],
+      "history_preserved": true
+    }
+  ],
+  "acceptance": {
+    "historical_regressions": true,
+    "procedural_pairs": true,
+    "causal_controls": true,
+    "checkpoint_resume": true,
+    "static_action_semantics": true,
+    "registry_bounds": true,
+    "aggregate_runtime_integrity": true,
+    "source_clean": true,
+    "resource_limits": true,
+    "holdout_integrity": true,
+    "stage_status": "PASS",
+    "remote_ci_green_claimed": true
+  },
+  "holdout": {
+    "status": "SEALED_UNCONSUMED",
+    "manifest_holdout_count": 10,
+    "public_partition_manifest_sha256": "sha256:682d5891c2aface54803d9bd1173c55ed21e89856e13b8a478fb9276ee963f2f",
+    "build_000_exposure_ledger_sha256": "sha256:cd9af42ed3a5ef9fa0dc201ddb10e32d2bcccee9df729aa0c7d53077c04c9ad4",
+    "stage_03_exposure_ledger_sha256": "sha256:e02a9fa71206170a6fe2aeefb6935ae25141e2759937657475cead4389bb17aa",
+    "frozen_exposure_hashes_match": true,
+    "stage_05_public_gameplay_events": 0,
+    "public_holdout_gameplay_events": 0,
+    "locally_acquired_holdout_assets": 0,
+    "note": "The Stage 05 measurement harness was synthetic-only and accessed no public-game episode, source, asset, adapter, or hosted inference service. Integrity verification read only the sealed partition manifest, exposure-ledger metadata, and declared acquisition roots."
+  },
+  "limitations": [
+    "This result is synthetic and does not establish local-public recovery or hidden-game generalization.",
+    "Calibration is an explicit symmetry breaker and remains charged to every action and efficiency budget.",
+    "Full-sequence inverse equivalence is not claimed before differing transition evidence.",
+    "The two historical unpermuted cases use 12 actions versus Build 000's eight, a 50 percent regression.",
+    "The seed-11 remapped variant uses five actions versus three in the paired Build 001 base variant.",
+    "Whole-process peak RSS may include earlier cases in the same measurement process.",
+    "The superseded 291e73e run passed the frozen synthetic matrix but was replaced after remote CI exposed a coordinate-candidate bound overflow and stale ablation expectations.",
+    "No public game, Kaggle, semi-private, or official-private result is claimed."
+  ],
+  "command_receipts": [
+    {
+      "status": "PASS",
+      "exit_code": 0,
+      "source_commit": "43713f8add4495cb48e15d9edab402564ab8b8da",
+      "command": "C:/a/arc3-b001-28c7a00/Scripts/python.exe scripts/measure_action_equivariance.py --output C:/a/arc3-b001/artifacts/stage05/action-equivariance.json --work-root C:/a/arc3-b001/artifacts/stage05/action-equivariance-work"
+    },
+    {
+      "status": "PASS",
+      "exit_code": 0,
+      "source_commit": "291e73e197fb9425465c072923804b2a377fbfb8",
+      "command": "C:/a/arc3-b001-28c7a00/Scripts/python.exe -m pytest tests/unit/test_action_registry.py tests/unit/test_check_action_semantics.py tests/unit/test_measure_action_equivariance.py tests/unit/test_controller_contract.py tests/unit/test_exploration_effects.py tests/unit/test_exploration_policy.py tests/unit/test_planning_execution.py tests/unit/test_planning_search.py tests/integration/test_controller_end_to_end.py tests/replay/test_controller_checkpoint.py -q --basetemp C:/a/arc3-b001/pytest-root-stage05-root-focused",
+      "result": "67 passed in 89.77s"
+    },
+    {
+      "status": "PASS",
+      "exit_code": 0,
+      "source_commit": "291e73e197fb9425465c072923804b2a377fbfb8",
+      "command": "C:/a/arc3-b001-28c7a00/Scripts/python.exe -m pytest -q --no-cov --basetemp C:/a/arc3-b001/pytest-root-stage05-broad tests/unit/test_palette_roles.py tests/unit/test_measure_palette_equivariance.py tests/property/test_perception_invariance.py tests/unit/test_action_registry.py tests/unit/test_check_action_semantics.py tests/unit/test_measure_action_equivariance.py tests/unit/test_controller_contract.py tests/unit/test_exploration_effects.py tests/unit/test_exploration_policy.py tests/unit/test_planning_execution.py tests/unit/test_planning_search.py tests/replay/test_controller_checkpoint.py tests/integration/test_controller_end_to_end.py tests/integration/test_memory_cross_level.py tests/integration/test_hypothesis_lifecycle.py tests/integration/test_hot_path_profile.py tests/integration/test_stage16_runtime_profile.py tests/unit/test_stage16_profiling.py",
+      "result": "114 passed in 70.29s"
+    },
+    {
+      "status": "PASS",
+      "exit_code": 0,
+      "source_commit": "291e73e197fb9425465c072923804b2a377fbfb8",
+      "command": "C:/a/arc3-b001-28c7a00/Scripts/python.exe -m pytest -q --no-cov --basetemp C:/a/arc3-b001/pytest-root-stage05-trace-receipt tests/unit/test_trace_schema.py tests/unit/test_exploration_effects.py tests/integration/test_controller_end_to_end.py tests/replay/test_controller_checkpoint.py tests/unit/test_measure_action_equivariance.py",
+      "result": "30 passed in 23.77s"
+    },
+    {
+      "status": "PASS",
+      "exit_code": 0,
+      "source_commit": "291e73e197fb9425465c072923804b2a377fbfb8",
+      "command": "C:/a/arc3-b001-28c7a00/Scripts/python.exe -m pytest -q --no-cov --basetemp C:/a/arc3-b001/pytest-root-stage05-integrity tests/competition/test_controller_offline_integrity.py tests/competition/test_offline_config.py",
+      "result": "11 passed in 3.66s"
+    },
+    {
+      "status": "PASS",
+      "exit_code": 0,
+      "source_commit": "43713f8add4495cb48e15d9edab402564ab8b8da",
+      "command": "C:/a/arc3-b001-28c7a00/Scripts/python.exe scripts/check_action_semantics.py",
+      "result": "0 findings; receipt sha256:f050c5208445c9d0fd7679e539437c06338be0335076f7ec8f8a870a11d3098c"
+    },
+    {
+      "status": "PASS",
+      "exit_code": 0,
+      "source_commit": "291e73e197fb9425465c072923804b2a377fbfb8",
+      "command": "C:/a/arc3-b001-28c7a00/Scripts/python.exe -m ruff check --no-cache <23 Stage 05 changed Python files>"
+    },
+    {
+      "status": "PASS",
+      "exit_code": 0,
+      "source_commit": "291e73e197fb9425465c072923804b2a377fbfb8",
+      "command": "C:/a/arc3-b001-28c7a00/Scripts/python.exe -m ruff format --check --no-cache <23 Stage 05 changed Python files>"
+    },
+    {
+      "status": "PASS",
+      "exit_code": 0,
+      "source_commit": "291e73e197fb9425465c072923804b2a377fbfb8",
+      "command": "C:/a/arc3-b001-28c7a00/Scripts/python.exe -m mypy --strict src agent scripts",
+      "result": "Success: no issues found in 151 source files"
+    },
+    {
+      "status": "EXPECTED_GUARD_FAILURE",
+      "exit_code": 1,
+      "source_state": "corrected implementation with intentionally dirty documentation",
+      "command": "C:/a/arc3-b001-28c7a00/Scripts/python.exe -m pytest -q --cov-report=xml --basetemp C:/a/arc3-b001/pytest-root-stage05-ci-fix-full",
+      "result": "492 passed, 2 dirty-or-mismatched-source guard failures in 502.18s"
+    },
+    {
+      "status": "PASS",
+      "exit_code": 0,
+      "source_commit": "43713f8add4495cb48e15d9edab402564ab8b8da",
+      "command": "C:/a/arc3-b001-28c7a00/Scripts/python.exe -m pytest tests/unit/test_measure_action_equivariance.py tests/unit/test_ablation_features.py -q --no-cov --basetemp C:/a/arc3-b001/pytest-root-stage05-post-rerun",
+      "result": "17 passed in 6.57s"
+    },
+    {
+      "status": "PASS",
+      "exit_code": 0,
+      "source_commit": "43713f8add4495cb48e15d9edab402564ab8b8da",
+      "command": "C:/a/arc3-b001-28c7a00/Scripts/python.exe -m pytest tests/integration/test_stage16_profile_cli.py -q --no-cov --basetemp C:/a/arc3-b001/pytest-root-stage05-clean-source",
+      "result": "2 passed in 7.84s"
+    },
+    {
+      "status": "PASS",
+      "source_commit": "43713f8add4495cb48e15d9edab402564ab8b8da",
+      "command": "GitHub Actions ARC3 CI push run 32557369468 and pull-request run 32557371792",
+      "result": "Ubuntu and Windows all passed Ruff lint, Ruff format, strict mypy, full pytest with coverage, and runtime doctor"
+    }
+  ]
+}

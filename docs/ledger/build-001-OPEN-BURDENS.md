@@ -253,4 +253,48 @@ does not erase earlier uncertainty or failed mechanisms.
   seeds completed within 3–13 actions; multi-displacement controls remained unresolved.
 - Resolution receipt: `C:/a/arc3-b001/stage05-smoke-pair-04`,
   `C:/a/arc3-b001/stage05-seed13-after-translation-facet`, 67/67 focused tests, and the official
-  clean Stage 05 artifact once sealed. The failed evidence remains retained after resolution.
+  clean Stage 05 artifact
+  `sha256:b2ea83ff85f50f005e8630e34857741b70471b232781464fa8e3825d6f33bc07`.
+  The failed evidence remains retained after resolution.
+
+## B-001-0019 — Opaque-handle calibration has a measured historical action cost
+
+- Status: OPEN
+- Stage: 05–10
+- Opened: 2026-08-22
+- Burden: The generic calibration prefix repairs both historical action-remap failures, but the
+  unpermuted seed-7 case rises from seven Build 000/Stage 04 actions to nine Stage 05 actions, and
+  seed 11 remains three actions versus the Build 000 one-action case. Across the two unpermuted
+  historical cases, Build 001 uses 12 actions versus Build 000's eight, a 50% increase. Calibration
+  actions are fully charged; the equivariance PASS does not make them free.
+- Current evidence: clean Stage 05 artifact
+  `sha256:b2ea83ff85f50f005e8630e34857741b70471b232781464fa8e3825d6f33bc07`.
+  The remapped variants improve from two 16-action non-completions to wins in nine and five actions,
+  respectively, so this is an efficiency burden alongside a real robustness repair.
+- Next discriminating action: retain the exact calibration policy through Stage 09 development and
+  Stage 10 regression evaluation, compare matched completion and action-efficiency metrics against
+  Build 000/B0 and ablations, then optimize only with generic measured evidence.
+- Resolution condition: a generic discovery/caching strategy preserves the frozen action-
+  equivariance and ambiguity controls while reducing matched aggregate actions without lowering
+  completion, or Stage 10 evidence shows the overhead is not materially harmful on the declared
+  development matrix.
+
+## B-001-0020 — Stage 05 CI exposed stale pre-transition expectations and a candidate-bound defect
+
+- Status: RESOLVED
+- Stage: 05
+- Opened: 2026-08-22
+- Failure evidence: both push run `32556414798` and draft-PR run `32556416756` failed on Linux and
+  Windows at source commit `291e73e197fb9425465c072923804b2a377fbfb8`; the shared test result
+  was 492 passed and two failed. One ablation test incorrectly expected an accepted world model
+  before any transition evidence. A second test exposed that prepending the mandatory coordinate
+  calibration request returned three coordinate candidates under a configured limit of two.
+- Resolution: require the first real consequence before asserting model-promotion receipts; count
+  mandatory coordinate calibration inside the configured candidate maximum; and preserve the
+  original Stage 05 artifact under
+  `C:/a/arc3-b001/artifacts/stage05/superseded-291e73e/` with raw file SHA-256
+  `6280fbe932fec3fa23fae6ba430093ca94a10135b052370673a801e38ff56a02`.
+- Resolution receipt: correcting commit `43713f8add4495cb48e15d9edab402564ab8b8da`; focused tests
+  7/7; clean Stage 16 source guards 2/2; corrected frozen Stage 05 artifact self-hash
+  `sha256:b2ea83ff85f50f005e8630e34857741b70471b232781464fa8e3825d6f33bc07`;
+  green push run `32557369468` and draft-PR run `32557371792` on both Linux and Windows.

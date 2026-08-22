@@ -215,3 +215,46 @@ independent authorities.
 - Reopening condition: any conflicting live displacement is silently discarded, a no-op/transform
   alternative still resolves as movement, checkpoint roundtrip changes the facet, or inverse paired
   behavior depends on raw handle ordering rather than learned semantics.
+
+## D-001-0015 — Accept exact synthetic action equivariance with run-local receipt canonicalization
+
+- Recorded: 2026-08-22T06:21:11Z
+- Status: accepted
+- Decision: Accept the Stage 05 mechanism on its frozen synthetic surface: both historical remap
+  cases completed; all 128 procedural pairs achieved exact post-calibration inverse requests and
+  canonical trajectory parity; all 64 causal controls and 16 restart pairs passed; the production
+  scan found zero identifier semantics. For cross-run checkpoint comparisons only, replace each
+  independently generated source event ID by its stable ordinal within that run before comparing
+  registry projections. The actual checkpoint restore within a run retains exact event IDs and
+  projections.
+- Evidence: corrected clean source commit `43713f8add4495cb48e15d9edab402564ab8b8da`; raw
+  artifact file `sha256:48141af44742c0955f30086f73b1983e6274362e150195ff88065be2b30ea797`;
+  self-hash `sha256:b2ea83ff85f50f005e8630e34857741b70471b232781464fa8e3825d6f33bc07`.
+  The superseded `291e73e` run remains preserved under
+  `C:/a/arc3-b001/artifacts/stage05/superseded-291e73e/`.
+- Boundary: event UUID/timestamp material is intentionally run-local and is not a policy semantic.
+  Canonicalization may not drop, merge, reorder, or change candidate support, contradiction,
+  status, handle, effect, or evidence cardinality. This is `synthetic` mechanism evidence only and
+  does not establish local-public recovery or hidden-game generalization.
+- Reopening condition: any semantic field differs across checkpoint counterparts, any actual restore
+  changes an evidence ID, any procedural inverse request misses, or later public-development evidence
+  shows that calibration/action discovery harms completion or action efficiency materially.
+
+## D-001-0016 — Count mandatory coordinate calibration inside the candidate bound
+
+- Recorded: 2026-08-22T06:35:21Z
+- Status: accepted
+- Decision: The mandatory evidence-gathering `ACTION6(3,3)` calibration request is the first
+  coordinate candidate and consumes one slot in `max_coordinate_candidates`. Prepending it may not
+  increase the configured maximum. The remaining salient or seeded-uniform candidates are
+  deduplicated and truncated to the residual capacity.
+- Evidence: CI on source commit `291e73e197fb9425465c072923804b2a377fbfb8` exposed three
+  candidates under a configured limit of two. Correcting commit
+  `43713f8add4495cb48e15d9edab402564ab8b8da` passed the focused seven-test regression, the clean
+  Stage 16 source guards, and all four Linux/Windows push/PR CI jobs. The corrected frozen Stage 05
+  rerun passed with self-hash
+  `sha256:b2ea83ff85f50f005e8630e34857741b70471b232781464fa8e3825d6f33bc07`.
+- Boundary: calibration remains fully charged as an environment action and a generated candidate;
+  this repair changes no action meaning and does not authorize a public-holdout run.
+- Reopening condition: any decision returns more coordinate requests than the configured bound,
+  excludes the calibration action from accounting, or loses seeded determinism/equivariance.
