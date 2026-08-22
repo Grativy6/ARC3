@@ -862,6 +862,10 @@ class ARC3Controller:
 
     def _initialize_context(self, context: RunContext) -> None:
         self._context = context
+        self._mechanics = MechanicsLifecycle(
+            level_index=0,
+            maximum_transitions_per_epoch=context.config.budgets.max_actions,
+        )
         self._source = SourceIdentity(
             context.source_kind,
             context.source_version,
@@ -4289,13 +4293,13 @@ class ARC3Controller:
                 ),
             )
             preserved_transition = transition
-            self._transitions.append(transition)
-            self._transition_levels[transition.transition_id] = previous_level
             transition_epoch_id = self._mechanics.active_epoch(previous_level).epoch_id
-            self._transition_epochs[transition.transition_id] = transition_epoch_id
             self._mechanics.register_transition(
                 transition.transition_id, epoch_id=transition_epoch_id
             )
+            self._transitions.append(transition)
+            self._transition_levels[transition.transition_id] = previous_level
+            self._transition_epochs[transition.transition_id] = transition_epoch_id
             self._transition_summaries.setdefault(previous_level, []).append(transition)
             if self.features.use_hypotheses:
                 interpreted_action_effect = (
@@ -8056,7 +8060,10 @@ class ARC3Controller:
 
         raw_mechanics = value.get("mechanics_lifecycle")
         if raw_mechanics is None:
-            self._mechanics = MechanicsLifecycle(level_index=self._level_index)
+            self._mechanics = MechanicsLifecycle(
+                level_index=self._level_index,
+                maximum_transitions_per_epoch=self.context.config.budgets.max_actions,
+            )
             legacy_epoch_id = self._mechanics.active_epoch(self._level_index).epoch_id
             self._mechanics.register_hypotheses(
                 (record.hypothesis_id for record in self._hypotheses.all()),
@@ -8065,7 +8072,10 @@ class ARC3Controller:
         elif isinstance(raw_mechanics, Mapping):
             try:
                 self._mechanics = MechanicsLifecycle.from_dict(
-                    cast(Mapping[str, object], raw_mechanics)
+                    cast(Mapping[str, object], raw_mechanics),
+                    expected_maximum_transitions_per_epoch=(
+                        self.context.config.budgets.max_actions
+                    ),
                 )
             except WorldModelError as error:
                 raise PolicyError("checkpoint mechanics lifecycle is malformed") from error
@@ -8130,8 +8140,6 @@ class ARC3Controller:
             level_index = item.get("level_index")
             if isinstance(level_index, bool) or not isinstance(level_index, int):
                 raise PolicyError("checkpoint transition level is malformed")
-            self._transitions.append(transition)
-            self._transition_levels[transition.transition_id] = level_index
             raw_epoch_id = item.get("mechanics_epoch_id")
             if raw_epoch_id is None and raw_mechanics is None:
                 raw_epoch_id = self._mechanics.active_epoch(level_index).epoch_id
@@ -8153,6 +8161,8 @@ class ARC3Controller:
                 raise PolicyError(
                     "checkpoint transition membership disagrees with mechanics lifecycle"
                 )
+            self._transitions.append(transition)
+            self._transition_levels[transition.transition_id] = level_index
             self._transition_epochs[transition.transition_id] = raw_epoch_id
             self._transition_summaries.setdefault(level_index, []).append(transition)
         lifecycle_transition_ids = set(

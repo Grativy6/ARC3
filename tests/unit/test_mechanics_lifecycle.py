@@ -15,8 +15,11 @@ from arc3.world_model import (
 )
 
 
-def _opened_lifecycle() -> tuple[MechanicsLifecycle, str]:
-    lifecycle = MechanicsLifecycle(level_index=0)
+def _opened_lifecycle(*, maximum_transitions_per_epoch: int = 64) -> tuple[MechanicsLifecycle, str]:
+    lifecycle = MechanicsLifecycle(
+        level_index=0,
+        maximum_transitions_per_epoch=maximum_transitions_per_epoch,
+    )
     epoch_id = lifecycle.active_epoch(0).epoch_id
     lifecycle.register_hypotheses(("H-PREDECESSOR",), epoch_id=epoch_id)
     lifecycle.register_models(("WM-PREDECESSOR",), epoch_id=epoch_id)
@@ -39,8 +42,10 @@ def _opened_lifecycle() -> tuple[MechanicsLifecycle, str]:
     return lifecycle, candidate.candidate_id
 
 
-def _confirmed_lifecycle() -> MechanicsLifecycle:
-    lifecycle, candidate_id = _opened_lifecycle()
+def _confirmed_lifecycle(*, maximum_transitions_per_epoch: int = 64) -> MechanicsLifecycle:
+    lifecycle, candidate_id = _opened_lifecycle(
+        maximum_transitions_per_epoch=maximum_transitions_per_epoch
+    )
     predecessor_epoch_id = lifecycle.active_epoch(0).epoch_id
     lifecycle.register_transition("T-CONFIRMATION", epoch_id=predecessor_epoch_id)
     lifecycle.support_successor(
@@ -556,13 +561,50 @@ def test_deserialization_rejects_duplicate_live_affected_domains(
 
 
 def test_transition_bound_is_enforced_per_epoch() -> None:
-    lifecycle = MechanicsLifecycle(level_index=0)
+    lifecycle = MechanicsLifecycle(level_index=0, maximum_transitions_per_epoch=80)
     epoch_id = lifecycle.active_epoch(0).epoch_id
-    for index in range(lifecycle.MAX_TRANSITIONS_PER_EPOCH):
+    for index in range(lifecycle.maximum_transitions_per_epoch):
         lifecycle.register_transition(f"T-{index:03d}", epoch_id=epoch_id)
 
+    assert lifecycle.maximum_transitions_per_epoch == 80
+    serialized = lifecycle.to_dict()
+    restored = MechanicsLifecycle.from_dict(
+        serialized,
+        expected_maximum_transitions_per_epoch=80,
+    )
+    assert restored.to_dict() == serialized
     with pytest.raises(WorldModelError, match="transition bound"):
         lifecycle.register_transition("T-OVERFLOW", epoch_id=epoch_id)
+
+
+def test_serialized_transition_capacity_must_match_the_expected_run_contract() -> None:
+    lifecycle = MechanicsLifecycle(level_index=0, maximum_transitions_per_epoch=80)
+    epoch_id = lifecycle.active_epoch(0).epoch_id
+    for index in range(65):
+        lifecycle.register_transition(f"T-{index:03d}", epoch_id=epoch_id)
+
+    with pytest.raises(WorldModelError, match="limits do not match"):
+        MechanicsLifecycle.from_dict(
+            lifecycle.to_dict(),
+            expected_maximum_transitions_per_epoch=79,
+        )
+
+
+def test_evidence_driven_successor_epoch_retains_the_run_capacity() -> None:
+    lifecycle = _confirmed_lifecycle(maximum_transitions_per_epoch=80)
+    successor = lifecycle.active_epoch(0)
+
+    assert successor.epoch_index == 1
+    assert lifecycle.maximum_transitions_per_epoch == 80
+    assert lifecycle.projection(level_index=0)["limits"] == {
+        "maximum_epochs_per_level": 4,
+        "maximum_live_change_candidates": 8,
+        "maximum_transitions_per_epoch": 80,
+    }
+    for index in range(80):
+        lifecycle.register_transition(f"T-SUCCESSOR-{index:03d}", epoch_id=successor.epoch_id)
+    with pytest.raises(WorldModelError, match="transition bound"):
+        lifecycle.register_transition("T-SUCCESSOR-OVERFLOW", epoch_id=successor.epoch_id)
 
 
 def test_closed_epoch_rejects_new_authority_registration() -> None:

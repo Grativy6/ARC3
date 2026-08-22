@@ -54,6 +54,12 @@ def _non_negative(value: object, *, field: str) -> int:
     return value
 
 
+def _positive(value: object, *, field: str) -> int:
+    if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+        raise WorldModelError(f"{field} must be a positive integer")
+    return value
+
+
 def _required_text(value: object, *, field: str) -> str:
     if not isinstance(value, str) or not value.strip():
         raise WorldModelError(f"{field} must be a non-empty string")
@@ -452,10 +458,19 @@ class MechanicsLifecycle:
     SCHEMA = "arc3.mechanics-lifecycle.v0.1"
     MAX_EPOCHS_PER_LEVEL = 4
     MAX_LIVE_CHANGE_CANDIDATES = 8
-    MAX_TRANSITIONS_PER_EPOCH = 64
+    DEFAULT_MAX_TRANSITIONS_PER_EPOCH = 64
 
-    def __init__(self, *, level_index: int = 0) -> None:
+    def __init__(
+        self,
+        *,
+        level_index: int = 0,
+        maximum_transitions_per_epoch: int = DEFAULT_MAX_TRANSITIONS_PER_EPOCH,
+    ) -> None:
         _non_negative(level_index, field="level_index")
+        self._maximum_transitions_per_epoch = _positive(
+            maximum_transitions_per_epoch,
+            field="maximum_transitions_per_epoch",
+        )
         initial = self._initial_epoch(level_index)
         self._epochs: dict[str, MechanicsEpoch] = {initial.epoch_id: initial}
         self._active_epoch_by_level: dict[int, str] = {level_index: initial.epoch_id}
@@ -463,6 +478,12 @@ class MechanicsLifecycle:
         self._hypothesis_epochs: dict[str, str] = {}
         self._model_epochs: dict[str, str] = {}
         self._transition_epochs: dict[str, str] = {}
+
+    @property
+    def maximum_transitions_per_epoch(self) -> int:
+        """Return the immutable, run-bound transition capacity for every epoch."""
+
+        return self._maximum_transitions_per_epoch
 
     @staticmethod
     def _initial_epoch(level_index: int) -> MechanicsEpoch:
@@ -856,7 +877,7 @@ class MechanicsLifecycle:
         )
 
     def register_transition(self, transition_id: str, *, epoch_id: str) -> None:
-        """Bind one immutable transition to an epoch under the frozen memory bound."""
+        """Bind one immutable transition under the run's action-derived capacity."""
 
         identifier = _required_text(transition_id, field="transition_id")
         target = self.epoch(epoch_id)
@@ -868,7 +889,7 @@ class MechanicsLifecycle:
                 raise WorldModelError("transition identity cannot move between mechanics epochs")
             return
         count = sum(item == target.epoch_id for item in self._transition_epochs.values())
-        if count >= self.MAX_TRANSITIONS_PER_EPOCH:
+        if count >= self._maximum_transitions_per_epoch:
             raise WorldModelError("mechanics transition bound exceeded for epoch")
         self._transition_epochs[identifier] = target.epoch_id
 
@@ -916,7 +937,7 @@ class MechanicsLifecycle:
                 "limits": {
                     "maximum_epochs_per_level": self.MAX_EPOCHS_PER_LEVEL,
                     "maximum_live_change_candidates": self.MAX_LIVE_CHANGE_CANDIDATES,
-                    "maximum_transitions_per_epoch": self.MAX_TRANSITIONS_PER_EPOCH,
+                    "maximum_transitions_per_epoch": self._maximum_transitions_per_epoch,
                 },
             }
         )
@@ -936,7 +957,7 @@ class MechanicsLifecycle:
                 "limits": {
                     "maximum_epochs_per_level": self.MAX_EPOCHS_PER_LEVEL,
                     "maximum_live_change_candidates": self.MAX_LIVE_CHANGE_CANDIDATES,
-                    "maximum_transitions_per_epoch": self.MAX_TRANSITIONS_PER_EPOCH,
+                    "maximum_transitions_per_epoch": self._maximum_transitions_per_epoch,
                 },
             }
         )
@@ -947,7 +968,12 @@ class MechanicsLifecycle:
         return payload
 
     @classmethod
-    def from_dict(cls, value: Mapping[str, object]) -> MechanicsLifecycle:
+    def from_dict(
+        cls,
+        value: Mapping[str, object],
+        *,
+        expected_maximum_transitions_per_epoch: int | None = None,
+    ) -> MechanicsLifecycle:
         if value.get("schema") != cls.SCHEMA:
             raise WorldModelError("unsupported mechanics lifecycle schema")
         raw_epochs = value.get("epochs")
@@ -969,17 +995,32 @@ class MechanicsLifecycle:
             or not isinstance(raw_limits, Mapping)
         ):
             raise WorldModelError("mechanics lifecycle projection is malformed")
+        serialized_capacity = _positive(
+            raw_limits.get("maximum_transitions_per_epoch"),
+            field="maximum_transitions_per_epoch",
+        )
+        expected_capacity = (
+            serialized_capacity
+            if expected_maximum_transitions_per_epoch is None
+            else _positive(
+                expected_maximum_transitions_per_epoch,
+                field="expected_maximum_transitions_per_epoch",
+            )
+        )
         expected_limits = {
             "maximum_epochs_per_level": cls.MAX_EPOCHS_PER_LEVEL,
             "maximum_live_change_candidates": cls.MAX_LIVE_CHANGE_CANDIDATES,
-            "maximum_transitions_per_epoch": cls.MAX_TRANSITIONS_PER_EPOCH,
+            "maximum_transitions_per_epoch": expected_capacity,
         }
         if dict(raw_limits) != expected_limits:
             raise WorldModelError("mechanics lifecycle limits do not match the runtime contract")
         epochs = tuple(MechanicsEpoch.from_dict(item) for item in raw_epochs)
         if not epochs:
             raise WorldModelError("mechanics lifecycle requires at least one epoch")
-        lifecycle = cls(level_index=epochs[0].level_index)
+        lifecycle = cls(
+            level_index=epochs[0].level_index,
+            maximum_transitions_per_epoch=expected_capacity,
+        )
         lifecycle._epochs = {item.epoch_id: item for item in epochs}
         if len(lifecycle._epochs) != len(epochs):
             raise WorldModelError("duplicate mechanics epoch identity")
@@ -1114,7 +1155,7 @@ class MechanicsLifecycle:
             transition_count = sum(
                 member_epoch == epoch.epoch_id for member_epoch in self._transition_epochs.values()
             )
-            if transition_count > self.MAX_TRANSITIONS_PER_EPOCH:
+            if transition_count > self._maximum_transitions_per_epoch:
                 raise WorldModelError("mechanics transition bound exceeded for epoch")
         for candidate in self._candidates.values():
             candidate_predecessor = self._epochs.get(candidate.predecessor_epoch_id)

@@ -281,6 +281,42 @@ def test_cached_checkpoint_rejects_omitted_or_wrong_mode(tmp_path: Path) -> None
 
 
 @pytest.mark.replay
+def test_checkpoint_rejects_mechanics_capacity_outside_the_run_contract(
+    tmp_path: Path,
+) -> None:
+    controller, context, _ = _drive_cached(tmp_path, label="mechanics-capacity")
+    checkpoint = controller.checkpoint()
+    assert controller.mechanics_lifecycle_projection["limits"] == {
+        "maximum_epochs_per_level": 4,
+        "maximum_live_change_candidates": 8,
+        "maximum_transitions_per_epoch": 16,
+    }
+    controller.journal.close()
+
+    def tamper(raw: dict[str, object]) -> None:
+        state = cast(dict[str, object], raw["state"])
+        derived = cast(dict[str, object], state["derived_controller_state"])
+        world = cast(dict[str, object], derived["world_model_ensemble"])
+        mechanics = cast(dict[str, object], world["mechanics_lifecycle"])
+        limits = cast(dict[str, object], mechanics["limits"])
+        limits["maximum_transitions_per_epoch"] = 17
+
+    tampered = _rewrite_checkpoint_and_commitment(
+        checkpoint_path=checkpoint.path,
+        trace_path=context.trace_root / "active.jsonl",
+        target=tmp_path / "tampered-mechanics-capacity.json",
+        mutate=tamper,
+    )
+    with pytest.raises(PolicyError, match="mechanics lifecycle"):
+        ARC3Controller.restore(
+            context,
+            preset=ControllerPreset.FULL,
+            checkpoint_path=tampered,
+            retrodiction_config=_CACHED,
+        )
+
+
+@pytest.mark.replay
 def test_rehashed_full_artifact_receipt_must_reconstruct_from_typed_history(
     tmp_path: Path,
 ) -> None:

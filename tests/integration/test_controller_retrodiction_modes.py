@@ -1,22 +1,30 @@
 from __future__ import annotations
 
 from collections import Counter
+from dataclasses import replace
 from pathlib import Path
 from typing import cast
 
 import pytest
 
 from arc3.ablations import AblationId, features_for_ablation
+from arc3.adapters import GridFrame, Observation
 from arc3.adapters.synthetic import SYNTHETIC_GAME_ID, SyntheticAdapter
 from arc3.config import ARC3Config, BudgetConfig
 from arc3.errors import CompetitionIntegrityError, PolicyError
-from arc3.policy import ARC3Controller, ControllerPhase, ControllerPreset, RunContext
+from arc3.policy import (
+    ARC3Controller,
+    ControllerPhase,
+    ControllerPreset,
+    RunContext,
+    preset_features,
+)
 from arc3.profiling import HotPathChangeKind, HotPathPhase, HotPathProfiler
-from arc3.types import EnvironmentMode, JSONValue
+from arc3.types import ActionName, ActionRequest, EnvironmentMode, GameId, GameStateName, JSONValue
 from arc3.world_model import RetrodictionConfig, RetrodictionMode, RetrodictionReason
 
 
-def _context(tmp_path: Path, *, label: str) -> RunContext:
+def _context(tmp_path: Path, *, label: str, max_actions: int = 16) -> RunContext:
     return RunContext(
         run_id=f"stage07-{label}",
         episode_id=f"stage07-{label}-episode",
@@ -27,9 +35,25 @@ def _context(tmp_path: Path, *, label: str) -> RunContext:
             mode=EnvironmentMode.SYNTHETIC,
             seed=37,
             profile=f"stage07-{label}",
-            budgets=BudgetConfig(max_actions=16, max_search_nodes=2_048),
+            budgets=BudgetConfig(max_actions=max_actions, max_search_nodes=2_048),
         ),
         git_commit="stage07-controller-integration",
+    )
+
+
+def _continuing_observation(
+    *,
+    step: int,
+    returned_action: ActionRequest | None = None,
+) -> Observation:
+    return Observation(
+        game_id=GameId(SYNTHETIC_GAME_ID),
+        frames=(GridFrame.from_rows(((step % 2,),)),),
+        state=GameStateName.NOT_FINISHED,
+        levels_completed=0,
+        win_levels=1,
+        available_actions=(ActionName.ACTION1,),
+        returned_action=returned_action,
     )
 
 
@@ -120,6 +144,56 @@ def test_competition_rejects_even_semantically_default_explicit_override() -> No
             ControllerPreset.COMPETITION,
             retrodiction_config=RetrodictionConfig(mode=RetrodictionMode.FULL),
         )
+
+
+@pytest.mark.integration
+@pytest.mark.replay
+@pytest.mark.parametrize("mode", tuple(RetrodictionMode))
+def test_every_retrodiction_mode_crosses_legacy_capacity_and_restores(
+    tmp_path: Path,
+    mode: RetrodictionMode,
+) -> None:
+    label = f"capacity-{mode.value.lower()}"
+    context = _context(tmp_path, label=label, max_actions=80)
+    features = replace(
+        preset_features(ControllerPreset.TRACE),
+        use_retrodiction_gate=mode is not RetrodictionMode.NONE,
+    )
+    retrodiction_config = RetrodictionConfig(mode=mode)
+    controller = ARC3Controller(
+        ControllerPreset.TRACE,
+        features=features,
+        retrodiction_config=retrodiction_config,
+    )
+    controller.reset(context)
+    controller.observe(_continuing_observation(step=0))
+
+    for step in range(1, 66):
+        decision = controller.choose_action()
+        controller.apply_consequence(
+            _continuing_observation(step=step, returned_action=decision.action)
+        )
+
+    projection = controller.mechanics_lifecycle_projection
+    assert controller.snapshot.actions_used == 65
+    assert len(controller._transitions) == 65
+    assert len(cast(dict[str, JSONValue], projection["transition_epochs"])) == 65
+    assert cast(dict[str, JSONValue], projection["limits"])["maximum_transitions_per_epoch"] == 80
+    checkpoint = controller.checkpoint()
+    controller.journal.close()
+
+    restored = ARC3Controller.restore(
+        context,
+        preset=ControllerPreset.TRACE,
+        checkpoint_path=checkpoint.path,
+        features=features,
+        retrodiction_config=retrodiction_config,
+    )
+    assert restored.retrodiction_config.mode is mode
+    assert restored.snapshot.actions_used == 65
+    assert len(restored._transitions) == 65
+    assert restored.mechanics_lifecycle_projection == projection
+    restored.journal.close()
 
 
 @pytest.mark.integration

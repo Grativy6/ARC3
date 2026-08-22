@@ -8,7 +8,12 @@ import pytest
 from arc3.adapters import GridFrame, Observation
 from arc3.adapters.synthetic import SYNTHETIC_GAME_ID, SyntheticAdapter
 from arc3.config import ARC3Config, BudgetConfig
-from arc3.errors import CompetitionIntegrityError, EnvironmentStateError, PolicyError
+from arc3.errors import (
+    CompetitionIntegrityError,
+    EnvironmentStateError,
+    PolicyError,
+    WorldModelError,
+)
 from arc3.hypotheses import ActionSemanticsStatement
 from arc3.policy import (
     ARC3Controller,
@@ -355,6 +360,41 @@ def _manual_observation(
         available_actions=(ActionName.ACTION1, ActionName.ACTION2),
         returned_action=returned_action,
     )
+
+
+def test_mechanics_membership_failure_precedes_transition_collection_mutation(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    controller = ARC3Controller(ControllerPreset.TRACE)
+    controller.reset(_context(tmp_path, max_actions=1))
+    active = _manual_observation(state=GameStateName.NOT_FINISHED)
+    controller.observe(active)
+    decision = controller.choose_action()
+
+    def reject_membership(transition_id: str, *, epoch_id: str) -> None:
+        assert transition_id == f"transition:{decision.submitted_event_id}"
+        assert epoch_id == "mechanics-epoch:L0:0000"
+        raise WorldModelError("injected mechanics membership failure")
+
+    monkeypatch.setattr(controller._mechanics, "register_transition", reject_membership)
+    with pytest.raises(WorldModelError, match="injected mechanics membership failure"):
+        controller.apply_consequence(
+            _manual_observation(
+                state=GameStateName.NOT_FINISHED,
+                returned_action=decision.action,
+            )
+        )
+
+    assert controller._transitions == []
+    assert controller._transition_levels == {}
+    assert controller._transition_epochs == {}
+    assert controller._transition_summaries == {}
+    assert any(
+        event.event_type == "consequence.received"
+        for event in controller.journal.verify_manifest(include_active=True)
+    )
+    controller.journal.close()
 
 
 def test_action_and_reset_budgets_are_enforced_independently(tmp_path: Path) -> None:
