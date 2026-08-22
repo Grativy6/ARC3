@@ -424,3 +424,21 @@ independent authorities.
 - Reopening condition: any altered typed outcome, residual, identity, omission, prefix, receipt, or
   configuration survives reconstruction; eviction changes policy behavior; or legacy FULL/NONE
   artifacts drift.
+
+## D-001-0025 — Trace the exact evidence authorizing event-triggered reuse
+
+- Recorded: 2026-08-22T16:09:50.7346730Z
+- Status: accepted
+- Decision: An EVENT_TRIGGERED reuse receipt must carry the exact ordered matched-prediction
+  evidence for the reused suffix and no unrelated evidence. Each item binds transition and model
+  identity to the pre-action prediction event and receipt, returned consequence event, assessment
+  receipt, match scope, match result, and source order. First-use, full-audit, and non-reuse paths
+  emit an empty authorization vector.
+- Evidence: source checkpoint `44fc3666522db4787f4349c4a5cb5ee085f787d9`; 35 focused
+  retrodiction tests pass, including omitted,
+  extra, reordered, wrong-model, invalid-scope, exact-hit, and full-audit authorization cases.
+- Boundary: a cache hit is not authority by itself. Controller restore must still validate every
+  referenced event type, source order, model, transition, and receipt against the immutable trace.
+- Reopening condition: a reuse passes without the exact suffix receipts, unrelated evidence is
+  accepted, trace references are not independently folded, or the authorization vector can be
+  changed and rehashed without rejection.

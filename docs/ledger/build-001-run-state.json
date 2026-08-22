@@ -11,8 +11,8 @@
   "implementation_branch": "build/001-local-public-recovery",
   "pull_request": "https://github.com/Grativy6/ARC3/pull/5",
   "started_at": "2026-08-21T15:41:02Z",
-  "last_checkpoint_at": "2026-08-22T16:02:36.5432466Z",
-  "last_checkpoint_commit": "586e8ba2c9c414b4bf2cc426ad5c1bbd357d5258",
+  "last_checkpoint_at": "2026-08-22T16:09:50.7346730Z",
+  "last_checkpoint_commit": "44fc3666522db4787f4349c4a5cb5ee085f787d9",
   "base": {
     "main_commit": "28c7a00732ce48e5c231211b01bc6eba7d0d71b4",
     "main_tree": "4586299448e9b1b585a0878674ed5f9afa60c384",
@@ -325,7 +325,8 @@
       "micro_history_sizes": 6,
       "implementation_status": "COMPOSITE_PROTOCOL_PREDECLARED_BEFORE_IMPLEMENTATION_MEASUREMENT",
       "runtime_checkpoint_commit": "586e8ba2c9c414b4bf2cc426ad5c1bbd357d5258",
-      "runtime_verification": "PASS:33-focused+ruff+format+mypy-strict+residual-tamper-rejection",
+      "runtime_authority_checkpoint_commit": "44fc3666522db4787f4349c4a5cb5ee085f787d9",
+      "runtime_verification": "PASS:35-focused+ruff+format+mypy-strict+residual-and-event-authority-tamper-rejection",
       "production_default": "FULL_UNCHANGED_PENDING_MEASURED_DECISION",
       "public_holdout_consumed": false
     }

@@ -584,3 +584,21 @@ does not erase earlier uncertainty or failed mechanisms.
 - Resolution receipt: source checkpoint `586e8ba2c9c414b4bf2cc426ad5c1bbd357d5258`;
   `tests/unit/test_retrodiction_modes.py` includes residual-content tamper coverage; the combined
   retrodiction suite passed 33/33 with strict lint, format, and type checks.
+
+## B-001-0030 — Initial event-triggered reuse payload omitted its causal receipts
+
+- Status: RESOLVED
+- Stage: 07
+- Opened: 2026-08-22
+- Burden: the first EVENT_TRIGGERED runtime could require matched prediction evidence in memory,
+  but its immutable started/reused/completed payloads omitted those causal identities. A restore
+  could therefore see that reuse occurred without independently proving which pre-action prediction
+  and returned consequence authorized it. No official Stage 07 measurement or public-development
+  attempt had begun.
+- Resolution: the plan now derives an exact ordered suffix-only authorization vector, emits it on
+  every related trace payload, emits an empty vector on non-reuse paths, and rejects missing,
+  injected, reordered, wrong-model, or invalid-scope items before execution.
+- Resolution receipt: source checkpoint `44fc3666522db4787f4349c4a5cb5ee085f787d9`; the 35-test
+  focused runtime suite and strict
+  lint, format, and type checks passed. Controller-level immutable-trace fold validation remains a
+  required premeasurement integration check rather than being inferred from this pure-runtime fix.
