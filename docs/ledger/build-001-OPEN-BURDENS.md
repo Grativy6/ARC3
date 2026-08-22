@@ -340,7 +340,12 @@ does not erase earlier uncertainty or failed mechanisms.
     `smoke-003-action-rotation-static-goal` (`sha256:4ca86b6e6485244cfdbb81ee92c89e0de6f9a38a7f8b45aafbabf4075d7c947d`),
     `smoke-017-action-transformed-latest-core` (`sha256:b028f7b231f56e529eabc4ae437af8ed59822fde1d5317fe8f65d22e4553d763`),
     and `smoke-019-traversability-transformed-latest-core`
-    (`sha256:d9b7692dfbc212df5fdb6373ca2fc6b6e6225e7cbe3fc69c345dd6a5d67f1abb`);
+    (`sha256:d9b7692dfbc212df5fdb6373ca2fc6b6e6225e7cbe3fc69c345dd6a5d67f1abb`),
+    plus the later fully audited transformed failures
+    `smoke-027-transformed-traversability`
+    (`sha256:68f7e6c88d1820ca3c0e42b66c158176745c06b456ea37463bde4fe677cc7e6b`)
+    and `smoke-028-transformed-action-global`
+    (`sha256:5b136f91da6b54cb75a32b7e07842a923898e0bfea160b1236d5c782a32d3cda`);
   - trace/lifecycle-fold failures:
     `smoke-005-harness-action` (`sha256:6fc61a058f2855ef88a59ab1615bbc1f9b24ec45f57281f8354433e3c70b154f`),
     `smoke-006-harness-action` (`sha256:bea3030a60639bf46ced337c669f60cd851845382c376e2447f9adbd9c4552e6`),
@@ -352,7 +357,17 @@ does not erase earlier uncertainty or failed mechanisms.
 - Current evidence: the later identity action smoke passed in 18 actions with trigger 6 and terminal
   `WIN` at `smoke-021-action-identity-audit/result.json`
   (`sha256:bb9563cebddb939982b9562b1cfba1d11f6aae64b5d020c2b92b04f82d837d0f`),
-  but one passing smoke does not resolve the frozen matrix or transformed/checkpoint obligations.
+  A stationary-noise replay smoke also passed with trigger 8 and `WIN` in 17 actions at
+  `smoke-026-noise-replay-pass/result.json`
+  (`sha256:9b296b52d6618356328eada992cb7155dfa30fece591ef46b173753787da7fb1`).
+  The generic repairs then resolved both transformed mechanism failures without changing the
+  evaluator gate: `smoke-031-transformed-action-global/result.json` passed with trigger 6,
+  confirmation 7, and `WIN` in 18 actions
+  (`sha256:10823549bc8d8f2ffb48ca8fb02ff43862ebf84f5d16913b2175872becd78980`),
+  while `smoke-032-transformed-traversability/result.json` passed with trigger 8, confirmation 9,
+  and `WIN` in 21 actions
+  (`sha256:4dda57c6d4d4bec4f7c3c029c19a747bc029cdf1d27551c2adcffdbd09b2108e`).
+  These passing smokes do not resolve the frozen matrix or checkpoint obligations.
 - Next discriminating action: finish cross-transform and checkpoint preflight, freeze a clean source
   commit, then execute the unchanged official 112-execution harness once all P0 gates pass.
 - Resolution condition: the official Stage 06 artifact either meets the frozen decision rule or
@@ -372,7 +387,23 @@ does not erase earlier uncertainty or failed mechanisms.
 - Failure evidence: `C:/a/arc3-b001/artifacts/stage06/failed-mechanisms/restore-final-palette-registry/junit.xml`,
   3,823 bytes, SHA-256
   `b241e7b472d56c7e821e3cebf91c2f96a244cbe9b8855ef1b44c00ffb476631d`;
-  the expanded run reported 43 passed and one failed before repair.
+  the expanded run reported 43 passed and one failed before repair. The first frozen PRE_TRIGGER
+  checkpoint pair then produced two individually successful `WIN` branches but failed the exact
+  next-action gate because the checkpoint boundary was not reached before `choose_action`:
+  `smoke-033-checkpoint-pre-trigger/result.json`
+  (`sha256:abff536c01f0d8cbc71c16ecde2bbcb6c7bdd03e9f3e2ab6270d649e092f1951`).
+  Its diagnostic receipt proves the exact-support pre-action state had an affected model but no
+  registered dependent plan/prediction:
+  `smoke-035-pretrigger-boundary-diagnostic/result.json`
+  (`sha256:87046fe66ca846cea7d2ddb3445637fc3821f11e3d16ededa380dfcd6502e249`).
+  The first POST_REOPEN pair failed before branch continuation because chronological reconstruction
+  rejected the transformed successor-epoch action registry:
+  `smoke-034-checkpoint-post-reopen/result.json`
+  (`sha256:b2863c4be4de41a93225a33006e3fb68448731d24a28b5ba7937b8af20a760cb`).
+  All three smoke paths are beneath the same retained `failed-mechanisms` root.
+- Current bounded verification: the combined changed Stage 06 core, harness, integration, replay,
+  and fixture subset passed 83/83 tests, but this does not resolve the two checkpoint-boundary
+  failures.
 - Next discriminating action: reconstruct palette/symbolic observations chronologically; bind every
   preserved transition to its immediate selected/submitted/consequence/returned-observation
   quartet; validate lifecycle terminal payloads and epoch lineage from trace; and add rehashed
@@ -394,6 +425,12 @@ does not erase earlier uncertainty or failed mechanisms.
   cross-handle relation.
 - Current evidence: source review against
   `docs/evidence/001-06-rule-change-predeclaration.json`; no official Stage 06 matrix has run.
+- Bounded resolving evidence: the controller now requires two distinct raw handles and transition
+  receipts for the typed global action-mapping candidate; the repeated-handle negative regression
+  passes, and transformed global smoke `smoke-031-transformed-action-global/result.json` passed with
+  trigger 6, cross-handle confirmation 7, and `WIN` in 18 actions
+  (`sha256:10823549bc8d8f2ffb48ca8fb02ff43862ebf84f5d16913b2175872becd78980`).
+  The burden remains open until the frozen matrix exercises every declared transform.
 - Next discriminating action: require two distinct affected handles/effects with one coherent typed
   global transformation, and add an adversarial regression proving repeated same-handle evidence
   cannot confirm the global change.

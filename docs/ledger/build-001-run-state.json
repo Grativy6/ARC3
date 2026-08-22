@@ -7,12 +7,12 @@
   "build_status": "IN_PROGRESS",
   "status": "IN_PROGRESS",
   "current_stage": "06",
-  "current_task": "Commit the unchanged Stage 06 rule-change predeclaration, then implement the frozen synthetic reopening mechanism",
+  "current_task": "Close the two frozen Stage 06 checkpoint-boundary failures, freeze the verified source, and run the unchanged 112-execution matrix",
   "implementation_branch": "build/001-local-public-recovery",
   "pull_request": "https://github.com/Grativy6/ARC3/pull/5",
   "started_at": "2026-08-21T15:41:02Z",
-  "last_checkpoint_at": "2026-08-22T06:47:30Z",
-  "last_checkpoint_commit": "9a5ffb7dca8dfe82c470bfaef16c33c60ce83f0a",
+  "last_checkpoint_at": "2026-08-22T09:45:15.3138559Z",
+  "last_checkpoint_commit": "89621ca384fa60306e5aa0f8361451e75becf60d",
   "base": {
     "main_commit": "28c7a00732ce48e5c231211b01bc6eba7d0d71b4",
     "main_tree": "4586299448e9b1b585a0878674ed5f9afa60c384",
@@ -232,7 +232,7 @@
       "stationary_noise_cases_predeclared": 32,
       "checkpoint_resume_pairs_predeclared": 8,
       "controller_executions_predeclared": 112,
-      "implementation_status": "NOT_STARTED_PREDECLARATION_ONLY",
+      "implementation_status": "IN_PROGRESS_PREFLIGHT_CHECKPOINT_FAILURES",
       "preimplementation_integrity": "PASS:0-blocking+0-warnings+0-secrets",
       "preimplementation_integrity_receipt_hash": "sha256:993bbce75fb055058711949d873ac5c73e6cc0a6cabe2cf4e93cf04fd12923a3",
       "public_holdout_consumed": false
@@ -321,7 +321,7 @@
     }
   },
   "blocked_items": [],
-  "next_action": "Commit docs/evidence/001-06-rule-change-predeclaration.json unchanged, then implement and measure the frozen synthetic intervention, noise-control, and checkpoint matrix without opening the public holdout.",
+  "next_action": "Repair and directly test the exact PRE_TRIGGER dependent-plan boundary and POST_REOPEN successor-epoch restore fold, rerun focused checkpoint smokes, then commit a clean verified source before the official Stage 06 matrix.",
   "notes": [
     "Build 000 ledgers and reports are immutable historical evidence and are not overwritten by Build 001.",
     "The owner explicitly approved MIT-0 for ARC3 first-party source in the active Build 001 instruction.",
