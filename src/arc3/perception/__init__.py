@@ -18,6 +18,13 @@ from arc3.perception.delta import (
     measure_delta,
 )
 from arc3.perception.frame import NormalizedFrame, NormalizedGrid, normalize_grid
+from arc3.perception.palette import (
+    MAX_PALETTE_ROLES,
+    PALETTE_ROLE_SCHEMA,
+    PaletteRoleAssignment,
+    PaletteRoleEvidence,
+    PaletteRoleRegistry,
+)
 from arc3.perception.relations import (
     ComponentRelation,
     RelationKind,
@@ -44,6 +51,8 @@ from arc3.perception.tracking import (
 )
 
 __all__ = [
+    "MAX_PALETTE_ROLES",
+    "PALETTE_ROLE_SCHEMA",
     "ActionEffectEvidence",
     "BoundingBox",
     "CellChange",
@@ -63,6 +72,9 @@ __all__ = [
     "MetadataChange",
     "NormalizedFrame",
     "NormalizedGrid",
+    "PaletteRoleAssignment",
+    "PaletteRoleEvidence",
+    "PaletteRoleRegistry",
     "RelationKind",
     "RepetitionGroup",
     "ShapeInvariance",

@@ -62,8 +62,11 @@ from arc3.memory import (
 )
 from arc3.perception import (
     Component,
+    ComponentChangeKind,
     ComponentConfig,
     FrameDelta,
+    PaletteRoleAssignment,
+    PaletteRoleRegistry,
     TrackingResult,
     extract_components,
     measure_delta,
@@ -214,43 +217,54 @@ def _metadata(observation: Observation) -> dict[str, JSONScalar]:
     return result
 
 
-def _stable_entity_kind(component: Component) -> str:
+def _stable_entity_kind(component: Component, palette_role: PaletteRoleAssignment) -> str:
     digest = sha256_json(
-        {"shape": component.translation_signature, "color": component.color}
+        {"shape": component.translation_signature, "palette_role": palette_role.role_id}
     ).removeprefix("sha256:")[:12]
     return f"observed-component:{digest}"
 
 
 def _symbolic_state(
-    frame: GridFrame, components: tuple[Component, ...]
+    frame: GridFrame,
+    components: tuple[Component, ...],
+    palette_roles: PaletteRoleRegistry,
 ) -> tuple[SymbolicState, dict[str, str]]:
     """Interpret measured components while retaining deterministic local identity."""
 
-    grouped: dict[tuple[int, str], list[Component]] = {}
+    grouped: dict[tuple[str, str], list[Component]] = {}
     for component in components:
-        grouped.setdefault((component.color, component.translation_signature), []).append(component)
+        identity_token = palette_roles.anonymous_identity(component.color)
+        grouped.setdefault((identity_token, component.translation_signature), []).append(component)
     entities: list[SymbolicEntity] = []
     component_to_entity: dict[str, str] = {}
-    for (color, signature), group in sorted(grouped.items()):
+    for (identity_token, signature), group in sorted(grouped.items()):
         ordered = sorted(
             group,
             key=lambda item: (
                 item.bounds.top,
                 item.bounds.left,
-                item.component_id,
+                item.bounds.bottom,
+                item.bounds.right,
             ),
         )
         shape_id = sha256_json({"shape": signature}).removeprefix("sha256:")[:12]
+        identity_fragment = identity_token.removeprefix("palette-identity:").replace(":", "-")
         for ordinal, component in enumerate(ordered):
-            entity_id = f"entity:c{color}:{shape_id}:{ordinal}"
+            palette_role = palette_roles.role_for(component.color)
+            entity_id = f"entity:{identity_fragment}:{shape_id}:{ordinal}"
             component_to_entity[component.component_id] = entity_id
             entities.append(
                 SymbolicEntity(
                     entity_id=entity_id,
-                    kind=_stable_entity_kind(component),
+                    kind=_stable_entity_kind(component, palette_role),
                     cells=tuple(Cell(point.x, point.y) for point in component.cells),
-                    color=color,
-                    attributes=(("shape", signature),),
+                    color=component.color,
+                    attributes=(
+                        ("palette_role", palette_role.role_id),
+                        ("palette_role_ambiguity", str(palette_role.ambiguous).lower()),
+                        ("palette_anonymous_identity", palette_role.identity_token),
+                        ("shape", signature),
+                    ),
                 )
             )
     return SymbolicState(width=frame.width, height=frame.height, entities=tuple(entities)), (
@@ -338,6 +352,7 @@ class ARC3Controller:
         self._transitions: list[PreservedTransition] = []
         self._transition_levels: dict[str, int] = {}
         self._transition_summaries: dict[int, list[PreservedTransition]] = {}
+        self._palette_roles = PaletteRoleRegistry(level_index=0)
         self._component_to_entity: dict[str, str] = {}
         self._provisional_mover_id: str | None = None
         self._goal_targets: dict[str, tuple[str, str]] = {}
@@ -371,6 +386,12 @@ class ARC3Controller:
 
         profiler = self._hot_path_profiler
         return profiler.summary() if profiler is not None and profiler.enabled else None
+
+    @property
+    def palette_role_projection(self) -> tuple[tuple[str, int, bool], ...]:
+        """Expose only the raw-color-free role projection for verification."""
+
+        return self._palette_roles.canonical_projection()
 
     @property
     def snapshot(self) -> ControllerSnapshot:
@@ -576,11 +597,13 @@ class ARC3Controller:
         self._flush_trace()
         frame = observation.frames[-1]
         background = Counter(cell for row in frame.cells for cell in row).most_common(1)[0][0]
+        self._palette_roles.begin_level(self._level_index)
+        self._palette_roles.observe(frame, background_colors=(background,))
         components = extract_components(
             frame,
             config=ComponentConfig(background_candidates=(background,)),
         )
-        symbolic, component_to_entity = _symbolic_state(frame, components)
+        symbolic, component_to_entity = _symbolic_state(frame, components, self._palette_roles)
         self._component_to_entity = component_to_entity
         measurement_ids: list[str] = []
         normalized_event = self._append(
@@ -687,6 +710,10 @@ class ARC3Controller:
                             "component_id": component.component_id,
                             "entity_candidate_id": component_to_entity[component.component_id],
                             "color": component.color,
+                            "palette_role": self._palette_roles.canonical_role(component.color),
+                            "palette_anonymous_identity": (
+                                self._palette_roles.anonymous_identity(component.color)
+                            ),
                             "area": component.area,
                             "bounds": [
                                 component.bounds.left,
@@ -787,14 +814,33 @@ class ARC3Controller:
 
     @_profiled("hypothesis_update")
     def _seed_directional_hypotheses(
-        self, receipt: ObservationReceipt, view: _PerceptionView
+        self,
+        receipt: ObservationReceipt,
+        view: _PerceptionView,
+        *,
+        observed_mover_id: str | None = None,
     ) -> dict[ActionName, str]:
         if not view.symbolic_state.entities:
             return {}
-        provisional = min(
-            view.symbolic_state.entities,
-            key=lambda item: (len(item.cells), item.entity_id),
+
+        def structural_provisional_key(entity: SymbolicEntity) -> tuple[int, int, str]:
+            boundary_evidence = (
+                self._palette_roles.role_for(entity.color).evidence.boundary_count
+                if entity.color is not None
+                else 0
+            )
+            return (len(entity.cells), -boundary_evidence, entity.entity_id)
+
+        provisional = (
+            view.symbolic_state.entity(observed_mover_id)
+            if observed_mover_id is not None
+            else min(
+                view.symbolic_state.entities,
+                key=structural_provisional_key,
+            )
         )
+        if provisional is None:
+            raise PolicyError("observed mover is absent from the current symbolic state")
         self._provisional_mover_id = provisional.entity_id
         scope_ref = f"level:{self._level_index}"
         existing = {
@@ -809,8 +855,14 @@ class ARC3Controller:
         for action, dx, dy in _DIRECTIONAL_PRIORS:
             existing_id = existing.get(action.value)
             if existing_id is not None:
-                seeded[action] = existing_id
-                continue
+                existing_record = self._hypotheses.get(existing_id)
+                if (
+                    isinstance(existing_record.statement, ActionSemanticsStatement)
+                    and existing_record.statement.parameters.get("entity_id")
+                    == provisional.entity_id
+                ):
+                    seeded[action] = existing_id
+                    continue
             receipt_identity = receipt.observation_event_hash.removeprefix("sha256:")[:12]
             hypothesis_id = f"H-DIRECTIONAL-L{self._level_index}-{action.value}-{receipt_identity}"
             record = self._hypotheses.create(
@@ -845,7 +897,81 @@ class ARC3Controller:
                 },
             )
             seeded[action] = hypothesis_id
+            if existing_id is not None:
+                self._hypotheses.supersede(
+                    existing_id,
+                    hypothesis_id,
+                    occurred_step=self._step_index,
+                    caused_by_event_ids=(receipt.observation_event_id,),
+                    note="observed translation revised the provisional controllable entity",
+                )
+                superseded = self._hypotheses.events[-1]
+                self._append(
+                    self.context.game_id,
+                    superseded.event_type.value,
+                    superseded.to_trace_payload(),
+                )
         return seeded
+
+    def _adopt_observed_mover(
+        self,
+        observation: Observation,
+        receipt: ObservationReceipt,
+        view: _PerceptionView,
+        *,
+        consequence_event_id: str,
+    ) -> None:
+        """Revise an initial structural guess only after unambiguous motion evidence."""
+
+        tracking = view.tracking
+        if tracking is None:
+            return
+        moved_after_ids = {
+            change.after_id
+            for change in tracking.changes
+            if change.after_id is not None
+            and ComponentChangeKind.TRANSLATION in change.kinds
+            and change.displacement not in {None, (0, 0)}
+        }
+        if len(moved_after_ids) != 1:
+            return
+        component_id = next(iter(moved_after_ids))
+        mover_id = self._component_to_entity.get(component_id)
+        if mover_id is None or mover_id == self._provisional_mover_id:
+            return
+        prior_mover_id = self._provisional_mover_id
+        self._seed_directional_hypotheses(
+            receipt,
+            view,
+            observed_mover_id=mover_id,
+        )
+        if self._active_goal_id is not None:
+            other_entities = tuple(
+                item for item in view.symbolic_state.entities if item.entity_id != mover_id
+            )
+            if other_entities:
+                target = min(
+                    other_entities,
+                    key=lambda item: (
+                        _entity_distance(view.symbolic_state, mover_id, item.entity_id) or 10**9,
+                        len(item.cells),
+                        item.entity_id,
+                    ),
+                )
+                self._goal_targets[self._active_goal_id] = (mover_id, target.entity_id)
+        self._append(
+            str(observation.game_id),
+            "perception.salience_computed",
+            {
+                "salience_kind": "observed-controllability-revision",
+                "source_consequence_event_id": consequence_event_id,
+                "source_observation_event_id": receipt.observation_event_id,
+                "prior_entity_candidate_id": prior_mover_id,
+                "observed_entity_candidate_id": mover_id,
+                "evidence": "sole tracked component with nonzero translation",
+                "revision": "derived interpretation only; raw receipts remain unchanged",
+            },
+        )
 
     @_profiled("goal_inference")
     def _seed_contact_goal(
@@ -1718,6 +1844,17 @@ class ARC3Controller:
         self._step_index += 1
         self._level_index = after.levels_completed
         observation_receipt, view = self._record_observation(after, previous=before)
+        if (
+            self.features.use_hypotheses
+            and not returned_action_mismatch
+            and after.levels_completed == previous_level
+        ):
+            self._adopt_observed_mover(
+                after,
+                observation_receipt,
+                view,
+                consequence_event_id=consequence_id,
+            )
         observed_state = view.symbolic_state
         actual_action = after.returned_action or pending.action
         self._record_actual_action(actual_action)
@@ -2092,6 +2229,7 @@ class ARC3Controller:
                 self._latest_receipt.observation_event_id if self._latest_receipt else None
             ),
             "provisional_mover_id": self._provisional_mover_id,
+            "palette_role_registry": self._palette_roles.to_dict(),
         }
         state = DerivedControllerState(
             normalized_state_hash=normalized_hash,
@@ -2237,16 +2375,28 @@ class ARC3Controller:
         controller._provisional_mover_id = cast(
             str | None, state.perception_state.get("provisional_mover_id")
         )
+        raw_palette_roles = state.perception_state.get("palette_role_registry")
+        try:
+            controller._palette_roles = (
+                PaletteRoleRegistry.from_dict(raw_palette_roles)
+                if raw_palette_roles is not None
+                else PaletteRoleRegistry(level_index=state.level_index)
+            )
+        except ARC3ValidationError as error:
+            raise PolicyError("checkpoint palette role registry is malformed") from error
+        if controller._palette_roles.level_index != state.level_index:
+            raise PolicyError("checkpoint palette role level does not match controller state")
         raw_observation = state.perception_state.get("latest_observation")
         if raw_observation is not None:
             controller._latest_observation = controller._deserialize_observation(raw_observation)
             controller._before_action_observation = controller._latest_observation
             frame = controller._latest_observation.frames[-1]
             background = Counter(cell for row in frame.cells for cell in row).most_common(1)[0][0]
+            controller._palette_roles.observe(frame, background_colors=(background,))
             components = extract_components(
                 frame, config=ComponentConfig(background_candidates=(background,))
             )
-            symbolic, mapping = _symbolic_state(frame, components)
+            symbolic, mapping = _symbolic_state(frame, components, controller._palette_roles)
             controller._component_to_entity = mapping
             controller._latest_view = _PerceptionView(components, symbolic, None, None, ())
             controller._before_action_state = symbolic
