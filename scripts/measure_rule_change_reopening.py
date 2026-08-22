@@ -959,6 +959,19 @@ def _fold_lifecycle_timeline(
     invalidated: set[str] = set()
     resolved_noise: set[str] = set()
     active_epoch_id: str | None = None
+    consistency_failures: list[str] = []
+    candidate_openings: dict[str, dict[str, object]] = {}
+    successor_supports: dict[str, list[tuple[str, str, str]]] = {}
+    predecessor_recoveries: dict[str, list[str]] = {}
+
+    def support_arrays(
+        payload: Mapping[str, object],
+    ) -> tuple[tuple[object, ...], tuple[object, ...], tuple[object, ...]]:
+        return (
+            tuple(_sequence(payload.get("supporting_contradiction_event_ids"))),
+            tuple(_sequence(payload.get("supporting_successor_transition_ids"))),
+            tuple(_sequence(payload.get("supporting_discrimination_context_ids"))),
+        )
 
     def ensure_epoch(epoch_id: str, fallback_level: int) -> dict[str, object]:
         coordinates = _epoch_coordinates(epoch_id)
@@ -1013,21 +1026,76 @@ def _fold_lifecycle_timeline(
             candidate_id = payload.get("candidate_id")
             if isinstance(candidate_id, str):
                 candidate = candidates.setdefault(candidate_id, {})
-                candidate.update(
-                    {
-                        key: payload.get(key)
-                        for key in _CANDIDATE_PROJECTION_FIELDS
-                        if key in payload
-                    }
-                )
                 affected_models = {
                     item
                     for item in _sequence(payload.get("affected_model_ids"))
                     if isinstance(item, str)
                 }
                 if event_type == "mechanics.change_candidate_created":
+                    if candidate_id in candidate_openings:
+                        consistency_failures.append(
+                            "mechanics candidate has duplicate creation events"
+                        )
+                    opening = {
+                        key: payload.get(key)
+                        for key in _CANDIDATE_PROJECTION_FIELDS
+                        if key in payload
+                    }
+                    candidate_openings[candidate_id] = opening
+                    candidate.update(opening)
+                    contradictions, transitions, contexts = support_arrays(payload)
+                    if (
+                        len(contradictions) != 1
+                        or len(transitions) != 1
+                        or len(contexts) != 1
+                        or payload.get("first_contradiction_event_id") != contradictions[0]
+                        or payload.get("source_transition_id") != transitions[0]
+                    ):
+                        consistency_failures.append(
+                            "mechanics candidate creation does not bind support index zero"
+                        )
                     suspended.update(affected_models)
                 else:
+                    if candidate_id not in candidate_openings:
+                        consistency_failures.append(
+                            "mechanics candidate terminal event lacks a creation event"
+                        )
+                    expected_supports = tuple(successor_supports.get(candidate_id, ()))
+                    expected_arrays = (
+                        tuple(item[0] for item in expected_supports),
+                        tuple(item[1] for item in expected_supports),
+                        tuple(item[2] for item in expected_supports),
+                    )
+                    if support_arrays(payload) != expected_arrays:
+                        consistency_failures.append(
+                            "mechanics candidate terminal support arrays disagree with receipts"
+                        )
+                    expected_recoveries = tuple(predecessor_recoveries.get(candidate_id, ()))
+                    if (
+                        tuple(_sequence(payload.get("predecessor_recovery_event_ids")))
+                        != expected_recoveries
+                    ):
+                        consistency_failures.append(
+                            "mechanics candidate terminal recoveries disagree with receipts"
+                        )
+                    candidate.update(
+                        {
+                            key: payload.get(key)
+                            for key in _CANDIDATE_PROJECTION_FIELDS
+                            if key in payload
+                            and key
+                            not in {
+                                "predecessor_recovery_event_ids",
+                                "supporting_contradiction_event_ids",
+                                "supporting_discrimination_context_ids",
+                                "supporting_successor_transition_ids",
+                            }
+                        }
+                    )
+                    candidate["supporting_contradiction_event_ids"] = list(expected_arrays[0])
+                    candidate["supporting_successor_transition_ids"] = list(expected_arrays[1])
+                    candidate["supporting_discrimination_context_ids"] = list(expected_arrays[2])
+                    candidate["predecessor_recovery_event_ids"] = list(expected_recoveries)
                     suspended.difference_update(affected_models)
                 if event_type == "mechanics.change_candidate_resolved":
                     resolved_noise.update(
@@ -1035,6 +1103,82 @@ def _fold_lifecycle_timeline(
                         for item in _sequence(payload.get("retrodiction_excluded_transition_ids"))
                         if isinstance(item, str)
                     )
+
+        if event_type == "mechanics.successor_evidence_supported":
+            candidate_id = payload.get("candidate_id")
+            support_index = payload.get("support_index")
+            contradiction_id = payload.get("contradiction_event_id")
+            transition_id = payload.get("source_transition_id")
+            context_id = payload.get("discrimination_context_id")
+            if not isinstance(candidate_id, str) or candidate_id not in candidate_openings:
+                consistency_failures.append("mechanics successor support lacks a creation event")
+            elif (
+                isinstance(support_index, bool)
+                or not isinstance(support_index, int)
+                or not isinstance(contradiction_id, str)
+                or not isinstance(transition_id, str)
+                or not isinstance(context_id, str)
+            ):
+                consistency_failures.append("mechanics successor support is malformed")
+            else:
+                supports = successor_supports.setdefault(candidate_id, [])
+                triple = (contradiction_id, transition_id, context_id)
+                if support_index != len(supports) + 1:
+                    consistency_failures.append(
+                        "mechanics successor support indices are not contiguous in arrival order"
+                    )
+                elif any(
+                    contradiction_id == prior[0] or transition_id == prior[1] for prior in supports
+                ):
+                    consistency_failures.append(
+                        "mechanics successor support repeats a contradiction or transition"
+                    )
+                else:
+                    supports.append(triple)
+                    opening = candidate_openings[candidate_id]
+                    if support_index == 1 and (
+                        support_arrays(opening)
+                        != ((contradiction_id,), (transition_id,), (context_id,))
+                    ):
+                        consistency_failures.append(
+                            "mechanics opening support receipt disagrees with creation"
+                        )
+                    candidate = candidates[candidate_id]
+                    candidate["supporting_contradiction_event_ids"] = [item[0] for item in supports]
+                    candidate["supporting_successor_transition_ids"] = [
+                        item[1] for item in supports
+                    ]
+                    candidate["supporting_discrimination_context_ids"] = [
+                        item[2] for item in supports
+                    ]
+                    step_value = raw_event.get("step_index")
+                    if isinstance(step_value, int) and not isinstance(step_value, bool):
+                        candidate["last_tested_step"] = step_value
+
+        if event_type == "mechanics.predecessor_recovery_supported":
+            candidate_id = payload.get("candidate_id")
+            support_index = payload.get("support_index")
+            if (
+                not isinstance(candidate_id, str)
+                or candidate_id not in candidate_openings
+                or not isinstance(event_id, str)
+                or isinstance(support_index, bool)
+                or not isinstance(support_index, int)
+            ):
+                consistency_failures.append("mechanics predecessor recovery is malformed")
+            else:
+                recoveries = predecessor_recoveries.setdefault(candidate_id, [])
+                if support_index != len(recoveries) + 1 or event_id in recoveries:
+                    consistency_failures.append(
+                        "mechanics predecessor recovery indices are not unique and contiguous"
+                    )
+                else:
+                    recoveries.append(event_id)
+                    candidate = candidates[candidate_id]
+                    candidate["predecessor_recovery_event_ids"] = list(recoveries)
+                    step_value = raw_event.get("step_index")
+                    if isinstance(step_value, int) and not isinstance(step_value, bool):
+                        candidate["last_tested_step"] = step_value
 
         if event_type == "mechanics.epoch_opened":
             opened_epoch_id = payload.get("epoch_id")
@@ -1118,18 +1262,26 @@ def _fold_lifecycle_timeline(
         "resolved_noise_transition_ids": sorted(resolved_noise),
         "suspended_model_ids": sorted(suspended),
     }
-    consistency_failures: list[str] = []
     epoch_ids = set(epochs)
     if active_epoch_id not in epoch_ids:
         consistency_failures.append("active epoch is absent from rebuilt index")
     for candidate in candidates.values():
+        candidate_id = candidate.get("candidate_id")
         status = candidate.get("provisional_status")
-        recoveries = _sequence(candidate.get("predecessor_recovery_event_ids"))
-        if status == "CONFIRMED" and not _coherent_candidate_confirmation(candidate, candidate):
+        candidate_recoveries = _sequence(candidate.get("predecessor_recovery_event_ids"))
+        candidate_opening = (
+            candidate_openings.get(candidate_id) if isinstance(candidate_id, str) else None
+        )
+        if isinstance(candidate_id, str) and not successor_supports.get(candidate_id):
+            consistency_failures.append("mechanics candidate lacks successor support receipts")
+        if status == "CONFIRMED" and (
+            candidate_opening is None
+            or not _coherent_candidate_confirmation(candidate_opening, candidate)
+        ):
             consistency_failures.append(
                 "confirmed candidate lacks two distinct coherent successor contexts"
             )
-        if status == "RESOLVED_NOISE" and len(recoveries) < 2:
+        if status == "RESOLVED_NOISE" and len(candidate_recoveries) < 2:
             consistency_failures.append("resolved-noise candidate lacks two recoveries")
     for epoch in epochs.values():
         caused_by = epoch.get("caused_by_change_candidate_id")
@@ -1163,6 +1315,7 @@ def _lifecycle_replay_report(
             "event_type": event.event_type,
             "level_index": event.level_index,
             "payload": event.payload,
+            "step_index": event.step_index,
         }
         for event in events
     )

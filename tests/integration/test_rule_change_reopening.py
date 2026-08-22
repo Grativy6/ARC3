@@ -5,6 +5,7 @@ from collections.abc import Callable
 from copy import deepcopy
 from pathlib import Path
 from typing import cast
+from unittest.mock import patch
 
 import pytest
 
@@ -71,6 +72,69 @@ def _rewrite_trace_tail(
     raw_tail["event_hash"] = sha256_json(material)
     lines[-1] = json.dumps(raw_tail, sort_keys=True, separators=(",", ":"))
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def _rewrite_support_index_and_checkpoint(
+    *,
+    trace_path: Path,
+    checkpoint_path: Path,
+    target_checkpoint_path: Path,
+    event_type: str,
+    support_index: object,
+) -> Path:
+    """Rehash a support receipt, its suffix, and the bound checkpoint commitment."""
+
+    raw_events = [
+        cast(dict[str, object], json.loads(line))
+        for line in trace_path.read_text(encoding="utf-8").splitlines()
+    ]
+    target_index = next(
+        index for index, event in enumerate(raw_events) if event["event_type"] == event_type
+    )
+    target_payload = cast(dict[str, object], raw_events[target_index]["payload"])
+    target_payload["support_index"] = support_index
+
+    raw_checkpoint = cast(
+        dict[str, object], json.loads(checkpoint_path.read_text(encoding="utf-8"))
+    )
+    prior_tail_event_id = cast(str, raw_checkpoint["trace_tail_event_id"])
+    prior_tail_index = next(
+        index for index, event in enumerate(raw_events) if event["event_id"] == prior_tail_event_id
+    )
+    assert target_index <= prior_tail_index
+    assert prior_tail_index + 1 == len(raw_events) - 1
+    receipt = raw_events[-1]
+    assert receipt["event_type"] == "run.checkpoint_written"
+
+    for index in range(target_index, prior_tail_index + 1):
+        event = raw_events[index]
+        event["previous_event_hash"] = raw_events[index - 1]["event_hash"]
+        material = {key: value for key, value in event.items() if key != "event_hash"}
+        event["event_hash"] = sha256_json(material)
+
+    prior_tail_hash = cast(str, raw_events[prior_tail_index]["event_hash"])
+    raw_checkpoint["trace_tail_hash"] = prior_tail_hash
+    checkpoint_material = {
+        key: value for key, value in raw_checkpoint.items() if key != "checkpoint_hash"
+    }
+    checkpoint_hash = sha256_json(checkpoint_material)
+    raw_checkpoint["checkpoint_hash"] = checkpoint_hash
+
+    receipt["previous_event_hash"] = prior_tail_hash
+    receipt_payload = cast(dict[str, object], receipt["payload"])
+    receipt_payload["checkpoint_hash"] = checkpoint_hash
+    receipt_payload["envelope_prior_trace_tail_hash"] = prior_tail_hash
+    receipt_material = {key: value for key, value in receipt.items() if key != "event_hash"}
+    receipt["event_hash"] = sha256_json(receipt_material)
+
+    trace_path.write_text(
+        "".join(
+            json.dumps(event, sort_keys=True, separators=(",", ":")) + "\n" for event in raw_events
+        ),
+        encoding="utf-8",
+    )
+    target_checkpoint_path.write_text(json.dumps(raw_checkpoint, sort_keys=True), encoding="utf-8")
+    return target_checkpoint_path
 
 
 def _drive_case(
@@ -170,13 +234,31 @@ def _drive_to_staged_pretrigger(
 
 
 @pytest.mark.integration
+@pytest.mark.parametrize(
+    ("schedule_index", "label", "expected_contexts"),
+    (
+        (
+            0,
+            "intervention",
+            ["opaque-handle:ACTION4", "opaque-handle:ACTION1"],
+        ),
+        (
+            3,
+            "intervention-cycle1234",
+            ["opaque-handle:ACTION1", "opaque-handle:ACTION2"],
+        ),
+    ),
+)
 def test_repeated_successor_contradiction_reopens_in_order_and_completes(
     tmp_path: Path,
+    schedule_index: int,
+    label: str,
+    expected_contexts: list[str] | None,
 ) -> None:
     controller, episode = _drive_case(
         tmp_path,
-        intervention_schedule()[0],
-        label="intervention",
+        intervention_schedule()[schedule_index],
+        label=label,
     )
 
     assert episode.session.observation.state is GameStateName.WIN
@@ -198,6 +280,17 @@ def test_repeated_successor_contradiction_reopens_in_order_and_completes(
         event.payload["observed_effect_signature"] == candidates[0]["successor_effect_signature"]
         for event in successor_support
     )
+    assert candidates[0]["supporting_contradiction_event_ids"] == [
+        event.payload["contradiction_event_id"] for event in successor_support
+    ]
+    assert candidates[0]["supporting_successor_transition_ids"] == [
+        event.payload["source_transition_id"] for event in successor_support
+    ]
+    assert candidates[0]["supporting_discrimination_context_ids"] == [
+        event.payload["discrimination_context_id"] for event in successor_support
+    ]
+    if expected_contexts is not None:
+        assert candidates[0]["supporting_discrimination_context_ids"] == expected_contexts
     required = (
         "hypothesis.contradicted",
         "mechanics.change_candidate_created",
@@ -264,6 +357,51 @@ def test_stationary_outlier_resolves_without_confirmed_reopening(tmp_path: Path)
     )
     assert restored.mechanics_lifecycle_projection == expected_projection
     restored.journal.close()
+
+
+@pytest.mark.replay
+@pytest.mark.parametrize(
+    ("receipt_kind", "invalid_index"),
+    (
+        ("successor", True),
+        ("successor", 1.0),
+        ("recovery", True),
+        ("recovery", 1.0),
+    ),
+)
+def test_restore_rejects_non_integer_mechanics_support_indices(
+    tmp_path: Path,
+    receipt_kind: str,
+    invalid_index: object,
+) -> None:
+    is_successor = receipt_kind == "successor"
+    case = intervention_schedule()[0] if is_successor else noise_control_schedule()[0]
+    label = f"typed-{receipt_kind}-support-index-{type(invalid_index).__name__}"
+    controller, _ = _drive_case(tmp_path, case, label=label)
+    checkpoint = controller.checkpoint()
+    controller.journal.close()
+    context = _context(tmp_path, case, label=label)
+    tampered = _rewrite_support_index_and_checkpoint(
+        trace_path=context.trace_root / "active.jsonl",
+        checkpoint_path=checkpoint.path,
+        target_checkpoint_path=tmp_path / f"tampered-{label}.json",
+        event_type=(
+            "mechanics.successor_evidence_supported"
+            if is_successor
+            else "mechanics.predecessor_recovery_supported"
+        ),
+        support_index=invalid_index,
+    )
+
+    with pytest.raises(
+        PolicyError,
+        match=("successor support disagrees" if is_successor else "predecessor recovery linkage"),
+    ):
+        ARC3Controller.restore(
+            context,
+            preset=ControllerPreset.FULL,
+            checkpoint_path=tampered,
+        )
 
 
 @pytest.mark.replay
@@ -542,7 +680,7 @@ def test_rehashed_live_candidate_cannot_invent_context_or_last_tested_step(
 
     for index, (mutation, message) in enumerate(
         (
-            (invent_context, "successor support disagrees"),
+            (invent_context, "mechanics lifecycle is malformed"),
             (advance_last_tested_step, "last-tested step"),
             (invent_planning_disabled, "planner-recovery disable flag"),
         )
@@ -558,6 +696,55 @@ def test_rehashed_live_candidate_cannot_invent_context_or_last_tested_step(
                 preset=ControllerPreset.FULL,
                 checkpoint_path=tampered,
             )
+
+
+@pytest.mark.integration
+def test_successor_support_append_failure_does_not_advance_candidate(
+    tmp_path: Path,
+) -> None:
+    case = intervention_schedule()[0]
+    controller, episode = _drive_case(
+        tmp_path,
+        case,
+        label="successor-support-append-failure",
+        stop=lambda current, _episode: any(
+            item["provisional_status"] == "CANDIDATE"
+            for item in cast(
+                list[dict[str, object]],
+                current.mechanics_lifecycle_projection["change_candidates"],
+            )
+        ),
+    )
+    before = cast(
+        list[dict[str, object]],
+        controller.mechanics_lifecycle_projection["change_candidates"],
+    )[0]
+    assert len(cast(list[str], before["supporting_successor_transition_ids"])) == 1
+
+    decision = controller.choose_action()
+    consequence = episode.take(decision.action).observation
+    with patch.object(
+        controller,
+        "_append_mechanics_successor_support",
+        side_effect=OSError("injected successor support append failure"),
+    ) as append_support:
+        with pytest.raises(OSError, match="injected successor support append failure"):
+            controller.apply_consequence(consequence)
+    append_support.assert_called_once()
+
+    after = cast(
+        list[dict[str, object]],
+        controller.mechanics_lifecycle_projection["change_candidates"],
+    )[0]
+    assert after == before
+    support_events = [
+        event
+        for event in controller.journal.verify_manifest(include_active=True)
+        if event.event_type == "mechanics.successor_evidence_supported"
+        and event.payload.get("candidate_id") == before["candidate_id"]
+    ]
+    assert [event.payload["support_index"] for event in support_events] == [1]
+    controller.journal.close()
 
 
 @pytest.mark.replay
@@ -793,6 +980,23 @@ def test_preconfirmation_checkpoint_restores_probe_and_confirms_exactly(
     resumed_projection = restored.mechanics_lifecycle_projection
     resumed_candidates = cast(list[dict[str, object]], resumed_projection["change_candidates"])
     assert [item["provisional_status"] for item in resumed_candidates] == ["CONFIRMED"]
+    resumed_events = restored.journal.verify_manifest(include_active=True)
+    successor_support = [
+        event
+        for event in resumed_events
+        if event.event_type == "mechanics.successor_evidence_supported"
+        and event.payload.get("candidate_id") == live_candidate["candidate_id"]
+    ]
+    assert [event.payload["support_index"] for event in successor_support] == [1, 2]
+    assert resumed_candidates[0]["supporting_contradiction_event_ids"] == [
+        event.payload["contradiction_event_id"] for event in successor_support
+    ]
+    assert resumed_candidates[0]["supporting_successor_transition_ids"] == [
+        event.payload["source_transition_id"] for event in successor_support
+    ]
+    assert resumed_candidates[0]["supporting_discrimination_context_ids"] == [
+        event.payload["discrimination_context_id"] for event in successor_support
+    ]
     epochs = cast(list[dict[str, object]], resumed_projection["epochs"])
     assert [item["epoch_index"] for item in epochs if item["level_index"] == 0] == [0, 1]
     assert episode.session.observation.state is GameStateName.NOT_FINISHED
@@ -946,6 +1150,17 @@ def test_rehashed_checkpoint_cannot_invent_derived_authority(tmp_path: Path) -> 
             "opaque-handle:invented",
         ]
 
+    def reorder_candidate_contexts_only(raw: dict[str, object]) -> None:
+        state = cast(
+            dict[str, object], cast(dict[str, object], raw["state"])["derived_controller_state"]
+        )
+        world = cast(dict[str, object], state["world_model_ensemble"])
+        mechanics = cast(dict[str, object], world["mechanics_lifecycle"])
+        candidate = cast(list[dict[str, object]], mechanics["change_candidates"])[0]
+        contexts = cast(list[str], candidate["supporting_discrimination_context_ids"])
+        assert len(contexts) == 2
+        contexts.reverse()
+
     def swap_transition_after_receipt(raw: dict[str, object]) -> None:
         state = cast(
             dict[str, object], cast(dict[str, object], raw["state"])["derived_controller_state"]
@@ -972,6 +1187,7 @@ def test_rehashed_checkpoint_cannot_invent_derived_authority(tmp_path: Path) -> 
             (lower_action_totals, "action/fault totals"),
             (replace_accepted_effect, "action semantics/calibration"),
             (lower_calibration, "action semantics/calibration"),
+            (reorder_candidate_contexts_only, "successor support disagrees with trace fold"),
             (invent_candidate_confirmation, "mechanics lifecycle"),
             (swap_transition_after_receipt, "source order/type"),
         )

@@ -566,7 +566,7 @@ def _valid_lifecycle_timeline() -> list[dict[str, object]]:
         "change_domain": "ACTION_MAPPING",
         "first_contradiction_event_id": "E-C1",
         "invalidated_plan_ids": ["plan:old"],
-        "last_tested_step": 7,
+        "last_tested_step": 6,
         "level_index": 0,
         "opaque_handle": "ACTION1",
         "opened_step": 6,
@@ -578,6 +578,7 @@ def _valid_lifecycle_timeline() -> list[dict[str, object]]:
         "supporting_contradiction_event_ids": ["E-C1"],
         "supporting_discrimination_context_ids": ["opaque-handle:ACTION1"],
         "supporting_successor_transition_ids": ["transition:one"],
+        "source_transition_id": "transition:one",
     }
     confirmed = {
         **candidate,
@@ -589,6 +590,7 @@ def _valid_lifecycle_timeline() -> list[dict[str, object]]:
             "opaque-handle:ACTION2",
         ],
         "supporting_successor_transition_ids": ["transition:one", "transition:two"],
+        "source_transition_id": "transition:two",
     }
     return [
         {
@@ -620,6 +622,32 @@ def _valid_lifecycle_timeline() -> list[dict[str, object]]:
             "event_type": "mechanics.change_candidate_created",
             "level_index": 0,
             "payload": candidate,
+        },
+        {
+            "event_id": "E-SUPPORT-1",
+            "event_type": "mechanics.successor_evidence_supported",
+            "level_index": 0,
+            "step_index": 6,
+            "payload": {
+                "candidate_id": "mechanics-change:one",
+                "contradiction_event_id": "E-C1",
+                "discrimination_context_id": "opaque-handle:ACTION1",
+                "source_transition_id": "transition:one",
+                "support_index": 1,
+            },
+        },
+        {
+            "event_id": "E-SUPPORT-2",
+            "event_type": "mechanics.successor_evidence_supported",
+            "level_index": 0,
+            "step_index": 8,
+            "payload": {
+                "candidate_id": "mechanics-change:one",
+                "contradiction_event_id": "E-C2",
+                "discrimination_context_id": "opaque-handle:ACTION2",
+                "source_transition_id": "transition:two",
+                "support_index": 2,
+            },
         },
         {
             "event_id": "E-DEMOTED",
@@ -679,6 +707,111 @@ def test_lifecycle_event_fold_rebuilds_without_final_projection_authority() -> N
     candidates = folded["change_candidates"]
     assert isinstance(candidates, list)
     assert candidates[0]["provisional_status"] == "CONFIRMED"
+
+
+@pytest.mark.parametrize(
+    ("mutation", "expected_failure"),
+    (
+        ("missing-support", "terminal support arrays disagree"),
+        ("duplicate-index", "indices are not contiguous"),
+        ("noncontiguous-index", "indices are not contiguous"),
+        ("terminal-only", "terminal event lacks a creation event"),
+        ("context-reordered", "terminal support arrays disagree"),
+        ("creation-source-mismatch", "does not bind support index zero"),
+    ),
+)
+def test_lifecycle_event_fold_rejects_unlinked_or_reordered_support(
+    mutation: str,
+    expected_failure: str,
+) -> None:
+    timeline = deepcopy(_valid_lifecycle_timeline())
+    created = next(
+        event for event in timeline if event["event_type"] == "mechanics.change_candidate_created"
+    )
+    confirmed = next(
+        event for event in timeline if event["event_type"] == "mechanics.change_confirmed"
+    )
+    supports = [
+        event
+        for event in timeline
+        if event["event_type"] == "mechanics.successor_evidence_supported"
+    ]
+    if mutation == "missing-support":
+        timeline.remove(supports[1])
+    elif mutation == "duplicate-index":
+        cast(dict[str, object], supports[1]["payload"])["support_index"] = 1
+    elif mutation == "noncontiguous-index":
+        cast(dict[str, object], supports[1]["payload"])["support_index"] = 3
+    elif mutation == "terminal-only":
+        timeline.remove(created)
+    elif mutation == "context-reordered":
+        payload = cast(dict[str, object], confirmed["payload"])
+        contexts = cast(list[str], payload["supporting_discrimination_context_ids"])
+        contexts.reverse()
+    else:
+        cast(dict[str, object], created["payload"])["source_transition_id"] = "transition:invented"
+
+    _folded, failures = _fold_lifecycle_timeline(timeline)
+    assert any(expected_failure in failure for failure in failures)
+
+
+def test_lifecycle_event_fold_preserves_recovery_arrival_order_and_rejects_reorder() -> None:
+    source = _valid_lifecycle_timeline()
+    created = deepcopy(
+        next(
+            event for event in source if event["event_type"] == "mechanics.change_candidate_created"
+        )
+    )
+    first_support = deepcopy(
+        next(
+            event
+            for event in source
+            if event["event_type"] == "mechanics.successor_evidence_supported"
+        )
+    )
+    opening_events = [
+        deepcopy(event)
+        for event in source
+        if event["event_type"] in {"action.selected", "hypothesis.created", "model.rule_promoted"}
+        and event["event_id"] in {"E-A0", "E-H0", "E-M0"}
+    ]
+    recovery_ids = ("E-RECOVERY-Z", "E-RECOVERY-A")
+    recoveries = [
+        {
+            "event_id": event_id,
+            "event_type": "mechanics.predecessor_recovery_supported",
+            "level_index": 0,
+            "step_index": support_index + 6,
+            "payload": {
+                "candidate_id": "mechanics-change:one",
+                "support_index": support_index,
+            },
+        }
+        for support_index, event_id in enumerate(recovery_ids, start=1)
+    ]
+    resolved_payload = deepcopy(cast(dict[str, object], created["payload"]))
+    resolved_payload["last_tested_step"] = 8
+    resolved_payload["predecessor_recovery_event_ids"] = list(recovery_ids)
+    resolved_payload["provisional_status"] = "RESOLVED_NOISE"
+    resolved = {
+        "event_id": "E-RESOLVED",
+        "event_type": "mechanics.change_candidate_resolved",
+        "level_index": 0,
+        "step_index": 8,
+        "payload": resolved_payload,
+    }
+    timeline = [*opening_events, created, first_support, *recoveries, resolved]
+
+    folded, failures = _fold_lifecycle_timeline(timeline)
+    assert failures == []
+    candidates = cast(list[dict[str, object]], folded["change_candidates"])
+    assert candidates[0]["predecessor_recovery_event_ids"] == list(recovery_ids)
+
+    tampered = deepcopy(timeline)
+    terminal = cast(dict[str, object], tampered[-1]["payload"])
+    cast(list[str], terminal["predecessor_recovery_event_ids"]).reverse()
+    _folded, failures = _fold_lifecycle_timeline(tampered)
+    assert "mechanics candidate terminal recoveries disagree with receipts" in failures
 
 
 def test_lifecycle_event_fold_rejects_tampered_epoch_without_confirmation() -> None:
@@ -748,10 +881,26 @@ def test_lifecycle_fold_distinguishes_persistent_plan_invalidations() -> None:
             "level_index": 0,
             "payload": {
                 "candidate_id": "mechanics-change:one",
+                "first_contradiction_event_id": "E-C1",
                 "invalidated_plan_ids": ["plan:mechanics"],
                 "predecessor_epoch_id": "mechanics-epoch:L0:0000",
                 "provisional_status": "CANDIDATE",
                 "supporting_contradiction_event_ids": ["E-C1"],
+                "supporting_discrimination_context_ids": ["opaque-handle:ACTION1"],
+                "supporting_successor_transition_ids": ["transition:one"],
+                "source_transition_id": "transition:one",
+            },
+        },
+        {
+            "event_id": "E-SUPPORT",
+            "event_type": "mechanics.successor_evidence_supported",
+            "level_index": 0,
+            "payload": {
+                "candidate_id": "mechanics-change:one",
+                "contradiction_event_id": "E-C1",
+                "discrimination_context_id": "opaque-handle:ACTION1",
+                "source_transition_id": "transition:one",
+                "support_index": 1,
             },
         },
     ]

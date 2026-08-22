@@ -92,6 +92,31 @@ def test_two_predecessor_receipts_resolve_noise_without_reopening() -> None:
     assert lifecycle.active_epoch(0).epoch_index == 0
 
 
+def test_predecessor_recoveries_preserve_arrival_order_and_ignore_exact_duplicate() -> None:
+    lifecycle, candidate_id = _opened_lifecycle()
+    first = lifecycle.support_predecessor(
+        candidate_id,
+        evidence_event_id="E-RECOVERY-Z",
+        observed_step=6,
+    )
+    duplicate = lifecycle.support_predecessor(
+        candidate_id,
+        evidence_event_id="E-RECOVERY-Z",
+        observed_step=7,
+    )
+    resolved = lifecycle.support_predecessor(
+        candidate_id,
+        evidence_event_id="E-RECOVERY-A",
+        observed_step=8,
+    )
+
+    assert duplicate is first
+    assert duplicate.last_tested_step == 6
+    assert resolved.predecessor_recovery_event_ids == ("E-RECOVERY-Z", "E-RECOVERY-A")
+    serialized = lifecycle.to_dict()
+    assert MechanicsLifecycle.from_dict(serialized).to_dict() == serialized
+
+
 def test_confirmed_successor_opens_monotonic_epoch_and_roundtrips_exactly() -> None:
     lifecycle, candidate_id = _opened_lifecycle()
     predecessor_epoch_id = lifecycle.active_epoch(0).epoch_id
@@ -128,6 +153,7 @@ def test_confirmed_successor_opens_monotonic_epoch_and_roundtrips_exactly() -> N
 
 def test_duplicate_successor_receipt_cannot_confirm_a_change() -> None:
     lifecycle, candidate_id = _opened_lifecycle()
+    before = lifecycle.candidate(candidate_id)
 
     duplicate = lifecycle.support_successor(
         candidate_id,
@@ -139,9 +165,127 @@ def test_duplicate_successor_receipt_cannot_confirm_a_change() -> None:
         observed_step=6,
     )
 
+    assert duplicate is before
+    assert duplicate.last_tested_step == 5
     assert duplicate.provisional_status is MechanicsChangeStatus.CANDIDATE
     assert duplicate.supporting_contradiction_event_ids == ("E-CONTRADICTION-1",)
     assert duplicate.supporting_successor_transition_ids == ("T-CONTRADICTION-1",)
+
+
+@pytest.mark.parametrize(
+    ("contradiction_event_id", "transition_id", "context_id"),
+    (
+        ("E-CONTRADICTION-1", "T-CONTRADICTION-2", "opaque-handle:opaque-handle-a"),
+        ("E-CONTRADICTION-2", "T-CONTRADICTION-1", "opaque-handle:opaque-handle-a"),
+        ("E-CONTRADICTION-1", "T-CONTRADICTION-1", "opaque-handle:opaque-handle-b"),
+    ),
+)
+def test_partial_or_mismatched_successor_duplicate_fails_closed(
+    contradiction_event_id: str,
+    transition_id: str,
+    context_id: str,
+) -> None:
+    lifecycle, candidate_id = _opened_lifecycle()
+    epoch_id = lifecycle.active_epoch(0).epoch_id
+    lifecycle.register_transition("T-CONTRADICTION-2", epoch_id=epoch_id)
+
+    with pytest.raises(WorldModelError, match="partially duplicates or mismatches"):
+        lifecycle.support_successor(
+            candidate_id,
+            contradiction_event_id=contradiction_event_id,
+            contradiction_transition_id=transition_id,
+            discrimination_context_id=context_id,
+            successor_effect_signature="sha256:successor",
+            observation_condition_signature="condition:stable",
+            observed_step=6,
+        )
+
+
+def test_successor_support_triples_preserve_action4_action1_order_and_roundtrip() -> None:
+    lifecycle = MechanicsLifecycle(level_index=0)
+    epoch_id = lifecycle.active_epoch(0).epoch_id
+    lifecycle.register_hypotheses(("H-ACTION-MAPPING",), epoch_id=epoch_id)
+    lifecycle.register_models(("WM-ACTION-MAPPING",), epoch_id=epoch_id)
+    lifecycle.register_transition("T-ACTION4", epoch_id=epoch_id)
+    candidate = lifecycle.open_candidate(
+        level_index=0,
+        change_domain=MechanicsChangeDomain.ACTION_MAPPING,
+        opaque_handle="ACTION4",
+        predecessor_effect_signature="sha256:identity-map",
+        successor_effect_signature="sha256:clockwise-map",
+        observation_condition_signature="condition:stable",
+        affected_hypothesis_ids=("H-ACTION-MAPPING",),
+        affected_model_ids=("WM-ACTION-MAPPING",),
+        contradiction_event_id="E-ACTION4",
+        contradiction_transition_id="T-ACTION4",
+        discrimination_context_id="opaque-handle:ACTION4",
+        invalidated_plan_ids=(),
+        opened_step=5,
+    )
+    lifecycle.register_transition("T-ACTION1", epoch_id=epoch_id)
+    confirmed = lifecycle.support_successor(
+        candidate.candidate_id,
+        contradiction_event_id="E-ACTION1",
+        contradiction_transition_id="T-ACTION1",
+        discrimination_context_id="opaque-handle:ACTION1",
+        successor_effect_signature="sha256:clockwise-map",
+        observation_condition_signature="condition:stable",
+        observed_step=6,
+    )
+    lifecycle.open_successor_epoch(candidate.candidate_id, start_transition_id="T-ACTION1")
+
+    assert confirmed.supporting_contradiction_event_ids == ("E-ACTION4", "E-ACTION1")
+    assert confirmed.supporting_successor_transition_ids == ("T-ACTION4", "T-ACTION1")
+    assert confirmed.supporting_discrimination_context_ids == (
+        "opaque-handle:ACTION4",
+        "opaque-handle:ACTION1",
+    )
+    serialized = lifecycle.to_dict()
+    assert MechanicsLifecycle.from_dict(serialized).to_dict() == serialized
+
+
+@pytest.mark.parametrize(
+    ("mutation", "message"),
+    (
+        ("unequal", "equal lengths"),
+        ("duplicate-contradiction", "supporting_contradiction_event_ids.*unique"),
+        ("duplicate-transition", "supporting_successor_transition_ids.*unique"),
+        ("first-not-zero", "support index zero"),
+        ("duplicate-recovery", "predecessor_recovery_event_ids.*unique"),
+    ),
+)
+def test_deserialization_rejects_misaligned_successor_support_arrays(
+    mutation: str,
+    message: str,
+) -> None:
+    payload = deepcopy(_opened_lifecycle()[0].to_dict())
+    candidates = payload["change_candidates"]
+    assert isinstance(candidates, list)
+    candidate = candidates[0]
+    assert isinstance(candidate, dict)
+    contradictions = candidate["supporting_contradiction_event_ids"]
+    transitions = candidate["supporting_successor_transition_ids"]
+    contexts = candidate["supporting_discrimination_context_ids"]
+    assert isinstance(contradictions, list)
+    assert isinstance(transitions, list)
+    assert isinstance(contexts, list)
+    if mutation == "unequal":
+        contexts.append("opaque-handle:extra")
+    elif mutation == "duplicate-contradiction":
+        contradictions.append(contradictions[0])
+        transitions.append("T-EXTRA")
+        contexts.append("opaque-handle:extra")
+    elif mutation == "duplicate-transition":
+        contradictions.append("E-EXTRA")
+        transitions.append(transitions[0])
+        contexts.append("opaque-handle:extra")
+    elif mutation == "duplicate-recovery":
+        candidate["predecessor_recovery_event_ids"] = ["E-RECOVERY", "E-RECOVERY"]
+    else:
+        candidate["first_contradiction_event_id"] = "E-NOT-INDEX-ZERO"
+
+    with pytest.raises(WorldModelError, match=message):
+        MechanicsLifecycle.from_dict(payload)
 
 
 def test_destination_role_requires_distinct_discrimination_contexts() -> None:
@@ -253,6 +397,10 @@ def test_global_action_mapping_requires_two_distinct_handle_contexts() -> None:
         observed_step=6,
     )
     assert repeated_handle.provisional_status is MechanicsChangeStatus.CANDIDATE
+    assert repeated_handle.supporting_discrimination_context_ids == (
+        "opaque-handle:opaque-handle-a",
+        "opaque-handle:opaque-handle-a",
+    )
 
     lifecycle.register_transition("T-MAP-3", epoch_id=epoch_id)
     distinct_handle = lifecycle.support_successor(
@@ -265,6 +413,11 @@ def test_global_action_mapping_requires_two_distinct_handle_contexts() -> None:
         observed_step=7,
     )
     assert distinct_handle.provisional_status is MechanicsChangeStatus.CONFIRMED
+    assert distinct_handle.supporting_discrimination_context_ids == (
+        "opaque-handle:opaque-handle-a",
+        "opaque-handle:opaque-handle-a",
+        "opaque-handle:opaque-handle-b",
+    )
     assert (
         lifecycle.live_candidate(
             level_index=0,

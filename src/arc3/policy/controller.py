@@ -5036,9 +5036,13 @@ class ARC3Controller:
             if observed_signature == candidate.successor_effect_signature:
                 if contradiction_event_id is None:
                     return ()
-                if (
-                    contradiction_event_id in candidate.supporting_contradiction_event_ids
-                    or transition.transition_id in candidate.supporting_successor_transition_ids
+                if not self._mechanics.successor_support_is_new(
+                    candidate.candidate_id,
+                    contradiction_event_id=contradiction_event_id,
+                    contradiction_transition_id=transition.transition_id,
+                    discrimination_context_id=discrimination_context_id,
+                    successor_effect_signature=observed_signature,
+                    observation_condition_signature=observation_condition_signature,
                 ):
                     self._provisional_probe_handle = ActionName(candidate.opaque_handle)
                     return ()
@@ -5051,7 +5055,7 @@ class ARC3Controller:
                     observation_condition_signature=observation_condition_signature,
                     discrimination_context_id=discrimination_context_id,
                 )
-                confirmed = self._mechanics.support_successor(
+                supported = self._mechanics.support_successor(
                     candidate.candidate_id,
                     contradiction_event_id=contradiction_event_id,
                     contradiction_transition_id=transition.transition_id,
@@ -5060,9 +5064,9 @@ class ARC3Controller:
                     observation_condition_signature=observation_condition_signature,
                     observed_step=self._step_index,
                 )
-                if confirmed.provisional_status is MechanicsChangeStatus.CONFIRMED:
-                    self._confirm_mechanics_change(observation, transition, confirmed)
-                    return confirmed.affected_model_ids
+                if supported.provisional_status is MechanicsChangeStatus.CONFIRMED:
+                    self._confirm_mechanics_change(observation, transition, supported)
+                    return supported.affected_model_ids
                 self._provisional_probe_handle = ActionName(candidate.opaque_handle)
                 return ()
             if observed_signature == candidate.predecessor_effect_signature:
@@ -5268,11 +5272,23 @@ class ARC3Controller:
     ) -> None:
         """Preserve one candidate-linked interpretation of successor evidence."""
 
-        already_registered = transition.transition_id in (
-            candidate.supporting_successor_transition_ids
+        support_triples = tuple(
+            zip(
+                candidate.supporting_contradiction_event_ids,
+                candidate.supporting_successor_transition_ids,
+                candidate.supporting_discrimination_context_ids,
+                strict=True,
+            )
         )
-        support_index = len(candidate.supporting_successor_transition_ids) + (
-            0 if already_registered else 1
+        support_triple = (
+            contradiction_event_id,
+            transition.transition_id,
+            discrimination_context_id,
+        )
+        support_index = (
+            support_triples.index(support_triple) + 1
+            if support_triple in support_triples
+            else len(support_triples) + 1
         )
         self._append(
             str(observation.game_id),
@@ -6624,6 +6640,15 @@ class ARC3Controller:
             if len(created) != 1:
                 raise PolicyError("checkpoint mechanics candidate lacks one opening trace event")
             opening = created[0]
+            successor_support_events = tuple(
+                event
+                for event in events
+                if event.event_type == "mechanics.successor_evidence_supported"
+                and event.payload.get("candidate_id") == candidate.candidate_id
+            )
+            first_successor_support = (
+                successor_support_events[0] if successor_support_events else None
+            )
             immutable_candidate_fields = {
                 "candidate_id",
                 "level_index",
@@ -6652,7 +6677,15 @@ class ARC3Controller:
             opening_transition_id = opening.payload.get("source_transition_id")
             if (
                 not isinstance(opening_transition_id, str)
-                or opening_transition_id not in candidate.supporting_successor_transition_ids
+                or first_successor_support is None
+                or opening_transition_id
+                != first_successor_support.payload.get("source_transition_id")
+                or opening.payload.get("supporting_contradiction_event_ids")
+                != [first_successor_support.payload.get("contradiction_event_id")]
+                or opening.payload.get("supporting_successor_transition_ids")
+                != [first_successor_support.payload.get("source_transition_id")]
+                or opening.payload.get("supporting_discrimination_context_ids")
+                != [first_successor_support.payload.get("discrimination_context_id")]
                 or self._transition_epochs.get(opening_transition_id)
                 != candidate.predecessor_epoch_id
             ):
@@ -6700,34 +6733,28 @@ class ARC3Controller:
             terminal_order = (
                 event_order[terminal_events[0].event_id] if len(terminal_events) == 1 else None
             )
-            successor_support_events = tuple(
-                event
-                for event in events
-                if event.event_type == "mechanics.successor_evidence_supported"
-                and event.payload.get("candidate_id") == candidate.candidate_id
+            support_indices = tuple(
+                event.payload.get("support_index") for event in successor_support_events
+            )
+            support_indices_are_integers = all(
+                isinstance(value, int) and not isinstance(value, bool) for value in support_indices
             )
             traced_contradiction_ids = tuple(
-                cast(str, event.payload.get("contradiction_event_id"))
-                for event in successor_support_events
-                if isinstance(event.payload.get("contradiction_event_id"), str)
+                event.payload.get("contradiction_event_id") for event in successor_support_events
             )
             traced_successor_transition_ids = tuple(
-                cast(str, event.payload.get("source_transition_id"))
-                for event in successor_support_events
-                if isinstance(event.payload.get("source_transition_id"), str)
+                event.payload.get("source_transition_id") for event in successor_support_events
             )
             traced_discrimination_context_ids = tuple(
-                cast(str, event.payload.get("discrimination_context_id"))
-                for event in successor_support_events
-                if isinstance(event.payload.get("discrimination_context_id"), str)
+                event.payload.get("discrimination_context_id") for event in successor_support_events
             )
             if (
                 len(successor_support_events) != len(candidate.supporting_successor_transition_ids)
-                or tuple(sorted(traced_contradiction_ids))
-                != candidate.supporting_contradiction_event_ids
-                or tuple(sorted(traced_successor_transition_ids))
-                != candidate.supporting_successor_transition_ids
-                or tuple(sorted(set(traced_discrimination_context_ids)))
+                or not support_indices_are_integers
+                or support_indices != tuple(range(1, len(successor_support_events) + 1))
+                or traced_contradiction_ids != candidate.supporting_contradiction_event_ids
+                or traced_successor_transition_ids != candidate.supporting_successor_transition_ids
+                or traced_discrimination_context_ids
                 != candidate.supporting_discrimination_context_ids
             ):
                 raise PolicyError(
@@ -6816,6 +6843,7 @@ class ARC3Controller:
                     raise PolicyError("checkpoint mechanics successor support linkage disagrees")
             for support_index, recovery_event in enumerate(recovery_events, start=1):
                 source_transition_id = recovery_event.payload.get("source_transition_id")
+                recorded_support_index = recovery_event.payload.get("support_index")
                 recovery_transition = (
                     transition_by_id.get(source_transition_id)
                     if isinstance(source_transition_id, str)
@@ -6862,7 +6890,9 @@ class ARC3Controller:
                     != candidate.observation_condition_signature
                     or recovery_event.payload.get("affected_hypothesis_ids")
                     != list(candidate.affected_hypothesis_ids)
-                    or recovery_event.payload.get("support_index") != support_index
+                    or isinstance(recorded_support_index, bool)
+                    or not isinstance(recorded_support_index, int)
+                    or recorded_support_index != support_index
                     or recovery_event.payload.get("interpretation")
                     != "predecessor-consistent consequence"
                     or not isinstance(recorded_context, str)

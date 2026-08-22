@@ -66,6 +66,33 @@ def _string_array(value: object, *, field: str) -> tuple[str, ...]:
     return _strings(cast(list[str], value), field=field)
 
 
+def _ordered_support_strings(
+    values: Iterable[str],
+    *,
+    field: str,
+    unique: bool,
+) -> tuple[str, ...]:
+    """Validate one arrival-ordered successor-support field without normalizing it."""
+
+    ordered = tuple(values)
+    if any(not isinstance(item, str) or not item.strip() for item in ordered):
+        raise WorldModelError(f"{field} must contain non-empty strings")
+    if unique and len(set(ordered)) != len(ordered):
+        raise WorldModelError(f"{field} must contain unique strings")
+    return ordered
+
+
+def _ordered_support_array(
+    value: object,
+    *,
+    field: str,
+    unique: bool,
+) -> tuple[str, ...]:
+    if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
+        raise WorldModelError(f"{field} must be an array of strings")
+    return _ordered_support_strings(cast(list[str], value), field=field, unique=unique)
+
+
 def _candidate_identifier(
     *,
     level_index: int,
@@ -174,16 +201,18 @@ class MechanicsChangeCandidate:
         )
         if not self.affected_hypothesis_ids or not self.affected_model_ids:
             raise WorldModelError("a mechanics candidate requires affected rules and models")
-        supporting = _strings(
+        supporting = _ordered_support_strings(
             self.supporting_contradiction_event_ids,
             field="supporting_contradiction_event_ids",
+            unique=True,
         )
-        if self.first_contradiction_event_id not in supporting:
-            raise WorldModelError("first contradiction must be retained in supporting receipts")
+        if not supporting or supporting[0] != self.first_contradiction_event_id:
+            raise WorldModelError("first contradiction must be support index zero")
         object.__setattr__(self, "supporting_contradiction_event_ids", supporting)
-        successor_transitions = _strings(
+        successor_transitions = _ordered_support_strings(
             self.supporting_successor_transition_ids,
             field="supporting_successor_transition_ids",
+            unique=True,
         )
         if not successor_transitions:
             raise WorldModelError("a mechanics candidate requires its opening transition")
@@ -192,9 +221,10 @@ class MechanicsChangeCandidate:
             "supporting_successor_transition_ids",
             successor_transitions,
         )
-        discrimination_contexts = _strings(
+        discrimination_contexts = _ordered_support_strings(
             self.supporting_discrimination_context_ids,
             field="supporting_discrimination_context_ids",
+            unique=False,
         )
         if not discrimination_contexts:
             raise WorldModelError("a mechanics candidate requires its opening context")
@@ -203,12 +233,15 @@ class MechanicsChangeCandidate:
             "supporting_discrimination_context_ids",
             discrimination_contexts,
         )
+        if not (len(supporting) == len(successor_transitions) == len(discrimination_contexts)):
+            raise WorldModelError("mechanics successor support arrays must have equal lengths")
         object.__setattr__(
             self,
             "predecessor_recovery_event_ids",
-            _strings(
+            _ordered_support_strings(
                 self.predecessor_recovery_event_ids,
                 field="predecessor_recovery_event_ids",
+                unique=True,
             ),
         )
         object.__setattr__(
@@ -272,9 +305,10 @@ class MechanicsChangeCandidate:
                 value.get("first_contradiction_event_id"),
                 field="first_contradiction_event_id",
             ),
-            supporting_contradiction_event_ids=_string_array(
+            supporting_contradiction_event_ids=_ordered_support_array(
                 value.get("supporting_contradiction_event_ids"),
                 field="supporting_contradiction_event_ids",
+                unique=True,
             ),
             provisional_status=status,
             opened_step=_non_negative(value.get("opened_step"), field="opened_step"),
@@ -292,17 +326,20 @@ class MechanicsChangeCandidate:
                 value.get("observation_condition_signature"),
                 field="observation_condition_signature",
             ),
-            supporting_successor_transition_ids=_string_array(
+            supporting_successor_transition_ids=_ordered_support_array(
                 value.get("supporting_successor_transition_ids"),
                 field="supporting_successor_transition_ids",
+                unique=True,
             ),
-            supporting_discrimination_context_ids=_string_array(
+            supporting_discrimination_context_ids=_ordered_support_array(
                 value.get("supporting_discrimination_context_ids"),
                 field="supporting_discrimination_context_ids",
+                unique=False,
             ),
-            predecessor_recovery_event_ids=_string_array(
+            predecessor_recovery_event_ids=_ordered_support_array(
                 value.get("predecessor_recovery_event_ids", []),
                 field="predecessor_recovery_event_ids",
+                unique=True,
             ),
             invalidated_plan_ids=_string_array(
                 value.get("invalidated_plan_ids", []), field="invalidated_plan_ids"
@@ -595,7 +632,7 @@ class MechanicsLifecycle:
         self._candidates[candidate.candidate_id] = candidate
         return candidate
 
-    def support_successor(
+    def successor_support_is_new(
         self,
         candidate_id: str,
         *,
@@ -604,8 +641,9 @@ class MechanicsLifecycle:
         discrimination_context_id: str,
         successor_effect_signature: str,
         observation_condition_signature: str,
-        observed_step: int,
-    ) -> MechanicsChangeCandidate:
+    ) -> bool:
+        """Validate a support triple and report whether it would add new evidence."""
+
         candidate = self.candidate(candidate_id)
         if candidate.provisional_status is not MechanicsChangeStatus.CANDIDATE:
             raise WorldModelError("only a live change candidate accepts successor support")
@@ -618,22 +656,74 @@ class MechanicsLifecycle:
             != candidate.predecessor_epoch_id
         ):
             raise WorldModelError("successor support transition is outside the predecessor epoch")
+        _required_text(contradiction_event_id, field="contradiction_event_id")
+        _required_text(contradiction_transition_id, field="contradiction_transition_id")
         _required_text(discrimination_context_id, field="discrimination_context_id")
-        supporting_events = _strings(
-            (*candidate.supporting_contradiction_event_ids, contradiction_event_id),
-            field="supporting_contradiction_event_ids",
+        contradiction_index = next(
+            (
+                index
+                for index, identifier in enumerate(candidate.supporting_contradiction_event_ids)
+                if identifier == contradiction_event_id
+            ),
+            None,
         )
-        supporting_transitions = _strings(
-            (*candidate.supporting_successor_transition_ids, contradiction_transition_id),
-            field="supporting_successor_transition_ids",
+        transition_index = next(
+            (
+                index
+                for index, identifier in enumerate(candidate.supporting_successor_transition_ids)
+                if identifier == contradiction_transition_id
+            ),
+            None,
         )
-        supporting_contexts = _strings(
-            (*candidate.supporting_discrimination_context_ids, discrimination_context_id),
-            field="supporting_discrimination_context_ids",
+        if contradiction_index is not None or transition_index is not None:
+            if (
+                contradiction_index is not None
+                and contradiction_index == transition_index
+                and candidate.supporting_discrimination_context_ids[contradiction_index]
+                == discrimination_context_id
+            ):
+                return False
+            raise WorldModelError(
+                "successor support partially duplicates or mismatches an existing receipt"
+            )
+        return True
+
+    def support_successor(
+        self,
+        candidate_id: str,
+        *,
+        contradiction_event_id: str,
+        contradiction_transition_id: str,
+        discrimination_context_id: str,
+        successor_effect_signature: str,
+        observation_condition_signature: str,
+        observed_step: int,
+    ) -> MechanicsChangeCandidate:
+        candidate = self.candidate(candidate_id)
+        if not self.successor_support_is_new(
+            candidate_id,
+            contradiction_event_id=contradiction_event_id,
+            contradiction_transition_id=contradiction_transition_id,
+            discrimination_context_id=discrimination_context_id,
+            successor_effect_signature=successor_effect_signature,
+            observation_condition_signature=observation_condition_signature,
+        ):
+            return candidate
+        supporting_events = (
+            *candidate.supporting_contradiction_event_ids,
+            contradiction_event_id,
+        )
+        supporting_transitions = (
+            *candidate.supporting_successor_transition_ids,
+            contradiction_transition_id,
+        )
+        supporting_contexts = (
+            *candidate.supporting_discrimination_context_ids,
+            discrimination_context_id,
         )
         context_gate_met = (
             candidate.change_domain is MechanicsChangeDomain.OPAQUE_HANDLE
-            or len(supporting_contexts) >= 2
+            or len(set(supporting_contexts)) >= 2
         )
         updated = replace(
             candidate,
@@ -660,10 +750,10 @@ class MechanicsLifecycle:
         candidate = self.candidate(candidate_id)
         if candidate.provisional_status is not MechanicsChangeStatus.CANDIDATE:
             raise WorldModelError("only a live change candidate accepts predecessor recovery")
-        receipts = _strings(
-            (*candidate.predecessor_recovery_event_ids, evidence_event_id),
-            field="predecessor_recovery_event_ids",
-        )
+        _required_text(evidence_event_id, field="evidence_event_id")
+        if evidence_event_id in candidate.predecessor_recovery_event_ids:
+            return candidate
+        receipts = (*candidate.predecessor_recovery_event_ids, evidence_event_id)
         updated = replace(
             candidate,
             predecessor_recovery_event_ids=receipts,
@@ -1064,8 +1154,12 @@ class MechanicsLifecycle:
                 len(candidate.supporting_contradiction_event_ids) < 2
                 or len(candidate.supporting_successor_transition_ids) < 2
                 or (
-                    candidate.change_domain is MechanicsChangeDomain.DESTINATION_ROLE
-                    and len(candidate.supporting_discrimination_context_ids) < 2
+                    candidate.change_domain
+                    in {
+                        MechanicsChangeDomain.ACTION_MAPPING,
+                        MechanicsChangeDomain.DESTINATION_ROLE,
+                    }
+                    and len(set(candidate.supporting_discrimination_context_ids)) < 2
                 )
             ):
                 raise WorldModelError("confirmed mechanics candidate lacks distinct support")
@@ -1074,7 +1168,7 @@ class MechanicsLifecycle:
                 and len(candidate.supporting_successor_transition_ids) >= 2
                 and (
                     candidate.change_domain is MechanicsChangeDomain.OPAQUE_HANDLE
-                    or len(candidate.supporting_discrimination_context_ids) >= 2
+                    or len(set(candidate.supporting_discrimination_context_ids)) >= 2
                 )
             )
             predecessor_gate_met = len(candidate.predecessor_recovery_event_ids) >= 2
