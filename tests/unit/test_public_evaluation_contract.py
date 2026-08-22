@@ -986,20 +986,54 @@ def test_worker_seals_trace_score_resources_asset_and_close_after_policy_fault(
     assert policy.closed is True
     assert session.close_count == 1
     assert _receipt_valid(receipt, specification, identity_hash)
+    aggregate = _aggregate([receipt], partition="development")
+    assert aggregate["status"] == "FAILED_INFRASTRUCTURE"
+    assert aggregate["claim"] == "MECHANISM_NOT_OBSERVED"
 
 
 def test_local_worker_socket_guard_counts_denial_and_restores_entry_points() -> None:
     original_create_connection = socket.create_connection
     original_connect = socket.socket.connect
     guard = _OfflineSocketGuard(enabled=True)
+    probe_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 
     guard.install()
     try:
-        with pytest.raises(EvaluationError, match="blocked a network attempt"):
-            socket.create_connection(("203.0.113.1", 9))
-        assert guard.attempt_count == 1
+        attempts = (
+            lambda: socket.create_connection(("203.0.113.1", 9)),
+            lambda: socket.getaddrinfo("example.invalid", 443),
+            lambda: probe_socket.connect(("203.0.113.1", 9)),
+            lambda: probe_socket.connect_ex(("203.0.113.1", 9)),
+            lambda: probe_socket.sendto(b"fixture", ("203.0.113.1", 9)),
+        )
+        for attempt in attempts:
+            with pytest.raises(EvaluationError, match="blocked a network attempt"):
+                attempt()
+        assert guard.attempt_count == 5
     finally:
         guard.restore()
+        probe_socket.close()
+
+    assert socket.create_connection is original_create_connection
+    assert socket.socket.connect is original_connect
+
+
+def test_worker_restores_socket_entry_points_after_unexpected_body_unwind(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    original_create_connection = socket.create_connection
+    original_connect = socket.socket.connect
+
+    def raise_unexpected(*_args: object, **_kwargs: object) -> None:
+        raise RuntimeError("unexpected worker-body unwind")
+
+    monkeypatch.setattr("arc3.evaluation.public_runner._worker_body", raise_unexpected)
+    with pytest.raises(RuntimeError, match="unexpected worker-body unwind"):
+        _worker(
+            {"specification": {"surface": "local-public"}},
+            str(tmp_path / "unwritten.json"),
+        )
 
     assert socket.create_connection is original_create_connection
     assert socket.socket.connect is original_connect
