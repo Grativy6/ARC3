@@ -159,10 +159,7 @@ def test_event_triggered_reuse_requires_exact_matched_suffix_receipt() -> None:
     assert forced_plan.authorizing_matched_prediction_evidence == ()
 
 
-@pytest.mark.parametrize(
-    "mode",
-    (RetrodictionMode.FULL, RetrodictionMode.EVENT_TRIGGERED),
-)
+@pytest.mark.parametrize("mode", tuple(RetrodictionMode))
 def test_stage07_stage14_adapter_preserves_checkpoint_and_replay(
     tmp_path: Path,
     mode: RetrodictionMode,
@@ -183,8 +180,8 @@ def test_stage07_stage14_adapter_preserves_checkpoint_and_replay(
     assert measurement.replay_valid is True
     assert measurement.checkpoint_valid is True
     assert measurement.event_reuse_receipts_valid is True
-    if mode is RetrodictionMode.EVENT_TRIGGERED:
-        assert measurement.cache_hit_count > 0
+    retrodiction_phase = raw["hot_path_profile"]["phases"]["retrodiction"]
+    assert measurement.cache_hit_count == retrodiction_phase["cache_hits"]
     assert raw["trace_tail_hash"] is not None
 
 
@@ -204,6 +201,9 @@ def test_stage07_stage06_adapter_uses_blinded_frozen_fixture(tmp_path: Path) -> 
     )
 
     assert measurement.intervention_triggered is True
+    assert measurement.checkpoint_valid is True
     assert measurement.trace_valid is True
     assert measurement.replay_valid is True
+    stage06 = raw["stage06_result"]
+    assert stage06["trace"]["prefix_immutability"]["passed"] is True
     assert "stage06_result" in raw

@@ -7,7 +7,7 @@ import random
 from collections import Counter
 from collections.abc import Callable, Mapping, Sequence
 from contextlib import AbstractContextManager
-from dataclasses import dataclass, replace
+from dataclasses import asdict, dataclass, replace
 from functools import wraps
 from pathlib import Path
 from typing import Literal, NoReturn, Protocol, TypeVar, cast
@@ -2330,6 +2330,7 @@ class ARC3Controller:
                     {
                         **evaluation.to_trace_payload(),
                         **candidate_receipt_payload,
+                        "artifact_projection": normalize_json(asdict(artifact)),
                         "complete": artifact.complete,
                         "namespace_key": plan.namespace_key,
                         "retrodiction_reused_event_id": (
@@ -8325,6 +8326,11 @@ class ARC3Controller:
         completion_ordinals = {
             event.event_id: ordinal for ordinal, event in enumerate(completed_events, start=1)
         }
+        candidate_by_id = {candidate.model_id: candidate for candidate in candidates}
+        transition_by_id = {
+            transition.transition_id: transition for transition in self._transitions
+        }
+        receipt_candidates: dict[str, ModelCandidate] = {}
 
         plan_receipt_keys = (
             "authorizing_matched_prediction_evidence",
@@ -8476,6 +8482,104 @@ class ARC3Controller:
                     )
             elif raw_authorizing_evidence:
                 raise PolicyError("non-event retrodiction invents matched-evidence authorization")
+
+            receipt_model_id = completed.payload.get("model_id")
+            if not isinstance(receipt_model_id, str):
+                raise PolicyError("immutable retrodiction artifact model is malformed")
+            current_candidate = candidate_by_id.get(receipt_model_id)
+            candidate = (
+                current_candidate
+                if current_candidate is not None
+                and current_candidate.rank_weight == completed.payload.get("candidate_rank_weight")
+                and list(current_candidate.hypothesis_ids)
+                == completed.payload.get("candidate_hypothesis_ids")
+                and list(current_candidate.compile_residuals)
+                == completed.payload.get("candidate_compile_residuals")
+                else self._candidate_from_retrodiction_receipt(completed)
+            )
+            raw_request_transition_ids = started.payload.get("transition_ids")
+            if (
+                not isinstance(raw_request_transition_ids, list)
+                or not all(isinstance(item, str) for item in raw_request_transition_ids)
+                or len(set(cast(list[str], raw_request_transition_ids)))
+                != len(raw_request_transition_ids)
+            ):
+                raise PolicyError("immutable retrodiction request transition order is malformed")
+            request_transition_ids = cast(list[str], raw_request_transition_ids)
+            expected_selected_ids = (
+                []
+                if mode is RetrodictionMode.NONE
+                else request_transition_ids[-self._retrodiction_runtime.config.window :]
+                if mode is RetrodictionMode.RECENT_WINDOW_8
+                else request_transition_ids
+            )
+            if cast(list[str], selected_transition_ids) != expected_selected_ids:
+                raise PolicyError("immutable retrodiction selected scope is malformed")
+            artifact_transition_ids = (
+                request_transition_ids
+                if mode is RetrodictionMode.NONE
+                else cast(list[str], selected_transition_ids)
+            )
+            try:
+                raw_transitions = tuple(
+                    transition_by_id[transition_id] for transition_id in artifact_transition_ids
+                )
+            except KeyError as error:
+                raise PolicyError(
+                    "immutable retrodiction artifact names an unknown transition"
+                ) from error
+            mechanics_epoch_id = completed.payload.get("mechanics_epoch_id")
+            if not isinstance(mechanics_epoch_id, str) or any(
+                self._transition_epochs.get(transition.transition_id) != mechanics_epoch_id
+                for transition in raw_transitions
+            ):
+                raise PolicyError("immutable retrodiction artifact crosses mechanics epochs")
+            projected = tuple(
+                replace(
+                    self._candidate_retrodiction_projection(candidate, transition),
+                    compatible_model_ids=(),
+                )
+                for transition in raw_transitions
+            )
+            artifact = retrodict(
+                candidate,
+                projected,
+                enabled=mode is not RetrodictionMode.NONE,
+            )
+            expected_artifact_payload: dict[str, JSONValue] = {
+                "artifact_id": artifact.artifact_id,
+                "compatible_transition_ids": list(artifact.compatible_transition_ids),
+                "complete": artifact.complete,
+                "contradiction_transition_ids": list(artifact.contradiction_transition_ids),
+                "explicitly_excluded_transition_ids": list(
+                    artifact.explicitly_excluded_transition_ids
+                ),
+                "matched_transition_ids": list(artifact.matched_transition_ids),
+                "result_complete": artifact.complete,
+                "score": artifact.score.total,
+                "status": artifact.status.value,
+                "tested_transition_ids": list(artifact.tested_transition_ids),
+                "weight_kind": artifact.score.weight_kind,
+            }
+            raw_artifact_projection = completed.payload.get("artifact_projection")
+            if raw_artifact_projection is not None and raw_artifact_projection != normalize_json(
+                asdict(artifact)
+            ):
+                raise PolicyError(
+                    "immutable retrodiction artifact projection does not reconstruct exactly"
+                )
+            artifact_mismatches = tuple(
+                key
+                for key, value in expected_artifact_payload.items()
+                if completed.payload.get(key) != value
+            )
+            if artifact_mismatches:
+                raise PolicyError(
+                    "immutable retrodiction artifact receipt does not reconstruct exactly: "
+                    f"{artifact_mismatches}"
+                )
+            receipt_candidates[completed.event_id] = candidate
+
             reused_id = completed.payload.get("retrodiction_reused_event_id")
             reused_flag = completed.payload.get("reused")
             if not isinstance(reused_flag, bool):
@@ -8503,10 +8607,6 @@ class ARC3Controller:
         if dict(state.trigger_generations) != expected_generations:
             raise PolicyError("checkpoint retrodiction generations disagree with receipts")
 
-        candidate_by_id = {candidate.model_id: candidate for candidate in candidates}
-        transition_by_id = {
-            transition.transition_id: transition for transition in self._transitions
-        }
         for entry in state.cache_entries:
             cache_completed = event_by_id.get(entry.source_receipt_event_id)
             expected_access_ordinal = completion_ordinals.get(entry.source_receipt_event_id)
@@ -8518,18 +8618,7 @@ class ARC3Controller:
                 raise PolicyError(
                     "checkpoint retrodiction cache lacks exact receipt-order authority"
                 )
-            current_candidate = candidate_by_id.get(entry.model_id)
-            candidate = (
-                current_candidate
-                if current_candidate is not None
-                and current_candidate.rank_weight
-                == cache_completed.payload.get("candidate_rank_weight")
-                and list(current_candidate.hypothesis_ids)
-                == cache_completed.payload.get("candidate_hypothesis_ids")
-                and list(current_candidate.compile_residuals)
-                == cache_completed.payload.get("candidate_compile_residuals")
-                else self._candidate_from_retrodiction_receipt(cache_completed)
-            )
+            candidate = receipt_candidates[cache_completed.event_id]
             try:
                 raw_transitions = tuple(
                     transition_by_id[outcome.transition_id] for outcome in entry.outcomes

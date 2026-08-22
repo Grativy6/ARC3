@@ -276,6 +276,8 @@ class CellMeasurement:
     retrodiction_wall_ns: int
     retrodiction_cpu_ns: int
     peak_rss_bytes: int
+    current_rss_bytes: int = 0
+    command_count: int = 0
     planning_failures: int = 0
     prediction_mismatches: int = 0
     accepted_true_model_ids: tuple[str, ...] = ()
@@ -290,7 +292,9 @@ class CellMeasurement:
     trace_valid: bool = True
     checkpoint_valid: bool = True
     replay_valid: bool = True
+    artifact_receipts_valid: bool = True
     source_identity_valid: bool = True
+    memory_measurement_valid: bool = True
     controller_fault_count: int = 0
     invalid_request_count: int = 0
     network_attempt_count: int = 0
@@ -306,6 +310,8 @@ class CellMeasurement:
             self.retrodiction_wall_ns,
             self.retrodiction_cpu_ns,
             self.peak_rss_bytes,
+            self.current_rss_bytes,
+            self.command_count,
             self.planning_failures,
             self.prediction_mismatches,
             self.confirmed_false_epochs,
@@ -324,7 +330,9 @@ class CellMeasurement:
             self.trace_valid
             and self.checkpoint_valid
             and self.replay_valid
+            and self.artifact_receipts_valid
             and self.source_identity_valid
+            and self.memory_measurement_valid
             and self.controller_fault_count == 0
             and self.invalid_request_count == 0
             and self.network_attempt_count == 0
@@ -1073,6 +1081,32 @@ def _not_more_than(candidate: int | float, baseline: int | float, fraction: floa
     return candidate <= baseline * (1.0 + fraction)
 
 
+def cell_budget_passed(cell: EvaluationCell, measurement: CellMeasurement) -> bool:
+    """Validate every directly measurable frozen per-cell budget."""
+
+    budgets = dict(cell.budgets)
+    action_budget = budgets.get("action_budget")
+    reset_budget = budgets.get("reset_budget")
+    wall_budget = budgets.get("wall_seconds", budgets.get("worker_wall_seconds"))
+    if (
+        isinstance(action_budget, (int, float))
+        and not isinstance(action_budget, bool)
+        and measurement.actions > action_budget
+    ):
+        return False
+    if (
+        isinstance(reset_budget, (int, float))
+        and not isinstance(reset_budget, bool)
+        and measurement.resets > reset_budget
+    ):
+        return False
+    return not (
+        isinstance(wall_budget, (int, float))
+        and not isinstance(wall_budget, bool)
+        and measurement.wall_ns > int(float(wall_budget) * 1_000_000_000)
+    )
+
+
 def evaluate_replacement_gates(
     measurements: Sequence[CellMeasurement],
     microbenchmarks: Sequence[MicrobenchmarkMeasurement],
@@ -1113,6 +1147,10 @@ def evaluate_replacement_gates(
         full_cells = tuple(item for item in cells if item.mode is RetrodictionMode.FULL)
         hard_integrity = all(
             by_id[item.cell_id].hard_integrity_passed for item in (*full_cells, *candidate_cells)
+        )
+        budget_integrity = all(
+            cell_budget_passed(item, by_id[item.cell_id])
+            for item in (*full_cells, *candidate_cells)
         )
 
         b_cells = tuple(
@@ -1287,6 +1325,10 @@ def evaluate_replacement_gates(
                 mode_specific
                 and all(by_id[item.cell_id].full_artifact_parity for item in candidate_cells)
                 and any(by_id[item.cell_id].cache_hit_count > 0 for item in candidate_cells)
+                and all(
+                    micro[(mode, size, "append_one_from_verified_n_minus_1_prefix")].cache_hit
+                    for size in MICRO_HISTORY_SIZES
+                )
             )
             mode_specific = mode_specific and all(
                 micro[(mode, size, path)].full_artifact_parity
@@ -1297,9 +1339,14 @@ def evaluate_replacement_gates(
             mode_specific = mode_specific and all(
                 by_id[item.cell_id].event_reuse_receipts_valid for item in candidate_cells
             )
+            mode_specific = mode_specific and all(
+                micro[(mode, size, "append_one_from_verified_n_minus_1_prefix")].cache_hit
+                for size in MICRO_HISTORY_SIZES
+            )
 
         predicates = (
             ("hard_integrity", hard_integrity),
+            ("per_cell_budget_integrity", budget_integrity),
             ("false_rule_gate_B", false_rule_gate),
             ("completion_gate_A", a_completion),
             ("mechanics_gate_C", mechanics_gate),
@@ -1369,6 +1416,7 @@ __all__ = [
     "build_evaluation_matrix",
     "build_false_rule_cases",
     "build_false_rule_manifest",
+    "cell_budget_passed",
     "choose_retrodiction_decision",
     "evaluate_replacement_gates",
     "selected_rule_change_cases",

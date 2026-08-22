@@ -22,6 +22,7 @@ import time
 from collections.abc import Mapping, Sequence
 from contextlib import AbstractContextManager
 from dataclasses import asdict, dataclass, replace
+from itertools import product
 from pathlib import Path
 from typing import Any, cast
 from unittest.mock import patch
@@ -46,6 +47,7 @@ from arc3.evaluation.artifacts import (  # noqa: E402
     verify_object_hash,
 )
 from arc3.evaluation.public import (  # noqa: E402
+    LocalAssetIdentity,
     PublicExposureLedger,
     PublicPartitionManifest,
     local_asset_identity,
@@ -74,6 +76,7 @@ from arc3.evaluation.retrodiction_decision import (  # noqa: E402
     build_evaluation_matrix,
     build_false_rule_cases,
     build_false_rule_manifest,
+    cell_budget_passed,
     choose_retrodiction_decision,
     evaluate_replacement_gates,
     selected_rule_change_cases,
@@ -117,9 +120,39 @@ from arc3.world_model.state import Cell, SymbolicEntity, SymbolicState  # noqa: 
 DEFAULT_OUTPUT = Path("C:/a/arc3-b001/artifacts/stage07/retrodiction-decision-attempt-01.json")
 DEFAULT_WORK_ROOT = Path("C:/a/arc3-b001/artifacts/stage07/retrodiction-decision-work-attempt-01")
 DEFAULT_EXPOSURE_LEDGER = Path("C:/a/arc3-b001/artifacts/stage07/public-exposure.jsonl")
-DEFAULT_ENVIRONMENTS_DIR = ROOT / "artifacts/stage15/public-environments"
+DEFAULT_ENVIRONMENTS_DIR = Path("C:/a/arc3-s15-6a0f6e5/artifacts/stage15/public-environments")
 DEFAULT_RECORDINGS_DIR = Path("C:/a/arc3-b001/artifacts/stage07/development-recordings")
+_EXPECTED_DEVELOPMENT_ASSET_IDENTITY = LocalAssetIdentity(
+    game_id="ar25-0c556536",
+    files=(
+        (
+            "ar25.py",
+            77_599,
+            "sha256:6aed29a43629d8f9537d3d84553cec095b5d0002225db1c407754ffd4343b694",
+        ),
+        (
+            "metadata.json",
+            378,
+            "sha256:94bb5161b1b6c8ada3399755b6602f2142e5570d11d2a477d6c65608d2b4be1c",
+        ),
+    ),
+    aggregate_sha256="sha256:e796e615d2e10c93b849f9bf150308fbf84d624725deaf995d7ec2d1c2f86b22",
+)
 _STAGE06_SCRIPT = ROOT / "scripts/measure_rule_change_reopening.py"
+_EXPECTED_BRANCH = "build/001-local-public-recovery"
+_SOURCE_BASELINE_COMMIT = "8e3400cebda87f75b8bb3fd0c8d592d2125a6869"
+_INHERITED_EXPOSURE_LEDGERS = (
+    (
+        "build-000",
+        Path("C:/a/arc3-s15-6a0f6e5/artifacts/stage15/public-exposure.jsonl"),
+        "sha256:cd9af42ed3a5ef9fa0dc201ddb10e32d2bcccee9df729aa0c7d53077c04c9ad4",
+    ),
+    (
+        "stage-03",
+        Path("C:/a/arc3-b001/artifacts/stage03/public-exposure.jsonl"),
+        "sha256:e02a9fa71206170a6fe2aeefb6935ae25141e2759937657475cead4389bb17aa",
+    ),
+)
 _SOURCE_PATHS = (
     ROOT / "src/arc3",
     ROOT / "scripts/measure_retrodiction_decision.py",
@@ -203,6 +236,17 @@ def _git_value(*arguments: str) -> str | None:
     return completed.stdout.strip()
 
 
+def _git_success(*arguments: str) -> bool:
+    completed = subprocess.run(
+        ["git", *arguments],
+        cwd=ROOT,
+        check=False,
+        capture_output=True,
+        text=False,
+    )
+    return completed.returncode == 0
+
+
 def _inventory(paths: Sequence[Path]) -> tuple[dict[str, JSONValue], ...]:
     files: list[Path] = []
     for path in paths:
@@ -230,13 +274,15 @@ def _inventory(paths: Sequence[Path]) -> tuple[dict[str, JSONValue], ...]:
 def _source_identity() -> dict[str, object]:
     head = _git_value("rev-parse", "HEAD")
     tree = _git_value("rev-parse", "HEAD^{tree}")
+    branch = _git_value("branch", "--show-current")
     status = _git_value("status", "--porcelain=v1", "--untracked-files=all")
-    if head is None or tree is None or status is None:
+    if head is None or tree is None or branch is None or status is None:
         raise EvaluationError("Stage 07 git source identity is unavailable")
     inventory = _inventory(_SOURCE_PATHS)
     return seal_object(
         {
             "amendment_sha256": sha256_file(AMENDMENT_PATH),
+            "branch": branch,
             "dirty_worktree": bool(status),
             "false_rule_manifest_sha256": sha256_file(FALSE_RULE_MANIFEST_PATH),
             "first_party_inventory": list(inventory),
@@ -246,6 +292,10 @@ def _source_identity() -> dict[str, object]:
             "predeclaration_sha256": sha256_file(PREDECLARATION_PATH),
             "public_partition_sha256": sha256_file(PUBLIC_PARTITION_PATH),
             "schema": "arc3.build-001.stage-07-source-identity.v0.1",
+            "source_baseline_ancestor": _git_success(
+                "merge-base", "--is-ancestor", _SOURCE_BASELINE_COMMIT, "HEAD"
+            ),
+            "source_baseline_commit": _SOURCE_BASELINE_COMMIT,
             "status_porcelain": status,
         },
         hash_field="identity_hash",
@@ -255,6 +305,7 @@ def _source_identity() -> dict[str, object]:
 def _source_stability(start: Mapping[str, object], end: Mapping[str, object]) -> dict[str, object]:
     fields = (
         "amendment_sha256",
+        "branch",
         "dirty_worktree",
         "false_rule_manifest_sha256",
         "first_party_source_hash",
@@ -262,6 +313,8 @@ def _source_stability(start: Mapping[str, object], end: Mapping[str, object]) ->
         "git_tree",
         "predeclaration_sha256",
         "public_partition_sha256",
+        "source_baseline_ancestor",
+        "source_baseline_commit",
     )
     predicates = {
         "clean_at_start": start.get("dirty_worktree") is False,
@@ -273,6 +326,27 @@ def _source_stability(start: Mapping[str, object], end: Mapping[str, object]) ->
         "predicates": predicates,
         "start_identity_hash": start.get("identity_hash"),
         "end_identity_hash": end.get("identity_hash"),
+    }
+
+
+def _development_asset_receipt(observed: LocalAssetIdentity | None) -> dict[str, object]:
+    """Bind the development game to its previously measured opaque byte identity."""
+
+    expected = _EXPECTED_DEVELOPMENT_ASSET_IDENTITY
+    predicates = {
+        "present": observed is not None,
+        "game_id": observed is not None and observed.game_id == expected.game_id,
+        "ordered_file_identity": observed is not None and observed.files == expected.files,
+        "aggregate_sha256": (
+            observed is not None and observed.aggregate_sha256 == expected.aggregate_sha256
+        ),
+        "exact_identity": observed == expected,
+    }
+    return {
+        "expected": expected.to_dict(),
+        "observed": observed.to_dict() if observed is not None else None,
+        "passed": all(predicates.values()),
+        "predicates": predicates,
     }
 
 
@@ -298,51 +372,147 @@ def _require_composite_contract() -> dict[str, object]:
     }
 
 
-def _holdout_integrity(exposure_path: Path, environments_dir: Path) -> dict[str, object]:
+def _holdout_integrity(
+    exposure_path: Path,
+    environments_dir: Path,
+    *,
+    inherited_ledgers: Sequence[tuple[str, Path, str]] = _INHERITED_EXPOSURE_LEDGERS,
+) -> dict[str, object]:
     manifest = PublicPartitionManifest.load(PUBLIC_PARTITION_PATH)
     ledger = PublicExposureLedger(exposure_path)
     events = ledger.events()
     holdout_ids = {item.game_id for item in manifest.games("public-holdout")}
-    development_ids = {item.game_id for item in manifest.games("development")}
-    attempted_holdout = 0
+    development_entries = tuple(manifest.games("development"))
+    development_ids = {item.game_id for item in development_entries}
+    development_entry = next(
+        (item for item in development_entries if item.game_id == "ar25-0c556536"),
+        None,
+    )
+    development_asset = _development_asset_receipt(
+        local_asset_identity(environments_dir, development_entry)
+        if development_entry is not None
+        else None
+    )
+    current_holdout = 0
     for event in events:
         payload = event.get("payload")
         if not isinstance(payload, Mapping):
             continue
         game_id = payload.get("game_id")
         partition = payload.get("partition")
-        attempted_holdout += int(game_id in holdout_ids or partition == "public-holdout")
+        current_holdout += int(game_id in holdout_ids or partition == "public-holdout")
+    inherited_receipts: list[dict[str, object]] = []
+    inherited_holdout = 0
+    for label, path, expected_sha256 in inherited_ledgers:
+        digest = sha256_file(path) if path.is_file() else None
+        inherited_events = PublicExposureLedger(path).events() if path.is_file() else ()
+        holdout_count = 0
+        for event in inherited_events:
+            payload = event.get("payload")
+            if not isinstance(payload, Mapping):
+                continue
+            holdout_count += int(
+                payload.get("game_id") in holdout_ids
+                or payload.get("partition") == "public-holdout"
+            )
+        inherited_holdout += holdout_count
+        inherited_receipts.append(
+            {
+                "entry_count": len(inherited_events),
+                "expected_sha256": expected_sha256,
+                "holdout_event_count": holdout_count,
+                "label": label,
+                "path": str(path.resolve()),
+                "sha256": digest,
+                "verified": digest == expected_sha256,
+            }
+        )
+    attempted_holdout = current_holdout + inherited_holdout
     local_holdout_assets = [
         item.game_id
         for item in manifest.games("public-holdout")
         if local_asset_identity(environments_dir, item) is not None
     ]
     predicates = {
+        "development_asset_identity": development_asset["passed"] is True,
         "development_identity_present": "ar25-0c556536" in development_ids,
+        "holdout_identity_count": len(holdout_ids) == 10,
+        "inherited_exposure_ledgers": all(item["verified"] is True for item in inherited_receipts),
         "manifest_sha256": manifest.digest == PUBLIC_PARTITION_SHA256,
         "public_holdout_gameplay_events": attempted_holdout == 0,
         "public_holdout_local_assets": not local_holdout_assets,
     }
     return {
+        "development_asset_identity": development_asset,
         "development_identity": "ar25-0c556536",
+        "exposure_ledgers": inherited_receipts,
         "locally_acquired_holdout_asset_ids": local_holdout_assets,
         "passed": all(predicates.values()),
         "predicates": predicates,
         "public_holdout_gameplay_events": attempted_holdout,
+        "stage07_public_holdout_gameplay_events": current_holdout,
         "status": "SEALED_UNCONSUMED" if all(predicates.values()) else "VIOLATED",
     }
 
 
-def _require_fresh_targets(output: Path, work_root: Path) -> None:
+def _require_fresh_targets(
+    output: Path,
+    work_root: Path,
+    *,
+    exposure_ledger: Path | None = None,
+    recordings_dir: Path | None = None,
+) -> None:
     if output.exists():
         raise EvaluationError(f"Stage 07 output already exists and cannot be overwritten: {output}")
+    if exposure_ledger is not None and exposure_ledger.exists():
+        raise EvaluationError(
+            f"Stage 07 exposure ledger already exists and cannot be overwritten: {exposure_ledger}"
+        )
     if work_root.exists():
         if not work_root.is_dir() or any(work_root.iterdir()):
             raise EvaluationError(
                 f"Stage 07 work root already exists and is not empty: {work_root}"
             )
-    else:
-        work_root.mkdir(parents=True)
+    if recordings_dir is not None and recordings_dir.exists():
+        if not recordings_dir.is_dir() or any(recordings_dir.iterdir()):
+            raise EvaluationError(
+                f"Stage 07 recordings root already exists and is not empty: {recordings_dir}"
+            )
+
+
+def _require_official_paths(
+    *,
+    output: Path,
+    work_root: Path,
+    exposure_ledger: Path,
+    environments_dir: Path,
+    recordings_dir: Path,
+) -> None:
+    """Reject caller-selected paths that can evade the frozen attempt and holdout scope."""
+
+    supplied = {
+        "output": output,
+        "work_root": work_root,
+        "exposure_ledger": exposure_ledger,
+        "environments_dir": environments_dir,
+        "recordings_dir": recordings_dir,
+    }
+    expected = {
+        "output": DEFAULT_OUTPUT,
+        "work_root": DEFAULT_WORK_ROOT,
+        "exposure_ledger": DEFAULT_EXPOSURE_LEDGER,
+        "environments_dir": DEFAULT_ENVIRONMENTS_DIR,
+        "recordings_dir": DEFAULT_RECORDINGS_DIR,
+    }
+    mismatches = {
+        key: {"expected": str(expected[key].resolve()), "supplied": str(value.resolve())}
+        for key, value in supplied.items()
+        if value.resolve() != expected[key].resolve()
+    }
+    if mismatches:
+        raise EvaluationError(
+            f"official Stage 07 paths differ from the frozen contract: {mismatches}"
+        )
 
 
 def _features_for_mode(
@@ -573,10 +743,8 @@ def _run_false_rule_cell(
     wall_ns = max(0, time.perf_counter_ns() - wall_started)
     cpu_ns = max(0, time.process_time_ns() - cpu_started)
     after_rss = process_memory_sample()
-    peak = max(
-        _rss_bytes(before_rss),
-        _rss_bytes(after_rss),
-    )
+    memory = _memory_receipt(before_rss, after_rss)
+    peak = cast(int, memory["peak_rss_bytes"])
     true_accepted = evaluations["TRUE"].artifact.status in (
         _FULL_STATUS | {PromotionStatus.UNGATED_ABLATION}
     )
@@ -588,6 +756,9 @@ def _run_false_rule_cell(
             "case": case.to_manifest(),
             "cell": cell.to_dict(),
             "checkpoint_roundtrip": roundtrips,
+            "artifact_projection": [
+                _evaluation_artifact_projection(evaluations[truth]) for truth in ("TRUE", "FALSE")
+            ],
             "evaluations": {
                 truth: evaluation.to_trace_payload() for truth, evaluation in evaluations.items()
             },
@@ -614,6 +785,8 @@ def _run_false_rule_cell(
         retrodiction_wall_ns=wall_ns,
         retrodiction_cpu_ns=cpu_ns,
         peak_rss_bytes=peak,
+        current_rss_bytes=cast(int, memory.get("current_rss_bytes") or 0),
+        command_count=0,
         accepted_true_model_ids=(case.true_model.model_id,) if true_accepted else (),
         accepted_false_model_ids=(case.false_model.model_id,) if false_accepted else (),
         cache_hit_count=sum(int(plan.cache_hit) for plan in plans.values()),
@@ -627,10 +800,13 @@ def _run_false_rule_cell(
         trace_valid=receipt_valid,
         checkpoint_valid=all(roundtrips.values()),
         replay_valid=all(roundtrips.values()),
+        artifact_receipts_valid=receipt_valid and all(roundtrips.values()),
         source_identity_valid=True,
+        memory_measurement_valid=memory["passed"] is True,
     )
     return measurement, {
         "measurement": asdict(measurement),
+        "memory": memory,
         "receipt_path": str(receipt_path.resolve()),
         "receipt_sha256": sha256_file(receipt_path),
     }
@@ -643,6 +819,38 @@ def _rss_bytes(sample: Mapping[str, object]) -> int:
         if isinstance((value := sample.get(key)), int) and not isinstance(value, bool)
     ]
     return max(values, default=0)
+
+
+def _memory_receipt(*samples: Mapping[str, object]) -> dict[str, object]:
+    """Preserve current/peak RSS and fail closed when the host surface is unavailable."""
+
+    current_values = [
+        value
+        for sample in samples
+        if isinstance((value := sample.get("current_rss_bytes")), int)
+        and not isinstance(value, bool)
+        and value >= 0
+    ]
+    peak_values = [
+        value
+        for sample in samples
+        if isinstance((value := sample.get("peak_rss_bytes")), int)
+        and not isinstance(value, bool)
+        and value >= 0
+    ]
+    sources = [
+        value for sample in samples if isinstance((value := sample.get("measurement_source")), str)
+    ]
+    passed = bool(current_values and peak_values) and all(
+        source != "unavailable" for source in sources
+    )
+    return {
+        "current_rss_bytes": current_values[-1] if current_values else None,
+        "peak_rss_bytes": max(peak_values) if peak_values else 0,
+        "passed": passed,
+        "samples": [dict(sample) for sample in samples],
+        "sources": sources,
+    }
 
 
 def _trace_events(trace_root: Path, run_id: str) -> tuple[TraceEvent, ...]:
@@ -666,19 +874,65 @@ def _trace_counts(events: Sequence[TraceEvent]) -> dict[str, int]:
 
 def _profile_retrodiction(profile: Mapping[str, object]) -> tuple[int, int, int]:
     raw_phases = profile.get("phases")
-    raw_cache = profile.get("cache_totals")
     phases = raw_phases if isinstance(raw_phases, Mapping) else {}
     phase = phases.get("retrodiction")
     payload = phase if isinstance(phase, Mapping) else {}
-    cache = raw_cache if isinstance(raw_cache, Mapping) else {}
     wall = payload.get("inclusive_wall_ns", 0)
     cpu = payload.get("inclusive_cpu_ns", 0)
-    hits = cache.get("hits", 0)
+    hits = payload.get("cache_hits", 0)
     return (
         wall if isinstance(wall, int) and not isinstance(wall, bool) else 0,
         cpu if isinstance(cpu, int) and not isinstance(cpu, bool) else 0,
         hits if isinstance(hits, int) and not isinstance(hits, bool) else 0,
     )
+
+
+def _evaluation_artifact_projection(
+    evaluation: RetrodictionEvaluation,
+) -> dict[str, JSONValue]:
+    value = normalize_json(asdict(evaluation.artifact))
+    if not isinstance(value, dict):
+        raise EvaluationError("retrodiction artifact projection is not an object")
+    return value
+
+
+def _retrodiction_receipt_metrics(
+    profile: Mapping[str, object], events: Sequence[TraceEvent]
+) -> dict[str, object]:
+    phases = profile.get("phases")
+    phase = phases.get("retrodiction") if isinstance(phases, Mapping) else None
+    payload = phase if isinstance(phase, Mapping) else {}
+    completions = tuple(
+        event for event in events if event.event_type == "model.retrodiction_completed"
+    )
+    omitted: list[JSONValue] = []
+    for event in completions:
+        raw_omissions = event.payload.get("omissions")
+        if isinstance(raw_omissions, list):
+            omitted.extend(raw_omissions)
+    rebuild_reasons = {"first-use", "non-prefix", "invalidated", "event-full-audit"}
+    return {
+        "cache_hits": payload.get("cache_hits", 0),
+        "cache_misses": payload.get("cache_misses", 0),
+        "cache_opportunity_misses": payload.get("cache_opportunity_misses", 0),
+        "completion_count": len(completions),
+        "eviction_count": sum(
+            len(cast(list[object], raw))
+            for event in completions
+            if isinstance((raw := event.payload.get("evicted_cache_keys")), list)
+        ),
+        "omissions": omitted,
+        "rebuild_count": sum(
+            event.payload.get("reason") in rebuild_reasons for event in completions
+        ),
+        "suffix_transition_count": sum(
+            value
+            for event in completions
+            if isinstance((value := event.payload.get("suffix_count")), int)
+            and not isinstance(value, bool)
+            and value >= 0
+        ),
+    }
 
 
 def _prediction_alternative_matches(
@@ -936,6 +1190,40 @@ def _event_receipt_integrity(
     return cached_parity, reuse_valid
 
 
+def _artifact_receipt_integrity(events: Sequence[TraceEvent]) -> bool:
+    """Require every new completion receipt to carry its exact typed artifact projection."""
+
+    completions = tuple(
+        event for event in events if event.event_type == "model.retrodiction_completed"
+    )
+    for event in completions:
+        projection = event.payload.get("artifact_projection")
+        if not isinstance(projection, Mapping):
+            return False
+        score = projection.get("score")
+        if not isinstance(score, Mapping):
+            return False
+        expected = {
+            "artifact_id": projection.get("artifact_id"),
+            "compatible_transition_ids": projection.get("compatible_transition_ids"),
+            "complete": projection.get("complete"),
+            "contradiction_transition_ids": projection.get("contradiction_transition_ids"),
+            "explicitly_excluded_transition_ids": projection.get(
+                "explicitly_excluded_transition_ids"
+            ),
+            "matched_transition_ids": projection.get("matched_transition_ids"),
+            "model_id": projection.get("model_id"),
+            "result_complete": projection.get("complete"),
+            "score": score.get("total"),
+            "status": projection.get("status"),
+            "tested_transition_ids": projection.get("tested_transition_ids"),
+            "weight_kind": score.get("weight_kind"),
+        }
+        if any(event.payload.get(key) != value for key, value in expected.items()):
+            return False
+    return True
+
+
 def _artifact_projection(events: Sequence[TraceEvent]) -> tuple[dict[str, JSONValue], ...]:
     """Project immutable completion receipts for exact paired artifact comparison."""
 
@@ -1009,6 +1297,84 @@ def _checkpoint_restore(
     return str(checkpoint_path), passed
 
 
+def _restore_closed_checkpoint(
+    context: RunContext,
+    *,
+    features: PresetFeatures,
+    config: RetrodictionConfig,
+) -> tuple[str, bool]:
+    """Restore a terminal checkpoint emitted by an already-closed reused harness run."""
+
+    events = _trace_events(context.trace_root, context.run_id)
+    if not events or events[-1].event_type != "run.checkpoint_written":
+        raise EvaluationError("closed reused run has no authoritative terminal checkpoint")
+    checkpoint_hash = events[-1].payload.get("checkpoint_hash")
+    if not isinstance(checkpoint_hash, str) or not checkpoint_hash.startswith("sha256:"):
+        raise EvaluationError("closed reused run checkpoint receipt has no exact hash")
+    checkpoint_path = (
+        context.checkpoint_root / f"checkpoint-{checkpoint_hash.removeprefix('sha256:')}.json"
+    ).resolve()
+    if not checkpoint_path.is_file():
+        raise EvaluationError("closed reused run content-addressed checkpoint is missing")
+    restored = ARC3Controller.restore(
+        context,
+        preset=ControllerPreset.FULL,
+        checkpoint_path=checkpoint_path,
+        features=features,
+        retrodiction_config=config,
+    )
+    try:
+        restored_snapshot = restored.snapshot
+        passed = restored_snapshot.trace_events == len(events)
+    finally:
+        restored.close()
+    _trace_events(context.trace_root, context.run_id)
+    return str(checkpoint_path), passed
+
+
+class _TerminalCheckpointController(ARC3Controller):
+    """Emit one truthful terminal checkpoint without enabling per-action persistence."""
+
+    def close(self) -> None:
+        if self._journal is None or self._phase is ControllerPhase.CLOSED:
+            return
+        if self._phase is not ControllerPhase.AWAITING_CONSEQUENCE:
+            events = self.journal.verify_manifest()
+            last_material_event = next(
+                (
+                    event
+                    for event in reversed(events)
+                    if event.event_type != "run.checkpoint_written"
+                ),
+                None,
+            )
+            if last_material_event is None or last_material_event.event_type != "run.completed":
+                self._append(
+                    self.context.game_id,
+                    "run.completed",
+                    {
+                        "final_phase": self._phase.value,
+                        "steps": self._step_index,
+                        "actions_used": self._actions_used,
+                        "resets_used": self._resets_used,
+                        "fault_count": self._fault_count,
+                    },
+                    scope="run",
+                )
+        tail = self.journal.tail_event
+        checkpoint_is_current = (
+            self._last_checkpoint is not None
+            and tail is not None
+            and tail.event_type == "run.checkpoint_written"
+            and tail.payload.get("checkpoint_hash")
+            == self._last_checkpoint.envelope.checkpoint_hash
+        )
+        if not checkpoint_is_current:
+            self._last_checkpoint = self.checkpoint()
+        self.journal.close()
+        self._phase = ControllerPhase.CLOSED
+
+
 def _episode_measurement(
     *,
     cell: EvaluationCell,
@@ -1020,7 +1386,7 @@ def _episode_measurement(
     resets: int,
     wall_ns: int,
     cpu_ns: int,
-    peak_rss_bytes: int,
+    memory: Mapping[str, object],
     profile: Mapping[str, object],
     events: Sequence[TraceEvent],
     checkpoint_path: str | None,
@@ -1031,7 +1397,14 @@ def _episode_measurement(
 ) -> tuple[CellMeasurement, dict[str, object]]:
     counts = _trace_counts(events)
     retrodiction_wall, retrodiction_cpu, cache_hits = _profile_retrodiction(profile)
+    peak_rss = memory.get("peak_rss_bytes")
+    if not isinstance(peak_rss, int) or isinstance(peak_rss, bool) or peak_rss < 0:
+        peak_rss = 0
+    current_rss = memory.get("current_rss_bytes")
+    if not isinstance(current_rss, int) or isinstance(current_rss, bool) or current_rss < 0:
+        current_rss = 0
     parity, reuse_valid = _event_receipt_integrity(events, cell.mode)
+    artifact_receipts_valid = _artifact_receipt_integrity(events) and checkpoint_valid
     planning_failures = sum(
         event.event_type == "simulation.plan_evaluated" and event.payload.get("status") != "found"
         for event in events
@@ -1048,7 +1421,9 @@ def _episode_measurement(
         cpu_ns=cpu_ns,
         retrodiction_wall_ns=retrodiction_wall,
         retrodiction_cpu_ns=retrodiction_cpu,
-        peak_rss_bytes=peak_rss_bytes,
+        peak_rss_bytes=peak_rss,
+        current_rss_bytes=current_rss,
+        command_count=counts.get("action.submitted", 0),
         planning_failures=planning_failures,
         prediction_mismatches=prediction_mismatches,
         cache_hit_count=cache_hits,
@@ -1057,17 +1432,33 @@ def _episode_measurement(
         trace_valid=True,
         checkpoint_valid=checkpoint_valid,
         replay_valid=True,
+        artifact_receipts_valid=artifact_receipts_valid,
         source_identity_valid=True,
+        memory_measurement_valid=memory.get("passed") is True,
         controller_fault_count=controller_fault_count,
         invalid_request_count=invalid_request_count,
     )
+    trace_inventory = _work_inventory(trace_root)
+    checkpoint_inventory: tuple[dict[str, JSONValue], ...] = ()
+    if checkpoint_path is not None:
+        checkpoint = Path(checkpoint_path)
+        if checkpoint.is_file():
+            checkpoint_inventory = _work_inventory(checkpoint.parent)
     return measurement, {
         "artifact_projection": list(_artifact_projection(events)),
+        "artifact_receipts_verified": artifact_receipts_valid,
         "checkpoint_path": checkpoint_path,
+        "checkpoint_bytes": sum(cast(int, item["bytes"]) for item in checkpoint_inventory),
+        "checkpoint_inventory_hash": sha256_json(list(checkpoint_inventory)),
         "event_type_counts": counts,
         "final_state": final_state,
         "hot_path_profile": dict(profile),
+        "memory": dict(memory),
         "measurement": asdict(measurement),
+        "retrodiction_receipt_metrics": _retrodiction_receipt_metrics(profile, events),
+        "trace_bytes": sum(cast(int, item["bytes"]) for item in trace_inventory),
+        "trace_event_count": len(events),
+        "trace_inventory_hash": sha256_json(list(trace_inventory)),
         "trace_root": str(trace_root.resolve()),
         "trace_tail_hash": events[-1].event_hash if events else None,
     }
@@ -1153,7 +1544,8 @@ def _run_stage14_cell(
     run = scorecard.runs[0]
     events = _trace_events(context.trace_root, context.run_id)
     profile = profiler.summary(total_wall_ns=wall_ns)
-    peak = max(_rss_bytes(before_rss), _rss_bytes(process_memory_sample()))
+    after_rss = process_memory_sample()
+    memory = _memory_receipt(before_rss, after_rss)
     return _episode_measurement(
         cell=cell,
         completed=run.completed,
@@ -1164,7 +1556,7 @@ def _run_stage14_cell(
         resets=snapshot.resets_used,
         wall_ns=wall_ns,
         cpu_ns=cpu_ns,
-        peak_rss_bytes=peak,
+        memory=memory,
         profile=profile,
         events=events,
         checkpoint_path=checkpoint_path,
@@ -1220,7 +1612,7 @@ def _run_stage06_cell(
         retrodiction_config: RetrodictionConfig | None = None,
     ) -> ARC3Controller:
         del local_proposal_provider, hot_path_profiler, retrodiction_config
-        return ARC3Controller(
+        return _TerminalCheckpointController(
             preset,
             features=_features_for_mode(cell.mode, features),
             hot_path_profiler=profiler,
@@ -1239,6 +1631,25 @@ def _run_stage06_cell(
         raise EvaluationError("Stage 06 reused run did not return an exact trace root")
     trace_root = Path(trace_root_value)
     run_id = case.case_id.replace("_", "-")
+    context = cast(
+        RunContext,
+        module._context(
+            cell_root,
+            run_id=run_id,
+            seed=case.seed,
+            git_commit=git_commit,
+            checkpointing=False,
+        ),
+    )
+    stage06_features = _features_for_mode(
+        cell.mode,
+        replace(preset_features(ControllerPreset.FULL), use_memory=False),
+    )
+    checkpoint_path, checkpoint_valid = _restore_closed_checkpoint(
+        context,
+        features=stage06_features,
+        config=config,
+    )
     events = _trace_events(trace_root, run_id)
     wall_ns = result.get("wall_ns")
     cpu_ns = result.get("cpu_ns")
@@ -1267,10 +1678,13 @@ def _run_stage06_cell(
     fault_count = result.get("controller_fault_count")
     rss = result.get("rss")
     rss_payload = rss if isinstance(rss, Mapping) else {}
-    peak = _rss_bytes(rss_payload)
+    memory_before_raw = rss_payload.get("before")
+    memory_after_raw = rss_payload.get("after")
+    memory = _memory_receipt(
+        memory_before_raw if isinstance(memory_before_raw, Mapping) else {},
+        memory_after_raw if isinstance(memory_after_raw, Mapping) else {},
+    )
     terminal = result.get("terminal_state")
-    final_checkpoint = result.get("final_checkpoint_commitment")
-    final_checkpoint_map = final_checkpoint if isinstance(final_checkpoint, Mapping) else {}
     measurement, raw = _episode_measurement(
         cell=cell,
         completed=terminal == GameStateName.WIN.value,
@@ -1283,20 +1697,20 @@ def _run_stage06_cell(
         resets=resets if isinstance(resets, int) and not isinstance(resets, bool) else 0,
         wall_ns=wall_ns,
         cpu_ns=cpu_ns,
-        peak_rss_bytes=peak,
+        memory=memory,
         profile=profile,
         events=events,
-        checkpoint_path=(
-            str(result.get("final_checkpoint_hash"))
-            if result.get("final_checkpoint_hash") is not None
-            else None
-        ),
-        checkpoint_valid=final_checkpoint_map.get("passed") is True,
+        checkpoint_path=checkpoint_path,
+        checkpoint_valid=checkpoint_valid,
         controller_fault_count=(
             fault_count if isinstance(fault_count, int) and not isinstance(fault_count, bool) else 0
         ),
         invalid_request_count=0,
         trace_root=trace_root,
+    )
+    prefix_immutability = trace_payload.get("prefix_immutability")
+    prefix_immutability_payload = (
+        prefix_immutability if isinstance(prefix_immutability, Mapping) else {}
     )
     measurement = replace(
         measurement,
@@ -1312,7 +1726,7 @@ def _run_stage06_cell(
         confirmed_false_epochs=confirmed_false_epochs,
         trace_valid=(
             trace_payload.get("replay_verified") is True
-            and trace_payload.get("prefix_immutability") is not None
+            and prefix_immutability_payload.get("passed") is True
         ),
         replay_valid=trace_payload.get("replay_verified") is True,
     )
@@ -1402,9 +1816,11 @@ def _run_public_cell(
     )
     if len(selected) != 1:
         raise EvaluationError("Stage 07 development identity is not uniquely selected")
-    asset = local_asset_identity(environments_dir, selected[0])
-    if asset is None:
-        raise EvaluationError("frozen Stage 07 development asset is unavailable locally")
+    asset_before_open = _development_asset_receipt(
+        local_asset_identity(environments_dir, selected[0])
+    )
+    if asset_before_open["passed"] is not True:
+        raise EvaluationError("frozen Stage 07 development asset identity changed before open")
     PublicExposureLedger(exposure_ledger).append(
         "stage07.development_episode_started",
         {
@@ -1438,6 +1854,11 @@ def _run_public_cell(
     session = adapter.open(cell.case_id, seed=cell.seed)
     if str(session.observation.game_id) != cell.case_id:
         raise EvaluationError("Stage 07 adapter returned the wrong development identity")
+    asset_after_open = _development_asset_receipt(
+        local_asset_identity(environments_dir, selected[0])
+    )
+    if asset_after_open["passed"] is not True or asset_after_open != asset_before_open:
+        raise EvaluationError("frozen Stage 07 development asset identity changed during open")
     scorecard = None
     checkpoint_path: str | None = None
     checkpoint_valid = False
@@ -1466,6 +1887,11 @@ def _run_public_cell(
     except Exception:
         invalid_count += 1
         raise
+    asset_after_episode = _development_asset_receipt(
+        local_asset_identity(environments_dir, selected[0])
+    )
+    if asset_after_episode["passed"] is not True or asset_after_episode != asset_before_open:
+        raise EvaluationError("frozen Stage 07 development asset identity changed during episode")
     wall_ns = max(0, time.perf_counter_ns() - wall_started)
     cpu_ns = max(0, time.process_time_ns() - cpu_started)
     if scorecard is None or len(scorecard.runs) != 1:
@@ -1482,7 +1908,8 @@ def _run_public_cell(
         raise EvaluationError("Stage 07 public action accounting is malformed")
     events = _trace_events(context.trace_root, context.run_id)
     profile = profiler.summary(total_wall_ns=wall_ns)
-    peak = max(_rss_bytes(before_rss), _rss_bytes(process_memory_sample()))
+    after_rss = process_memory_sample()
+    memory = _memory_receipt(before_rss, after_rss)
     measurement, raw = _episode_measurement(
         cell=cell,
         completed=run.completed,
@@ -1493,7 +1920,7 @@ def _run_public_cell(
         resets=measured_resets,
         wall_ns=wall_ns,
         cpu_ns=cpu_ns,
-        peak_rss_bytes=peak,
+        memory=memory,
         profile=profile,
         events=events,
         checkpoint_path=checkpoint_path,
@@ -1502,7 +1929,11 @@ def _run_public_cell(
         invalid_request_count=invalid_count,
         trace_root=context.trace_root,
     )
-    raw["asset_identity"] = asset.to_dict()
+    raw["asset_identity"] = asset_before_open["observed"]
+    raw["asset_identity_after_episode"] = asset_after_episode
+    raw["asset_identity_after_open"] = asset_after_open
+    raw["asset_identity_before_open"] = asset_before_open
+    raw["asset_identity_stable"] = True
     raw["official_local_scorecard"] = normalize_json(asdict(scorecard))
     raw["public_metrics"] = metrics
     return measurement, raw
@@ -1567,7 +1998,9 @@ def _failure_measurement(
         trace_valid=False,
         checkpoint_valid=False,
         replay_valid=False,
+        artifact_receipts_valid=False,
         source_identity_valid=False,
+        memory_measurement_valid=False,
         controller_fault_count=int(isinstance(error, PolicyError)),
         invalid_request_count=int(not isinstance(error, PolicyError)),
     )
@@ -1579,18 +2012,74 @@ def _failure_measurement(
     }
 
 
+def _development_asset_matrix_integrity(
+    cells: Sequence[EvaluationCell],
+    raw_records: Mapping[str, Mapping[str, object]],
+) -> dict[str, object]:
+    """Require every frozen D cell to carry the same three exact asset snapshots."""
+
+    development_cells = tuple(
+        cell for cell in cells if cell.group is EvaluationGroup.D_LOCAL_PUBLIC
+    )
+    expected = _EXPECTED_DEVELOPMENT_ASSET_IDENTITY.to_dict()
+    per_cell: dict[str, bool] = {}
+    for cell in development_cells:
+        record = raw_records.get(cell.cell_id)
+        receipts = (
+            tuple(
+                record.get(key)
+                for key in (
+                    "asset_identity_before_open",
+                    "asset_identity_after_open",
+                    "asset_identity_after_episode",
+                )
+            )
+            if isinstance(record, Mapping)
+            else ()
+        )
+        per_cell[cell.cell_id] = bool(
+            len(receipts) == 3
+            and record is not None
+            and record.get("asset_identity_stable") is True
+            and all(
+                isinstance(receipt, Mapping)
+                and receipt.get("passed") is True
+                and receipt.get("expected") == expected
+                and receipt.get("observed") == expected
+                for receipt in receipts
+            )
+        )
+    predicates = {
+        "exact_development_cell_count": len(development_cells) == 10,
+        "exact_record_count": len(per_cell) == 10,
+        "all_cell_snapshots_exact": len(per_cell) == 10 and all(per_cell.values()),
+    }
+    return {
+        "expected": expected,
+        "passed": all(predicates.values()),
+        "per_cell": per_cell,
+        "predicates": predicates,
+    }
+
+
 def _apply_global_integrity(
     cells: Sequence[EvaluationCell],
     measurements: Sequence[CellMeasurement],
     raw_records: Mapping[str, Mapping[str, object]],
     *,
+    development_asset_integrity: Mapping[str, object] | None = None,
     source_valid: bool,
-    network_attempt_count: int,
     holdout_exposure_count: int,
 ) -> tuple[CellMeasurement, ...]:
     by_pair_mode = {(cell.pair_key, cell.mode): cell for cell in cells}
     by_id = {item.cell_id: item for item in measurements}
     updated: list[CellMeasurement] = []
+    raw_development_cells = (
+        development_asset_integrity.get("per_cell", {})
+        if isinstance(development_asset_integrity, Mapping)
+        else {}
+    )
+    development_cells = raw_development_cells if isinstance(raw_development_cells, Mapping) else {}
     for cell in cells:
         item = by_id[cell.cell_id]
         parity = item.full_artifact_parity
@@ -1598,18 +2087,23 @@ def _apply_global_integrity(
             full_cell = by_pair_mode[(cell.pair_key, RetrodictionMode.FULL)]
             full_projection = raw_records.get(full_cell.cell_id, {}).get("artifact_projection")
             current_projection = raw_records.get(cell.cell_id, {}).get("artifact_projection")
-            if cell.group is not EvaluationGroup.B_FALSE_RULE:
-                parity = (
-                    isinstance(full_projection, list)
-                    and bool(full_projection)
-                    and current_projection == full_projection
-                )
+            parity = (
+                isinstance(full_projection, list)
+                and bool(full_projection)
+                and current_projection == full_projection
+            )
         updated.append(
             replace(
                 item,
                 full_artifact_parity=parity,
-                source_identity_valid=item.source_identity_valid and source_valid,
-                network_attempt_count=network_attempt_count,
+                source_identity_valid=(
+                    item.source_identity_valid
+                    and source_valid
+                    and (
+                        cell.group is not EvaluationGroup.D_LOCAL_PUBLIC
+                        or development_cells.get(cell.cell_id) is True
+                    )
+                ),
                 holdout_exposure_count=holdout_exposure_count,
             )
         )
@@ -1794,17 +2288,36 @@ def measure_retrodiction_decision(
 ) -> dict[str, object]:
     """Run all 280 frozen cells and 60 microbenchmark cells exactly once."""
 
-    _require_fresh_targets(output, work_root)
+    _require_official_paths(
+        output=output,
+        work_root=work_root,
+        exposure_ledger=exposure_ledger,
+        environments_dir=environments_dir,
+        recordings_dir=recordings_dir,
+    )
+    _require_fresh_targets(
+        output,
+        work_root,
+        exposure_ledger=exposure_ledger,
+        recordings_dir=recordings_dir,
+    )
     contract = _require_composite_contract()
     source_start = _source_identity()
     if source_start.get("dirty_worktree") is not False:
         raise EvaluationError("official Stage 07 measurement requires a clean committed tree")
+    if source_start.get("branch") != _EXPECTED_BRANCH:
+        raise EvaluationError("official Stage 07 measurement requires the frozen Build 001 branch")
+    if source_start.get("source_baseline_ancestor") is not True:
+        raise EvaluationError(
+            "official Stage 07 source does not descend from the frozen checkpoint"
+        )
     git_commit = source_start.get("git_commit")
     if not isinstance(git_commit, str):
         raise EvaluationError("official Stage 07 measurement has no git commit identity")
     holdout_start = _holdout_integrity(exposure_ledger, environments_dir)
     if holdout_start.get("passed") is not True:
         raise EvaluationError("public holdout is not sealed before Stage 07 measurement")
+    work_root.mkdir(parents=True, exist_ok=True)
     matrix = build_evaluation_matrix()
     false_cases = {item.case_id: item for item in build_false_rule_cases()}
     measurements: list[CellMeasurement] = []
@@ -1814,9 +2327,25 @@ def measure_retrodiction_decision(
     before_rss = process_memory_sample()
     wall_started = time.perf_counter_ns()
     cpu_started = time.process_time_ns()
+    wall_limit_ns = int(MAX_OVERALL_WALL_SECONDS * 1_000_000_000)
+    wall_limit_recorded = False
     with _SocketDeny() as network_guard:
         for cell in matrix:
+            if time.perf_counter_ns() - wall_started > wall_limit_ns:
+                failures.append(
+                    {
+                        "cell_id": cell.cell_id,
+                        "error_kind": "ResourceLimitExceeded",
+                        "error_message": "Stage 07 overall 3600-second wall limit exceeded",
+                    }
+                )
+                wall_limit_recorded = True
+                break
             cell_root = work_root / "cells" / f"{cell.ordinal:03d}-{cell.cell_id[-16:]}"
+            cell_before_rss = process_memory_sample()
+            cell_wall_started = time.perf_counter_ns()
+            cell_cpu_started = time.process_time_ns()
+            network_attempts_before = network_guard.attempt_count
             try:
                 measurement, record = _run_cell(
                     cell,
@@ -1836,11 +2365,41 @@ def measure_retrodiction_decision(
                         "error_message": str(error),
                     }
                 )
+            cell_wall_ns = max(0, time.perf_counter_ns() - cell_wall_started)
+            cell_cpu_ns = max(0, time.process_time_ns() - cell_cpu_started)
+            cell_memory = _memory_receipt(cell_before_rss, process_memory_sample())
+            current_rss = cell_memory.get("current_rss_bytes")
+            peak_rss = cell_memory.get("peak_rss_bytes")
+            measurement = replace(
+                measurement,
+                wall_ns=cell_wall_ns,
+                cpu_ns=cell_cpu_ns,
+                current_rss_bytes=(
+                    current_rss
+                    if isinstance(current_rss, int) and not isinstance(current_rss, bool)
+                    else 0
+                ),
+                peak_rss_bytes=(
+                    peak_rss if isinstance(peak_rss, int) and not isinstance(peak_rss, bool) else 0
+                ),
+                memory_measurement_valid=(
+                    measurement.memory_measurement_valid and cell_memory["passed"] is True
+                ),
+                network_attempt_count=(network_guard.attempt_count - network_attempts_before),
+            )
+            runner_measurement = record.get("measurement")
+            record["memory"] = cell_memory
+            record["measurement"] = asdict(measurement)
+            record["orchestrator_resources"] = {
+                "cpu_ns": cell_cpu_ns,
+                "memory": cell_memory,
+                "network_attempt_count": measurement.network_attempt_count,
+                "wall_ns": cell_wall_ns,
+            }
+            record["runner_measurement"] = runner_measurement
             measurements.append(measurement)
             raw_records[cell.cell_id] = record
-            if time.perf_counter_ns() - wall_started > int(
-                MAX_OVERALL_WALL_SECONDS * 1_000_000_000
-            ):
+            if time.perf_counter_ns() - wall_started > wall_limit_ns:
                 failures.append(
                     {
                         "cell_id": cell.cell_id,
@@ -1848,47 +2407,67 @@ def measure_retrodiction_decision(
                         "error_message": "Stage 07 overall 3600-second wall limit exceeded",
                     }
                 )
+                wall_limit_recorded = True
                 break
-        if len(measurements) == len(matrix):
-            for mode in MODE_ORDER:
-                for size in MICRO_HISTORY_SIZES:
-                    for timing_path in _TIMING_PATHS:
-                        raw_micro.append(measure_microbenchmark_cell(mode, size, timing_path))
+        if len(measurements) == len(matrix) and not wall_limit_recorded:
+            for mode, size, timing_path in product(MODE_ORDER, MICRO_HISTORY_SIZES, _TIMING_PATHS):
+                if time.perf_counter_ns() - wall_started > wall_limit_ns:
+                    failures.append(
+                        {
+                            "cell_id": f"micro:{mode.value}:{size}:{timing_path}",
+                            "error_kind": "ResourceLimitExceeded",
+                            "error_message": "Stage 07 overall 3600-second wall limit exceeded",
+                        }
+                    )
+                    wall_limit_recorded = True
+                    break
+                raw_micro.append(measure_microbenchmark_cell(mode, size, timing_path))
+    verification = _run_verification(work_root / "verification")
     source_end = _source_identity()
     source_stability = _source_stability(source_start, source_end)
     holdout_end = _holdout_integrity(exposure_ledger, environments_dir)
+    development_asset_integrity = _development_asset_matrix_integrity(matrix, raw_records)
     measurements_final = _apply_global_integrity(
         matrix,
         measurements,
         raw_records,
+        development_asset_integrity=development_asset_integrity,
         source_valid=source_stability["passed"] is True,
-        network_attempt_count=network_guard.attempt_count,
         holdout_exposure_count=cast(int, holdout_end["public_holdout_gameplay_events"]),
     )
     micro_measurements = tuple(item.measurement for item in raw_micro)
     gates: tuple[ModeGateResult, ...] = ()
-    decision = "KEEP_FULL"
+    provisional_decision = "KEEP_FULL"
     if len(measurements_final) == len(matrix) and len(micro_measurements) == 60:
         gates = evaluate_replacement_gates(measurements_final, micro_measurements)
-        decision = choose_retrodiction_decision(gates).value
-    verification = _run_verification(work_root / "verification")
+        provisional_decision = choose_retrodiction_decision(gates).value
     wall_ns = max(0, time.perf_counter_ns() - wall_started)
     cpu_ns = max(0, time.process_time_ns() - cpu_started)
-    peak_rss = max(_rss_bytes(before_rss), _rss_bytes(process_memory_sample()))
+    after_rss = process_memory_sample()
+    memory = _memory_receipt(before_rss, after_rss)
+    peak_rss = cast(int, memory["peak_rss_bytes"])
     inventory = _work_inventory(work_root)
     exact_execution = (
         len(measurements_final) == len(matrix) and len(micro_measurements) == 60 and not failures
     )
     integrity = (
         exact_execution
+        and development_asset_integrity["passed"] is True
         and source_stability["passed"] is True
         and holdout_end["passed"] is True
         and network_guard.attempt_count == 0
+        and memory["passed"] is True
         and peak_rss <= MAX_PEAK_RSS_BYTES
         and wall_ns <= int(MAX_OVERALL_WALL_SECONDS * 1_000_000_000)
         and verification["passed"] is True
         and all(item.hard_integrity_passed for item in measurements_final)
+        and len(measurements_final) == len(matrix)
+        and all(
+            cell_budget_passed(cell, measurement)
+            for cell, measurement in zip(matrix, measurements_final, strict=True)
+        )
     )
+    decision = provisional_decision if integrity else "KEEP_FULL"
     report = seal_object(
         {
             "commands": [list(command)],
@@ -1908,6 +2487,8 @@ def measure_retrodiction_decision(
                 "peak_rss_limit_bytes": MAX_PEAK_RSS_BYTES,
             },
             "decision": decision,
+            "development_asset_integrity": development_asset_integrity,
+            "provisional_decision": provisional_decision,
             "evidence_labels": ["synthetic", "local-public"],
             "failures": failures,
             "holdout_end": holdout_end,
@@ -1924,6 +2505,7 @@ def measure_retrodiction_decision(
             "raw_cell_records": raw_records,
             "resources": {
                 "cpu_ns": cpu_ns,
+                "memory_measurement": memory,
                 "peak_rss_bytes": peak_rss,
                 "peak_rss_within_limit": peak_rss <= MAX_PEAK_RSS_BYTES,
                 "wall_ns": wall_ns,
@@ -2024,7 +2606,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             }
         )
     )
-    return 0
+    return 0 if report["status"] == "PASS" else 1
 
 
 if __name__ == "__main__":

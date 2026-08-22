@@ -12,9 +12,22 @@ from unittest.mock import patch
 
 import pytest
 from scripts.measure_retrodiction_decision import (
+    _EXPECTED_DEVELOPMENT_ASSET_IDENTITY,
+    DEFAULT_ENVIRONMENTS_DIR,
+    DEFAULT_EXPOSURE_LEDGER,
+    DEFAULT_OUTPUT,
+    DEFAULT_RECORDINGS_DIR,
+    DEFAULT_WORK_ROOT,
+    _apply_global_integrity,
+    _development_asset_matrix_integrity,
+    _development_asset_receipt,
     _event_receipt_integrity,
     _holdout_integrity,
+    _memory_receipt,
+    _profile_retrodiction,
     _require_fresh_targets,
+    _require_official_paths,
+    _run_public_cell,
     _run_verification_command,
     _SocketDeny,
     _source_stability,
@@ -22,7 +35,7 @@ from scripts.measure_retrodiction_decision import (
     measure_microbenchmark_cell,
 )
 
-from arc3.evaluation.public import PublicExposureLedger
+from arc3.evaluation.public import LocalAssetIdentity, PublicExposureLedger
 from arc3.evaluation.retrodiction_decision import (
     AMENDMENT_SHA256,
     PREDECLARATION_SHA256,
@@ -41,7 +54,7 @@ from arc3.evaluation.retrodiction_decision import (
 )
 from arc3.lab.rule_change import ActionVariant, PaletteVariant
 from arc3.trace import TraceEvent
-from arc3.types import ActionName
+from arc3.types import ActionName, GameStateName
 from arc3.world_model.retrodiction import PromotionStatus, RetrodictionMode, retrodict
 from arc3.world_model.rules import (
     CollisionRule,
@@ -417,7 +430,10 @@ def _complete_microbenchmarks() -> list[MicrobenchmarkMeasurement]:
             median_wall_ns=1_000 if mode is RetrodictionMode.FULL else 500,
             median_cpu_ns=800 if mode is RetrodictionMode.FULL else 400,
             semantic_parity=True,
-            cache_hit=mode is RetrodictionMode.CACHED_INCREMENTAL and path.startswith("append"),
+            cache_hit=(
+                mode in {RetrodictionMode.EVENT_TRIGGERED, RetrodictionMode.CACHED_INCREMENTAL}
+                and path.startswith("append")
+            ),
         )
         for mode in RetrodictionMode
         for size in (2, 4, 8, 16, 32, 64)
@@ -501,10 +517,25 @@ def test_runner_no_overwrite_guard_rejects_existing_targets(tmp_path: Path) -> N
     with pytest.raises(Exception, match="not empty"):
         _require_fresh_targets(output, work)
 
+    work_file = work / "receipt.json"
+    work_file.unlink()
+    exposure = tmp_path / "exposure.jsonl"
+    exposure.write_text("preserve", encoding="utf-8")
+    with pytest.raises(Exception, match="exposure ledger already exists"):
+        _require_fresh_targets(output, work, exposure_ledger=exposure)
+
+    exposure.unlink()
+    recordings = tmp_path / "recordings"
+    recordings.mkdir()
+    (recordings / "receipt.json").write_text("preserve", encoding="utf-8")
+    with pytest.raises(Exception, match="recordings root already exists"):
+        _require_fresh_targets(output, work, recordings_dir=recordings)
+
 
 def test_source_stability_requires_clean_exact_start_and_end() -> None:
     identity = {
         "amendment_sha256": "A",
+        "branch": "build/001-local-public-recovery",
         "dirty_worktree": False,
         "false_rule_manifest_sha256": "M",
         "first_party_source_hash": "S",
@@ -513,6 +544,8 @@ def test_source_stability_requires_clean_exact_start_and_end() -> None:
         "identity_hash": "I",
         "predeclaration_sha256": "P",
         "public_partition_sha256": "H",
+        "source_baseline_ancestor": True,
+        "source_baseline_commit": "B",
     }
     assert _source_stability(identity, identity)["passed"] is True
     drifted = {**identity, "git_tree": "changed", "identity_hash": "J"}
@@ -534,7 +567,11 @@ def test_holdout_guard_fails_closed_on_a_holdout_exposure_receipt(tmp_path: Path
         "test.holdout_attempt",
         {"game_id": "ls20-7880a0b6", "partition": "public-holdout"},
     )
-    result = _holdout_integrity(ledger_path, tmp_path / "empty-assets")
+    result = _holdout_integrity(
+        ledger_path,
+        tmp_path / "empty-assets",
+        inherited_ledgers=(),
+    )
 
     assert result["passed"] is False
     assert result["public_holdout_gameplay_events"] == 1
@@ -548,3 +585,335 @@ def test_verification_timeout_is_not_relabelled_as_infrastructure(tmp_path: Path
     assert receipt["timed_out"] is True
     assert receipt["infrastructure_failure"] is False
     assert receipt["passed"] is False
+
+
+def test_retrodiction_cache_hits_are_phase_scoped() -> None:
+    profile = {
+        "cache_totals": {"hits": 99},
+        "phases": {
+            "retrodiction": {
+                "cache_hits": 2,
+                "inclusive_cpu_ns": 11,
+                "inclusive_wall_ns": 13,
+            }
+        },
+    }
+
+    assert _profile_retrodiction(profile) == (13, 11, 2)
+
+
+def test_memory_receipt_fails_closed_when_rss_is_unavailable() -> None:
+    receipt = _memory_receipt(
+        {
+            "current_rss_bytes": None,
+            "measurement_source": "unavailable",
+            "peak_rss_bytes": None,
+        }
+    )
+
+    assert receipt["passed"] is False
+    assert receipt["peak_rss_bytes"] == 0
+
+
+def test_missing_typed_artifact_receipt_fails_hard_integrity() -> None:
+    measurement = _complete_measurements()[0]
+
+    assert measurement.hard_integrity_passed is True
+    assert replace(measurement, artifact_receipts_valid=False).hard_integrity_passed is False
+
+
+def test_official_path_guard_rejects_alternate_exposure_or_asset_roots(tmp_path: Path) -> None:
+    _require_official_paths(
+        output=DEFAULT_OUTPUT,
+        work_root=DEFAULT_WORK_ROOT,
+        exposure_ledger=DEFAULT_EXPOSURE_LEDGER,
+        environments_dir=DEFAULT_ENVIRONMENTS_DIR,
+        recordings_dir=DEFAULT_RECORDINGS_DIR,
+    )
+    with pytest.raises(Exception, match="frozen contract"):
+        _require_official_paths(
+            output=DEFAULT_OUTPUT,
+            work_root=DEFAULT_WORK_ROOT,
+            exposure_ledger=tmp_path / "fresh-exposure.jsonl",
+            environments_dir=tmp_path / "fresh-assets",
+            recordings_dir=DEFAULT_RECORDINGS_DIR,
+        )
+
+
+def test_inherited_holdout_ledger_hash_is_mandatory(tmp_path: Path) -> None:
+    inherited = tmp_path / "inherited.jsonl"
+    PublicExposureLedger(inherited).append(
+        "test.development",
+        {"game_id": "ar25-0c556536", "partition": "development"},
+    )
+    result = _holdout_integrity(
+        tmp_path / "current.jsonl",
+        tmp_path / "assets",
+        inherited_ledgers=(("inherited", inherited, "sha256:not-the-file"),),
+    )
+
+    assert result["passed"] is False
+    assert result["public_holdout_gameplay_events"] == 0
+
+
+def test_frozen_development_asset_identity_accepts_exact_measured_bytes() -> None:
+    receipt = _development_asset_receipt(_EXPECTED_DEVELOPMENT_ASSET_IDENTITY)
+
+    assert receipt["passed"] is True
+    assert all(cast(dict[str, bool], receipt["predicates"]).values())
+
+
+@pytest.mark.parametrize(
+    "observed",
+    (
+        replace(
+            _EXPECTED_DEVELOPMENT_ASSET_IDENTITY,
+            aggregate_sha256="sha256:forged",
+        ),
+        replace(
+            _EXPECTED_DEVELOPMENT_ASSET_IDENTITY,
+            files=(
+                ("renamed.py", 77_599, _EXPECTED_DEVELOPMENT_ASSET_IDENTITY.files[0][2]),
+                _EXPECTED_DEVELOPMENT_ASSET_IDENTITY.files[1],
+            ),
+        ),
+        replace(
+            _EXPECTED_DEVELOPMENT_ASSET_IDENTITY,
+            files=(
+                (
+                    _EXPECTED_DEVELOPMENT_ASSET_IDENTITY.files[0][0],
+                    77_600,
+                    _EXPECTED_DEVELOPMENT_ASSET_IDENTITY.files[0][2],
+                ),
+                _EXPECTED_DEVELOPMENT_ASSET_IDENTITY.files[1],
+            ),
+        ),
+        replace(
+            _EXPECTED_DEVELOPMENT_ASSET_IDENTITY,
+            files=(
+                (
+                    _EXPECTED_DEVELOPMENT_ASSET_IDENTITY.files[0][0],
+                    _EXPECTED_DEVELOPMENT_ASSET_IDENTITY.files[0][1],
+                    "sha256:forged",
+                ),
+                _EXPECTED_DEVELOPMENT_ASSET_IDENTITY.files[1],
+            ),
+        ),
+    ),
+)
+def test_frozen_development_asset_identity_rejects_every_byte_identity_drift(
+    observed: LocalAssetIdentity,
+) -> None:
+    assert _development_asset_receipt(observed)["passed"] is False
+
+
+def test_development_asset_matrix_requires_all_ten_exact_three_point_receipts() -> None:
+    matrix = build_evaluation_matrix()
+    development = tuple(item for item in matrix if item.group is EvaluationGroup.D_LOCAL_PUBLIC)
+    exact = _development_asset_receipt(_EXPECTED_DEVELOPMENT_ASSET_IDENTITY)
+    raw = {
+        cell.cell_id: {
+            "asset_identity_before_open": exact,
+            "asset_identity_after_open": exact,
+            "asset_identity_after_episode": exact,
+            "asset_identity_stable": True,
+        }
+        for cell in development
+    }
+
+    accepted = _development_asset_matrix_integrity(matrix, raw)
+    assert accepted["passed"] is True
+
+    drifted = dict(raw)
+    drifted_receipt = _development_asset_receipt(
+        replace(_EXPECTED_DEVELOPMENT_ASSET_IDENTITY, aggregate_sha256="sha256:forged")
+    )
+    drifted[development[0].cell_id] = {
+        **raw[development[0].cell_id],
+        "asset_identity_after_episode": drifted_receipt,
+    }
+    rejected = _development_asset_matrix_integrity(matrix, drifted)
+    assert rejected["passed"] is False
+    assert cast(dict[str, bool], rejected["per_cell"])[development[0].cell_id] is False
+
+    missing = dict(raw)
+    missing.pop(development[-1].cell_id)
+    assert _development_asset_matrix_integrity(matrix, missing)["passed"] is False
+
+
+def test_holdout_integrity_rejects_development_asset_drift_before_launch(
+    tmp_path: Path,
+) -> None:
+    wrong = replace(
+        _EXPECTED_DEVELOPMENT_ASSET_IDENTITY,
+        aggregate_sha256="sha256:forged",
+    )
+
+    def identity_for_entry(_root: Path, entry: object) -> LocalAssetIdentity | None:
+        return wrong if getattr(entry, "game_id", None) == wrong.game_id else None
+
+    with patch(
+        "scripts.measure_retrodiction_decision.local_asset_identity",
+        side_effect=identity_for_entry,
+    ):
+        result = _holdout_integrity(
+            tmp_path / "current.jsonl",
+            tmp_path / "assets",
+            inherited_ledgers=(),
+        )
+
+    assert result["passed"] is False
+    assert cast(dict[str, bool], result["predicates"])["development_asset_identity"] is False
+
+
+def test_holdout_integrity_accepts_exact_development_asset_before_launch(
+    tmp_path: Path,
+) -> None:
+    expected = _EXPECTED_DEVELOPMENT_ASSET_IDENTITY
+
+    def identity_for_entry(_root: Path, entry: object) -> LocalAssetIdentity | None:
+        return expected if getattr(entry, "game_id", None) == expected.game_id else None
+
+    with patch(
+        "scripts.measure_retrodiction_decision.local_asset_identity",
+        side_effect=identity_for_entry,
+    ):
+        result = _holdout_integrity(
+            tmp_path / "current.jsonl",
+            tmp_path / "assets",
+            inherited_ledgers=(),
+        )
+
+    assert result["passed"] is True
+
+
+def test_failed_development_asset_matrix_marks_d_cell_hard_integrity_false() -> None:
+    matrix = build_evaluation_matrix()
+    measurements = _complete_measurements()
+    development = tuple(item for item in matrix if item.group is EvaluationGroup.D_LOCAL_PUBLIC)
+    exact = _development_asset_receipt(_EXPECTED_DEVELOPMENT_ASSET_IDENTITY)
+    raw = {
+        cell.cell_id: {
+            "asset_identity_before_open": exact,
+            "asset_identity_after_open": exact,
+            "asset_identity_after_episode": exact,
+            "asset_identity_stable": True,
+        }
+        for cell in development
+    }
+    failed_cell = development[0]
+    raw[failed_cell.cell_id] = {
+        **raw[failed_cell.cell_id],
+        "asset_identity_stable": False,
+    }
+    integrity = _development_asset_matrix_integrity(matrix, raw)
+
+    updated = _apply_global_integrity(
+        matrix,
+        measurements,
+        raw,
+        development_asset_integrity=integrity,
+        source_valid=True,
+        holdout_exposure_count=0,
+    )
+    failed = next(item for item in updated if item.cell_id == failed_cell.cell_id)
+    assert failed.source_identity_valid is False
+    assert failed.hard_integrity_passed is False
+
+
+@pytest.mark.parametrize("drift_call", (1, 2))
+def test_public_cell_rejects_asset_mutation_after_open_or_episode_without_gameplay(
+    tmp_path: Path,
+    drift_call: int,
+) -> None:
+    cell = next(
+        item
+        for item in build_evaluation_matrix()
+        if item.group is EvaluationGroup.D_LOCAL_PUBLIC and item.mode is RetrodictionMode.FULL
+    )
+    wrong = replace(
+        _EXPECTED_DEVELOPMENT_ASSET_IDENTITY,
+        aggregate_sha256="sha256:forged",
+    )
+    identities = [_EXPECTED_DEVELOPMENT_ASSET_IDENTITY] * 3
+    identities[drift_call] = wrong
+    fake_session = SimpleNamespace(observation=SimpleNamespace(game_id=cell.case_id))
+    fake_run = SimpleNamespace(
+        completed=False,
+        levels_completed=0,
+        score=0.0,
+        state=GameStateName.GAME_OVER,
+    )
+    fake_scorecard = SimpleNamespace(runs=[fake_run])
+
+    with (
+        patch(
+            "scripts.measure_retrodiction_decision.local_asset_identity",
+            side_effect=identities,
+        ),
+        patch(
+            "scripts.measure_retrodiction_decision.ArcAGIAdapter",
+            return_value=SimpleNamespace(open=lambda _game_id, seed: fake_session),
+        ),
+        patch(
+            "scripts.measure_retrodiction_decision.run_public_episode",
+            return_value=(fake_scorecard, {"environment_actions": 0, "resets": 0}),
+        ),
+        patch(
+            "scripts.measure_retrodiction_decision._checkpoint_restore",
+            return_value=(str(tmp_path / "checkpoint.json"), True),
+        ),
+    ):
+        with pytest.raises(Exception, match="asset identity changed"):
+            _run_public_cell(
+                cell,
+                cell_root=tmp_path / "cell",
+                git_commit="test-commit",
+                exposure_ledger=tmp_path / "exposure.jsonl",
+                environments_dir=tmp_path / "assets",
+                recordings_dir=tmp_path / "recordings",
+            )
+
+
+def test_cached_false_rule_parity_is_paired_to_full_not_self_roundtrip() -> None:
+    matrix = build_evaluation_matrix()
+    measurements = _complete_measurements()
+    raw: dict[str, dict[str, object]] = {}
+    pair = next(item.pair_key for item in matrix if item.group is EvaluationGroup.B_FALSE_RULE)
+    full = next(
+        item for item in matrix if item.pair_key == pair and item.mode is RetrodictionMode.FULL
+    )
+    cached = next(
+        item
+        for item in matrix
+        if item.pair_key == pair and item.mode is RetrodictionMode.CACHED_INCREMENTAL
+    )
+    raw[full.cell_id] = {"artifact_projection": [{"artifact_id": "full"}]}
+    raw[cached.cell_id] = {"artifact_projection": [{"artifact_id": "different"}]}
+
+    updated = _apply_global_integrity(
+        matrix,
+        measurements,
+        raw,
+        source_valid=True,
+        holdout_exposure_count=0,
+    )
+    cached_measurement = next(item for item in updated if item.cell_id == cached.cell_id)
+    assert cached_measurement.full_artifact_parity is False
+
+
+def test_replacement_gate_rejects_a_frozen_cell_wall_budget_overrun() -> None:
+    measurements = _complete_measurements()
+    target = next(
+        item
+        for item in build_evaluation_matrix()
+        if item.group is EvaluationGroup.A_STAGE14
+        and item.mode is RetrodictionMode.CACHED_INCREMENTAL
+    )
+    index = next(index for index, item in enumerate(measurements) if item.cell_id == target.cell_id)
+    measurements[index] = replace(measurements[index], wall_ns=121_000_000_000)
+
+    results = evaluate_replacement_gates(measurements, _complete_microbenchmarks())
+    cached = next(item for item in results if item.mode is RetrodictionMode.CACHED_INCREMENTAL)
+    assert dict(cached.predicates)["per_cell_budget_integrity"] is False
+    assert cached.eligible is False

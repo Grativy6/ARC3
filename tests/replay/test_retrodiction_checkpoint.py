@@ -19,6 +19,7 @@ from arc3.world_model import RetrodictionConfig, RetrodictionMode
 
 _CACHED = RetrodictionConfig(mode=RetrodictionMode.CACHED_INCREMENTAL)
 _EVENT_TRIGGERED = RetrodictionConfig(mode=RetrodictionMode.EVENT_TRIGGERED)
+_FULL = RetrodictionConfig(mode=RetrodictionMode.FULL)
 
 
 def _context(tmp_path: Path, *, label: str) -> RunContext:
@@ -43,12 +44,13 @@ def _drive_cached(
     *,
     label: str,
     awaiting_prediction: bool = False,
+    retrodiction_config: RetrodictionConfig = _CACHED,
 ) -> tuple[ARC3Controller, RunContext, SyntheticAdapter]:
     context = _context(tmp_path, label=label)
     session = SyntheticAdapter(seed=37, size=8, max_steps=32).open(SYNTHETIC_GAME_ID)
     controller = ARC3Controller(
         ControllerPreset.FULL,
-        retrodiction_config=_CACHED,
+        retrodiction_config=retrodiction_config,
     )
     controller.reset(context)
     controller.observe(session.observation)
@@ -68,6 +70,29 @@ def _drive_cached(
         assert decision.prediction_receipt_id is not None
         assert controller.phase is ControllerPhase.AWAITING_CONSEQUENCE
     return controller, context, session
+
+
+def _forge_semantically_wrong_artifact(payload: dict[str, object]) -> None:
+    tested = cast(list[str], payload["tested_transition_ids"])
+    assert tested
+    forged_contradiction = tested[0]
+    payload["matched_transition_ids"] = [
+        transition_id for transition_id in tested if transition_id != forged_contradiction
+    ]
+    payload["contradiction_transition_ids"] = [forged_contradiction]
+    payload["status"] = "rejected"
+    payload["score"] = -1.0
+    content = {
+        "model_id": payload["model_id"],
+        "enabled": True,
+        "compatible": payload["compatible_transition_ids"],
+        "tested": payload["tested_transition_ids"],
+        "excluded": payload["explicitly_excluded_transition_ids"],
+        "matched": payload["matched_transition_ids"],
+        "contradicted": payload["contradiction_transition_ids"],
+        "status": payload["status"],
+    }
+    payload["artifact_id"] = f"retrodiction:{sha256_json(content).removeprefix('sha256:')[:24]}"
 
 
 def _drive_event_reuse(
@@ -252,6 +277,83 @@ def test_cached_checkpoint_rejects_omitted_or_wrong_mode(tmp_path: Path) -> None
                 mode=RetrodictionMode.CACHED_INCREMENTAL,
                 capacity=32,
             ),
+        )
+
+
+@pytest.mark.replay
+def test_rehashed_full_artifact_receipt_must_reconstruct_from_typed_history(
+    tmp_path: Path,
+) -> None:
+    controller, context, _ = _drive_cached(
+        tmp_path,
+        label="full-artifact-tamper",
+        retrodiction_config=_FULL,
+    )
+    completion = next(
+        event
+        for event in controller.journal.verify_manifest()
+        if event.event_type == "model.retrodiction_completed"
+        and event.payload.get("tested_transition_ids")
+    )
+    checkpoint = controller.checkpoint()
+    controller.journal.close()
+
+    tampered = _rewrite_trace_suffix_and_checkpoint(
+        checkpoint_path=checkpoint.path,
+        trace_path=context.trace_root / "active.jsonl",
+        target=tmp_path / "tampered-full-artifact.json",
+        event_type="model.retrodiction_completed",
+        predicate=lambda payload: (
+            payload.get("artifact_id") == completion.payload.get("artifact_id")
+        ),
+        mutate_payload=_forge_semantically_wrong_artifact,
+    )
+    with pytest.raises(PolicyError, match="artifact receipt does not reconstruct exactly"):
+        ARC3Controller.restore(
+            context,
+            preset=ControllerPreset.FULL,
+            checkpoint_path=tampered,
+            retrodiction_config=_FULL,
+        )
+
+
+@pytest.mark.replay
+def test_rehashed_full_artifact_projection_tamper_is_rejected(tmp_path: Path) -> None:
+    controller, context, _ = _drive_cached(
+        tmp_path,
+        label="full-projection-tamper",
+        retrodiction_config=_FULL,
+    )
+    completion = next(
+        event
+        for event in controller.journal.verify_manifest()
+        if event.event_type == "model.retrodiction_completed"
+        and event.payload.get("artifact_projection")
+    )
+    checkpoint = controller.checkpoint()
+    controller.journal.close()
+
+    def forge_projection(payload: dict[str, object]) -> None:
+        projection = cast(dict[str, object], payload["artifact_projection"])
+        score = cast(dict[str, object], projection["score"])
+        score["fit"] = 999.0
+
+    tampered = _rewrite_trace_suffix_and_checkpoint(
+        checkpoint_path=checkpoint.path,
+        trace_path=context.trace_root / "active.jsonl",
+        target=tmp_path / "tampered-full-projection.json",
+        event_type="model.retrodiction_completed",
+        predicate=lambda payload: (
+            payload.get("artifact_id") == completion.payload.get("artifact_id")
+        ),
+        mutate_payload=forge_projection,
+    )
+    with pytest.raises(PolicyError, match="artifact projection does not reconstruct exactly"):
+        ARC3Controller.restore(
+            context,
+            preset=ControllerPreset.FULL,
+            checkpoint_path=tampered,
+            retrodiction_config=_FULL,
         )
 
 
