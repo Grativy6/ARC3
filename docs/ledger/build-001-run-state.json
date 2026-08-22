@@ -6,13 +6,13 @@
   "owner": "Christopher D. Pang",
   "build_status": "IN_PROGRESS",
   "status": "IN_PROGRESS",
-  "current_stage": "07",
-  "current_task": "Preserve the unique failed Stage 07 attempt, repair partial serialization without rerunning, and close the stage honestly",
+  "current_stage": "08",
+  "current_task": "Freeze and implement the Stage 08 two-speed controller while preserving the Stage 07 epoch-bound failure",
   "implementation_branch": "build/001-local-public-recovery",
   "pull_request": "https://github.com/Grativy6/ARC3/pull/5",
   "started_at": "2026-08-21T15:41:02Z",
-  "last_checkpoint_at": "2026-08-22T18:38:27.5753539Z",
-  "last_checkpoint_commit": "f683dbc672213e804ddc6120b0be2762e6c66a08",
+  "last_checkpoint_at": "2026-08-22T18:45:54.7898565Z",
+  "last_checkpoint_commit": "85a0782e77e0549814363cbeefd50bb5eec6ca3c",
   "base": {
     "main_commit": "28c7a00732ce48e5c231211b01bc6eba7d0d71b4",
     "main_tree": "4586299448e9b1b585a0878674ed5f9afa60c384",
@@ -36,7 +36,8 @@
     "03",
     "04",
     "05",
-    "06"
+    "06",
+    "07"
   ],
   "stage_status": {
     "00": "PASS",
@@ -46,8 +47,8 @@
     "04": "PASS",
     "05": "PASS",
     "06": "FAILED_MECHANISM",
-    "07": "IN_PROGRESS",
-    "08": "PENDING",
+    "07": "FAILED_INFRASTRUCTURE",
+    "08": "IN_PROGRESS",
     "09": "PENDING",
     "10": "PENDING",
     "11": "PENDING",
@@ -304,7 +305,7 @@
       "public_holdout_consumed": false
     },
     "07": {
-      "status": "IN_PROGRESS",
+      "status": "FAILED_INFRASTRUCTURE",
       "labels": [
         "synthetic",
         "local-public"
@@ -323,7 +324,7 @@
       "rule_change_and_noise_cases": 32,
       "local_public_development_cases": 2,
       "micro_history_sizes": 6,
-      "implementation_status": "UNIQUE_OFFICIAL_ATTEMPT_FAILED_PENDING_FAIL_CLOSED_SERIALIZATION_REPAIR",
+      "implementation_status": "UNIQUE_OFFICIAL_ATTEMPT_FAILED_AND_FAIL_CLOSED_SERIALIZATION_REPAIRED",
       "runtime_checkpoint_commit": "586e8ba2c9c414b4bf2cc426ad5c1bbd357d5258",
       "runtime_authority_checkpoint_commit": "44fc3666522db4787f4349c4a5cb5ee085f787d9",
       "runtime_final_audit_checkpoint_commit": "2a78ba0f873a6f2c0e2b214a953f4b303057139e",
@@ -346,6 +347,24 @@
         "development_exposure_ledger_sha256": "sha256:4f924df44b11decb392022a927b3296e0248a02edac2c87c53899d374045f0c7"
       },
       "production_default": "FULL_RETAINED_NO_ELIGIBLE_REPLACEMENT_DECISION",
+      "recovered_false_rule_receipts": "40/40:FULL+EVENT_TRIGGERED+CACHED reject false8/8;RECENT promotes false8/8;NONE ungated",
+      "recovered_false_rule_inventory_sha256": "sha256:7c7f2f36f7ad0b17df85007f0c4e64c5865481c92cc4f7f34f818a089c00a533",
+      "recovered_local_public_prefixes": "9/9:65-actions+65-consequences+0-levels+NOT_FINISHED+epoch-bound-fault",
+      "recovered_local_public_trace_projection_sha256": "sha256:95ec8fddc04499f8f68411d5ba112670f219d87a74b5a8511cd6fdab2be364e6",
+      "serialization_repair_commit": "85a0782e77e0549814363cbeefd50bb5eec6ca3c",
+      "acceptance": "docs/evidence/001-07-retrodiction-decision.json",
+      "acceptance_sha256": "sha256:35555cc69e9f35091dd3a18ead1822b0b2afde5847f045d4901b7491227425e4",
+      "report": "docs/reports/001-07-retrodiction-decision.md",
+      "report_sha256": "sha256:53b43726a1e2205df157d1fe4cb3005b265fa23737f9a581792ed41636dc21e8",
+      "resolved_burdens": [
+        "B-001-0041"
+      ],
+      "open_burdens": [
+        "B-001-0039",
+        "B-001-0040",
+        "B-001-0042",
+        "B-001-0043"
+      ],
       "public_holdout_consumed": false
     }
   },
@@ -460,11 +479,19 @@
     },
     "stage_07_failed_infrastructure_attempt_01": {
       "path": "docs/evidence/001-07-failed-infrastructure-attempt-01.json",
-      "sha256": "18fa8016d9f62d92ed390b58630892e7e36bfd3c55d6a131d0fafa68c1e185c2"
+      "sha256": "3c4bb0d9599907d48cb6193082732e2244dcc40e8c6ca23dfa7e237485a3657e"
+    },
+    "stage_07_acceptance": {
+      "path": "docs/evidence/001-07-retrodiction-decision.json",
+      "sha256": "35555cc69e9f35091dd3a18ead1822b0b2afde5847f045d4901b7491227425e4"
+    },
+    "stage_07_report": {
+      "path": "docs/reports/001-07-retrodiction-decision.md",
+      "sha256": "53b43726a1e2205df157d1fe4cb3005b265fa23737f9a581792ed41636dc21e8"
     }
   },
   "blocked_items": [],
-  "next_action": "Validate and commit the failed-attempt receipt, repair only fail-closed partial serialization with a regression test, then close Stage 07 without rerunning it.",
+  "next_action": "Freeze the Stage 08 two-speed trigger, budget, cache, regression, and epoch-capacity contract before implementation measurement.",
   "notes": [
     "Build 000 ledgers and reports are immutable historical evidence and are not overwritten by Build 001.",
     "The owner explicitly approved MIT-0 for ARC3 first-party source in the active Build 001 instruction.",

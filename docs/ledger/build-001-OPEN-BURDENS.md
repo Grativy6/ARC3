@@ -756,7 +756,7 @@ does not erase earlier uncertainty or failed mechanisms.
 
 ## B-001-0041 — Stage 07 partial aggregation raised instead of serializing failure
 
-- Status: OPEN
+- Status: RESOLVED
 - Stage: 07, 08, 14
 - Opened: 2026-08-22
 - Burden: the unique official Stage 07 attempt exceeded its frozen overall wall limit after 279
@@ -771,13 +771,14 @@ does not erase earlier uncertainty or failed mechanisms.
   directories, 6,615 files, 1,854,364,170 bytes, inventory SHA-256
   `fa79526cc91c096fa38868fe4aa11e52cad6c8f0fe8c804ebe00806ee6f4f62e`; no official output file;
   exit 1 at `_apply_global_integrity`; all five post-loop verification commands passed.
-- Next discriminating action: make global integrity total over the completed prefix, serialize an
-  explicitly incomplete fail-closed artifact, and add a regression test that reaches the overall
-  limit before the final matrix cell. Do not rerun the unique attempt.
+- Resolution: global integrity is now total over the completed prefix. Exact-count gates remain
+  unchanged, and a CLI regression verifies that an explicitly incomplete result serializes as
+  `PARTIAL`, retains `KEEP_FULL`, and exits nonzero. The unique attempt was not rerun.
 - Resolution condition: a synthetic unit/integration fixture with a deliberately incomplete matrix
   writes a structurally valid `PARTIAL` artifact, selects `KEEP_FULL`, exits nonzero, and retains the
   missing-cell/resource failure without a `KeyError`.
-- Resolution receipt: none.
+- Resolution receipt: commit `85a0782e77e0549814363cbeefd50bb5eec6ca3c`;
+  `docs/evidence/001-07-retrodiction-decision.json`; 150 focused Stage 07 tests passed.
 
 ## B-001-0042 — Every attempted Stage 07 local-public mode exceeded the mechanics epoch bound
 
@@ -800,4 +801,29 @@ does not erase earlier uncertainty or failed mechanisms.
 - Resolution condition: a predeclared generic development run completes within the same action and
   wall budgets without exceeding the epoch bound, while synthetic replay and contradiction tests
   remain within their frozen floors.
+- Resolution receipt: none.
+
+## B-001-0043 — Exceptional public-cell exit loses terminal measurement receipts
+
+- Status: OPEN
+- Stage: 07, 09
+- Opened: 2026-08-22
+- Burden: `_run_public_cell` rethrows an episode exception before its after-episode asset snapshot,
+  scorecard sealing, normal measurement projection, and explicit adapter close. The Stage 07
+  fallback measurement therefore reports zeros and omits the durable trace tail even though each
+  of nine trace prefixes independently proves 65 submitted actions and returned consequences.
+- Why it matters: failure preservation must distinguish "no action occurred" from "65 actions
+  occurred before a controller fault." Missing terminal asset, network-attempt, resource, and
+  scorecard receipts prevent the failed D rows from satisfying hard integrity or entering paired
+  retrodiction gates.
+- Current evidence: `docs/evidence/001-07-failed-infrastructure-attempt-01.json`; nine valid
+  1,702-event trace prefixes with projection SHA-256
+  `95ec8fddc04499f8f68411d5ba112670f219d87a74b5a8511cd6fdab2be364e6`; each reaches 65
+  `action.submitted` and 65 `consequence.received` events, zero levels, and no terminal outcome.
+- Next discriminating action: before Stage 09's decisive public run, make exceptional episode exit
+  close the adapter and seal recoverable trace/action/resource/asset snapshots without converting
+  the policy failure into PASS. Add a fault-injection regression test.
+- Resolution condition: an injected post-action policy fault writes a terminal failure receipt with
+  exact durable action/consequence counts, trace tail, after-failure asset identity, resources, and
+  close outcome; the evaluator remains nonzero/failed and holdout exposure remains zero.
 - Resolution receipt: none.

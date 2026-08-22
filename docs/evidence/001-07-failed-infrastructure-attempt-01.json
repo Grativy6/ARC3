@@ -6,7 +6,7 @@
     "local-public"
   ],
   "attempt": 1,
-  "claim_boundary": "This is the one frozen official Stage 07 attempt. It did not produce the declared result artifact, did not execute the exact 280-cell matrix, did not execute the 60 microbenchmarks, and cannot select a replacement retrodiction mode. Production remains FULL. The 270 synthetic cell directories and nine local-public failure receipts are partial negative evidence only; they are not a completed benchmark or a hidden-generalization claim.",
+  "claim_boundary": "This is the one frozen official Stage 07 attempt. It did not produce the declared result artifact, did not execute the exact 280-cell matrix, did not execute the 60 microbenchmarks, and cannot select a replacement retrodiction mode. Production remains FULL. The 270 synthetic cell directories and nine local-public failure receipts are partial evidence only; they are not a completed benchmark or a hidden-generalization claim.",
   "source": {
     "git_commit": "f683dbc672213e804ddc6120b0be2762e6c66a08",
     "git_tree": "0e05672f7d2cf488b66f7dc21b67b9110a27352f",
@@ -95,6 +95,42 @@
       {"ordinal": 277, "path": "cells/277-5d81b498c1478b37/failure.json", "sha256": "sha256:5b977f66806df4a140d023fe23e53a67a70fb17a54c1e0f3ef896b44e4c0e5f0"},
       {"ordinal": 278, "path": "cells/278-6541aed230bee58e/failure.json", "sha256": "sha256:b8f0d3f67f8389f201e02e350c67d0ed29765d4feaba3a0d2cdcfa2c4a79ab5e"}
     ]
+  },
+  "recovered_partial_results": {
+    "claim_status": "RECOVERED_FROM_IMMUTABLE_RAW_RECEIPTS_NOT_A_COMPLETE_DECISION_ARTIFACT",
+    "false_rule_group_b": {
+      "evidence_label": "synthetic",
+      "receipt_count": 40,
+      "receipt_bytes": 850188,
+      "inventory_definition": "sha256_json(sorted list of {bytes,path-relative-posix,sha256} for cells/*/receipt.json)",
+      "inventory_sha256": "sha256:7c7f2f36f7ad0b17df85007f0c4e64c5865481c92cc4f7f34f818a089c00a533",
+      "checkpoint_roundtrips": "80/80",
+      "mode_results": {
+        "FULL": "TRUE promoted 8/8; FALSE rejected 8/8",
+        "NONE": "TRUE and FALSE ungated_ablation 8/8 each",
+        "RECENT_WINDOW_8": "TRUE promoted 8/8; FALSE incorrectly promoted 8/8",
+        "EVENT_TRIGGERED": "TRUE promoted 8/8; FALSE rejected 8/8",
+        "CACHED_INCREMENTAL": "TRUE promoted 8/8; FALSE rejected 8/8"
+      },
+      "boundary": "These individually sealed receipts recover mechanism outcomes for Group B only. Their process-local cost measurements were lost, and they cannot select a replacement mode."
+    },
+    "local_public_group_d": {
+      "evidence_label": "local-public",
+      "trace_prefixes": 9,
+      "events_per_prefix": 1702,
+      "total_events": 15318,
+      "actions_submitted_per_prefix": 65,
+      "consequences_received_per_prefix": 65,
+      "total_actions_and_consequences": 585,
+      "levels_completed_per_prefix": 0,
+      "terminal_outcomes": 0,
+      "retrodiction_or_model_events": 0,
+      "all_event_hashes_and_chains_valid": true,
+      "all_code_identity_commits": "f683dbc672213e804ddc6120b0be2762e6c66a08",
+      "projection_definition": "sha256_json(sorted rows of {cell_dir,event_count,action_submitted,consequence_received,tail_hash})",
+      "projection_sha256": "sha256:95ec8fddc04499f8f68411d5ba112670f219d87a74b5a8511cd6fdab2be364e6",
+      "boundary": "All nine prefixes remained NOT_FINISHED after the 65th consequence and then faulted at the fixed 64-transition-per-epoch bound before any model, mechanics, hypothesis, planning, simulation, or retrodiction event. This is mode-independent bounded-controller failure evidence, not a scorecard, completion, replay, or paired retrodiction decision."
+    }
   },
   "preserved_partial_work_tree": {
     "path": "C:/a/arc3-b001/artifacts/stage07/retrodiction-decision-work-attempt-01",
