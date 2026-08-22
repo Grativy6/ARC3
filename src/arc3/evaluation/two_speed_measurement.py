@@ -44,6 +44,9 @@ VARIANTS_PER_REPETITION = 4
 EXPECTED_CELL_COUNT = REPETITIONS_PER_VARIANT * VARIANTS_PER_REPETITION
 MATERIALITY_MAX_MEDIAN_RATIO = 0.75
 NONREGRESSION_MIN_FRACTION = 0.70
+MAX_PEAK_RSS_BYTES = 2_147_483_648
+MAX_TRACE_BYTES_PER_RUN = 268_435_456
+MAX_DECISION_WALL_NS = 2_000_000_000
 MEASUREMENT_MATRIX_SHA256 = (
     "sha256:ca507ee6e539e0544647aac792417b276806a848e656f2b7b4f1a368ba6b63a1"
 )
@@ -51,8 +54,8 @@ MEASUREMENT_PLAN_SHA256 = "sha256:b42326c4de76786982c07a18be2fcd73afe4583bdb1110
 
 _PLAN_SCHEMA = "arc3.build-001.stage-08.measurement-plan.v0.1"
 _CELL_SCHEMA = "arc3.build-001.stage-08.measurement-cell.v0.1"
-_RESULT_SCHEMA = "arc3.build-001.stage-08.cell-result.v0.1"
-_GATE_SCHEMA = "arc3.build-001.stage-08.materiality-gate.v0.1"
+_RESULT_SCHEMA = "arc3.build-001.stage-08.cell-result.v0.2"
+_GATE_SCHEMA = "arc3.build-001.stage-08.materiality-gate.v0.2"
 _SCORE_SCOPE_SUCCESS = "terminal-success-receipts"
 _SCORE_SCOPE_RECOVERED_FAILURE = "verified-scorecards-on-failed-receipts"
 
@@ -97,6 +100,45 @@ class WorkAvailability(StrEnum):
 
     AVAILABLE = "available"
     UNAVAILABLE_AT_FROZEN_SOURCE = "unavailable-at-frozen-source"
+
+
+class ReasoningPath(StrEnum):
+    """Typed reasoning path projected from immutable cadence receipts."""
+
+    FAST = "FAST"
+    DEEP = "DEEP"
+
+
+class DeepTrigger(StrEnum):
+    """The frozen priority-ordered reasons that authorize TWO_SPEED DEEP work."""
+
+    STARTUP_UNKNOWN_ACTION = "STARTUP_UNKNOWN_ACTION"
+    REOPENING = "REOPENING"
+    MEANINGFUL_CONTRADICTION = "MEANINGFUL_CONTRADICTION"
+    STRUCTURAL_NOVELTY = "STRUCTURAL_NOVELTY"
+    NO_VALID_PLAN = "NO_VALID_PLAN"
+    HIGH_GOAL_UNCERTAINTY = "HIGH_GOAL_UNCERTAINTY"
+    REPEATED_NO_PROGRESS = "REPEATED_NO_PROGRESS"
+    MAX_FAST_STREAK = "MAX_FAST_STREAK"
+
+
+DEEP_TRIGGER_PRIORITY: tuple[DeepTrigger, ...] = tuple(DeepTrigger)
+
+
+class DeliberationStatus(StrEnum):
+    """Terminal status of one selected reasoning path."""
+
+    COMPLETED = "COMPLETED"
+    FALLBACK_USED = "FALLBACK_USED"
+    BUDGET_EXHAUSTED = "BUDGET_EXHAUSTED"
+    FAILED = "FAILED"
+
+
+class ReasoningTerminalKind(StrEnum):
+    """The exactly-one terminal receipt kind linked to a path selection."""
+
+    DELIBERATION_COMPLETED = "reasoning.deliberation_completed"
+    FALLBACK_USED = "reasoning.fallback_used"
 
 
 @dataclass(frozen=True, slots=True)
@@ -403,10 +445,70 @@ class WorkMeasurement:
 
 
 @dataclass(frozen=True, slots=True)
+class DeepTriggerMeasurement:
+    """One typed DEEP trigger and its immutable source-event provenance."""
+
+    trigger: DeepTrigger
+    source_event_ids: tuple[str, ...]
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.trigger, DeepTrigger):
+            raise EvaluationError("deep trigger must be typed")
+        if not self.source_event_ids:
+            raise EvaluationError("deep trigger requires at least one source event")
+        if any(not isinstance(event_id, str) or not event_id for event_id in self.source_event_ids):
+            raise EvaluationError("deep trigger source IDs must be non-empty strings")
+        if self.source_event_ids != tuple(sorted(set(self.source_event_ids))):
+            raise EvaluationError("deep trigger source IDs must be unique and sorted")
+
+    def to_dict(self) -> dict[str, JSONValue]:
+        return {
+            "source_event_ids": list(self.source_event_ids),
+            "trigger": self.trigger.value,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class ReasoningTerminalMeasurement:
+    """Selected-path linkage to exactly one typed terminal reasoning receipt."""
+
+    path_selected_event_id: str
+    terminal_event_id: str
+    path: ReasoningPath
+    kind: ReasoningTerminalKind
+    status: DeliberationStatus
+
+    def __post_init__(self) -> None:
+        _require_str(self.path_selected_event_id, field="path_selected_event_id")
+        _require_str(self.terminal_event_id, field="terminal_event_id")
+        if self.path_selected_event_id == self.terminal_event_id:
+            raise EvaluationError("reasoning selected and terminal event IDs must differ")
+        if not isinstance(self.path, ReasoningPath):
+            raise EvaluationError("reasoning terminal path must be typed")
+        if not isinstance(self.kind, ReasoningTerminalKind):
+            raise EvaluationError("reasoning terminal kind must be typed")
+        if not isinstance(self.status, DeliberationStatus):
+            raise EvaluationError("reasoning terminal status must be typed")
+        fallback = self.kind is ReasoningTerminalKind.FALLBACK_USED
+        if fallback != (self.status is DeliberationStatus.FALLBACK_USED):
+            raise EvaluationError("reasoning terminal kind and status disagree")
+
+    def to_dict(self) -> dict[str, JSONValue]:
+        return {
+            "kind": self.kind.value,
+            "path": self.path.value,
+            "path_selected_event_id": self.path_selected_event_id,
+            "status": self.status.value,
+            "terminal_event_id": self.terminal_event_id,
+        }
+
+
+@dataclass(frozen=True, slots=True)
 class ActionMeasurement:
     """One whole-controller action timing and its deterministic work projection."""
 
     action_ordinal: int
+    environment_action_identity: str
     boundary_status: BoundaryStatus
     choose_wall_ns: int | None
     choose_cpu_ns: int | None
@@ -417,11 +519,13 @@ class ActionMeasurement:
     controller_total_wall_ns: int | None
     controller_total_cpu_ns: int | None
     work: WorkMeasurement
-    reasoning_path: str | None = None
-    ordered_triggers: tuple[str, ...] = ()
+    reasoning_path: ReasoningPath | None = None
+    deep_triggers: tuple[DeepTriggerMeasurement, ...] = ()
+    reasoning_terminal: ReasoningTerminalMeasurement | None = None
 
     def __post_init__(self) -> None:
         _require_nonnegative_int(self.action_ordinal, field="action_ordinal")
+        _require_str(self.environment_action_identity, field="environment_action_identity")
         if not isinstance(self.boundary_status, BoundaryStatus):
             raise EvaluationError("boundary status must be typed")
         timings = self._timings()
@@ -439,16 +543,47 @@ class ActionMeasurement:
             assert self.choose_cpu_ns is not None
             assert self.consequence_cpu_ns is not None
             assert self.controller_total_cpu_ns is not None
-            if self.controller_total_wall_ns != self.choose_wall_ns + self.consequence_wall_ns:
-                raise EvaluationError("controller wall total must equal choose plus consequence")
-            if self.controller_total_cpu_ns != self.choose_cpu_ns + self.consequence_cpu_ns:
-                raise EvaluationError("controller CPU total must equal choose plus consequence")
-        if self.reasoning_path is not None and (
-            not isinstance(self.reasoning_path, str) or not self.reasoning_path
+            assert self.checkpoint_wall_ns is not None
+            assert self.checkpoint_cpu_ns is not None
+            expected_wall = self.choose_wall_ns + self.consequence_wall_ns + self.checkpoint_wall_ns
+            expected_cpu = self.choose_cpu_ns + self.consequence_cpu_ns + self.checkpoint_cpu_ns
+            if self.controller_total_wall_ns != expected_wall:
+                raise EvaluationError(
+                    "controller wall total must equal choose plus consequence plus checkpoint"
+                )
+            if self.controller_total_cpu_ns != expected_cpu:
+                raise EvaluationError(
+                    "controller CPU total must equal choose plus consequence plus checkpoint"
+                )
+        if self.reasoning_path is not None and not isinstance(self.reasoning_path, ReasoningPath):
+            raise EvaluationError("reasoning path must be typed when available")
+        if any(not isinstance(trigger, DeepTriggerMeasurement) for trigger in self.deep_triggers):
+            raise EvaluationError("deep trigger measurements must be typed")
+        ordered = tuple(item.trigger for item in self.deep_triggers)
+        expected_order = tuple(trigger for trigger in DEEP_TRIGGER_PRIORITY if trigger in ordered)
+        if ordered != expected_order or len(set(ordered)) != len(ordered):
+            raise EvaluationError("deep triggers must be unique and priority ordered")
+        if self.reasoning_path is ReasoningPath.FAST and self.deep_triggers:
+            raise EvaluationError("FAST reasoning cannot carry a DEEP trigger")
+        if self.reasoning_terminal is not None and not isinstance(
+            self.reasoning_terminal, ReasoningTerminalMeasurement
         ):
-            raise EvaluationError("reasoning_path must be non-empty when available")
-        if any(not isinstance(trigger, str) or not trigger for trigger in self.ordered_triggers):
-            raise EvaluationError("ordered triggers must be non-empty strings")
+            raise EvaluationError("reasoning terminal measurement must be typed")
+        if self.reasoning_path is None and (
+            self.deep_triggers or self.reasoning_terminal is not None
+        ):
+            raise EvaluationError("unavailable reasoning telemetry must be wholly null")
+        if (
+            self.reasoning_terminal is not None
+            and self.reasoning_terminal.path is not self.reasoning_path
+        ):
+            raise EvaluationError("reasoning terminal path disagrees with the selected path")
+
+    @property
+    def reasoning_receipt_complete(self) -> bool:
+        """Whether selected-path telemetry links to exactly one typed terminal receipt."""
+
+        return self.reasoning_path is not None and self.reasoning_terminal is not None
 
     def _timings(self) -> tuple[int | None, ...]:
         return (
@@ -474,8 +609,13 @@ class ActionMeasurement:
             "consequence_wall_ns": self.consequence_wall_ns,
             "controller_total_cpu_ns": self.controller_total_cpu_ns,
             "controller_total_wall_ns": self.controller_total_wall_ns,
-            "ordered_triggers": list(self.ordered_triggers),
-            "reasoning_path": self.reasoning_path,
+            "deep_trigger_receipts": [item.to_dict() for item in self.deep_triggers],
+            "environment_action_identity": self.environment_action_identity,
+            "ordered_triggers": [item.trigger.value for item in self.deep_triggers],
+            "reasoning_path": None if self.reasoning_path is None else self.reasoning_path.value,
+            "reasoning_terminal_receipt": (
+                None if self.reasoning_terminal is None else self.reasoning_terminal.to_dict()
+            ),
             "work": self.work.to_dict(),
         }
 
@@ -534,6 +674,9 @@ class CellResult:
     peak_rss_bytes: int
     trace_bytes: int
     checkpoint_bytes: int
+    terminal_state: str | None
+    controller_faults: int
+    controller_fault_identities: tuple[str, ...]
     source_identity_valid: bool = True
     receipt_integrity_valid: bool = True
     replay_valid: bool = True
@@ -559,11 +702,21 @@ class CellResult:
             ("peak_rss_bytes", self.peak_rss_bytes),
             ("trace_bytes", self.trace_bytes),
             ("checkpoint_bytes", self.checkpoint_bytes),
+            ("controller_faults", self.controller_faults),
             ("network_attempt_count", self.network_attempt_count),
             ("holdout_exposure_count", self.holdout_exposure_count),
         )
         for field_name, value in counts:
             _require_nonnegative_int(value, field=field_name)
+        if any(
+            not isinstance(identity, str) or not identity
+            for identity in self.controller_fault_identities
+        ):
+            raise EvaluationError("controller fault identities must be non-empty strings")
+        if len(set(self.controller_fault_identities)) != len(self.controller_fault_identities):
+            raise EvaluationError("controller fault identities must be unique")
+        if self.controller_faults != len(self.controller_fault_identities):
+            raise EvaluationError("controller fault count and identities disagree")
         if self.environment_actions > MAX_ACTIONS or self.resets > MAX_RESETS:
             raise EvaluationError("Stage 08 action or reset budget was exceeded")
         if self.environment_actions != len(self.actions):
@@ -577,8 +730,12 @@ class CellResult:
                 raise EvaluationError("successful Stage 08 cells cannot carry a failure kind")
             if not self.score.verified:
                 raise EvaluationError("successful Stage 08 cells require a verified score")
+            if self.terminal_state is None:
+                raise EvaluationError("successful Stage 08 cells require a terminal state")
         elif not self.failure_kind:
             raise EvaluationError("failed Stage 08 cells require a failure kind")
+        if self.terminal_state is not None:
+            _require_str(self.terminal_state, field="terminal_state")
         frozen_source = self.cell.variant is MeasurementVariant.FROZEN_BUILD_000_FULL
         for action in self.actions:
             if frozen_source and (
@@ -587,6 +744,64 @@ class CellResult:
                 raise EvaluationError("Build 000 integer work must be explicitly unavailable")
             if not frozen_source and action.work.availability is not WorkAvailability.AVAILABLE:
                 raise EvaluationError("Build 001 integer work must be measured")
+            if frozen_source and (
+                action.reasoning_path is not None
+                or action.deep_triggers
+                or action.reasoning_terminal is not None
+            ):
+                raise EvaluationError("Build 000 reasoning telemetry must be null")
+
+    @property
+    def behavior_signature(self) -> tuple[object, ...]:
+        """Exact observable outcome used for cross-variant behavior parity."""
+
+        return (
+            tuple(action.environment_action_identity for action in self.actions),
+            self.resets,
+            self.terminal_state,
+            self.score,
+            self.controller_faults,
+            self.controller_fault_identities,
+        )
+
+    @property
+    def resources_valid(self) -> bool:
+        """Apply the frozen per-cell RSS, trace, and per-decision wall limits."""
+
+        return (
+            self.peak_rss_bytes <= MAX_PEAK_RSS_BYTES
+            and self.trace_bytes <= MAX_TRACE_BYTES_PER_RUN
+            and all(
+                action.choose_wall_ns is not None and action.choose_wall_ns <= MAX_DECISION_WALL_NS
+                for action in self.actions
+            )
+        )
+
+    @property
+    def reasoning_receipts_valid(self) -> bool:
+        """Fail closed on unavailable or incomplete Build 001 cadence receipts."""
+
+        frozen_source = self.cell.variant is MeasurementVariant.FROZEN_BUILD_000_FULL
+        if frozen_source:
+            return all(
+                action.reasoning_path is None
+                and not action.deep_triggers
+                and action.reasoning_terminal is None
+                for action in self.actions
+            )
+        if self.cell.variant is MeasurementVariant.BUILD_001_LEGACY_ALWAYS_DEEP:
+            return all(
+                action.reasoning_path is ReasoningPath.DEEP and action.reasoning_receipt_complete
+                for action in self.actions
+            )
+        return all(
+            action.reasoning_receipt_complete
+            and (
+                (action.reasoning_path is ReasoningPath.FAST and not action.deep_triggers)
+                or (action.reasoning_path is ReasoningPath.DEEP and bool(action.deep_triggers))
+            )
+            for action in self.actions
+        )
 
     @property
     def integrity_valid(self) -> bool:
@@ -609,6 +824,8 @@ class CellResult:
             "cell": self.cell.to_dict(),
             "checkpoint_bytes": self.checkpoint_bytes,
             "checkpoint_valid": self.checkpoint_valid,
+            "controller_fault_identities": list(self.controller_fault_identities),
+            "controller_faults": self.controller_faults,
             "environment_actions": self.environment_actions,
             "failure_kind": self.failure_kind,
             "holdout_exposure_count": self.holdout_exposure_count,
@@ -621,6 +838,7 @@ class CellResult:
             "score": self.score.to_dict(),
             "source_identity_valid": self.source_identity_valid,
             "status": self.status.value,
+            "terminal_state": self.terminal_state,
             "trace_bytes": self.trace_bytes,
         }
 
@@ -756,12 +974,16 @@ class Stage08GateResult:
     terminal_failure_count: int
     censored_action_count: int
     integrity_failure_count: int
+    behavior_parity_failure_count: int
+    resource_failure_count: int
+    reasoning_receipt_failure_count: int
     comparisons: tuple[ComparatorGate, ...]
     scores: tuple[VariantScoreAggregate, ...]
     passed: bool
 
     def to_dict(self) -> dict[str, JSONValue]:
         return {
+            "behavior_parity_failure_count": self.behavior_parity_failure_count,
             "censored_action_count": self.censored_action_count,
             "comparisons": [comparison.to_dict() for comparison in self.comparisons],
             "complete_matrix": self.complete_matrix,
@@ -769,6 +991,8 @@ class Stage08GateResult:
             "missing_cell_count": self.missing_cell_count,
             "passed": self.passed,
             "result_count": self.result_count,
+            "resource_failure_count": self.resource_failure_count,
+            "reasoning_receipt_failure_count": self.reasoning_receipt_failure_count,
             "schema": _GATE_SCHEMA,
             "score_aggregates": [score.to_dict() for score in self.scores],
             "terminal_failure_count": self.terminal_failure_count,
@@ -799,6 +1023,11 @@ def evaluate_materiality_gates(results: Sequence[CellResult]) -> Stage08GateResu
         for action in result.actions
     )
     integrity_failure_count = sum(not result.integrity_valid for result in by_id.values())
+    behavior_parity_failure_count = _behavior_parity_failure_count(expected, by_id)
+    resource_failure_count = sum(not result.resources_valid for result in by_id.values())
+    reasoning_receipt_failure_count = sum(
+        not result.reasoning_receipts_valid for result in by_id.values()
+    )
     candidate = MeasurementVariant.BUILD_001_TWO_SPEED
     comparisons = tuple(
         _evaluate_comparator(expected, by_id, candidate, comparator)
@@ -813,6 +1042,9 @@ def evaluate_materiality_gates(results: Sequence[CellResult]) -> Stage08GateResu
         and terminal_failure_count == 0
         and censored_action_count == 0
         and integrity_failure_count == 0
+        and behavior_parity_failure_count == 0
+        and resource_failure_count == 0
+        and reasoning_receipt_failure_count == 0
         and all(comparison.passed for comparison in comparisons)
     )
     return Stage08GateResult(
@@ -822,12 +1054,37 @@ def evaluate_materiality_gates(results: Sequence[CellResult]) -> Stage08GateResu
         terminal_failure_count=terminal_failure_count,
         censored_action_count=censored_action_count,
         integrity_failure_count=integrity_failure_count,
+        behavior_parity_failure_count=behavior_parity_failure_count,
+        resource_failure_count=resource_failure_count,
+        reasoning_receipt_failure_count=reasoning_receipt_failure_count,
         comparisons=comparisons,
         scores=tuple(
             aggregate_score_evidence(tuple(by_id.values()), variant) for variant in VARIANT_ORDER
         ),
         passed=passed,
     )
+
+
+def _behavior_parity_failure_count(
+    expected: Sequence[MeasurementCell], results: Mapping[str, CellResult]
+) -> int:
+    """Count exact behavior mismatches across all paired variants in each repetition."""
+
+    cells_by_key = {(cell.repetition, cell.variant): cell for cell in expected}
+    failures = 0
+    for repetition in range(REPETITIONS_PER_VARIANT):
+        paired: list[CellResult] = []
+        for variant in VARIANT_ORDER:
+            result = results.get(cells_by_key[(repetition, variant)].cell_id)
+            if result is None or result.status is not CellStatus.SUCCESS:
+                paired = []
+                break
+            paired.append(result)
+        if not paired:
+            continue
+        reference = paired[0].behavior_signature
+        failures += sum(result.behavior_signature != reference for result in paired[1:])
+    return failures
 
 
 def _evaluate_comparator(
@@ -1001,6 +1258,9 @@ __all__ = [
     "DEVELOPMENT_GAME_ID",
     "EXPECTED_CELL_COUNT",
     "MATERIALITY_MAX_MEDIAN_RATIO",
+    "MAX_DECISION_WALL_NS",
+    "MAX_PEAK_RSS_BYTES",
+    "MAX_TRACE_BYTES_PER_RUN",
     "MEASUREMENT_MATRIX_SHA256",
     "MEASUREMENT_PLAN_SHA256",
     "NONREGRESSION_MIN_FRACTION",
@@ -1013,9 +1273,15 @@ __all__ = [
     "CellResult",
     "CellStatus",
     "ComparatorGate",
+    "DeepTrigger",
+    "DeepTriggerMeasurement",
+    "DeliberationStatus",
     "DevelopmentIdentity",
     "MeasurementCell",
     "MeasurementVariant",
+    "ReasoningPath",
+    "ReasoningTerminalKind",
+    "ReasoningTerminalMeasurement",
     "ScoreMeasurement",
     "ScoreMetrics",
     "Stage08GateResult",

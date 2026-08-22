@@ -10,6 +10,9 @@ from arc3.errors import EvaluationError
 from arc3.evaluation.two_speed_measurement import (
     EXPECTED_CELL_COUNT,
     MATERIALITY_MAX_MEDIAN_RATIO,
+    MAX_DECISION_WALL_NS,
+    MAX_PEAK_RSS_BYTES,
+    MAX_TRACE_BYTES_PER_RUN,
     MEASUREMENT_MATRIX_SHA256,
     MEASUREMENT_PLAN_SHA256,
     NONREGRESSION_MIN_FRACTION,
@@ -20,9 +23,15 @@ from arc3.evaluation.two_speed_measurement import (
     BoundaryStatus,
     CellResult,
     CellStatus,
+    DeepTrigger,
+    DeepTriggerMeasurement,
+    DeliberationStatus,
     DevelopmentIdentity,
     MeasurementCell,
     MeasurementVariant,
+    ReasoningPath,
+    ReasoningTerminalKind,
+    ReasoningTerminalMeasurement,
     ScoreMeasurement,
     WorkAvailability,
     WorkMeasurement,
@@ -56,10 +65,32 @@ def _action(
     total_wall_ns: int,
     *,
     boundary_status: BoundaryStatus = BoundaryStatus.NORMAL,
+    action_ordinal: int = 0,
+    environment_action_identity: str = "canonical-action-1",
+    reasoning_path: ReasoningPath | None = None,
+    deep_triggers: tuple[DeepTriggerMeasurement, ...] = (),
+    reasoning_terminal: ReasoningTerminalMeasurement | None = None,
 ) -> ActionMeasurement:
+    if variant is MeasurementVariant.FROZEN_BUILD_000_FULL:
+        selected_path = None
+        terminal = None
+    else:
+        selected_path = reasoning_path or (
+            ReasoningPath.DEEP
+            if variant is MeasurementVariant.BUILD_001_LEGACY_ALWAYS_DEEP
+            else ReasoningPath.FAST
+        )
+        terminal = reasoning_terminal or ReasoningTerminalMeasurement(
+            path_selected_event_id=f"reasoning-selected-{action_ordinal}",
+            terminal_event_id=f"reasoning-terminal-{action_ordinal}",
+            path=selected_path,
+            kind=ReasoningTerminalKind.DELIBERATION_COMPLETED,
+            status=DeliberationStatus.COMPLETED,
+        )
     if boundary_status is not BoundaryStatus.NORMAL:
         return ActionMeasurement(
-            action_ordinal=0,
+            action_ordinal=action_ordinal,
+            environment_action_identity=environment_action_identity,
             boundary_status=boundary_status,
             choose_wall_ns=None,
             choose_cpu_ns=None,
@@ -70,24 +101,33 @@ def _action(
             controller_total_wall_ns=None,
             controller_total_cpu_ns=None,
             work=_work(variant),
+            reasoning_path=selected_path,
+            deep_triggers=deep_triggers,
+            reasoning_terminal=terminal,
         )
-    choose_wall_ns = total_wall_ns // 2
-    consequence_wall_ns = total_wall_ns - choose_wall_ns
+    checkpoint_wall_ns = min(1, total_wall_ns)
+    measured_without_checkpoint = total_wall_ns - checkpoint_wall_ns
+    choose_wall_ns = measured_without_checkpoint // 2
+    consequence_wall_ns = measured_without_checkpoint - choose_wall_ns
     choose_cpu_ns = choose_wall_ns * 2
     consequence_cpu_ns = consequence_wall_ns * 2
+    checkpoint_cpu_ns = checkpoint_wall_ns * 2
     return ActionMeasurement(
-        action_ordinal=0,
+        action_ordinal=action_ordinal,
+        environment_action_identity=environment_action_identity,
         boundary_status=boundary_status,
         choose_wall_ns=choose_wall_ns,
         choose_cpu_ns=choose_cpu_ns,
         consequence_wall_ns=consequence_wall_ns,
         consequence_cpu_ns=consequence_cpu_ns,
-        checkpoint_wall_ns=1,
-        checkpoint_cpu_ns=2,
+        checkpoint_wall_ns=checkpoint_wall_ns,
+        checkpoint_cpu_ns=checkpoint_cpu_ns,
         controller_total_wall_ns=total_wall_ns,
-        controller_total_cpu_ns=choose_cpu_ns + consequence_cpu_ns,
+        controller_total_cpu_ns=choose_cpu_ns + consequence_cpu_ns + checkpoint_cpu_ns,
         work=_work(variant),
-        reasoning_path=(None if variant is MeasurementVariant.FROZEN_BUILD_000_FULL else "FAST"),
+        reasoning_path=selected_path,
+        deep_triggers=deep_triggers,
+        reasoning_terminal=terminal,
     )
 
 
@@ -99,6 +139,9 @@ def _result(
     boundary_status: BoundaryStatus = BoundaryStatus.NORMAL,
     score: ScoreMeasurement | None = None,
     integrity_valid: bool = True,
+    terminal_state: str | None = "NOT_FINISHED",
+    controller_faults: int = 0,
+    controller_fault_identities: tuple[str, ...] = (),
 ) -> CellResult:
     return CellResult(
         cell=cell,
@@ -110,6 +153,9 @@ def _result(
         peak_rss_bytes=1_000,
         trace_bytes=2_000,
         checkpoint_bytes=3_000,
+        terminal_state=terminal_state,
+        controller_faults=controller_faults,
+        controller_fault_identities=controller_fault_identities,
         source_identity_valid=integrity_valid,
         failure_kind=None if status is CellStatus.SUCCESS else "fixture-failure",
     )
@@ -269,15 +315,265 @@ def test_frozen_build_work_is_null_not_zero_and_build001_work_is_required() -> N
     with pytest.raises(EvaluationError, match="Build 001 integer work"):
         replace(_result(build001_cell, 75), actions=(bad_build001_action,))
 
+    build000_action = _action(build000_cell.variant, 100)
+    build000_payload = build000_action.to_dict()
+    assert build000_payload["reasoning_path"] is None
+    assert build000_payload["reasoning_terminal_receipt"] is None
+    assert build000_payload["ordered_triggers"] == []
+
 
 def test_action_measurement_requires_complete_consistent_normal_boundary() -> None:
     action = _action(MeasurementVariant.BUILD_001_TWO_SPEED, 75)
+    assert action.controller_total_wall_ns == (
+        action.choose_wall_ns + action.consequence_wall_ns + action.checkpoint_wall_ns
+    )
+    assert action.controller_total_cpu_ns == (
+        action.choose_cpu_ns + action.consequence_cpu_ns + action.checkpoint_cpu_ns
+    )
     with pytest.raises(EvaluationError, match="complete timing"):
         replace(action, choose_wall_ns=None)
     with pytest.raises(EvaluationError, match="wall total"):
         replace(action, controller_total_wall_ns=76)
     with pytest.raises(EvaluationError, match="CPU total"):
         replace(action, controller_total_cpu_ns=151)
+
+
+@pytest.mark.parametrize(
+    "mismatch",
+    ["action_identity", "resets", "terminal_state", "score", "levels", "completed", "faults"],
+)
+def test_gate_fails_closed_on_exact_paired_behavior_mismatch(mismatch: str) -> None:
+    values = _complete_results()
+    target = next(
+        result
+        for result in values
+        if result.cell.variant is MeasurementVariant.BUILD_001_TWO_SPEED
+        and result.cell.repetition == 0
+    )
+    replacement = target
+    if mismatch == "action_identity":
+        replacement = replace(
+            target,
+            actions=(replace(target.actions[0], environment_action_identity="different-action"),),
+        )
+    elif mismatch == "resets":
+        replacement = replace(target, resets=1)
+    elif mismatch == "terminal_state":
+        replacement = replace(target, terminal_state="WIN")
+    elif mismatch == "score":
+        replacement = replace(target, score=ScoreMeasurement(True, 0.5, 0, False))
+    elif mismatch == "levels":
+        replacement = replace(target, score=ScoreMeasurement(True, 0.25, 1, False))
+    elif mismatch == "completed":
+        replacement = replace(target, score=ScoreMeasurement(True, 0.25, 0, True))
+    else:
+        replacement = replace(
+            target,
+            controller_faults=1,
+            controller_fault_identities=("canonical-controller-fault",),
+        )
+    _replace_result(
+        values,
+        MeasurementVariant.BUILD_001_TWO_SPEED,
+        0,
+        replacement,
+    )
+
+    gate = evaluate_materiality_gates(values)
+    assert gate.behavior_parity_failure_count == 1
+    assert not gate.passed
+
+
+def test_behavior_signature_preserves_exact_environment_action_order() -> None:
+    cell = next(
+        cell
+        for cell in build_measurement_matrix()
+        if cell.variant is MeasurementVariant.BUILD_001_TWO_SPEED
+    )
+    first = _action(cell.variant, 40, action_ordinal=0, environment_action_identity="action-a")
+    second = _action(cell.variant, 35, action_ordinal=1, environment_action_identity="action-b")
+    forward = replace(
+        _result(cell, 75),
+        actions=(first, second),
+        environment_actions=2,
+    )
+    reverse = replace(
+        forward,
+        actions=(
+            replace(first, environment_action_identity="action-b"),
+            replace(second, environment_action_identity="action-a"),
+        ),
+    )
+    assert forward.behavior_signature != reverse.behavior_signature
+
+
+def test_gate_compares_controller_fault_identity_at_equal_count() -> None:
+    values = [
+        replace(
+            result,
+            controller_faults=1,
+            controller_fault_identities=("shared-fault-kind",),
+        )
+        for result in _complete_results()
+    ]
+    target = next(
+        result
+        for result in values
+        if result.cell.variant is MeasurementVariant.BUILD_001_TWO_SPEED
+        and result.cell.repetition == 0
+    )
+    _replace_result(
+        values,
+        MeasurementVariant.BUILD_001_TWO_SPEED,
+        0,
+        replace(target, controller_fault_identities=("different-fault-kind",)),
+    )
+    gate = evaluate_materiality_gates(values)
+    assert gate.behavior_parity_failure_count == 1
+    assert not gate.passed
+
+
+@pytest.mark.parametrize("resource", ["rss", "trace", "decision"])
+def test_gate_fails_closed_on_each_frozen_resource_limit(resource: str) -> None:
+    values = _complete_results()
+    target = next(
+        result
+        for result in values
+        if result.cell.variant is MeasurementVariant.BUILD_001_TWO_SPEED
+        and result.cell.repetition == 0
+    )
+    if resource == "rss":
+        replacement = replace(target, peak_rss_bytes=MAX_PEAK_RSS_BYTES + 1)
+    elif resource == "trace":
+        replacement = replace(target, trace_bytes=MAX_TRACE_BYTES_PER_RUN + 1)
+    else:
+        action = target.actions[0]
+        assert action.consequence_wall_ns is not None
+        assert action.checkpoint_wall_ns is not None
+        replacement = replace(
+            target,
+            actions=(
+                replace(
+                    action,
+                    choose_wall_ns=MAX_DECISION_WALL_NS + 1,
+                    controller_total_wall_ns=(
+                        MAX_DECISION_WALL_NS
+                        + 1
+                        + action.consequence_wall_ns
+                        + action.checkpoint_wall_ns
+                    ),
+                ),
+            ),
+        )
+    _replace_result(
+        values,
+        MeasurementVariant.BUILD_001_TWO_SPEED,
+        0,
+        replacement,
+    )
+
+    gate = evaluate_materiality_gates(values)
+    assert gate.resource_failure_count == 1
+    assert not gate.passed
+
+
+def test_resource_limits_are_inclusive() -> None:
+    target = next(
+        result
+        for result in _complete_results()
+        if result.cell.variant is MeasurementVariant.BUILD_001_TWO_SPEED
+    )
+    action = target.actions[0]
+    assert action.consequence_wall_ns is not None
+    assert action.checkpoint_wall_ns is not None
+    at_limits = replace(
+        target,
+        peak_rss_bytes=MAX_PEAK_RSS_BYTES,
+        trace_bytes=MAX_TRACE_BYTES_PER_RUN,
+        actions=(
+            replace(
+                action,
+                choose_wall_ns=MAX_DECISION_WALL_NS,
+                controller_total_wall_ns=(
+                    MAX_DECISION_WALL_NS + action.consequence_wall_ns + action.checkpoint_wall_ns
+                ),
+            ),
+        ),
+    )
+    assert at_limits.resources_valid
+
+
+def test_two_speed_deep_path_requires_typed_trigger_sources_and_terminal_receipt() -> None:
+    values = _complete_results()
+    target = next(
+        result
+        for result in values
+        if result.cell.variant is MeasurementVariant.BUILD_001_TWO_SPEED
+        and result.cell.repetition == 0
+    )
+    action = target.actions[0]
+    terminal = ReasoningTerminalMeasurement(
+        path_selected_event_id="selected-deep",
+        terminal_event_id="terminal-deep",
+        path=ReasoningPath.DEEP,
+        kind=ReasoningTerminalKind.DELIBERATION_COMPLETED,
+        status=DeliberationStatus.COMPLETED,
+    )
+    deep = replace(
+        action,
+        reasoning_path=ReasoningPath.DEEP,
+        deep_triggers=(
+            DeepTriggerMeasurement(
+                DeepTrigger.REOPENING,
+                ("source-event-1",),
+            ),
+        ),
+        reasoning_terminal=terminal,
+    )
+    _replace_result(
+        values,
+        MeasurementVariant.BUILD_001_TWO_SPEED,
+        0,
+        replace(target, actions=(deep,)),
+    )
+    accepted = evaluate_materiality_gates(values)
+    assert accepted.reasoning_receipt_failure_count == 0
+    assert accepted.passed
+
+    without_trigger = list(values)
+    _replace_result(
+        without_trigger,
+        MeasurementVariant.BUILD_001_TWO_SPEED,
+        0,
+        replace(target, actions=(replace(deep, deep_triggers=()),)),
+    )
+    trigger_gate = evaluate_materiality_gates(without_trigger)
+    assert trigger_gate.reasoning_receipt_failure_count == 1
+    assert not trigger_gate.passed
+
+    without_terminal = list(values)
+    _replace_result(
+        without_terminal,
+        MeasurementVariant.BUILD_001_TWO_SPEED,
+        0,
+        replace(target, actions=(replace(deep, reasoning_terminal=None),)),
+    )
+    terminal_gate = evaluate_materiality_gates(without_terminal)
+    assert terminal_gate.reasoning_receipt_failure_count == 1
+    assert not terminal_gate.passed
+
+
+def test_typed_deep_receipt_rejects_missing_sources_and_terminal_disagreement() -> None:
+    with pytest.raises(EvaluationError, match="at least one source"):
+        DeepTriggerMeasurement(DeepTrigger.REOPENING, ())
+    with pytest.raises(EvaluationError, match="kind and status disagree"):
+        ReasoningTerminalMeasurement(
+            path_selected_event_id="selected-deep",
+            terminal_event_id="terminal-deep",
+            path=ReasoningPath.DEEP,
+            kind=ReasoningTerminalKind.FALLBACK_USED,
+            status=DeliberationStatus.COMPLETED,
+        )
 
 
 def test_materiality_gate_passes_at_frozen_ratio_edge() -> None:
@@ -288,6 +584,9 @@ def test_materiality_gate_passes_at_frozen_ratio_edge() -> None:
     assert gate.terminal_failure_count == 0
     assert gate.censored_action_count == 0
     assert gate.integrity_failure_count == 0
+    assert gate.behavior_parity_failure_count == 0
+    assert gate.resource_failure_count == 0
+    assert gate.reasoning_receipt_failure_count == 0
     assert gate.passed
     assert len(gate.comparisons) == 2
     for comparison in gate.comparisons:
