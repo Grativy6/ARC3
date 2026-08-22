@@ -7,10 +7,10 @@ import random
 from collections import Counter
 from collections.abc import Callable, Mapping, Sequence
 from contextlib import AbstractContextManager
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from functools import wraps
 from pathlib import Path
-from typing import NoReturn, Protocol, TypeVar, cast
+from typing import Literal, NoReturn, Protocol, TypeVar, cast
 
 from arc3.adapters import GridFrame, Observation, validate_action_request
 from arc3.config import derive_seed
@@ -122,6 +122,7 @@ from arc3.world_model import (
     Cell,
     CollisionBehavior,
     CollisionRule,
+    MatchedPredictionEvidence,
     MechanicsChangeCandidate,
     MechanicsChangeDomain,
     MechanicsChangeStatus,
@@ -134,6 +135,14 @@ from arc3.world_model import (
     PreservedTransition,
     PromotionStatus,
     RetrodictionArtifact,
+    RetrodictionConfig,
+    RetrodictionEvaluation,
+    RetrodictionMode,
+    RetrodictionOmission,
+    RetrodictionPlan,
+    RetrodictionReason,
+    RetrodictionRequest,
+    RetrodictionRuntime,
     SymbolicEntity,
     SymbolicState,
     WorldModelEnsemble,
@@ -157,6 +166,24 @@ from .models import (
     preset_features,
 )
 from .proposal import LocalProposalProvider, ProposalContext
+
+_RETRODICTION_FORCE_FULL_EVENTS = frozenset(
+    {
+        "consequence.mismatched_prediction",
+        "hypothesis.reopened",
+        "mechanics.change_candidate_created",
+        "mechanics.change_candidate_resolved",
+        "mechanics.change_confirmed",
+        "mechanics.epoch_opened",
+        "model.rule_demoted",
+    }
+)
+_HotPathChangeKindValue = Literal[
+    "initial",
+    "unchanged",
+    "history_growth",
+    "global_change",
+]
 
 
 class _HotPathProfiler(Protocol):
@@ -355,6 +382,7 @@ class ARC3Controller:
         local_proposal_provider: LocalProposalProvider | None = None,
         features: PresetFeatures | None = None,
         hot_path_profiler: _HotPathProfiler | None = None,
+        retrodiction_config: RetrodictionConfig | None = None,
     ) -> None:
         self.preset = preset if isinstance(preset, ControllerPreset) else ControllerPreset(preset)
         selected_features = preset_features(self.preset) if features is None else features
@@ -369,10 +397,33 @@ class ARC3Controller:
             raise CompetitionIntegrityError(
                 "competition preset forbids the experimental local proposal provider"
             )
+        if self.preset is ControllerPreset.COMPETITION and retrodiction_config is not None:
+            raise CompetitionIntegrityError(
+                "competition preset forbids explicit retrodiction overrides"
+            )
         if local_proposal_provider is not None and not self.features.allow_local_proposals:
             raise PolicyError("local proposals are disabled by the selected controller preset")
+        default_retrodiction_mode = (
+            RetrodictionMode.FULL
+            if selected_features.use_retrodiction_gate
+            else RetrodictionMode.NONE
+        )
+        selected_retrodiction = retrodiction_config or RetrodictionConfig(
+            mode=default_retrodiction_mode
+        )
+        if (selected_retrodiction.mode is RetrodictionMode.NONE) != (
+            not selected_features.use_retrodiction_gate
+        ):
+            raise PolicyError(
+                "NONE retrodiction must pair with use_retrodiction_gate=false; "
+                "all other modes require the gate"
+            )
         self._local_proposals = local_proposal_provider
         self._hot_path_profiler = hot_path_profiler
+        self._retrodiction_config_explicit = retrodiction_config is not None
+        self._retrodiction_runtime = RetrodictionRuntime(selected_retrodiction)
+        self._retrodiction_force_full_source_event_ids: list[str] = []
+        self._matched_prediction_evidence: dict[tuple[str, str], MatchedPredictionEvidence] = {}
         self._context: RunContext | None = None
         self._journal: EventJournal | None = None
         self._checkpoint_manager: ControllerCheckpointManager | None = None
@@ -392,6 +443,7 @@ class ARC3Controller:
         self._before_action_features: ProbeContext | None = None
         self._pending_action: PendingAction | None = None
         self._pending_prediction: PredictionReceipt | None = None
+        self._pending_prediction_event_id: str | None = None
         self._restored_prediction_state_ids: tuple[str, ...] = ()
         self._restored_prediction_plan_ids: tuple[str, ...] = ()
         self._prediction_book = PredictionBook()
@@ -466,6 +518,18 @@ class ARC3Controller:
 
         profiler = self._hot_path_profiler
         return profiler.summary() if profiler is not None and profiler.enabled else None
+
+    @property
+    def retrodiction_config(self) -> RetrodictionConfig:
+        """Return the complete typed retrodiction policy identity."""
+
+        return self._retrodiction_runtime.config
+
+    @property
+    def retrodiction_state(self) -> dict[str, JSONValue]:
+        """Return a derived checkpoint projection without granting action authority."""
+
+        return self._retrodiction_runtime.to_dict()
 
     @property
     def palette_role_projection(self) -> tuple[tuple[str, int, bool], ...]:
@@ -766,12 +830,19 @@ class ARC3Controller:
                 raise CompetitionIntegrityError(
                     "competition preset requires a competition-mode ARC3Config"
                 )
+        proposal_provider = self._local_proposals
+        selected_features = self.features
+        profiler = self._hot_path_profiler
+        selected_retrodiction = (
+            self._retrodiction_runtime.config if self._retrodiction_config_explicit else None
+        )
         ARC3Controller.__init__(
             self,
             self.preset,
-            local_proposal_provider=self._local_proposals,
-            features=self.features,
-            hot_path_profiler=self._hot_path_profiler,
+            local_proposal_provider=proposal_provider,
+            features=selected_features,
+            hot_path_profiler=profiler,
+            retrodiction_config=selected_retrodiction,
         )
         self._initialize_context(context)
         self._append(
@@ -781,6 +852,10 @@ class ARC3Controller:
                 "preset": self.preset.value,
                 "network_enabled": context.config.network_enabled,
                 "features": self.features.to_dict(),
+                "retrodiction_config": self._retrodiction_runtime.config.to_dict(),
+                "retrodiction_configuration_hash": sha256_json(
+                    self._retrodiction_runtime.config.to_dict()
+                ),
             },
             scope="run",
         )
@@ -790,7 +865,14 @@ class ARC3Controller:
         self._source = SourceIdentity(
             context.source_kind,
             context.source_version,
-            {"preset": self.preset.value, "features": self.features.to_dict()},
+            {
+                "preset": self.preset.value,
+                "features": self.features.to_dict(),
+                "retrodiction_config": self._retrodiction_runtime.config.to_dict(),
+                "retrodiction_configuration_hash": sha256_json(
+                    self._retrodiction_runtime.config.to_dict()
+                ),
+            },
         )
         self._code = CodeIdentity(
             context.git_commit,
@@ -820,7 +902,7 @@ class ARC3Controller:
     ) -> TraceEvent:
         if self._source is None or self._code is None:
             raise PolicyError("controller identity is unavailable")
-        return self.journal.append(
+        event = self.journal.append(
             episode_id=self.context.episode_id,
             game_id=game_id,
             level_index=self._level_index,
@@ -831,6 +913,9 @@ class ARC3Controller:
             payload=payload,
             code_identity=self._code,
         )
+        if event_type in _RETRODICTION_FORCE_FULL_EVENTS:
+            self._retrodiction_force_full_source_event_ids.append(event.event_id)
+        return event
 
     @_profiled("controller_orchestration", "observe")
     def observe(self, frames: Observation | object) -> ObservationReceipt:
@@ -2186,45 +2271,87 @@ class ARC3Controller:
                 and item.transition_id not in self._resolved_noise_transition_ids
             )
         )
-        artifacts = []
-        for candidate in compiled.candidates:
-            (
-                candidate_transitions,
-                deferred_unclaimed_action_ids,
-                deferred_collision_ambiguous_ids,
-            ) = self._candidate_retrodiction_partition(candidate, level_transitions)
-            self._append(
-                str(observation.game_id),
-                "model.retrodiction_started",
-                {
-                    "model_id": candidate.model_id,
-                    "transition_ids": [item.transition_id for item in candidate_transitions],
-                    "deferred_unclaimed_action_transition_ids": list(deferred_unclaimed_action_ids),
-                    "deferred_collision_ambiguous_transition_ids": list(
-                        deferred_collision_ambiguous_ids
-                    ),
-                    "resolved_noise_transition_ids": sorted(self._resolved_noise_transition_ids),
-                    "mechanics_epoch_id": current_epoch_id,
-                },
+        artifacts: list[RetrodictionArtifact] = []
+        completed_by_model: dict[str, tuple[RetrodictionEvaluation, TraceEvent]] = {}
+        force_full_source_event_ids = tuple(self._retrodiction_force_full_source_event_ids)
+        runtime_before = self._retrodiction_runtime.to_dict()
+        try:
+            for candidate in compiled.candidates:
+                (
+                    request,
+                    deferred_unclaimed_action_ids,
+                    deferred_collision_ambiguous_ids,
+                ) = self._retrodiction_request(
+                    candidate,
+                    level_transitions,
+                    mechanics_epoch_id=current_epoch_id,
+                    force_full_source_event_ids=force_full_source_event_ids,
+                )
+                plan = self._retrodiction_runtime.plan(request)
+                candidate_receipt_payload: dict[str, JSONValue] = {
+                    "candidate_compile_residuals": list(candidate.compile_residuals),
+                    "candidate_hypothesis_ids": list(candidate.hypothesis_ids),
+                    "candidate_rank_weight": candidate.rank_weight,
+                }
+                started = self._append(
+                    str(observation.game_id),
+                    "model.retrodiction_started",
+                    {
+                        **plan.to_trace_payload(),
+                        **candidate_receipt_payload,
+                        "namespace_key": plan.namespace_key,
+                        # Legacy receipt fields remain stable for Build 000 replay.
+                        "transition_ids": [item.transition_id for item in request.transitions],
+                        "deferred_unclaimed_action_transition_ids": list(
+                            deferred_unclaimed_action_ids
+                        ),
+                        "deferred_collision_ambiguous_transition_ids": list(
+                            deferred_collision_ambiguous_ids
+                        ),
+                    },
+                )
+                evaluation = self._execute_retrodiction(plan)
+                reused: TraceEvent | None = None
+                if evaluation.reused:
+                    reused = self._append(
+                        str(observation.game_id),
+                        "model.retrodiction_reused",
+                        {
+                            **evaluation.to_trace_payload(),
+                            **candidate_receipt_payload,
+                            "namespace_key": plan.namespace_key,
+                            "retrodiction_started_event_id": started.event_id,
+                        },
+                    )
+                artifact = evaluation.artifact
+                completed = self._append(
+                    str(observation.game_id),
+                    "model.retrodiction_completed",
+                    {
+                        **evaluation.to_trace_payload(),
+                        **candidate_receipt_payload,
+                        "complete": artifact.complete,
+                        "namespace_key": plan.namespace_key,
+                        "retrodiction_reused_event_id": (
+                            reused.event_id if reused is not None else None
+                        ),
+                        "retrodiction_started_event_id": started.event_id,
+                    },
+                )
+                self._retrodiction_runtime.commit(
+                    evaluation,
+                    source_receipt_event_id=completed.event_id,
+                )
+                artifacts.append(artifact)
+                completed_by_model[candidate.model_id] = (evaluation, completed)
+        except (ARC3ValidationError, WorldModelError):
+            self._retrodiction_runtime = RetrodictionRuntime.from_dict(
+                runtime_before,
+                expected_config=self._retrodiction_runtime.config,
             )
-            artifact = self._retrodict_candidate(candidate, level_transitions)
-            artifacts.append(artifact)
-            self._append(
-                str(observation.game_id),
-                "model.retrodiction_completed",
-                {
-                    "artifact_id": artifact.artifact_id,
-                    "model_id": artifact.model_id,
-                    "status": artifact.status.value,
-                    "complete": artifact.complete,
-                    "tested_transition_ids": list(artifact.tested_transition_ids),
-                    "matched_transition_ids": list(artifact.matched_transition_ids),
-                    "contradiction_transition_ids": list(artifact.contradiction_transition_ids),
-                    "score": artifact.score.total,
-                    "weight_kind": artifact.score.weight_kind,
-                    "mechanics_epoch_id": current_epoch_id,
-                },
-            )
+            raise
+        if compiled.candidates:
+            self._retrodiction_force_full_source_event_ids.clear()
         accepted_ids = {
             artifact.model_id
             for artifact in artifacts
@@ -2247,6 +2374,7 @@ class ARC3Controller:
                 epoch_id=current_epoch_id,
             )
             for candidate in self._ensemble.candidates:
+                evaluation, completed = completed_by_model[candidate.model_id]
                 self._append(
                     str(observation.game_id),
                     "model.rule_promoted",
@@ -2254,6 +2382,10 @@ class ARC3Controller:
                         "model_id": candidate.model_id,
                         "hypothesis_ids": list(candidate.hypothesis_ids),
                         "mechanics_epoch_id": current_epoch_id,
+                        "retrodiction_artifact_id": evaluation.artifact.artifact_id,
+                        "retrodiction_completed_event_id": completed.event_id,
+                        "retrodiction_mode": evaluation.plan.mode.value,
+                        "retrodiction_reason": evaluation.plan.reason.value,
                         "promotion_basis": (
                             "complete compatible-trace retrodiction"
                             if self.features.use_retrodiction_gate
@@ -2264,32 +2396,106 @@ class ARC3Controller:
         else:
             self._ensemble = None
 
-    @_profiled("retrodiction")
-    def _retrodict_candidate(
+    def _retrodiction_request(
         self,
         candidate: ModelCandidate,
         transitions: tuple[PreservedTransition, ...],
-    ) -> RetrodictionArtifact:
+        *,
+        mechanics_epoch_id: str,
+        force_full_source_event_ids: tuple[str, ...],
+    ) -> tuple[RetrodictionRequest, tuple[str, ...], tuple[str, ...]]:
+        (
+            compatible,
+            deferred_unclaimed_action_ids,
+            deferred_collision_ambiguous_ids,
+        ) = self._candidate_retrodiction_partition(candidate, transitions)
+        projected = tuple(
+            self._candidate_retrodiction_projection(candidate, transition)
+            for transition in compatible
+        )
+        resolved_noise_ids = tuple(
+            sorted(
+                transition_id
+                for transition_id in self._resolved_noise_transition_ids
+                if self._transition_levels.get(transition_id) == self._level_index
+                and self._transition_epochs.get(transition_id) == mechanics_epoch_id
+            )
+        )
+        omissions = tuple(
+            RetrodictionOmission(transition_id, reason)
+            for transition_id, reason in (
+                *((item, "unclaimed-action") for item in deferred_unclaimed_action_ids),
+                *((item, "collision-ambiguous") for item in deferred_collision_ambiguous_ids),
+                *((item, "resolved-noise") for item in resolved_noise_ids),
+            )
+        )
+        matched_evidence = tuple(
+            evidence
+            for transition in projected
+            if (
+                evidence := self._matched_prediction_evidence.get(
+                    (transition.transition_id, candidate.model_id)
+                )
+            )
+            is not None
+        )
+        return (
+            RetrodictionRequest(
+                model=candidate,
+                transitions=projected,
+                mechanics_epoch_id=mechanics_epoch_id,
+                omissions=omissions,
+                resolved_noise_transition_ids=resolved_noise_ids,
+                force_full_source_event_ids=force_full_source_event_ids,
+                matched_evidence=matched_evidence,
+            ),
+            deferred_unclaimed_action_ids,
+            deferred_collision_ambiguous_ids,
+        )
+
+    @_profiled("retrodiction")
+    def _execute_retrodiction(
+        self,
+        plan: RetrodictionPlan,
+    ) -> RetrodictionEvaluation:
         if self._hot_path_profiler is not None:
             self._hot_path_profiler.cache(
                 "retrodiction",
-                None,
-                input_key=(
-                    candidate.model_id
-                    + "|"
-                    + ",".join(transition.transition_id for transition in transitions)
-                ),
-                change_kind="history_growth",
+                plan.cache_hit,
+                input_key=plan.cache_key,
+                change_kind=self._retrodiction_hot_path_change_kind(plan),
             )
-        compatible = self._candidate_retrodiction_transitions(candidate, transitions)
-        return retrodict(
-            candidate,
-            tuple(
-                self._candidate_retrodiction_projection(candidate, transition)
-                for transition in compatible
-            ),
-            enabled=self.features.use_retrodiction_gate,
-        )
+        return self._retrodiction_runtime.execute(plan)
+
+    @staticmethod
+    def _retrodiction_hot_path_change_kind(plan: RetrodictionPlan) -> _HotPathChangeKindValue:
+        """Map retrodiction semantics onto stable profiler-only change classes."""
+
+        if plan.reason in {
+            RetrodictionReason.DISABLED,
+            RetrodictionReason.EXACT_CACHE_HIT,
+        }:
+            return "unchanged"
+        if plan.reason is RetrodictionReason.FIRST_USE:
+            return "initial"
+        if plan.reason in {
+            RetrodictionReason.PREFIX_EXTENSION,
+            RetrodictionReason.EVENT_RECEIPT_REUSE,
+        }:
+            return "history_growth"
+        if plan.reason in {
+            RetrodictionReason.NON_PREFIX,
+            RetrodictionReason.INVALIDATED,
+        }:
+            return "global_change"
+        if plan.reason in {
+            RetrodictionReason.FULL,
+            RetrodictionReason.EVENT_FULL_AUDIT,
+        }:
+            return "initial" if plan.generation == 1 else "global_change"
+        if plan.reason is RetrodictionReason.RECENT_WINDOW:
+            return "initial" if plan.generation == 1 else "history_growth"
+        raise PolicyError(f"unsupported retrodiction reason: {plan.reason.value}")
 
     @staticmethod
     def _candidate_retrodiction_projection(
@@ -2491,6 +2697,225 @@ class ARC3Controller:
             if candidate.predict(projected.before, action).after_state == projected.after:
                 matched.append(candidate.model_id)
         return tuple(sorted(matched))
+
+    def _record_prediction_match_evidence(
+        self,
+        *,
+        transition_id: str,
+        prediction: PredictionReceipt,
+        prediction_event_id: str | None,
+        consequence_event_id: str,
+        assessment_receipt_id: str,
+        assessment_event: TraceEvent,
+        observed_state_id: str,
+        controlled_match_model_ids: tuple[str, ...],
+    ) -> None:
+        """Retain candidate-specific match evidence without replacing raw receipts."""
+
+        if prediction_event_id is None:
+            return
+        prediction_event = self.journal.get_event(prediction_event_id)
+        consequence_event = self.journal.get_event(consequence_event_id)
+        if (
+            prediction_event is None
+            or prediction_event.event_type != "simulation.prediction_emitted"
+            or prediction_event.payload.get("receipt_id") != prediction.receipt_id
+            or consequence_event is None
+            or consequence_event.event_type != "consequence.received"
+            or assessment_event.event_type
+            not in {"consequence.matched_prediction", "consequence.mismatched_prediction"}
+            or assessment_event.payload.get("receipt_id") != assessment_receipt_id
+        ):
+            return
+        exact_model_ids = {
+            model_id
+            for alternative in prediction.prediction.alternatives
+            if alternative.after_state_id == observed_state_id
+            for model_id in alternative.supporting_model_ids
+        }
+        controlled_ids = set(controlled_match_model_ids)
+        predicted_model_ids = {
+            model_id
+            for alternative in prediction.prediction.alternatives
+            for model_id in alternative.supporting_model_ids
+        }
+        for model_id in sorted(predicted_model_ids | controlled_ids):
+            matched = model_id in exact_model_ids or model_id in controlled_ids
+            scope = (
+                "whole-symbolic-state"
+                if model_id in exact_model_ids
+                else "controlled-entity-projection"
+                if model_id in controlled_ids
+                else "none"
+            )
+            evidence = MatchedPredictionEvidence(
+                transition_id=transition_id,
+                model_id=model_id,
+                prediction_event_id=prediction_event_id,
+                prediction_receipt_id=prediction.receipt_id,
+                consequence_event_id=consequence_event_id,
+                assessment_receipt_id=assessment_receipt_id,
+                matched=matched,
+                match_scope=scope,
+            )
+            self._matched_prediction_evidence[(transition_id, model_id)] = evidence
+
+    def _rebuild_matched_prediction_evidence_from_trace(self) -> None:
+        """Reconstruct event-triggered evidence from immutable source receipts."""
+
+        events = self.journal.verify_manifest()
+        event_by_id = {event.event_id: event for event in events}
+        event_order = {event.event_id: index for index, event in enumerate(events)}
+        predictions: dict[str, TraceEvent] = {}
+        assessments: dict[str, TraceEvent] = {}
+        for event in events:
+            if event.event_type == "simulation.prediction_emitted":
+                receipt_id = event.payload.get("receipt_id")
+                if not isinstance(receipt_id, str) or receipt_id in predictions:
+                    raise PolicyError("immutable prediction receipt identity is malformed")
+                predictions[receipt_id] = event
+            elif event.event_type in {
+                "consequence.matched_prediction",
+                "consequence.mismatched_prediction",
+            }:
+                prediction_receipt_id = event.payload.get("prediction_receipt_id")
+                if prediction_receipt_id is None and event.payload.get("restored_pending_action"):
+                    continue
+                if (
+                    not isinstance(prediction_receipt_id, str)
+                    or prediction_receipt_id in assessments
+                ):
+                    raise PolicyError("immutable consequence assessment identity is malformed")
+                assessments[prediction_receipt_id] = event
+
+        rebuilt: dict[tuple[str, str], MatchedPredictionEvidence] = {}
+        for transition in self._transitions:
+            if len(transition.source_event_ids) != 4:
+                raise PolicyError("checkpoint transition source quartet is incomplete")
+            _, submitted_id, consequence_id, _ = transition.source_event_ids
+            submitted = event_by_id.get(submitted_id)
+            consequence = event_by_id.get(consequence_id)
+            if submitted is None or consequence is None:
+                raise PolicyError("checkpoint prediction evidence source is absent")
+            prediction_receipt_id = submitted.payload.get("prediction_receipt_id")
+            if prediction_receipt_id is None:
+                continue
+            if not isinstance(prediction_receipt_id, str):
+                raise PolicyError("immutable submitted prediction identity is malformed")
+            prediction = predictions.get(prediction_receipt_id)
+            assessment = assessments.get(prediction_receipt_id)
+            if prediction is None or assessment is None:
+                raise PolicyError(
+                    "checkpoint transition prediction lacks immutable assessment receipts"
+                )
+            if not (
+                event_order[prediction.event_id]
+                < event_order[submitted_id]
+                < event_order[consequence_id]
+                < event_order[assessment.event_id]
+            ):
+                raise PolicyError("immutable prediction evidence is not source-ordered")
+            raw_alternatives = prediction.payload.get("alternatives")
+            raw_matched_ids = assessment.payload.get("matched_prediction_ids")
+            raw_mismatched_ids = assessment.payload.get("mismatched_prediction_ids")
+            raw_controlled_ids = assessment.payload.get("controlled_projection_match_model_ids", [])
+            assessment_receipt_id = assessment.payload.get("receipt_id")
+            if (
+                not isinstance(raw_alternatives, list)
+                or not all(isinstance(item, Mapping) for item in raw_alternatives)
+                or not isinstance(raw_matched_ids, list)
+                or not all(isinstance(item, str) for item in raw_matched_ids)
+                or not isinstance(raw_mismatched_ids, list)
+                or not all(isinstance(item, str) for item in raw_mismatched_ids)
+                or not isinstance(raw_controlled_ids, list)
+                or not all(isinstance(item, str) for item in raw_controlled_ids)
+                or not isinstance(assessment_receipt_id, str)
+            ):
+                raise PolicyError("immutable prediction assessment payload is malformed")
+            matched_ids = set(cast(list[str], raw_matched_ids))
+            mismatched_ids = set(cast(list[str], raw_mismatched_ids))
+            controlled_ids = set(cast(list[str], raw_controlled_ids))
+            predicted_ids: set[str] = set()
+            predicted_model_ids: set[str] = set()
+            exact_model_ids: set[str] = set()
+            alternatives = cast(list[Mapping[str, object]], raw_alternatives)
+            for alternative in alternatives:
+                raw_supporting = alternative.get("supporting_model_ids")
+                raw_prediction_ids = alternative.get("prediction_ids")
+                if (
+                    not isinstance(raw_supporting, list)
+                    or not raw_supporting
+                    or not all(isinstance(item, str) for item in raw_supporting)
+                    or not isinstance(raw_prediction_ids, list)
+                    or not raw_prediction_ids
+                    or not all(isinstance(item, str) for item in raw_prediction_ids)
+                ):
+                    raise PolicyError("immutable prediction alternative is malformed")
+                supporting = set(cast(list[str], raw_supporting))
+                alternative_prediction_ids = set(cast(list[str], raw_prediction_ids))
+                if (
+                    len(supporting) != len(raw_supporting)
+                    or len(alternative_prediction_ids) != len(raw_prediction_ids)
+                    or predicted_model_ids & supporting
+                    or predicted_ids & alternative_prediction_ids
+                    or len(supporting) != len(alternative_prediction_ids)
+                ):
+                    raise PolicyError("immutable prediction alternative identity is ambiguous")
+                predicted_model_ids.update(supporting)
+                predicted_ids.update(alternative_prediction_ids)
+                alternative_matches = alternative_prediction_ids & matched_ids
+                if alternative_matches:
+                    if alternative_prediction_ids != alternative_matches:
+                        raise PolicyError("immutable whole-state match splits one alternative")
+                    exact_model_ids.update(supporting)
+            if (
+                matched_ids & mismatched_ids
+                or matched_ids | mismatched_ids != predicted_ids
+                or not controlled_ids.issubset(predicted_model_ids)
+                or prediction.payload.get("before_state_id") != transition.before.state_id
+                or assessment.payload.get("observed_state_id") != transition.after.state_id
+                or consequence.event_type != "consequence.received"
+            ):
+                raise PolicyError("immutable prediction assessment disagrees with transition")
+            expected_scope = (
+                "whole-symbolic-state"
+                if matched_ids
+                else "controlled-entity-projection"
+                if controlled_ids
+                else "none"
+            )
+            expected_event_type = (
+                "consequence.matched_prediction"
+                if exact_model_ids or controlled_ids
+                else "consequence.mismatched_prediction"
+            )
+            if (
+                assessment.event_type != expected_event_type
+                or assessment.payload.get("exact_state_match") is not bool(matched_ids)
+                or assessment.payload.get("match_scope") != expected_scope
+            ):
+                raise PolicyError("immutable prediction assessment classification is malformed")
+            for model_id in sorted(predicted_model_ids):
+                exact_match = model_id in exact_model_ids
+                controlled_match = model_id in controlled_ids
+                evidence = MatchedPredictionEvidence(
+                    transition_id=transition.transition_id,
+                    model_id=model_id,
+                    prediction_event_id=prediction.event_id,
+                    prediction_receipt_id=prediction_receipt_id,
+                    consequence_event_id=consequence_id,
+                    assessment_receipt_id=assessment_receipt_id,
+                    matched=exact_match or controlled_match,
+                    match_scope=(
+                        "whole-symbolic-state"
+                        if exact_match
+                        else "controlled-entity-projection"
+                        if controlled_match
+                        else "none"
+                    ),
+                )
+                rebuilt[(transition.transition_id, model_id)] = evidence
+        self._matched_prediction_evidence = rebuilt
 
     def _legal_actions(
         self, observation: Observation, view: _PerceptionView
@@ -3401,6 +3826,7 @@ class ARC3Controller:
 
         prediction_receipt_id: str | None = None
         self._pending_prediction = None
+        self._pending_prediction_event_id = None
         self._restored_prediction_state_ids = ()
         self._restored_prediction_plan_ids = ()
         if (
@@ -3430,7 +3856,7 @@ class ARC3Controller:
                 alternative.after_state_id for alternative in prediction.prediction.alternatives
             )
             self._restored_prediction_plan_ids = prediction.dependent_plan_ids
-            self._append(
+            prediction_event = self._append(
                 str(observation.game_id),
                 "simulation.prediction_emitted",
                 {
@@ -3438,6 +3864,7 @@ class ARC3Controller:
                     "mechanics_epoch_id": self._mechanics.active_epoch(self._level_index).epoch_id,
                 },
             )
+            self._pending_prediction_event_id = prediction_event.event_id
         submitted = self._append(
             str(observation.game_id),
             "action.submitted",
@@ -3587,6 +4014,7 @@ class ARC3Controller:
             self._latest_view = view
             self._pending_action = None
             self._pending_prediction = None
+            self._pending_prediction_event_id = None
             self._restored_prediction_state_ids = ()
             self._restored_prediction_plan_ids = ()
             self._before_action_observation = None
@@ -3711,10 +4139,20 @@ class ARC3Controller:
                     "mechanics_epoch_id": self._mechanics.active_epoch(previous_level).epoch_id,
                 }
             )
-            self._append(
+            assessment_event = self._append(
                 str(after.game_id),
                 event_type,
                 assessment_payload,
+            )
+            self._record_prediction_match_evidence(
+                transition_id=f"transition:{pending.submitted_event_id}",
+                prediction=self._pending_prediction,
+                prediction_event_id=self._pending_prediction_event_id,
+                consequence_event_id=consequence_id,
+                assessment_receipt_id=assessment.receipt_id,
+                assessment_event=assessment_event,
+                observed_state_id=observed_state.state_id,
+                controlled_match_model_ids=controlled_match_model_ids,
             )
         elif self._restored_prediction_state_ids:
             matched_prediction = observed_state.state_id in self._restored_prediction_state_ids
@@ -3875,6 +4313,7 @@ class ARC3Controller:
         self._latest_view = view
         self._pending_action = None
         self._pending_prediction = None
+        self._pending_prediction_event_id = None
         self._restored_prediction_state_ids = ()
         self._restored_prediction_plan_ids = ()
         self._before_action_observation = None
@@ -5407,6 +5846,10 @@ class ARC3Controller:
                 "preserved_transitions": [
                     self._serialize_transition(item) for item in self._transitions
                 ],
+                "retrodiction_state": self._retrodiction_runtime.to_dict(),
+                "retrodiction_pending_force_full_source_event_ids": list(
+                    self._retrodiction_force_full_source_event_ids
+                ),
                 "mechanics_lifecycle": self._mechanics.to_dict(),
                 "suspended_model_ids": cast(list[JSONValue], sorted(self._suspended_model_ids)),
                 "demoted_model_ids": cast(list[JSONValue], sorted(self._demoted_model_ids)),
@@ -5463,6 +5906,7 @@ class ARC3Controller:
                     if self._pending_prediction is not None
                     else None
                 ),
+                "pending_prediction_event_id": self._pending_prediction_event_id,
                 "restored_prediction_state_ids": list(self._restored_prediction_state_ids),
                 "restored_prediction_plan_ids": list(self._restored_prediction_plan_ids),
                 "controller_phase": self._phase.value,
@@ -5492,6 +5936,7 @@ class ARC3Controller:
         checkpoint_path: str | Path | None = None,
         features: PresetFeatures | None = None,
         hot_path_profiler: _HotPathProfiler | None = None,
+        retrodiction_config: RetrodictionConfig | None = None,
     ) -> ARC3Controller:
         """Restore a compatible checkpoint without emitting a pending action again."""
 
@@ -5499,6 +5944,7 @@ class ARC3Controller:
             preset,
             features=features,
             hot_path_profiler=hot_path_profiler,
+            retrodiction_config=retrodiction_config,
         )
         controller._initialize_context(context)
         if controller._checkpoint_manager is None or controller._code is None:
@@ -5520,6 +5966,12 @@ class ARC3Controller:
         controller._hypotheses = HypothesisRegistry.from_dict(
             cast(Mapping[str, object], state.hypothesis_registry)
         )
+        raw_controller_features = state.planner_state.get("controller_features")
+        if (
+            raw_controller_features is not None
+            and raw_controller_features != controller.features.to_dict()
+        ):
+            raise PolicyError("checkpoint controller feature identity does not match")
         controller._provisional_mover_id = cast(
             str | None, state.perception_state.get("provisional_mover_id")
         )
@@ -7421,13 +7873,17 @@ class ARC3Controller:
             raise PolicyError("checkpoint awaiting consequence has an unmarked plan emission")
 
         raw_prediction = value.get("pending_prediction")
+        raw_prediction_event_id = value.get("pending_prediction_event_id")
         if raw_prediction is None:
+            if raw_prediction_event_id is not None:
+                raise PolicyError("checkpoint pending prediction event lacks a pending prediction")
             if self._pending_action is not None and self._pending_action.prediction_ids:
                 if not self._restored_prediction_state_ids:
                     raise PolicyError("checkpoint pending prediction has no restorable outcomes")
         else:
             if (
                 not isinstance(raw_prediction, Mapping)
+                or not isinstance(raw_prediction_event_id, str)
                 or self._phase is not ControllerPhase.AWAITING_CONSEQUENCE
                 or self._pending_action is None
                 or self._before_action_state is None
@@ -7451,13 +7907,67 @@ class ARC3Controller:
             )
             if rebuilt.to_dict() != dict(raw_prediction):
                 raise PolicyError("checkpoint pending prediction does not reproduce exactly")
+            prediction_event = self.journal.get_event(raw_prediction_event_id)
+            if (
+                prediction_event is None
+                or prediction_event.event_type != "simulation.prediction_emitted"
+                or prediction_event.payload.get("receipt_id") != rebuilt.receipt_id
+                or {
+                    key: item
+                    for key, item in prediction_event.payload.items()
+                    if key != "mechanics_epoch_id"
+                }
+                != rebuilt.to_dict()
+            ):
+                raise PolicyError(
+                    "checkpoint pending prediction lacks its immutable emission receipt"
+                )
             self._pending_prediction = rebuilt
+            self._pending_prediction_event_id = raw_prediction_event_id
             self._restored_prediction_state_ids = tuple(
                 item.after_state_id for item in rebuilt.prediction.alternatives
             )
             self._restored_prediction_plan_ids = rebuilt.dependent_plan_ids
 
     def _restore_world_state(self, value: Mapping[str, JSONValue]) -> None:
+        raw_retrodiction_state = value.get("retrodiction_state")
+        try:
+            restored_retrodiction_runtime = RetrodictionRuntime.from_dict(
+                raw_retrodiction_state,
+                expected_config=self._retrodiction_runtime.config,
+            )
+        except WorldModelError as error:
+            raise PolicyError("checkpoint retrodiction runtime is malformed") from error
+        if not isinstance(
+            raw_retrodiction_state, Mapping
+        ) or restored_retrodiction_runtime.to_dict() != dict(raw_retrodiction_state):
+            raise PolicyError("checkpoint retrodiction runtime does not round-trip exactly")
+        raw_force_full_ids = value.get("retrodiction_pending_force_full_source_event_ids", [])
+        if (
+            not isinstance(raw_force_full_ids, list)
+            or not all(isinstance(item, str) and bool(item.strip()) for item in raw_force_full_ids)
+            or len(set(cast(list[str], raw_force_full_ids))) != len(raw_force_full_ids)
+        ):
+            raise PolicyError("checkpoint pending retrodiction triggers are malformed")
+        trace_events = self.journal.verify_manifest()
+        last_completed_index = max(
+            (
+                index
+                for index, event in enumerate(trace_events)
+                if event.event_type == "model.retrodiction_completed"
+            ),
+            default=-1,
+        )
+        expected_force_full_ids = [
+            event.event_id
+            for event in trace_events[last_completed_index + 1 :]
+            if event.event_type in _RETRODICTION_FORCE_FULL_EVENTS
+        ]
+        if cast(list[str], raw_force_full_ids) != expected_force_full_ids:
+            raise PolicyError("checkpoint pending retrodiction triggers disagree with trace fold")
+        self._retrodiction_runtime = restored_retrodiction_runtime
+        self._retrodiction_force_full_source_event_ids = list(cast(list[str], raw_force_full_ids))
+
         raw_mechanics = value.get("mechanics_lifecycle")
         if raw_mechanics is None:
             self._mechanics = MechanicsLifecycle(level_index=self._level_index)
@@ -7567,6 +8077,7 @@ class ARC3Controller:
         )
         if lifecycle_transition_ids != seen_transition_ids:
             raise PolicyError("checkpoint transition set disagrees with mechanics lifecycle")
+        self._rebuild_matched_prediction_evidence_from_trace()
         current_scope = f"level:{self._level_index}"
         eligible = tuple(
             record
@@ -7580,6 +8091,7 @@ class ARC3Controller:
         )
         compiled = compile_hypotheses(eligible)
         self._model_candidates = compiled.candidates
+        self._validate_retrodiction_runtime_receipts(compiled.candidates)
         level_transitions = (
             tuple(
                 item
@@ -7599,8 +8111,19 @@ class ARC3Controller:
             for item in level_transitions
             if item.transition_id not in self._resolved_noise_transition_ids
         )
-        artifacts = tuple(
-            self._retrodict_candidate(candidate, level_transitions)
+        artifacts: tuple[RetrodictionArtifact, ...] = tuple(
+            self._retrodiction_runtime.execute(
+                self._retrodiction_runtime.plan(
+                    self._retrodiction_request(
+                        candidate,
+                        level_transitions,
+                        mechanics_epoch_id=current_epoch_id,
+                        force_full_source_event_ids=tuple(
+                            self._retrodiction_force_full_source_event_ids
+                        ),
+                    )[0]
+                )
+            ).artifact
             for candidate in compiled.candidates
         )
         if any(
@@ -7649,6 +8172,331 @@ class ARC3Controller:
         )
         if sorted(cast(list[str], raw_active_ids)) != restored_active:
             raise PolicyError("checkpoint active model ensemble does not replay exactly")
+
+    def _candidate_from_retrodiction_receipt(
+        self,
+        receipt: TraceEvent,
+    ) -> ModelCandidate:
+        """Recompile one historical candidate from retained typed hypotheses."""
+
+        model_id = receipt.payload.get("model_id")
+        raw_hypothesis_ids = receipt.payload.get("candidate_hypothesis_ids")
+        raw_compile_residuals = receipt.payload.get("candidate_compile_residuals")
+        rank_weight = receipt.payload.get("candidate_rank_weight")
+        if (
+            not isinstance(model_id, str)
+            or not isinstance(raw_hypothesis_ids, list)
+            or not raw_hypothesis_ids
+            or not all(isinstance(item, str) for item in raw_hypothesis_ids)
+            or len(set(cast(list[str], raw_hypothesis_ids))) != len(raw_hypothesis_ids)
+            or not isinstance(raw_compile_residuals, list)
+            or not all(isinstance(item, str) for item in raw_compile_residuals)
+            or isinstance(rank_weight, bool)
+            or not isinstance(rank_weight, int)
+        ):
+            raise PolicyError("immutable retrodiction candidate receipt is malformed")
+        hypothesis_ids = tuple(cast(list[str], raw_hypothesis_ids))
+        historical_records = []
+        for hypothesis_id in hypothesis_ids:
+            record = self._hypotheses.find(hypothesis_id)
+            if record is None:
+                raise PolicyError("immutable retrodiction candidate names an unknown hypothesis")
+            historical_records.append(replace(record, status=HypothesisStatus.CANDIDATE))
+        candidates = compile_hypotheses(tuple(historical_records)).candidates
+        candidate = next((item for item in candidates if item.model_id == model_id), None)
+        compile_residuals = tuple(cast(list[str], raw_compile_residuals))
+        if (
+            candidate is None
+            or candidate.hypothesis_ids != hypothesis_ids
+            or candidate.compile_residuals != compile_residuals
+        ):
+            raise PolicyError("immutable retrodiction candidate does not recompile exactly")
+        return replace(candidate, rank_weight=rank_weight)
+
+    def _validate_retrodiction_runtime_receipts(
+        self,
+        candidates: Sequence[ModelCandidate],
+    ) -> None:
+        """Bind restored cache/cost state to reconstructible immutable receipts."""
+
+        events = self.journal.verify_manifest()
+        event_by_id = {event.event_id: event for event in events}
+        event_order = {event.event_id: index for index, event in enumerate(events)}
+        completed_events = tuple(
+            event for event in events if event.event_type == "model.retrodiction_completed"
+        )
+        state = self._retrodiction_runtime.state
+        if state.access_ordinal != len(completed_events):
+            raise PolicyError("checkpoint retrodiction access ordinal disagrees with receipts")
+
+        plan_receipt_keys = (
+            "authorizing_matched_prediction_evidence",
+            "cache_hit",
+            "cache_key",
+            "candidate_compile_residuals",
+            "candidate_hypothesis_ids",
+            "candidate_rank_weight",
+            "complete_scope",
+            "force_full_source_event_ids",
+            "full_audit",
+            "full_eligible_history_count",
+            "full_eligible_history_hash",
+            "generation",
+            "mechanics_epoch_id",
+            "mode",
+            "model_id",
+            "model_semantic_fingerprint",
+            "namespace_key",
+            "omissions",
+            "prefix_count",
+            "prior_artifact_id",
+            "prior_source_receipt_event_id",
+            "reason",
+            "resolved_noise_transition_ids",
+            "retrodiction_configuration_hash",
+            "selected_history_count",
+            "selected_history_hash",
+            "selected_transition_ids",
+            "suffix_count",
+        )
+        expected_generations: dict[str, int] = {}
+        for completed in completed_events:
+            started_id = completed.payload.get("retrodiction_started_event_id")
+            namespace_key = completed.payload.get("namespace_key")
+            generation = completed.payload.get("generation")
+            started = event_by_id.get(started_id) if isinstance(started_id, str) else None
+            if (
+                started is None
+                or started.event_type != "model.retrodiction_started"
+                or not isinstance(namespace_key, str)
+                or isinstance(generation, bool)
+                or not isinstance(generation, int)
+                or event_order[started.event_id] >= event_order[completed.event_id]
+                or any(
+                    started.payload.get(key) != completed.payload.get(key)
+                    for key in plan_receipt_keys
+                )
+            ):
+                raise PolicyError("immutable retrodiction start/completion chain is malformed")
+            previous_generation = expected_generations.get(namespace_key)
+            if previous_generation is not None and generation < previous_generation:
+                raise PolicyError("immutable retrodiction generation regressed")
+            expected_generations[namespace_key] = generation
+            force_full_ids = completed.payload.get("force_full_source_event_ids")
+            if not isinstance(force_full_ids, list) or not all(
+                isinstance(item, str)
+                and item in event_order
+                and event_order[item] < event_order[started.event_id]
+                and event_by_id[item].event_type in _RETRODICTION_FORCE_FULL_EVENTS
+                for item in force_full_ids
+            ):
+                raise PolicyError("immutable force-full retrodiction sources are malformed")
+            raw_authorizing_evidence = completed.payload.get(
+                "authorizing_matched_prediction_evidence"
+            )
+            selected_transition_ids = completed.payload.get("selected_transition_ids")
+            prefix_count = completed.payload.get("prefix_count")
+            reason = completed.payload.get("reason")
+            mode = completed.payload.get("mode")
+            if (
+                not isinstance(raw_authorizing_evidence, list)
+                or not all(isinstance(item, Mapping) for item in raw_authorizing_evidence)
+                or not isinstance(selected_transition_ids, list)
+                or not all(isinstance(item, str) for item in selected_transition_ids)
+                or isinstance(prefix_count, bool)
+                or not isinstance(prefix_count, int)
+                or not 0 <= prefix_count <= len(selected_transition_ids)
+            ):
+                raise PolicyError("immutable retrodiction authorization payload is malformed")
+            if reason == "event-receipt-reuse":
+                model_id = completed.payload.get("model_id")
+                if mode != RetrodictionMode.EVENT_TRIGGERED.value or not isinstance(model_id, str):
+                    raise PolicyError("event-triggered authorization mode/model is malformed")
+                suffix_transition_ids = cast(list[str], selected_transition_ids)[prefix_count:]
+                expected_authorization: list[dict[str, JSONValue]] = []
+                for transition_id in suffix_transition_ids:
+                    evidence = self._matched_prediction_evidence.get((transition_id, model_id))
+                    if evidence is None:
+                        raise PolicyError(
+                            "event-triggered reuse lacks trace-derived matched evidence"
+                        )
+                    expected_authorization.append(evidence.to_dict())
+                if (
+                    not expected_authorization
+                    or [
+                        dict(item)
+                        for item in cast(list[Mapping[str, JSONValue]], raw_authorizing_evidence)
+                    ]
+                    != expected_authorization
+                ):
+                    raise PolicyError(
+                        "event-triggered authorization disagrees with suffix receipts"
+                    )
+            elif raw_authorizing_evidence:
+                raise PolicyError("non-event retrodiction invents matched-evidence authorization")
+            reused_id = completed.payload.get("retrodiction_reused_event_id")
+            reused_flag = completed.payload.get("reused")
+            if not isinstance(reused_flag, bool):
+                raise PolicyError("immutable retrodiction reuse marker is malformed")
+            if reused_flag:
+                reused = event_by_id.get(reused_id) if isinstance(reused_id, str) else None
+                if (
+                    reused is None
+                    or reused.event_type != "model.retrodiction_reused"
+                    or reused.payload.get("retrodiction_started_event_id") != started.event_id
+                    or not (
+                        event_order[started.event_id]
+                        < event_order[reused.event_id]
+                        < event_order[completed.event_id]
+                    )
+                    or any(
+                        reused.payload.get(key) != completed.payload.get(key)
+                        for key in reused.payload
+                        if key != "retrodiction_started_event_id"
+                    )
+                ):
+                    raise PolicyError("immutable retrodiction reuse chain is malformed")
+            elif reused_id is not None:
+                raise PolicyError("immutable non-reused retrodiction cites a reuse receipt")
+        if dict(state.trigger_generations) != expected_generations:
+            raise PolicyError("checkpoint retrodiction generations disagree with receipts")
+
+        candidate_by_id = {candidate.model_id: candidate for candidate in candidates}
+        transition_by_id = {
+            transition.transition_id: transition for transition in self._transitions
+        }
+        for entry in state.cache_entries:
+            cache_completed = event_by_id.get(entry.source_receipt_event_id)
+            if (
+                cache_completed is None
+                or cache_completed.event_type != "model.retrodiction_completed"
+            ):
+                raise PolicyError(
+                    "checkpoint retrodiction cache lacks reconstructible source authority"
+                )
+            current_candidate = candidate_by_id.get(entry.model_id)
+            candidate = (
+                current_candidate
+                if current_candidate is not None
+                and current_candidate.rank_weight
+                == cache_completed.payload.get("candidate_rank_weight")
+                and list(current_candidate.hypothesis_ids)
+                == cache_completed.payload.get("candidate_hypothesis_ids")
+                and list(current_candidate.compile_residuals)
+                == cache_completed.payload.get("candidate_compile_residuals")
+                else self._candidate_from_retrodiction_receipt(cache_completed)
+            )
+            try:
+                raw_transitions = tuple(
+                    transition_by_id[outcome.transition_id] for outcome in entry.outcomes
+                )
+            except KeyError as error:
+                raise PolicyError(
+                    "checkpoint retrodiction cache names an unknown transition"
+                ) from error
+            if any(
+                self._transition_epochs.get(transition.transition_id) != entry.mechanics_epoch_id
+                for transition in raw_transitions
+            ):
+                raise PolicyError("checkpoint retrodiction cache crosses mechanics epochs")
+            projected = tuple(
+                self._candidate_retrodiction_projection(candidate, transition)
+                for transition in raw_transitions
+            )
+            request = RetrodictionRequest(
+                model=candidate,
+                transitions=projected,
+                mechanics_epoch_id=entry.mechanics_epoch_id,
+                omissions=entry.omissions,
+                resolved_noise_transition_ids=entry.resolved_noise_transition_ids,
+                force_full_source_event_ids=tuple(
+                    cast(
+                        list[str],
+                        cache_completed.payload.get("force_full_source_event_ids", []),
+                    )
+                ),
+            )
+            outcome_ids = [outcome.transition_id for outcome in entry.outcomes]
+            tested_ids = [
+                outcome.transition_id
+                for outcome in entry.outcomes
+                if outcome.kind.value != "excluded"
+            ]
+            excluded_ids = [
+                outcome.transition_id
+                for outcome in entry.outcomes
+                if outcome.kind.value == "excluded"
+            ]
+            matched_ids = [
+                outcome.transition_id
+                for outcome in entry.outcomes
+                if outcome.kind.value == "matched"
+            ]
+            contradicted_ids = [
+                outcome.transition_id
+                for outcome in entry.outcomes
+                if outcome.kind.value == "contradicted"
+            ]
+            if (
+                cache_completed.payload.get("model_id") != entry.model_id
+                or cache_completed.payload.get("model_semantic_fingerprint")
+                != entry.model_semantic_fingerprint
+                or cache_completed.payload.get("mechanics_epoch_id") != entry.mechanics_epoch_id
+                or cache_completed.payload.get("namespace_key") != entry.namespace_key
+                or cache_completed.payload.get("cache_key") != entry.cache_key
+                or cache_completed.payload.get("retrodiction_configuration_hash")
+                != entry.configuration_hash
+                or cache_completed.payload.get("full_eligible_history_hash") != entry.history_key
+                or cache_completed.payload.get("full_eligible_history_count") != entry.prefix_length
+                or cache_completed.payload.get("compatible_transition_ids") != outcome_ids
+                or cache_completed.payload.get("tested_transition_ids") != tested_ids
+                or cache_completed.payload.get("explicitly_excluded_transition_ids") != excluded_ids
+                or cache_completed.payload.get("matched_transition_ids") != matched_ids
+                or cache_completed.payload.get("contradiction_transition_ids") != contradicted_ids
+                or cache_completed.payload.get("artifact_id") != entry.materialized_artifact_id
+                or cache_completed.payload.get("omissions")
+                != [item.to_dict() for item in entry.omissions]
+                or cache_completed.payload.get("resolved_noise_transition_ids")
+                != list(entry.resolved_noise_transition_ids)
+            ):
+                raise PolicyError("checkpoint retrodiction cache disagrees with completion receipt")
+            try:
+                entry.validate_against(
+                    config=self._retrodiction_runtime.config,
+                    request=request,
+                    materialized_artifact_id=cast(str, cache_completed.payload["artifact_id"]),
+                    source_receipt_event_id=cache_completed.event_id,
+                )
+            except WorldModelError as error:
+                raise PolicyError(
+                    "checkpoint retrodiction cache fails exact reconstruction"
+                ) from error
+
+        for promotion in (event for event in events if event.event_type == "model.rule_promoted"):
+            completed_id = promotion.payload.get("retrodiction_completed_event_id")
+            promotion_completed = (
+                event_by_id.get(completed_id) if isinstance(completed_id, str) else None
+            )
+            if (
+                promotion_completed is None
+                or promotion_completed.event_type != "model.retrodiction_completed"
+                or event_order[promotion_completed.event_id] >= event_order[promotion.event_id]
+                or promotion.payload.get("model_id") != promotion_completed.payload.get("model_id")
+                or promotion.payload.get("mechanics_epoch_id")
+                != promotion_completed.payload.get("mechanics_epoch_id")
+                or promotion.payload.get("retrodiction_artifact_id")
+                != promotion_completed.payload.get("artifact_id")
+                or promotion.payload.get("retrodiction_mode")
+                != promotion_completed.payload.get("mode")
+                or promotion.payload.get("retrodiction_reason")
+                != promotion_completed.payload.get("reason")
+                or promotion_completed.payload.get("status")
+                not in {
+                    PromotionStatus.PROMOTED.value,
+                    PromotionStatus.UNGATED_ABLATION.value,
+                }
+            ):
+                raise PolicyError("immutable model promotion lacks retrodiction authority")
 
     def _restore_goal_state(self, value: Mapping[str, JSONValue]) -> None:
         raw_records = value.get("records", [])
@@ -8207,6 +9055,7 @@ class ARC3Controller:
             "action": _action_payload(value.action),
             "after": value.after.to_dict(),
             "source_event_ids": list(value.source_event_ids),
+            "compatible_model_ids": list(value.compatible_model_ids),
             "level_index": self._transition_levels[value.transition_id],
             "mechanics_epoch_id": self._transition_epochs[value.transition_id],
         }
@@ -8217,12 +9066,18 @@ class ARC3Controller:
         after = value.get("after")
         action = value.get("action")
         sources = value.get("source_event_ids", [])
+        compatible_model_ids = value.get("compatible_model_ids", [])
         if (
             not isinstance(before, Mapping)
             or not isinstance(after, Mapping)
             or not isinstance(action, Mapping)
             or not isinstance(sources, list)
             or not all(isinstance(item, str) for item in sources)
+            or not isinstance(compatible_model_ids, list)
+            or not all(
+                isinstance(item, str) and bool(item.strip()) for item in compatible_model_ids
+            )
+            or len(set(cast(list[str], compatible_model_ids))) != len(compatible_model_ids)
         ):
             raise PolicyError("serialized transition is malformed")
         return PreservedTransition(
@@ -8231,6 +9086,7 @@ class ARC3Controller:
             action=cls._action_from_value(action),
             after=cls._state_from_dict(after),
             source_event_ids=tuple(cast(list[str], sources)),
+            compatible_model_ids=tuple(cast(list[str], compatible_model_ids)),
         )
 
     @_profiled("finalize")

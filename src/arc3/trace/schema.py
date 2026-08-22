@@ -58,6 +58,7 @@ CORE_EVENT_TYPES: Final[frozenset[str]] = frozenset(
         "hypothesis.superseded",
         "hypothesis.scope_changed",
         "model.retrodiction_started",
+        "model.retrodiction_reused",
         "model.retrodiction_completed",
         "model.rule_promoted",
         "model.rule_demoted",
