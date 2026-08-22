@@ -7,12 +7,12 @@
   "build_status": "IN_PROGRESS",
   "status": "IN_PROGRESS",
   "current_stage": "06",
-  "current_task": "Close the two frozen Stage 06 checkpoint-boundary failures, freeze the verified source, and run the unchanged 112-execution matrix",
+  "current_task": "Repair the preserved Attempt 01 Windows path-length infrastructure failure, freeze the bounded workspace mapping, and rerun the unchanged 112-execution matrix as Attempt 02",
   "implementation_branch": "build/001-local-public-recovery",
   "pull_request": "https://github.com/Grativy6/ARC3/pull/5",
   "started_at": "2026-08-21T15:41:02Z",
-  "last_checkpoint_at": "2026-08-22T09:45:15.3138559Z",
-  "last_checkpoint_commit": "89621ca384fa60306e5aa0f8361451e75becf60d",
+  "last_checkpoint_at": "2026-08-22T13:22:44.1023602Z",
+  "last_checkpoint_commit": "d1866e014ae4ff7ee6f24beb2f92688b5fd7ec17",
   "base": {
     "main_commit": "28c7a00732ce48e5c231211b01bc6eba7d0d71b4",
     "main_tree": "4586299448e9b1b585a0878674ed5f9afa60c384",
@@ -232,9 +232,18 @@
       "stationary_noise_cases_predeclared": 32,
       "checkpoint_resume_pairs_predeclared": 8,
       "controller_executions_predeclared": 112,
-      "implementation_status": "IN_PROGRESS_PREFLIGHT_CHECKPOINT_FAILURES",
+      "implementation_status": "FAILED_INFRASTRUCTURE_ATTEMPT_01_PATH_LENGTH_REPAIR_IN_PROGRESS",
       "preimplementation_integrity": "PASS:0-blocking+0-warnings+0-secrets",
       "preimplementation_integrity_receipt_hash": "sha256:993bbce75fb055058711949d873ac5c73e6cc0a6cabe2cf4e93cf04fd12923a3",
+      "official_attempt_01": {
+        "status": "FAILED_INFRASTRUCTURE",
+        "source_commit": "d1866e014ae4ff7ee6f24beb2f92688b5fd7ec17",
+        "mechanism_cases_completed": 0,
+        "result_file_created": false,
+        "failure_receipt": "docs/evidence/001-06-failed-infrastructure-attempt-01.json",
+        "failure_receipt_sha256": "sha256:749bdf1673b44fe5272ac4445bb21299b54f7835634ab87e74e86d6d274c3029",
+        "partial_work_manifest_sha256": "sha256:66e31a5df20dbdc5629eae1a063c001cd62e50615519c2c4095422eb77bda080"
+      },
       "public_holdout_consumed": false
     }
   },
@@ -318,10 +327,14 @@
     "stage_06_predeclaration": {
       "path": "docs/evidence/001-06-rule-change-predeclaration.json",
       "sha256": "0bca5f32986c79008cf6ee01a83867262cda591f477239a5b8e9bccd90e37434"
+    },
+    "stage_06_failed_infrastructure_attempt_01": {
+      "path": "docs/evidence/001-06-failed-infrastructure-attempt-01.json",
+      "sha256": "749bdf1673b44fe5272ac4445bb21299b54f7835634ab87e74e86d6d274c3029"
     }
   },
   "blocked_items": [],
-  "next_action": "Repair and directly test the exact PRE_TRIGGER dependent-plan boundary and POST_REOPEN successor-epoch restore fold, rerun focused checkpoint smokes, then commit a clean verified source before the official Stage 06 matrix.",
+  "next_action": "Commit the frozen Attempt 01 failure receipt and deterministic bounded workspace mapping, re-run clean verification and CI, then execute the unchanged matrix at the predeclared Attempt 02 artifact paths.",
   "notes": [
     "Build 000 ledgers and reports are immutable historical evidence and are not overwritten by Build 001.",
     "The owner explicitly approved MIT-0 for ARC3 first-party source in the active Build 001 instruction.",

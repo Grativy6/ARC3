@@ -277,3 +277,21 @@ independent authorities.
 - Reopening condition: implementation cannot guarantee every declared trigger, the frozen suite is
   infeasible within the 900-second/declared resource envelope, or executable trace ordering shows
   that a required lifecycle transition is not source-honest.
+
+## D-001-0018 — Bound Stage 06 filesystem names without changing the frozen matrix
+
+- Recorded: 2026-08-22T13:20:00Z
+- Status: accepted
+- Decision: Preserve official Attempt 01 as `FAILED_INFRASTRUCTURE`. Replace only the harness's
+  filesystem directory components for intervention, stationary-noise, and checkpoint executions
+  with deterministic bounded content-addressed names. Keep complete case IDs in typed receipts.
+  Freeze the superseding output at
+  `C:/a/arc3-b001/artifacts/stage06/rule-change-reopening-attempt-02.json` and its work root at
+  `C:/a/arc3-b001/artifacts/stage06/rule-change-reopening-work-attempt-02` before the rerun.
+- Evidence: `docs/evidence/001-06-failed-infrastructure-attempt-01.json`; Attempt 01 created no
+  result file and completed zero mechanism cases before the 283-character path failed.
+- Boundary: this decision changes no schedule member, ordering, seed, environment truth, action or
+  reset budget, lifecycle predicate, acceptance threshold, production policy, or holdout state.
+  Attempt 02 remains bound to the unchanged Stage 06 predeclaration.
+- Reopening condition: any content-addressed component collides across the frozen schedule, any
+  receipt loses its full case identity, or any frozen matrix field changes.

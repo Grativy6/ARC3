@@ -437,3 +437,27 @@ does not erase earlier uncertainty or failed mechanisms.
 - Resolution condition: typed cross-handle confirmation and the adversarial test pass throughout
   identity/transformed smoke cases and the frozen official matrix.
 - Resolution receipt: none.
+
+## B-001-0025 — First official Stage 06 attempt exceeded the Windows path boundary
+
+- Status: OPEN
+- Stage: 06
+- Opened: 2026-08-22
+- Burden: The first clean-source official harness attempt stopped before its first intervention
+  case completed. The full frozen case ID was reused as a filesystem directory component, making
+  an immutable temporary blob path 283 characters long. `Path.open(mode='xb')` returned
+  `FileNotFoundError` on Windows. This is `FAILED_INFRASTRUCTURE`, not evidence for or against the
+  reopening mechanism.
+- Preserved evidence: `docs/evidence/001-06-failed-infrastructure-attempt-01.json`; the ten-file,
+  16,846,070-byte partial work tree was moved intact to
+  `C:/a/arc3-b001/artifacts/stage06/failed-infrastructure/official-attempt-01-d1866e0` and has
+  recursive manifest hash
+  `sha256:66e31a5df20dbdc5629eae1a063c001cd62e50615519c2c4095422eb77bda080`.
+  No official result JSON was created and zero mechanism cases completed.
+- Next discriminating action: map execution directories to deterministic bounded
+  content-addressed components, verify uniqueness across the frozen intervention, noise, and
+  checkpoint schedules, then rerun the unchanged matrix from a new clean source and new artifact
+  paths.
+- Resolution condition: the path mapping tests, repository verification, and superseding frozen
+  matrix complete without path failure; Attempt 01 remains preserved and separately labeled.
+- Resolution receipt: none.
