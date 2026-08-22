@@ -7,12 +7,12 @@
   "build_status": "IN_PROGRESS",
   "status": "IN_PROGRESS",
   "current_stage": "08",
-  "current_task": "Implement the frozen Stage 08 two-speed controller and budget-derived mechanics capacity",
+  "current_task": "Integrate the verified typed Stage 08 cadence and cache into the controller",
   "implementation_branch": "build/001-local-public-recovery",
   "pull_request": "https://github.com/Grativy6/ARC3/pull/5",
   "started_at": "2026-08-21T15:41:02Z",
-  "last_checkpoint_at": "2026-08-22T18:45:54.7898565Z",
-  "last_checkpoint_commit": "d0052555e721453746e4c443efea441da2cb4789",
+  "last_checkpoint_at": "2026-08-22T19:18:15.9658269Z",
+  "last_checkpoint_commit": "5d1a67840bf75a939e25832d8300fa9c835c0e1d",
   "base": {
     "main_commit": "28c7a00732ce48e5c231211b01bc6eba7d0d71b4",
     "main_tree": "4586299448e9b1b585a0878674ed5f9afa60c384",
@@ -385,7 +385,9 @@
       "public_repetitions_per_variant": 5,
       "public_variants": 4,
       "mechanics_capacity": "ARC3Config.budgets.max_actions",
-      "implementation_status": "FROZEN_PREIMPLEMENTATION",
+      "implementation_status": "CAPACITY_REPAIR_VERIFIED_CADENCE_MODULE_PENDING_INTEGRATION",
+      "mechanics_capacity_checkpoint_commit": "5d1a67840bf75a939e25832d8300fa9c835c0e1d",
+      "mechanics_capacity_verification": "PASS:82-focused+lifecycle+controller+all-retrodiction-modes+replay+ruff+format+mypy-strict",
       "public_holdout_consumed": false
     }
   },
@@ -516,7 +518,7 @@
     }
   },
   "blocked_items": [],
-  "next_action": "Implement and verify the budget-derived mechanics capacity, then the typed Stage 08 cadence, receipts, checkpoint state, and pure prediction cache before measurement.",
+  "next_action": "Review and checkpoint the typed cadence/cache module, then integrate cadence receipts, checkpoint state, and pure prediction reuse into the controller before measurement.",
   "notes": [
     "Build 000 ledgers and reports are immutable historical evidence and are not overwritten by Build 001.",
     "The owner explicitly approved MIT-0 for ARC3 first-party source in the active Build 001 instruction.",
