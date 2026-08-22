@@ -106,6 +106,21 @@ MAX_SEARCH_NODES = 2_048
 MAX_SEARCH_DEPTH = 32
 MAX_COORDINATE_CANDIDATES = 24
 
+_WORKSPACE_ADDRESS_SCHEMA = "arc3.stage06.measurement-workspace.v1"
+_WORKSPACE_DIGEST_HEX_CHARS = 32
+_WORKSPACE_COMPONENT_MAX_CHARS = 34
+_WORKSPACE_PROJECTED_PATH_MAX_CHARS = 240
+_INTERVENTION_WORKSPACE_DIR = "i"
+_NOISE_WORKSPACE_DIR = "n"
+_CHECKPOINT_WORKSPACE_DIR = "c"
+_CHECKPOINT_UNINTERRUPTED_DIR = "u"
+_CHECKPOINT_RESUMED_DIR = "r"
+_WORKSPACE_NAMESPACE_PREFIXES = {
+    "checkpoint": "c",
+    RuleChangeCaseKind.INTERVENTION.value: "i",
+    RuleChangeCaseKind.NOISE.value: "n",
+}
+
 _FALSE_POSITIVE_EVENTS = frozenset(
     {
         "mechanics.change_confirmed",
@@ -3483,6 +3498,82 @@ def _case_run_id(case: RuleChangeCase, suffix: str | None = None) -> str:
     return base if suffix is None else f"{base}-{suffix}"
 
 
+def _content_addressed_workspace_component(
+    namespace: str,
+    identity: Mapping[str, object],
+) -> str:
+    """Return a short deterministic directory component for a frozen execution identity."""
+
+    try:
+        prefix = _WORKSPACE_NAMESPACE_PREFIXES[namespace]
+    except KeyError as error:
+        raise ValueError(f"unsupported Stage 06 workspace namespace: {namespace}") from error
+    digest = sha256_json(
+        {
+            "identity": dict(identity),
+            "namespace": namespace,
+            "schema": _WORKSPACE_ADDRESS_SCHEMA,
+        }
+    ).removeprefix("sha256:")
+    if len(digest) != 64 or any(character not in "0123456789abcdef" for character in digest):
+        raise ValueError("Stage 06 workspace identity hash is not canonical SHA-256")
+    component = f"{prefix}-{digest[:_WORKSPACE_DIGEST_HEX_CHARS]}"
+    if len(component) > _WORKSPACE_COMPONENT_MAX_CHARS:
+        raise ValueError("Stage 06 workspace component exceeds its declared bound")
+    return component
+
+
+def _case_workspace_component(case: RuleChangeCase) -> str:
+    return _content_addressed_workspace_component(
+        case.kind.value,
+        {
+            "action_variant": case.action_variant.value,
+            "case_id": case.case_id,
+            "family": case.family.value,
+            "kind": case.kind.value,
+            "palette_variant": case.palette_variant.value,
+            "rejection_count": case.rejection_count,
+            "seed": case.seed,
+            "timing": case.timing.value,
+        },
+    )
+
+
+def _checkpoint_workspace_component(specification: RuleChangeCheckpointCase) -> str:
+    return _content_addressed_workspace_component(
+        "checkpoint",
+        {
+            "action_variant": specification.action_variant.value,
+            "boundary": specification.boundary.value,
+            "case_id": specification.case_id,
+            "family": specification.family.value,
+            "palette_variant": specification.palette_variant.value,
+            "seed": specification.seed,
+            "timing": specification.timing.value,
+        },
+    )
+
+
+def _schedule_workspace_paths(
+    work_root: Path,
+    components: Sequence[str],
+    *,
+    schedule_name: str,
+) -> tuple[Path, ...]:
+    """Bind an ordered schedule to unique bounded workspace directories."""
+
+    if any(
+        not component
+        or Path(component).name != component
+        or len(component) > _WORKSPACE_COMPONENT_MAX_CHARS
+        for component in components
+    ):
+        raise ValueError(f"{schedule_name} contains an invalid workspace component")
+    if len(set(components)) != len(components):
+        raise ValueError(f"{schedule_name} contains a workspace address collision")
+    return tuple(work_root / component for component in components)
+
+
 _DYNAMIC_ID_PREFIXES = (
     "E-",
     "H-",
@@ -4002,8 +4093,8 @@ def _prepare_shared_checkpoint_starts(
 ) -> tuple[_CaseStart, _CaseStart]:
     """Drive one prefix, checkpoint it once, then fork evaluator and storage state."""
 
-    source_root = root / "uninterrupted"
-    resumed_root = root / "resumed"
+    source_root = root / _CHECKPOINT_UNINTERRUPTED_DIR
+    resumed_root = root / _CHECKPOINT_RESUMED_DIR
     run_id = _case_run_id(case, f"{boundary.value}-shared")
     features = replace(preset_features(ControllerPreset.FULL), use_memory=True)
     context = _context(
@@ -4346,13 +4437,19 @@ def _metamorphic_groups(
 
 
 def _intervention_suite(work_root: Path, git_commit: str) -> dict[str, object]:
+    schedule = intervention_schedule()
+    roots = _schedule_workspace_paths(
+        work_root,
+        tuple(_case_workspace_component(case) for case in schedule),
+        schedule_name="Stage 06 intervention schedule",
+    )
     cases = [
         _run_case(
             case,
-            root=work_root / case.case_id,
+            root=root,
             git_commit=git_commit,
         )
-        for case in intervention_schedule()
+        for case, root in zip(schedule, roots, strict=True)
     ]
     families = Counter(
         _mapping(item["case"]).get("family")
@@ -4371,13 +4468,19 @@ def _intervention_suite(work_root: Path, git_commit: str) -> dict[str, object]:
 
 
 def _noise_suite(work_root: Path, git_commit: str) -> dict[str, object]:
+    schedule = noise_control_schedule()
+    roots = _schedule_workspace_paths(
+        work_root,
+        tuple(_case_workspace_component(case) for case in schedule),
+        schedule_name="Stage 06 stationary-noise schedule",
+    )
     cases = [
         _run_case(
             case,
-            root=work_root / case.case_id,
+            root=root,
             git_commit=git_commit,
         )
-        for case in noise_control_schedule()
+        for case, root in zip(schedule, roots, strict=True)
     ]
     false_positives = sum(
         len(_sequence(_mapping(item.get("lifecycle")).get("false_positive_event_ids")))
@@ -4431,14 +4534,14 @@ def _checkpoint_pair(
         }
     uninterrupted = _run_case(
         case,
-        root=root / "uninterrupted",
+        root=root / _CHECKPOINT_UNINTERRUPTED_DIR,
         git_commit=git_commit,
         boundary_request=_BoundaryRequest(specification.boundary, False),
         starting=uninterrupted_start,
     )
     resumed = _run_case(
         case,
-        root=root / "resumed",
+        root=root / _CHECKPOINT_RESUMED_DIR,
         git_commit=git_commit,
         boundary_request=_BoundaryRequest(specification.boundary, True),
         starting=resumed_start,
@@ -4717,14 +4820,19 @@ def _checkpoint_pair(
 
 
 def _checkpoint_suite(work_root: Path, git_commit: str) -> dict[str, object]:
+    schedule = checkpoint_schedule()
+    roots = _schedule_workspace_paths(
+        work_root,
+        tuple(_checkpoint_workspace_component(specification) for specification in schedule),
+        schedule_name="Stage 06 checkpoint schedule",
+    )
     pairs = [
         _checkpoint_pair(
             specification,
-            root=work_root
-            / f"pair-{index:02d}-{specification.family.value}-{specification.boundary.value}",
+            root=root,
             git_commit=git_commit,
         )
-        for index, specification in enumerate(checkpoint_schedule())
+        for specification, root in zip(schedule, roots, strict=True)
     ]
     completed_controller_executions = sum(
         bool(_mapping(pair.get(branch)).get("case"))
@@ -5385,9 +5493,9 @@ def measure_rule_change_reopening(
         "socket.socket",
         side_effect=RuntimeError("Stage 06 competition-mode socket access denied"),
     ) as socket_constructor:
-        intervention = _intervention_suite(work_root / "intervention", git_commit)
-        noise = _noise_suite(work_root / "stationary-noise", git_commit)
-        checkpoint = _checkpoint_suite(work_root / "checkpoint-resume", git_commit)
+        intervention = _intervention_suite(work_root / _INTERVENTION_WORKSPACE_DIR, git_commit)
+        noise = _noise_suite(work_root / _NOISE_WORKSPACE_DIR, git_commit)
+        checkpoint = _checkpoint_suite(work_root / _CHECKPOINT_WORKSPACE_DIR, git_commit)
     socket_guard = {
         "attempt_count": socket_constructor.call_count,
         "network_enabled": False,

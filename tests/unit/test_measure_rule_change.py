@@ -7,9 +7,19 @@ import sys
 from copy import deepcopy
 from pathlib import Path
 from types import SimpleNamespace
+from typing import cast
+from unittest.mock import patch
 
+import pytest
 from scripts.measure_rule_change_reopening import (
+    _CHECKPOINT_RESUMED_DIR,
+    _CHECKPOINT_UNINTERRUPTED_DIR,
+    _CHECKPOINT_WORKSPACE_DIR,
     _FOCUSED_VERIFICATION_TESTS,
+    _INTERVENTION_WORKSPACE_DIR,
+    _NOISE_WORKSPACE_DIR,
+    _WORKSPACE_COMPONENT_MAX_CHARS,
+    _WORKSPACE_PROJECTED_PATH_MAX_CHARS,
     DEFAULT_OUTPUT,
     DEFAULT_WORK_ROOT,
     MAX_ACTIONS,
@@ -28,9 +38,12 @@ from scripts.measure_rule_change_reopening import (
     STAGE05_EVIDENCE_PATH,
     STAGE05_EVIDENCE_SHA256,
     _aggregate_measurements,
+    _case_workspace_component,
     _causal_action_replay,
     _checkpoint_commitment_report,
     _checkpoint_resource_report,
+    _checkpoint_suite,
+    _checkpoint_workspace_component,
     _classify_stage_status,
     _coherent_candidate_confirmation,
     _event_source_closure_after,
@@ -38,16 +51,19 @@ from scripts.measure_rule_change_reopening import (
     _fold_lifecycle_timeline,
     _holdout_source_bindings,
     _infrastructure_failure_count,
+    _intervention_suite,
     _invalidated_plan_ids,
     _lifecycle_summary,
     _linked_candidate_confirmation_support,
     _linked_lifecycle_chain,
     _linked_noise_closure,
     _metamorphic_groups,
+    _noise_suite,
     _observation_blinding_report,
     _pretrigger_checkpoint_ready,
     _resource_summary,
     _run_verification_command,
+    _schedule_workspace_paths,
     _semantic_identifier_projection,
     _source_identity_stability,
     _stale_authority_uses,
@@ -61,8 +77,10 @@ from arc3.lab.rule_change import (
     PaletteVariant,
     RuleChangeCase,
     RuleChangeCaseKind,
+    RuleChangeCheckpointCase,
     RuleChangeFamily,
     RuleChangeTiming,
+    checkpoint_schedule,
     intervention_schedule,
     noise_control_schedule,
     open_rule_change_case,
@@ -175,6 +193,207 @@ def test_frozen_paths_and_budget_constants_match_predeclaration() -> None:
     assert MAX_PEAK_RSS_BYTES == 1024 * 1024 * 1024
     assert MAX_TRACE_BYTES == 64 * 1024 * 1024
     assert MAX_CHECKPOINT_BYTES == 64 * 1024 * 1024
+
+
+def test_content_addressed_workspaces_are_deterministic_unique_and_bounded() -> None:
+    interventions = intervention_schedule()
+    noise_controls = noise_control_schedule()
+    checkpoints = checkpoint_schedule()
+
+    intervention_names = tuple(_case_workspace_component(case) for case in interventions)
+    noise_names = tuple(_case_workspace_component(case) for case in noise_controls)
+    checkpoint_names = tuple(
+        _checkpoint_workspace_component(specification) for specification in checkpoints
+    )
+
+    assert intervention_names == tuple(
+        _case_workspace_component(case) for case in intervention_schedule()
+    )
+    assert noise_names == tuple(
+        _case_workspace_component(case) for case in noise_control_schedule()
+    )
+    assert checkpoint_names == tuple(
+        _checkpoint_workspace_component(specification) for specification in checkpoint_schedule()
+    )
+    assert len(set(intervention_names)) == len(interventions)
+    assert len(set(noise_names)) == len(noise_controls)
+    assert len(set(checkpoint_names)) == len(checkpoints)
+    assert len(set((*intervention_names, *noise_names, *checkpoint_names))) == (
+        len(interventions) + len(noise_controls) + len(checkpoints)
+    )
+
+    all_names = (*intervention_names, *noise_names, *checkpoint_names)
+    assert all(len(name) <= _WORKSPACE_COMPONENT_MAX_CHARS for name in all_names)
+    assert all(name[1] == "-" for name in all_names)
+    assert all(len(name[2:]) == 32 for name in all_names)
+    assert all(set(name[2:]) <= set("0123456789abcdef") for name in all_names)
+    assert all(name.startswith("i-") for name in intervention_names)
+    assert all(name.startswith("n-") for name in noise_names)
+    assert all(name.startswith("c-") for name in checkpoint_names)
+
+    relative_execution_roots = (
+        *(Path(_INTERVENTION_WORKSPACE_DIR) / name for name in intervention_names),
+        *(Path(_NOISE_WORKSPACE_DIR) / name for name in noise_names),
+        *(
+            Path(_CHECKPOINT_WORKSPACE_DIR) / name / branch
+            for name in checkpoint_names
+            for branch in (_CHECKPOINT_UNINTERRUPTED_DIR, _CHECKPOINT_RESUMED_DIR)
+        ),
+    )
+    assert max(len(part) for path in relative_execution_roots for part in path.parts) <= (
+        _WORKSPACE_COMPONENT_MAX_CHARS
+    )
+    assert max(len(path.as_posix()) for path in relative_execution_roots) <= 38
+
+    attempt_02_root = DEFAULT_WORK_ROOT.with_name(f"{DEFAULT_WORK_ROOT.name}-attempt-02")
+    temporary_blob_name = f".{('f' * 64)}.blob.{('f' * 32)}.tmp"
+
+    def projected_temporary_blob(execution_root: Path) -> Path:
+        return execution_root / "trace" / "blobs" / "sha256" / "ff" / temporary_blob_name
+
+    projected_path_lengths = {
+        "checkpoint-resumed": max(
+            len(
+                str(
+                    projected_temporary_blob(
+                        attempt_02_root / _CHECKPOINT_WORKSPACE_DIR / name / _CHECKPOINT_RESUMED_DIR
+                    )
+                )
+            )
+            for name in checkpoint_names
+        ),
+        "checkpoint-uninterrupted": max(
+            len(
+                str(
+                    projected_temporary_blob(
+                        attempt_02_root
+                        / _CHECKPOINT_WORKSPACE_DIR
+                        / name
+                        / _CHECKPOINT_UNINTERRUPTED_DIR
+                    )
+                )
+            )
+            for name in checkpoint_names
+        ),
+        "intervention": max(
+            len(str(projected_temporary_blob(attempt_02_root / _INTERVENTION_WORKSPACE_DIR / name)))
+            for name in intervention_names
+        ),
+        "stationary-noise": max(
+            len(str(projected_temporary_blob(attempt_02_root / _NOISE_WORKSPACE_DIR / name)))
+            for name in noise_names
+        ),
+    }
+    assert projected_path_lengths == {
+        "checkpoint-resumed": 239,
+        "checkpoint-uninterrupted": 239,
+        "intervention": 237,
+        "stationary-noise": 237,
+    }
+    assert max(projected_path_lengths.values()) <= _WORKSPACE_PROJECTED_PATH_MAX_CHARS
+
+
+def test_schedule_workspace_wiring_preserves_full_receipt_case_ids(tmp_path: Path) -> None:
+    executed_cases: list[tuple[RuleChangeCase, Path]] = []
+
+    def fake_run_case(
+        case: RuleChangeCase,
+        *,
+        root: Path,
+        git_commit: str,
+        **_: object,
+    ) -> dict[str, object]:
+        assert git_commit == "test-commit"
+        executed_cases.append((case, root))
+        return {
+            "case": {"case_id": case.case_id, "family": case.family.value},
+            "case_passed": True,
+            "lifecycle": {
+                "false_positive_event_ids": [],
+                "predicates": {"candidate_resolved_as_noise": True},
+            },
+            "trigger_step": None,
+        }
+
+    with (
+        patch(
+            "scripts.measure_rule_change_reopening._run_case",
+            side_effect=fake_run_case,
+        ),
+        patch(
+            "scripts.measure_rule_change_reopening._metamorphic_groups",
+            return_value={"passed": True},
+        ),
+    ):
+        intervention = _intervention_suite(tmp_path / _INTERVENTION_WORKSPACE_DIR, "test-commit")
+        noise = _noise_suite(tmp_path / _NOISE_WORKSPACE_DIR, "test-commit")
+
+    expected_cases = (*intervention_schedule(), *noise_control_schedule())
+    assert tuple(case for case, _ in executed_cases) == expected_cases
+    intervention_records = cast(list[dict[str, object]], intervention["cases"])
+    noise_records = cast(list[dict[str, object]], noise["cases"])
+    assert tuple(
+        cast(dict[str, object], item["case"])["case_id"]
+        for item in (*intervention_records, *noise_records)
+    ) == tuple(case.case_id for case in expected_cases)
+    assert all(root.name != case.case_id for case, root in executed_cases)
+    assert all(len(root.name) <= _WORKSPACE_COMPONENT_MAX_CHARS for _, root in executed_cases)
+
+    checkpoint_roots: list[tuple[RuleChangeCheckpointCase, Path]] = []
+
+    def fake_checkpoint_pair(
+        specification: RuleChangeCheckpointCase,
+        *,
+        root: Path,
+        git_commit: str,
+    ) -> dict[str, object]:
+        assert git_commit == "test-commit"
+        checkpoint_roots.append((specification, root))
+        case_receipt = {"case_id": specification.case_id}
+        return {
+            "case_id": specification.case_id,
+            "failures": [],
+            "pair_passed": True,
+            "resumed": {"case": case_receipt},
+            "uninterrupted": {"case": case_receipt},
+        }
+
+    with patch(
+        "scripts.measure_rule_change_reopening._checkpoint_pair",
+        side_effect=fake_checkpoint_pair,
+    ):
+        checkpoint = _checkpoint_suite(tmp_path / _CHECKPOINT_WORKSPACE_DIR, "test-commit")
+
+    expected_checkpoints = checkpoint_schedule()
+    assert tuple(specification for specification, _ in checkpoint_roots) == expected_checkpoints
+    checkpoint_pairs = cast(list[dict[str, object]], checkpoint["pairs"])
+    assert tuple(pair["case_id"] for pair in checkpoint_pairs) == tuple(
+        specification.case_id for specification in expected_checkpoints
+    )
+    assert all(root.name != specification.case_id for specification, root in checkpoint_roots)
+    assert all(len(root.name) <= _WORKSPACE_COMPONENT_MAX_CHARS for _, root in checkpoint_roots)
+
+
+def test_schedule_workspace_paths_fail_closed_on_unsafe_or_colliding_names(
+    tmp_path: Path,
+) -> None:
+    with pytest.raises(ValueError, match="workspace address collision"):
+        _schedule_workspace_paths(
+            tmp_path,
+            ("i-0123456789abcdef", "i-0123456789abcdef"),
+            schedule_name="duplicate test schedule",
+        )
+
+    for invalid in (
+        "../outside",
+        f"i-{'0' * _WORKSPACE_COMPONENT_MAX_CHARS}",
+    ):
+        with pytest.raises(ValueError, match="invalid workspace component"):
+            _schedule_workspace_paths(
+                tmp_path,
+                (invalid,),
+                schedule_name="invalid test schedule",
+            )
 
 
 def test_holdout_source_bindings_reject_manifest_or_stage05_replacement() -> None:
