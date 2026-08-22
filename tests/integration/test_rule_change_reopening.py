@@ -1189,7 +1189,10 @@ def test_rehashed_checkpoint_cannot_invent_derived_authority(tmp_path: Path) -> 
             (lower_calibration, "action semantics/calibration"),
             (reorder_candidate_contexts_only, "successor support disagrees with trace fold"),
             (invent_candidate_confirmation, "mechanics lifecycle"),
-            (swap_transition_after_receipt, "source order/type"),
+            (
+                swap_transition_after_receipt,
+                "source order/type|artifact projection does not reconstruct exactly",
+            ),
         )
     ):
         tampered = _write_rehashed_checkpoint(
