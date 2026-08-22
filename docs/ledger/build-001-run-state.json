@@ -233,6 +233,8 @@
       "checkpoint_resume_pairs_predeclared": 8,
       "controller_executions_predeclared": 112,
       "implementation_status": "NOT_STARTED_PREDECLARATION_ONLY",
+      "preimplementation_integrity": "PASS:0-blocking+0-warnings+0-secrets",
+      "preimplementation_integrity_receipt_hash": "sha256:993bbce75fb055058711949d873ac5c73e6cc0a6cabe2cf4e93cf04fd12923a3",
       "public_holdout_consumed": false
     }
   },

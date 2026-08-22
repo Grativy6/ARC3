@@ -298,3 +298,22 @@ does not erase earlier uncertainty or failed mechanisms.
   7/7; clean Stage 16 source guards 2/2; corrected frozen Stage 05 artifact self-hash
   `sha256:b2ea83ff85f50f005e8630e34857741b70471b232781464fa8e3825d6f33bc07`;
   green push run `32557369468` and draft-PR run `32557371792` on both Linux and Windows.
+
+## B-001-0021 — Integrity CLI does not infer the Build 001 nested manifest identity
+
+- Status: RESOLVED
+- Stage: 05–06
+- Opened: 2026-08-22
+- Failure evidence: on clean commit `916c80174b16b75c03d65b2ff9613116b41fff2a`, invoking
+  `scripts.check_competition_integrity` with the Build 001 run-state but without
+  `--expected-manifest-sha256` returned exit 1 and the single blocking finding
+  `manifest-identity-unbound`. Its receipt is
+  `C:/a/arc3-b001/artifacts/stage06/preimplementation-integrity.json`, file SHA-256
+  `f7d6028981573d6df232fa3d3ab5d9e6c6ad618b359f50b7a53bcdc6fa5adc0e`; policy,
+  supply-chain, and zero-finding secret checks still passed.
+- Resolution: supply the already frozen manifest identity explicitly as the CLI contract requires:
+  `--expected-manifest-sha256 682d5891c2aface54803d9bd1173c55ed21e89856e13b8a478fb9276ee963f2f`.
+- Resolution receipt: `C:/a/arc3-b001/artifacts/stage06/preimplementation-integrity-pinned.json`,
+  file SHA-256 `4209570fe577904844577ad5ead0a0d2d984673316b82dd0f1f9f0fd35089b0a`,
+  receipt hash `sha256:993bbce75fb055058711949d873ac5c73e6cc0a6cabe2cf4e93cf04fd12923a3`;
+  exit 0, zero blocking findings, zero warnings, zero secret findings.
