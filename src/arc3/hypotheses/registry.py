@@ -7,7 +7,7 @@ from dataclasses import dataclass, replace
 from typing import cast
 
 from arc3.errors import HypothesisError
-from arc3.trace.canonical import canonical_json
+from arc3.trace.canonical import canonical_json, normalize_json
 from arc3.types import HypothesisStatus, JSONValue
 
 from .base import (
@@ -891,6 +891,8 @@ class HypothesisRegistry:
     def from_dict(cls, value: Mapping[str, object]) -> HypothesisRegistry:
         """Restore by replaying events; serialized records are never trusted as authority."""
 
+        if value.get("schema") != "arc3.hypothesis.registry.v0.1":
+            raise HypothesisError("unsupported hypothesis registry schema")
         events_value = value.get("events")
         if not isinstance(events_value, list) or not all(
             isinstance(item, Mapping) for item in events_value
@@ -909,6 +911,13 @@ class HypothesisRegistry:
                     raise HypothesisError("dependent plan IDs must be strings")
                 registry._dependent_plans.setdefault(hypothesis_id, set()).add(
                     require_text(plan_id, field="plan_id")
+                )
+        replayed = registry.to_dict()
+        for field in ("records", "dependent_plans", "invalidations"):
+            supplied = value.get(field)
+            if normalize_json(supplied) != replayed[field]:
+                raise HypothesisError(
+                    f"serialized hypothesis {field} disagrees with replayed events"
                 )
         return registry
 

@@ -1,6 +1,14 @@
 """Retrodiction-gated executable world models for ARC3."""
 
 from .compiler import CompilationResult, CompileIssue, compile_hypotheses
+from .lifecycle import (
+    MechanicsChangeCandidate,
+    MechanicsChangeDomain,
+    MechanicsChangeStatus,
+    MechanicsEpoch,
+    MechanicsEpochStatus,
+    MechanicsLifecycle,
+)
 from .model import (
     AlternativeOutcome,
     EnsemblePrediction,
@@ -38,6 +46,7 @@ from .rules import (
     CoordinateEffectRule,
     CounterRule,
     MovementRule,
+    NoOpRule,
     RuleCondition,
     RuleEffect,
     RuleExecution,
@@ -71,11 +80,18 @@ __all__ = [
     "CoordinateEffectRule",
     "CounterRule",
     "EnsemblePrediction",
+    "MechanicsChangeCandidate",
+    "MechanicsChangeDomain",
+    "MechanicsChangeStatus",
+    "MechanicsEpoch",
+    "MechanicsEpochStatus",
+    "MechanicsLifecycle",
     "ModelCandidate",
     "ModelPrediction",
     "ModelReopening",
     "ModelScore",
     "MovementRule",
+    "NoOpRule",
     "PredictionBook",
     "PredictionReceipt",
     "PreservedTransition",

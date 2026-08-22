@@ -237,6 +237,12 @@ class CheckpointStore:
         self.root.mkdir(parents=True, exist_ok=True)
         self.latest_path = self.root / "latest.json"
 
+    def content_addressed_path(self, checkpoint_hash: str) -> Path:
+        """Resolve an immutable checkpoint identity without trusting ``latest``."""
+
+        require_sha256(checkpoint_hash, field="checkpoint_hash")
+        return self.root / f"checkpoint-{checkpoint_hash.removeprefix('sha256:')}.json"
+
     @staticmethod
     def _write_atomic(path: Path, content: bytes) -> None:
         temporary = path.with_name(f".{path.name}.{uuid.uuid4().hex}.tmp")
@@ -274,8 +280,7 @@ class CheckpointStore:
             state=state,
         )
         content = canonical_bytes(envelope.to_dict()) + b"\n"
-        digest = envelope.checkpoint_hash.removeprefix("sha256:")
-        immutable_path = self.root / f"checkpoint-{digest}.json"
+        immutable_path = self.content_addressed_path(envelope.checkpoint_hash)
         if immutable_path.exists():
             if immutable_path.read_bytes() != content:
                 raise CheckpointError("content-addressed checkpoint collision")

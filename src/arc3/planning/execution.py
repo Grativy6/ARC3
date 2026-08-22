@@ -88,6 +88,24 @@ class PlanExecutor:
         self._plan = plan
         self._cursor = 0
 
+    def restore(self, plan: Plan, *, cursor: int) -> None:
+        """Restore an evidence-validated plan cursor without emitting an action.
+
+        Checkpoints preserve the executor's revisable derived state.  Restoring
+        the cursor separately from a pending emission lets the controller
+        reconstruct that emission through :meth:`next_action`, while an
+        observation/terminal checkpoint retains the exact consumed prefix.
+        """
+
+        if self._pending is not None:
+            raise PlanningError("cannot restore a plan while an action consequence is pending")
+        if isinstance(cursor, bool) or not isinstance(cursor, int):
+            raise PlanningError("restored plan cursor must be an integer")
+        if cursor < 0 or cursor > len(plan.steps):
+            raise PlanningError("restored plan cursor is outside the plan")
+        self._plan = plan
+        self._cursor = cursor
+
     def next_action(
         self,
         current_state: SymbolicState,

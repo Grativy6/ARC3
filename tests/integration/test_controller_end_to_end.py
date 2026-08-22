@@ -60,7 +60,8 @@ def _run_cycle(seed: int) -> tuple[bool, int]:
 @pytest.mark.integration
 def test_integrated_controller_outperforms_equal_budget_cycle_on_synthetic(tmp_path: Path) -> None:
     seeds = tuple(range(16))
-    full = [_run_full(tmp_path, seed)[:2] for seed in seeds]
+    full_runs = [_run_full(tmp_path, seed) for seed in seeds]
+    full = [run[:2] for run in full_runs]
     cycle = [_run_cycle(seed) for seed in seeds]
 
     assert sum(completed for completed, _actions in full) == len(seeds)
@@ -68,6 +69,27 @@ def test_integrated_controller_outperforms_equal_budget_cycle_on_synthetic(tmp_p
         completed for completed, _actions in cycle
     )
     assert max(actions for _completed, actions in full) <= 16
+
+    # The initially selected structural mover can be wrong. Once diverse
+    # consequences establish the controlled lineage, an earlier paid-for
+    # receipt is interpreted retrospectively while its raw transition remains.
+    receipt_reuse = full_runs[1][2]
+    events = receipt_reuse.journal.verify_manifest()
+    retrospective = tuple(
+        event
+        for event in events
+        if event.event_type == "action.controlled_effect_interpreted"
+        and event.payload.get("interpretation_timing")
+        == "retrospective-after-mover-lineage-confirmation"
+    )
+    assert len(retrospective) == 1
+    source_transition_id = retrospective[0].payload["source_transition_id"]
+    assert any(
+        transition.transition_id == source_transition_id
+        for transition in receipt_reuse._transitions
+    )
+    assert len(retrospective[0].payload["confirmation_consequence_event_ids"]) == 2
+    assert retrospective[0].payload["authority_event_ids"]
 
 
 @pytest.mark.integration
@@ -136,6 +158,14 @@ def test_probe_plan_fallback_and_reset_paths_all_accept_consequences(
     fallback = controller.choose_action()
     assert fallback.rationale_summary.startswith("deterministic legal fallback")
     controller.apply_consequence(session.step(fallback.action))
+    assert controller.phase is ControllerPhase.OBSERVED
+    staging_faults = tuple(
+        event
+        for event in controller.journal.verify_manifest()
+        if event.event_type == "run.environment_fault"
+        and event.payload.get("boundary") == "consequence-tail-plan-staging"
+    )
+    assert len(staging_faults) == 1
 
 
 @pytest.mark.integration

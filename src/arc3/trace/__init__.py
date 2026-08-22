@@ -40,6 +40,7 @@ from .replay import (
     validate_summary,
 )
 from .schema import (
+    CHECKPOINT_COMMITMENT_SCHEMA,
     CHECKPOINT_SCHEMA,
     CORE_EVENT_TYPES,
     EVENT_SCHEMA,
@@ -55,6 +56,7 @@ from .schema import (
 )
 
 __all__ = [
+    "CHECKPOINT_COMMITMENT_SCHEMA",
     "CHECKPOINT_SCHEMA",
     "CORE_EVENT_TYPES",
     "EVENT_SCHEMA",

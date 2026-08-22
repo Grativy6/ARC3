@@ -9,16 +9,21 @@ from arc3.hypotheses import (
     HypothesisRegistry,
     HypothesisScope,
 )
+from arc3.policy import ARC3Controller
 from arc3.types import ActionName, ActionRequest
 from arc3.world_model import (
     Cell,
+    CollisionBehavior,
+    CollisionRule,
     MovementRule,
+    NoOpRule,
     PreservedTransition,
     PromotionStatus,
     SymbolicEntity,
     SymbolicState,
     WorldModelEnsemble,
     compile_hypotheses,
+    execute_rules,
     gated_ensemble,
     make_model_candidate,
     retrodict,
@@ -36,6 +41,24 @@ def transition(identifier: str, before_x: int, after_x: int) -> PreservedTransit
         state(before_x),
         ActionRequest(ActionName.ACTION1),
         state(after_x),
+        (f"event:{identifier}:before", f"event:{identifier}:after"),
+    )
+
+
+def scene_state(*entities: SymbolicEntity, width: int = 8) -> SymbolicState:
+    return SymbolicState(width, 3, entities)
+
+
+def scene_transition(
+    identifier: str,
+    before: SymbolicState,
+    after: SymbolicState,
+) -> PreservedTransition:
+    return PreservedTransition(
+        identifier,
+        before,
+        ActionRequest(ActionName.ACTION1),
+        after,
         (f"event:{identifier}:before", f"event:{identifier}:after"),
     )
 
@@ -112,6 +135,37 @@ def test_gate_scores_fit_complexity_contradictions_and_residuals() -> None:
     assert simulation.paths[0].state.entity("piece").anchor == Cell(5, 1)  # type: ignore[union-attr]
 
 
+def test_compiled_noop_is_action_scoped_and_keeps_other_action_rules() -> None:
+    registry = HypothesisRegistry()
+    registry.create(
+        hypothesis_id="H-NOOP",
+        statement=ActionSemanticsStatement("ACTION1", "no-op", {"entity_id": "piece"}),
+        scope=HypothesisScope.LEVEL,
+        created_from_event_ids=("E-NOOP",),
+        occurred_step=0,
+    )
+    registry.create(
+        hypothesis_id="H-MOVE",
+        statement=ActionSemanticsStatement(
+            "ACTION2", "translation", {"entity_id": "piece", "dx": 1, "dy": 0}
+        ),
+        scope=HypothesisScope.LEVEL,
+        created_from_event_ids=("E-MOVE",),
+        occurred_step=1,
+    )
+
+    candidate = compile_hypotheses(registry.all()).candidates[0]
+
+    assert any(isinstance(rule, NoOpRule) for rule in candidate.rules)
+    assert execute_rules(
+        candidate.rules, state(1), ActionRequest(ActionName.ACTION1)
+    ).state == state(1)
+    moved = execute_rules(
+        candidate.rules, state(1), ActionRequest(ActionName.ACTION2)
+    ).state.entity("piece")
+    assert moved is not None and moved.anchor == Cell(2, 1)
+
+
 def test_retrodiction_off_is_explicit_and_cannot_silently_promote() -> None:
     model = make_model_candidate(
         hypothesis_ids=("H",),
@@ -145,3 +199,161 @@ def test_ensemble_returns_explicit_alternative_outcomes_with_rank_weights() -> N
     assert [item.rank_weight for item in prediction.alternatives] == [2, 1]
     assert all(item.weight_kind == "uncalibrated_rank" for item in prediction.alternatives)
     assert {item.after_state.entity("piece").anchor.x for item in prediction.alternatives} == {2, 4}  # type: ignore[union-attr]
+
+
+def test_controlled_projection_ignores_exogenous_motion_without_mutating_raw_receipt() -> None:
+    mover_rule = MovementRule("R-MOVER", ActionName.ACTION1, 1, 0, entity_id="mover")
+    model = make_model_candidate(hypothesis_ids=("H-MOVER",), rules=(mover_rule,))
+    before = scene_state(
+        SymbolicEntity("mover", "mover", (Cell(1, 1),)),
+        SymbolicEntity("guide", "guide", (Cell(5, 1),)),
+    )
+    after = scene_state(
+        SymbolicEntity("mover", "mover", (Cell(2, 1),)),
+        SymbolicEntity("guide", "guide", (Cell(6, 1),)),
+    )
+    raw = scene_transition("T-EXOGENOUS", before, after)
+
+    assert retrodict(model, (raw,)).status is PromotionStatus.REJECTED
+    projected = ARC3Controller._candidate_retrodiction_projection(model, raw)
+    artifact = retrodict(model, (projected,))
+
+    assert artifact.status is PromotionStatus.PROMOTED
+    assert projected.source_event_ids == raw.source_event_ids
+    assert projected.before.entity("guide") is None
+    assert projected.after.entity("guide") is None
+    assert raw.before == before
+    assert raw.after == after
+    assert raw.after.entity("guide") is not None
+
+
+def test_stationary_component_absent_boundary_is_deferred_not_counted_as_a_match() -> None:
+    model = make_model_candidate(
+        hypothesis_ids=("H-MOVER",),
+        rules=(MovementRule("R-MOVER", ActionName.ACTION1, 1, 0, entity_id="mover"),),
+    )
+    stationary = scene_transition(
+        "T-MODAL-BOUNDARY",
+        scene_state(SymbolicEntity("mover", "mover", (Cell(2, 1),)), width=5),
+        scene_state(SymbolicEntity("mover", "mover", (Cell(2, 1),)), width=5),
+    )
+
+    compatible = ARC3Controller._candidate_retrodiction_transitions(model, (stationary,))
+
+    assert compatible == ()
+    assert stationary.before == stationary.after
+    assert retrodict(model, compatible).matched_transition_ids == ()
+
+
+def test_partial_action_model_defers_unclaimed_action_without_assuming_identity() -> None:
+    model = make_model_candidate(
+        hypothesis_ids=("H-ACTION2",),
+        rules=(MovementRule("R-ACTION2", ActionName.ACTION2, 0, 1, entity_id="mover"),),
+    )
+    before = scene_state(SymbolicEntity("mover", "mover", (Cell(2, 1),)))
+    unclaimed = PreservedTransition(
+        "T-UNCLAIMED",
+        before,
+        ActionRequest(ActionName.ACTION1),
+        scene_state(SymbolicEntity("mover", "mover", (Cell(3, 1),))),
+        ("E-UNCLAIMED-BEFORE", "E-UNCLAIMED-AFTER"),
+    )
+    claimed = PreservedTransition(
+        "T-CLAIMED",
+        before,
+        ActionRequest(ActionName.ACTION2),
+        scene_state(SymbolicEntity("mover", "mover", (Cell(2, 2),))),
+        ("E-CLAIMED-BEFORE", "E-CLAIMED-AFTER"),
+    )
+
+    compatible, unclaimed_ids, collision_ids = ARC3Controller._candidate_retrodiction_partition(
+        model, (unclaimed, claimed)
+    )
+    artifact = retrodict(
+        model,
+        tuple(
+            ARC3Controller._candidate_retrodiction_projection(model, item) for item in compatible
+        ),
+    )
+
+    assert compatible == (claimed,)
+    assert unclaimed_ids == (unclaimed.transition_id,)
+    assert collision_ids == ()
+    assert artifact.status is PromotionStatus.PROMOTED
+    assert artifact.matched_transition_ids == (claimed.transition_id,)
+
+
+def test_unobstructed_wrong_mover_displacement_remains_a_contradiction() -> None:
+    model = make_model_candidate(
+        hypothesis_ids=("H-MOVER",),
+        rules=(MovementRule("R-MOVER", ActionName.ACTION1, 1, 0, entity_id="mover"),),
+    )
+    wrong = scene_transition(
+        "T-WRONG",
+        scene_state(SymbolicEntity("mover", "mover", (Cell(2, 1),))),
+        scene_state(SymbolicEntity("mover", "mover", (Cell(1, 1),))),
+    )
+
+    compatible = ARC3Controller._candidate_retrodiction_transitions(model, (wrong,))
+    artifact = retrodict(
+        model,
+        tuple(
+            ARC3Controller._candidate_retrodiction_projection(model, item) for item in compatible
+        ),
+    )
+
+    assert compatible == (wrong,)
+    assert artifact.status is PromotionStatus.REJECTED
+    assert artifact.contradiction_transition_ids == (wrong.transition_id,)
+
+
+def test_occupied_destination_pass_is_tested_while_block_and_unknown_are_deferred() -> None:
+    movement = MovementRule("R-MOVER", ActionName.ACTION1, 1, 0, entity_id="mover")
+    pass_model = make_model_candidate(
+        hypothesis_ids=("H-PASS",),
+        rules=(
+            movement,
+            CollisionRule(
+                "R-PASS",
+                moving_kind="mover",
+                obstacle_kind="terrain",
+                behavior=CollisionBehavior.PASS,
+            ),
+        ),
+    )
+    block_model = make_model_candidate(
+        hypothesis_ids=("H-BLOCK",),
+        rules=(
+            movement,
+            CollisionRule(
+                "R-BLOCK",
+                moving_kind="mover",
+                obstacle_kind="terrain",
+                behavior=CollisionBehavior.BLOCK,
+            ),
+        ),
+    )
+    unknown_model = make_model_candidate(hypothesis_ids=("H-UNKNOWN",), rules=(movement,))
+    before = scene_state(
+        SymbolicEntity("mover", "mover", (Cell(1, 1),)),
+        SymbolicEntity("terrain", "terrain", (Cell(2, 1),)),
+    )
+    passed = scene_transition(
+        "T-PASS",
+        before,
+        scene_state(
+            SymbolicEntity("mover", "mover", (Cell(2, 1),)),
+            SymbolicEntity("terrain", "terrain", (Cell(2, 1),)),
+        ),
+    )
+
+    assert ARC3Controller._candidate_retrodiction_transitions(pass_model, (passed,)) == (passed,)
+    assert (
+        retrodict(
+            pass_model,
+            (ARC3Controller._candidate_retrodiction_projection(pass_model, passed),),
+        ).status
+        is PromotionStatus.PROMOTED
+    )
+    assert ARC3Controller._candidate_retrodiction_transitions(block_model, (passed,)) == ()
+    assert ARC3Controller._candidate_retrodiction_transitions(unknown_model, (passed,)) == ()

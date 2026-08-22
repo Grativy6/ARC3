@@ -137,7 +137,7 @@ def test_synthetic_diagnosis_is_self_hashed_and_behavior_preserving(tmp_path: Pa
     assert comparison["active_ensemble_sampled_every_trial"] is True
     assert comparison["prediction_and_state_identity_rows_present_every_trial"] is True
     for trial in microbenchmark["trials"]:
-        assert trial["setup_actions"] == 1
+        assert trial["setup_actions"] == 2
         assert trial["setup_active_world_model_count"] > 0
         assert trial["setup_active_hypothesis_count"] > 0
         assert trial["setup_candidate_count"] > 0

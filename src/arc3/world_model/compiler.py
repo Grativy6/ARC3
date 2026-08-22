@@ -27,6 +27,7 @@ from .rules import (
     CoordinateEffectRule,
     CounterRule,
     MovementRule,
+    NoOpRule,
     RuleCondition,
     RulePrimitive,
     SelectionMode,
@@ -148,6 +149,17 @@ def _compile_record(
                     action,
                     _integer(parameters.get("dx"), default=0),
                     _integer(parameters.get("dy"), default=0),
+                    entity_id=_optional_text(parameters.get("entity_id"))
+                    or controllable.get(statement.action),
+                    entity_kind=_optional_text(parameters.get("entity_kind")),
+                    conditions=conditions,
+                ),
+            ), None
+        if effect in {"no-op", "noop", "identity"}:
+            return (
+                NoOpRule(
+                    rule_id,
+                    action,
                     entity_id=_optional_text(parameters.get("entity_id"))
                     or controllable.get(statement.action),
                     entity_kind=_optional_text(parameters.get("entity_kind")),

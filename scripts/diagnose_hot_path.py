@@ -715,9 +715,12 @@ def _run_action_selection_micro_trial(
         _micro_context(root, seed=fixture_seed, repetition=repetition, tracing=tracing)
     )
     controller.observe(session.observation)
-    setup_decision = controller.choose_action()
-    setup_consequence = session.step(setup_decision.action)
-    controller.apply_consequence(setup_consequence)
+    # Controlled-object authority is earned only after two coherent, diverse
+    # consequences.  Keep both setup actions outside the read-only hot path.
+    for _ in range(2):
+        setup_decision = controller.choose_action()
+        setup_consequence = session.step(setup_decision.action)
+        controller.apply_consequence(setup_consequence)
     setup_snapshot = controller.snapshot
     if controller.phase is not ControllerPhase.OBSERVED:
         raise RuntimeError("microbenchmark setup did not reach a nonterminal observed state")

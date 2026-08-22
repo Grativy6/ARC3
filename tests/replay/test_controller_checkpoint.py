@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import json
+import random
 from pathlib import Path
+from typing import cast
 
 import pytest
 
@@ -9,8 +12,8 @@ from arc3.adapters.synthetic import SYNTHETIC_GAME_ID, SyntheticAdapter
 from arc3.config import ARC3Config, BudgetConfig
 from arc3.errors import PolicyError
 from arc3.policy import ARC3Controller, ControllerPhase, ControllerPreset, RunContext
-from arc3.trace import EventJournal, verify_event_chain
-from arc3.types import ActionName, EnvironmentMode, GameId, GameStateName
+from arc3.trace import CheckpointStore, EventJournal, verify_event_chain
+from arc3.types import ActionName, EnvironmentMode, GameId, GameStateName, JSONValue
 
 
 def _context(tmp_path: Path) -> RunContext:
@@ -44,6 +47,11 @@ def test_pending_action_checkpoint_restores_without_resubmission(tmp_path: Path)
     expected_registry = original.action_effect_projection
     expected_calibration = original.action_calibration_projection
     event_count = original.journal.event_count
+    checkpoint_tail = original.journal.tail_event
+    assert checkpoint_tail is not None
+    assert checkpoint_tail.event_type == "run.checkpoint_written"
+    assert checkpoint_tail.payload["checkpoint_hash"] == checkpoint.envelope.checkpoint_hash
+    assert checkpoint_tail.payload["pending_submitted_event_id"] == decision.submitted_event_id
     original.close()
 
     restored = ARC3Controller.restore(
@@ -66,6 +74,14 @@ def test_pending_action_checkpoint_restores_without_resubmission(tmp_path: Path)
     assert restored.action_calibration_projection["completed_handles"] == ["ACTION1"]
     assert restored.action_effect_projection["observation_counts"]["ACTION1"] == 1
     assert restored.journal.event_count > event_count
+    assert (
+        sum(
+            event.event_type == "consequence.received"
+            and event.payload.get("submitted_event_id") == decision.submitted_event_id
+            for event in restored.journal.verify_manifest()
+        )
+        == 1
+    )
 
     actions = 1
     while restored.phase not in {ControllerPhase.COMPLETE, ControllerPhase.GAME_OVER}:
@@ -75,6 +91,50 @@ def test_pending_action_checkpoint_restores_without_resubmission(tmp_path: Path)
         assert actions <= 16
     assert restored.phase is ControllerPhase.COMPLETE
     assert restored.snapshot.fault_count == 0
+
+
+@pytest.mark.replay
+def test_restore_ignores_orphan_newer_latest_without_commitment_receipt(
+    tmp_path: Path,
+) -> None:
+    context = _context(tmp_path)
+    controller = ARC3Controller(ControllerPreset.FULL)
+    controller.reset(context)
+    observation = (
+        SyntheticAdapter(seed=23, size=8, max_steps=32).open(SYNTHETIC_GAME_ID).observation
+    )
+    controller.observe(observation)
+    checkpoint = controller.checkpoint()
+    committed_receipt = controller.journal.tail_event
+    assert committed_receipt is not None
+    assert committed_receipt.event_type == "run.checkpoint_written"
+
+    raw_checkpoint = json.loads(checkpoint.path.read_text(encoding="utf-8"))
+    raw_state = cast(dict[str, JSONValue], raw_checkpoint["state"])
+    orphan_path, orphan = CheckpointStore(context.checkpoint_root).write(
+        run_id=context.run_id,
+        episode_id=context.episode_id,
+        trace_tail_event_id=committed_receipt.event_id,
+        trace_tail_hash=committed_receipt.event_hash,
+        git_commit=context.git_commit,
+        config_hash=str(context.config.hash),
+        rng=random.Random(999),
+        state=raw_state,
+    )
+    assert orphan_path != checkpoint.path
+    assert orphan.checkpoint_hash != checkpoint.envelope.checkpoint_hash
+    assert (
+        json.loads((context.checkpoint_root / "latest.json").read_text(encoding="utf-8"))[
+            "checkpoint_hash"
+        ]
+        == orphan.checkpoint_hash
+    )
+    controller.journal.close()
+
+    restored = ARC3Controller.restore(context, preset=ControllerPreset.FULL)
+    assert restored.snapshot.phase is ControllerPhase.OBSERVED
+    assert restored.journal.tail_event_id == committed_receipt.event_id
+    assert restored.journal.tail_hash == committed_receipt.event_hash
 
 
 @pytest.mark.replay
@@ -137,7 +197,8 @@ def test_close_checkpoint_restores_complete_phase_without_duplicate_completion(
     before_auditor = EventJournal(context.trace_root, run_id=context.run_id)
     before = before_auditor.verify_manifest()
     before_auditor.close()
-    assert before[-1].event_type == "run.completed"
+    assert before[-1].event_type == "run.checkpoint_written"
+    assert before[-2].event_type == "run.completed"
     assert sum(event.event_type == "run.completed" for event in before) == 1
 
     restored = ARC3Controller.restore(context, preset=ControllerPreset.FULL)

@@ -111,8 +111,12 @@ def test_ungated_ablation_is_explicit_in_model_receipts(tmp_path: Path) -> None:
     controller.observe(session.observation)
 
     assert not controller.snapshot.active_world_model_ids
-    decision = controller.choose_action()
-    controller.apply_consequence(session.step(decision.action))
+    first = controller.choose_action()
+    controller.apply_consequence(session.step(first.action))
+    assert not controller.snapshot.active_world_model_ids
+
+    second = controller.choose_action()
+    controller.apply_consequence(session.step(second.action))
 
     assert controller.snapshot.active_world_model_ids
     events = controller.journal.verify_manifest()
@@ -126,6 +130,9 @@ def test_ungated_ablation_is_explicit_in_model_receipts(tmp_path: Path) -> None:
     assert {event.payload["promotion_basis"] for event in promotions} == {
         "ungated Stage 14 ablation"
     }
+    started = [event for event in events if event.event_type == "model.retrodiction_started"]
+    assert started
+    assert all("deferred_unclaimed_action_transition_ids" in event.payload for event in started)
 
 
 def test_object_tracking_ablation_preserves_raw_delta_but_omits_correspondence(

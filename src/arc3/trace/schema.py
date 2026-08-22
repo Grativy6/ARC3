@@ -24,6 +24,7 @@ from .canonical import (
 
 EVENT_SCHEMA: Final = "arc3.trace.event.v0.1"
 CHECKPOINT_SCHEMA: Final = "arc3.checkpoint.v0.1"
+CHECKPOINT_COMMITMENT_SCHEMA: Final = "arc3.memory.checkpoint-commitment.v0.1"
 SUMMARY_SCHEMA: Final = "arc3.trace.summary.v0.1"
 MANIFEST_SCHEMA: Final = "arc3.trace.manifest.v0.1"
 MIGRATION_SCHEMA: Final = "arc3.trace.migration.v0.1"
@@ -60,7 +61,14 @@ CORE_EVENT_TYPES: Final[frozenset[str]] = frozenset(
         "model.retrodiction_completed",
         "model.rule_promoted",
         "model.rule_demoted",
+        "mechanics.change_candidate_created",
+        "mechanics.successor_evidence_supported",
+        "mechanics.predecessor_recovery_supported",
+        "mechanics.change_candidate_resolved",
+        "mechanics.change_confirmed",
+        "mechanics.epoch_opened",
         "simulation.plan_evaluated",
+        "simulation.plan_invalidated",
         "simulation.prediction_emitted",
         "goal.candidate_created",
         "goal.supported",
@@ -68,8 +76,10 @@ CORE_EVENT_TYPES: Final[frozenset[str]] = frozenset(
         "goal.selected_for_planning",
         "goal.reopened",
         "goal.retired",
+        "goal.target_bound",
         "action.candidates_generated",
         "action.effect_observed",
+        "action.controlled_effect_interpreted",
         "action.selected",
         "action.validated",
         "action.submitted",
@@ -365,6 +375,59 @@ def _validate_delta_payload(payload: dict[str, JSONValue]) -> None:
         raise ARC3ValidationError("apparent_noop must exactly reflect changed_cell_count == 0")
 
 
+def _validate_checkpoint_written_payload(payload: dict[str, JSONValue]) -> None:
+    required = {
+        "commitment_schema",
+        "checkpoint_sequence",
+        "checkpoint_hash",
+        "checkpoint_schema",
+        "derived_controller_schema",
+        "derived_controller_state_hash",
+        "rng_state_hash",
+        "envelope_prior_trace_tail_event_id",
+        "envelope_prior_trace_tail_hash",
+        "git_commit",
+        "config_hash",
+        "memory_phase",
+        "controller_phase",
+        "level_index",
+        "step_index",
+        "pending_submitted_event_id",
+    }
+    missing = sorted(required - set(payload))
+    if missing:
+        raise ARC3ValidationError(f"run.checkpoint_written payload missing: {', '.join(missing)}")
+    if payload.get("commitment_schema") != CHECKPOINT_COMMITMENT_SCHEMA:
+        raise ARC3ValidationError("unsupported checkpoint commitment schema")
+    if payload.get("checkpoint_schema") != CHECKPOINT_SCHEMA:
+        raise ARC3ValidationError("checkpoint receipt names an unsupported envelope schema")
+    if payload.get("derived_controller_schema") != "arc3.memory.derived-controller.v0.1":
+        raise ARC3ValidationError("checkpoint receipt names an unsupported controller schema")
+    sequence = _require_int(payload, "checkpoint_sequence")
+    if sequence <= 0:
+        raise ARC3ValidationError("checkpoint_sequence must be positive")
+    for field_name in (
+        "checkpoint_hash",
+        "derived_controller_state_hash",
+        "rng_state_hash",
+        "envelope_prior_trace_tail_hash",
+        "config_hash",
+    ):
+        require_sha256(_require_text(payload, field_name), field=field_name)
+    for field_name in ("envelope_prior_trace_tail_event_id", "git_commit"):
+        _require_text(payload, field_name)
+    memory_phase = _require_text(payload, "memory_phase")
+    if memory_phase not in {"ready", "awaiting_consequence", "game_over"}:
+        raise ARC3ValidationError("checkpoint memory_phase is unsupported")
+    _require_text(payload, "controller_phase")
+    for field_name in ("level_index", "step_index"):
+        if _require_int(payload, field_name) < 0:
+            raise ARC3ValidationError(f"checkpoint {field_name} must be non-negative")
+    pending = payload.get("pending_submitted_event_id")
+    if pending is not None and (not isinstance(pending, str) or not pending):
+        raise ARC3ValidationError("pending_submitted_event_id must be a non-empty string or null")
+
+
 def _validate_event_payload(event_type: str, payload: dict[str, JSONValue]) -> None:
     secret = _contains_secret(payload)
     if secret is not None:
@@ -376,6 +439,8 @@ def _validate_event_payload(event_type: str, payload: dict[str, JSONValue]) -> N
         _validate_observation_payload(payload)
     elif event_type == "observation.delta_measured":
         _validate_delta_payload(payload)
+    elif event_type == "run.checkpoint_written":
+        _validate_checkpoint_written_payload(payload)
     elif event_type == "action.selected":
         _validate_action_selected_payload(payload)
     elif event_type.startswith("evaluation."):
