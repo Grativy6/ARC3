@@ -561,3 +561,21 @@ independent authorities.
 - Reopening condition: a future exception can escape without a sealed failed receipt, a verified
   score is accepted for a different game, asset drift can enter a success, any opened trace owner
   lacks an explicit close outcome, or a guarded socket entry point is neither denied nor counted.
+
+## D-001-0031 — Separate successful aggregates from recovered failure evidence
+
+- Recorded: 2026-08-22T19:41:19.9544637Z
+- Status: accepted
+- Decision: publish new public evaluation summaries as schema v0.2. Successful-receipt score and
+  level aggregates remain the only inputs to flat policy means and improvement ranking. Verified
+  scorecards recovered from failed receipts remain visible in a separate failed-evidence
+  projection; unverified failures remain separately counted. Any failure still disables an
+  improvement claim.
+- Evidence: commit `15eda558a40eea9ecb7f162aabdf6fb05ab64c4b`; 27 focused tests,
+  Ruff, format, and strict mypy pass. The immutable Stage 01 v0.1 evaluation reverified exactly:
+  56 artifacts, one run, zero errors.
+- Boundary: v0.1 reconstruction exists only for verification of historical immutable artifacts.
+  New failed-only policy means are null, not zero; downstream consumers must use the schema.
+- Reopening condition: a failed receipt can enter a successful aggregate or improvement rank, a
+  recovered verified score disappears from failure evidence, or a sealed v0.1 artifact no longer
+  verifies exactly.

@@ -843,9 +843,10 @@ does not erase earlier uncertainty or failed mechanisms.
 
 ## B-001-0044 — Recovered failure scores share aggregate policy means
 
-- Status: OPEN
+- Status: RESOLVED
 - Stage: 08, 09
 - Opened: 2026-08-22
+- Resolved: 2026-08-22
 - Burden: the public evaluator correctly preserves a verified scorecard recovered after a derived
   policy failure, but `_aggregate` currently includes that failed run's score and completed levels
   in the policy mean/total alongside successful runs.
@@ -855,10 +856,16 @@ does not erase earlier uncertainty or failed mechanisms.
 - Current evidence: the injected post-action failure preserves one verified level and aggregates to
   `FAILED_INFRASTRUCTURE` with `MECHANISM_NOT_OBSERVED`; 29 focused tests pass at
   `f5a2bd28f91eab6c3e16e335ec9b6b232f4d1804`.
-- Next discriminating action: before Stage 09 reporting, split normally successful score metrics
-  from recovered-failure score metrics while retaining both and keeping any failure ineligible for
-  improvement claims.
+- Resolution: public summary schema v0.2 gives successful receipts and recovered failed receipts
+  separate typed score/level projections. Flat aggregate fields and improvement ranking consume
+  only successful receipts; any failed receipt still disables improvement claims. Unverified
+  failures are counted separately. The verifier retains an exact v0.1-only reconstruction path so
+  immutable historical evidence remains reproducible without rewriting it.
 - Resolution condition: aggregate/report schemas label successful and recovered-failure score and
   level totals separately, with regression coverage proving failures cannot enter the successful
   mean or improvement gate.
-- Resolution receipt: none.
+- Resolution receipt: commit `15eda558a40eea9ecb7f162aabdf6fb05ab64c4b`; 27 focused
+  public-contract and public-episode tests, Ruff, format, and strict mypy pass. The frozen Stage 01
+  evaluation reverified with 56 artifacts, one run, and zero errors.
+- Compatibility boundary: new failed-only policy means are JSON null rather than numeric zero.
+  Consumers must branch on summary schema v0.2; built-in verification accepts v0.1 and v0.2.
