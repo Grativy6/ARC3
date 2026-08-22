@@ -11,8 +11,8 @@
   "implementation_branch": "build/001-local-public-recovery",
   "pull_request": "https://github.com/Grativy6/ARC3/pull/5",
   "started_at": "2026-08-21T15:41:02Z",
-  "last_checkpoint_at": "2026-08-22T06:44:07Z",
-  "last_checkpoint_commit": "43713f8add4495cb48e15d9edab402564ab8b8da",
+  "last_checkpoint_at": "2026-08-22T06:47:30Z",
+  "last_checkpoint_commit": "9a5ffb7dca8dfe82c470bfaef16c33c60ce83f0a",
   "base": {
     "main_commit": "28c7a00732ce48e5c231211b01bc6eba7d0d71b4",
     "main_tree": "4586299448e9b1b585a0878674ed5f9afa60c384",
@@ -222,6 +222,18 @@
         "resolving_seed_13_completion": "PASS:16/16-seeds+6/6-permutations"
       },
       "public_holdout_consumed": false
+    },
+    "06": {
+      "status": "IN_PROGRESS",
+      "label": "synthetic",
+      "predeclaration": "docs/evidence/001-06-rule-change-predeclaration.json",
+      "predeclaration_sha256": "sha256:0bca5f32986c79008cf6ee01a83867262cda591f477239a5b8e9bccd90e37434",
+      "intervention_cases_predeclared": 64,
+      "stationary_noise_cases_predeclared": 32,
+      "checkpoint_resume_pairs_predeclared": 8,
+      "controller_executions_predeclared": 112,
+      "implementation_status": "NOT_STARTED_PREDECLARATION_ONLY",
+      "public_holdout_consumed": false
     }
   },
   "artifacts": {
@@ -300,6 +312,10 @@
     "stage_05_report": {
       "path": "docs/reports/001-05-action-equivariance.md",
       "sha256": "210d3e473fb12acc5a1d07344625c47c8ae4256ca377a2921688fe842dd65abf"
+    },
+    "stage_06_predeclaration": {
+      "path": "docs/evidence/001-06-rule-change-predeclaration.json",
+      "sha256": "0bca5f32986c79008cf6ee01a83867262cda591f477239a5b8e9bccd90e37434"
     }
   },
   "blocked_items": [],

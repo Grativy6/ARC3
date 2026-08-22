@@ -1,0 +1,410 @@
+{
+  "schema": "arc3.build-001.stage-06-rule-change-predeclaration.v0.1",
+  "status": "PREDECLARED",
+  "created_at": "2026-08-22T06:05:50.5033399Z",
+  "workflow": "docs/workflows/001-local-public-failure-recovery.md",
+  "objective": "Demonstrate, under guaranteed synthetic exposure, that stable supported mechanics can be contradicted, provisionally suspended, demoted, reopened into a new mechanics epoch, relearned, and used to complete without mutating prior receipts or overreacting to a single stationary outlier.",
+  "evidence_label": "synthetic",
+  "claim_limit": "NO_GENERALIZATION_CLAIM",
+  "source_baseline": {
+    "git_commit_at_declaration_preparation": "8cd292daa15bd9cdd82ffe4b02e17d0f516da161",
+    "git_tree_at_declaration_preparation": "85bca3d349e52b217992a68a599aae74268f8ec6",
+    "stage_05_status_at_declaration_preparation": "IN_PROGRESS",
+    "stage_05_predeclaration": "docs/evidence/001-05-action-equivariance-predeclaration.json",
+    "stage_05_predeclaration_sha256": "sha256:ec4ed1a8b3b8d4904a38bf4533d9fbd61975cac61aea05d4313d4b6a47119ce2",
+    "resolution": "IMPLEMENTATION_COMMIT_MUST_DESCEND_FROM_THE_CLEAN_STAGE_05_ACCEPTANCE_CHECKPOINT_AND_CONTAIN_THIS_UNCHANGED_DECLARATION",
+    "resolution_rule": "Stage 06 acceptance may run only from a clean implementation commit that contains the accepted Stage 05 implementation/evidence and this unchanged declaration. Bind that clean commit, tree, first-party source hash, config hash, commands, versions, hardware, seeds, budgets, trace manifests, and raw artifact hash.",
+    "dirty_worktree_measurement_allowed": false,
+    "public_assets_allowed": false
+  },
+  "frozen_inherited_failure": {
+    "source": "docs/evidence/016-competition-profile-acceptance.json",
+    "source_sha256": "sha256:8127acc6441bcba4f4e9b0a02b9950880c3231f7a0b4cef91c95dd089af0f595",
+    "build_000_cases": [
+      {
+        "seed": 7,
+        "status": "PASS",
+        "actions": 16,
+        "score": 0.0,
+        "rule_change_signal_count": 14,
+        "behavior_exercised": true
+      },
+      {
+        "seed": 11,
+        "status": "NOT_EXERCISED",
+        "actions": 1,
+        "score": 1.0,
+        "rule_change_signal_count": 1,
+        "behavior_exercised": false
+      }
+    ],
+    "burden": "Build 000 counted contradiction or prediction-mismatch signals but one case terminated before the scheduled rule change. It did not establish an ordered contradiction, model demotion, hypothesis reopening, stale-plan invalidation, relearning, and bounded adaptation chain.",
+    "acceptance_boundary": "A mismatch count alone is not reopening evidence, and reaching one intervention seed does not satisfy guaranteed exposure."
+  },
+  "separation_contract": {
+    "observation": "The exact before and returned observations, frame/blob hashes, action request, environment intervention truth, and consequence receipt remain immutable and separately typed.",
+    "interpretation": "Delta, correspondence, action-effect, terrain-role, and residual classifications are derived and revisable; evaluator intervention truth is never supplied to production policy.",
+    "candidate_change_point": "One typed contradiction opens a bounded candidate and provisionally suspends the implicated model from action authority; one outlier cannot by itself confirm a mechanics epoch.",
+    "accepted_change_point": "A candidate is confirmed only after two post-trigger consequences support one coherent successor rule and contradict the supported predecessor under matched observable conditions.",
+    "accepted_rule": "Predecessor and successor rules retain separate stable identities, mechanics-epoch scopes, source event IDs, support, contradiction, and residual receipts.",
+    "world_model": "A confirmed change demotes the predecessor model for the active epoch. Historical models remain queryable but cannot plan or predict in the successor epoch.",
+    "goal_and_plan": "The active goal may persist only if still supported. Every plan dependent on the contradicted rule/model is invalidated before another environment action may follow it.",
+    "action": "Post-contradiction actions are explicit discriminating probes or plans under current-epoch rules; no action is credited as adaptation merely because it was valid.",
+    "returned_consequence": "Adaptation requires a returned consequence matching the successor rule, not a pre-action prediction or evaluator narrative.",
+    "trace_update": "Every lifecycle transition cites immutable source events and preserves the full predecessor history; no later success rewrites what was known before the intervention."
+  },
+  "typed_repair_contract": {
+    "change_point_type": {
+      "name": "MechanicsChangeCandidate",
+      "required_fields": [
+        "candidate_id",
+        "level_index",
+        "predecessor_epoch_id",
+        "affected_hypothesis_ids",
+        "affected_model_ids",
+        "first_contradiction_event_id",
+        "supporting_contradiction_event_ids",
+        "provisional_status",
+        "opened_step",
+        "last_tested_step"
+      ],
+      "statuses": [
+        "CANDIDATE",
+        "CONFIRMED",
+        "RESOLVED_NOISE",
+        "CONTRADICTED"
+      ]
+    },
+    "epoch_type": {
+      "name": "MechanicsEpoch",
+      "required_fields": [
+        "epoch_id",
+        "level_index",
+        "epoch_index",
+        "parent_epoch_id",
+        "start_transition_id",
+        "caused_by_change_candidate_id",
+        "active_hypothesis_ids",
+        "active_model_ids",
+        "status"
+      ],
+      "maximum_epochs_per_level": 4,
+      "maximum_live_change_candidates": 8,
+      "maximum_transitions_per_epoch": 64
+    },
+    "scope_rule": "Retrodiction for a newly proposed rule tests only compatible transitions from its mechanics epoch. Earlier epochs remain immutable audit history and may inform an explicitly defeasible prior, but cannot veto a coherent successor solely because the old mechanics differed.",
+    "single_outlier_rule": "The first affected-rule contradiction invalidates the pending plan and suspends the implicated model from action authority, but does not emit model.rule_demoted, hypothesis.reopened, mechanics.change_confirmed, or mechanics.epoch_opened until one coherent successor receives a second post-trigger receipt.",
+    "confirmed_change_rule": "On the second coherent successor receipt, emit the frozen lifecycle order, close the predecessor epoch, open exactly one successor epoch, and require fresh evidence before successor promotion.",
+    "checkpoint_rule": "Persist the full change-candidate set, epoch lineage, active epoch, suspended/demoted model identities, hypothesis lineage, invalidated plans, action-effect state, retrodiction window identity, and RNG state. Restore by replay validation rather than trusting serialized current views.",
+    "duplicate_evidence_rule": "Evidence receipt IDs must include the affected hypothesis or candidate identity where one consequence updates multiple claims; one immutable source event may support multiple typed receipts, but no receipt ID may be reused."
+  },
+  "common_environment_contract": {
+    "game_identity": "synthetic-stage06-rule-change-v1",
+    "grid": {
+      "width": 11,
+      "height": 11,
+      "topology": "family-specific bounded or toroidal geometry declared below",
+      "cell_domain": "ARC integers 0..15"
+    },
+    "advertised_gameplay_handles": [
+      "ACTION1",
+      "ACTION2",
+      "ACTION3",
+      "ACTION4"
+    ],
+    "reset_fact": "RESET is permitted only under the existing environment lifecycle and is outside palette/action transforms.",
+    "calibration": "The complete Stage 05 four-handle calibration prefix is charged to the action budget. No case may terminate during calibration.",
+    "goal_structure": "A seed-derived visible waypoint chain supplies ordinary goal evidence while terminal WIN is withheld until the declared intervention or noise trigger has resolved. The final post-trigger target is at least three legal successor-rule actions from the mover when armed.",
+    "production_blinding": "The policy receives only ordinary observations, advertised actions, returned consequences, and its own prior receipts. Family, timing, intervention truth, terrain truth, palette map, and action map remain evaluator-only.",
+    "readiness": "The trigger arms only after calibration is complete, the affected predecessor hypothesis is ACTIVE with the timing-specific minimum support, its executable model is promoted, and at least one current plan depends on the affected hypothesis or model.",
+    "hard_exposure_deadline": "Readiness and the trigger must occur by non-reset action 24. Terminal state before the trigger is prohibited by the fixture. Missing readiness or trigger is FAILED_MECHANISM, never NOT_EXERCISED or an excluded case.",
+    "qualifying_action": "After readiness, the next submitted action for which the promoted predecessor model emits a nontrivial affected-rule prediction is the trigger action. The intervention is applied after that prediction/action receipt exists and before its environment consequence is computed.",
+    "intervention_count": "Exactly one intervention or noise pulse per case; resets do not re-arm or erase it."
+  },
+  "timings": [
+    {
+      "id": "early_support_2",
+      "minimum_distinct_prechange_support_receipts": 2,
+      "latest_trigger_action": 16,
+      "meaning": "The first qualifying action after two stable support receipts, calibration, model promotion, and dependent-plan registration triggers the case."
+    },
+    {
+      "id": "late_support_4",
+      "minimum_distinct_prechange_support_receipts": 4,
+      "latest_trigger_action": 24,
+      "meaning": "The first qualifying action after four stable support receipts, calibration, model promotion, and dependent-plan registration triggers the case."
+    }
+  ],
+  "intervention_families": [
+    {
+      "id": "action_effect_rotation",
+      "topology": "11x11 torus so every point-free movement produces a nonzero observable translation and no boundary no-op can mask the intervention.",
+      "prechange_rule": "Four latent point-free handles produce north, south, west, and east translations under a stable one-to-one mapping.",
+      "intervention": "At the trigger action, rotate every latent translation clockwise: north becomes east, east becomes south, south becomes west, and west becomes north. The raw presented handles do not change at the intervention.",
+      "observable_contradiction": "The trigger action returns a nonzero translation different from the promoted predecessor prediction. A second qualifying post-trigger action must support the same global clockwise successor mapping.",
+      "successor": "The controller learns current-epoch action effects without raw-handle priors, uses a successor effect to reach the final target, and never uses a predecessor model or invalidated plan after reopening.",
+      "degeneracy_rejection": "Reject and regenerate any seed layout whose trigger or confirmation could match both predecessor and successor state because of entity aliasing, terminal contact, or symmetry. The seed and rejection count remain in evidence."
+    },
+    {
+      "id": "traversability_flip",
+      "topology": "An 11x11 two-lane bounded arena with a repeated primary terrain role and a connected bypass terrain role; the visible terrain cells do not change at intervention.",
+      "prechange_rule": "The primary terrain role is traversable and the bypass terrain role is blocking. The training waypoint chain forces at least the timing-specific number of successful entries onto distinct primary cells before readiness.",
+      "intervention": "At the trigger action, primary terrain becomes blocking and bypass terrain becomes traversable before resolving the attempted primary-cell entry. Action effects and raw handles remain unchanged.",
+      "observable_contradiction": "The trigger action is a predicted primary-terrain entry but returns a blocked/no-translation consequence. A discriminating post-trigger attempt on a distinct primary or bypass cell supplies the second coherent successor receipt.",
+      "successor": "The controller reopens the old traversability claim, learns the role-level successor relation, routes through the bypass lane, and completes without using the stale primary-lane plan.",
+      "degeneracy_rejection": "Reject and regenerate layouts lacking two distinct prechange primary entries, a postchange bypass route of length 3..12, or an unambiguous affected terrain role. Preserve seed and rejection count."
+    }
+  ],
+  "transformation_schedule": {
+    "seeds": [
+      7,
+      11,
+      23,
+      29
+    ],
+    "palette_variants": [
+      {
+        "id": "identity",
+        "mapping": "p(c)=c"
+      },
+      {
+        "id": "affine_nonidentity",
+        "mapping": "For seed-order index i in 0..3, p(c)=(5*c+b_i) mod 16 with b=[3,7,11,15][i]. This is bijective, moves color zero, and applies jointly to all rendered observations."
+      }
+    ],
+    "action_variants": [
+      {
+        "id": "identity",
+        "mapping": {
+          "ACTION1": "ACTION1",
+          "ACTION2": "ACTION2",
+          "ACTION3": "ACTION3",
+          "ACTION4": "ACTION4"
+        }
+      },
+      {
+        "id": "cycle1234",
+        "mapping": {
+          "ACTION1": "ACTION2",
+          "ACTION2": "ACTION3",
+          "ACTION3": "ACTION4",
+          "ACTION4": "ACTION1"
+        },
+        "orientation": "The mapping sends a base latent handle to the raw presented handle that realizes its effect. It applies at the environment boundary from episode start and is independent of the later mechanics intervention."
+      }
+    ],
+    "controller_seed": "The controller root seed equals the listed environment seed in every transformed case; transforms receive no additional policy-visible seed.",
+    "case_order": "Family order, timing order, ascending seed, palette order, then action order."
+  },
+  "intervention_suite": {
+    "logical_cases": 64,
+    "calculation": "2 intervention families * 2 timings * 4 seeds * 2 palette variants * 2 action variants = 64",
+    "case_id_rule": "stage06-intervention-<family>-<timing>-s<seed>-<palette>-<action>",
+    "required_exposure": "All 64 trigger exactly once before terminal state. Both families must be exercised for every seed under every declared transform; no case is dropped after generation or execution.",
+    "prechange_predicates": {
+      "calibration_complete": true,
+      "affected_hypothesis_active": true,
+      "minimum_support": "exact timing threshold",
+      "promoted_predecessor_model": true,
+      "dependent_plan_registered": true,
+      "trace_prefix_verified_and_hashed": true
+    },
+    "change_confirmation": {
+      "first_affected_contradiction_required": true,
+      "coherent_successor_receipts_required": 2,
+      "maximum_nonreset_actions_after_trigger_to_confirm": 4,
+      "single_outlier_sufficient": false
+    },
+    "postchange_predicates": {
+      "ordered_lifecycle_chain": true,
+      "predecessor_history_queryable": true,
+      "stale_plan_absent_from_later_actions": true,
+      "stale_model_absent_from_later_actions": true,
+      "explicit_reexploration_selected": true,
+      "successor_hypothesis_supported": true,
+      "successor_model_promoted": true,
+      "matched_successor_action_consequence": true,
+      "terminal_completion_required": true,
+      "maximum_nonreset_actions_after_trigger_consequence_to_completion": 16
+    }
+  },
+  "stationary_noise_control_suite": {
+    "logical_cases": 32,
+    "calculation": "2 timings * 4 seeds * 2 palette variants * 2 action variants = 32",
+    "case_id_rule": "stage06-noise-<timing>-s<seed>-<palette>-<action>",
+    "fixture": "A combined stable action-effect and traversability arena uses the same calibration, readiness, support thresholds, waypoint discipline, transforms, and budgets as intervention cases.",
+    "noise_pulse": "The trigger action returns exactly one deterministic transient outlier matching an apparent affected-rule contradiction; underlying action and traversability mappings never change, and the next two qualifying receipts again support the predecessor rule.",
+    "required_response": "Record the outlier and a revisable change-point candidate, invalidate the prediction-dependent pending plan, and temporarily withhold the implicated model from action authority. After two resumed predecessor-consistent receipts, resolve the candidate as noise and retain the predecessor epoch/rule without reopening or demotion.",
+    "false_positive_definition": "Any mechanics.change_confirmed, mechanics.epoch_opened, model.rule_demoted, or hypothesis.reopened event whose causal source closure includes the noise pulse, or any active mechanics epoch increment, is one false-positive reopening.",
+    "maximum_false_positive_reopenings": 0,
+    "required_cases_resolved_as_noise": 32,
+    "completion_required": true,
+    "maximum_nonreset_actions_after_noise_consequence_to_completion": 16,
+    "boundary": "A temporary candidate, model suspension, plan invalidation, or retained contradiction receipt is not falsely labeled reopening when it is later resolved from immutable evidence without deleting the outlier."
+  },
+  "ordered_trace_contract": {
+    "required_intervention_order": [
+      "consequence.received",
+      "observation.normalized",
+      "hypothesis.contradicted",
+      "mechanics.change_candidate_created",
+      "model.rule_demoted",
+      "hypothesis.reopened",
+      "mechanics.change_confirmed",
+      "mechanics.epoch_opened",
+      "action.selected:reexploration",
+      "hypothesis.supported:successor",
+      "model.rule_promoted:successor",
+      "consequence.matched_prediction:successor"
+    ],
+    "strict_subsequence": "Within each intervention trace, hypothesis.contradicted must precede model.rule_demoted, which must precede hypothesis.reopened, which must precede the first adapted action. The raw consequence and normalized observation must precede all derived lifecycle events. Other source-honest events may occur between required items.",
+    "plan_invalidation": "The contradiction/reopening source closure names every invalidated dependent plan. No later action.selected may cite an invalidated plan ID.",
+    "model_invalidation": "No later action.selected, simulation.prediction_emitted, or simulation.plan_evaluated in the successor epoch may cite a demoted predecessor model ID.",
+    "history_immutability": "Hash the raw trace prefix through the pre-trigger boundary before execution continues; at seal, its bytes, event IDs, previous-hash links, event hashes, and referenced frame/blob hashes must be identical. Rejected, contradicted, and reopened predecessor records remain queryable.",
+    "no_retrospective_knowledge": "The successor hypothesis created/support events must occur after their source consequences. A later completion cannot change predecessor event timestamps, statuses-at-event, decision payloads, or predictions."
+  },
+  "checkpoint_resume_suite": {
+    "logical_pairs": 8,
+    "controller_executions": 16,
+    "transforms": {
+      "palette": "affine_nonidentity",
+      "action": "cycle1234"
+    },
+    "schedule": [
+      {
+        "family": "action_effect_rotation",
+        "timing": "early_support_2",
+        "seed": 7,
+        "boundary": "pre_trigger"
+      },
+      {
+        "family": "action_effect_rotation",
+        "timing": "late_support_4",
+        "seed": 11,
+        "boundary": "pre_trigger"
+      },
+      {
+        "family": "traversability_flip",
+        "timing": "early_support_2",
+        "seed": 23,
+        "boundary": "pre_trigger"
+      },
+      {
+        "family": "traversability_flip",
+        "timing": "late_support_4",
+        "seed": 29,
+        "boundary": "pre_trigger"
+      },
+      {
+        "family": "action_effect_rotation",
+        "timing": "early_support_2",
+        "seed": 7,
+        "boundary": "post_reopen"
+      },
+      {
+        "family": "action_effect_rotation",
+        "timing": "late_support_4",
+        "seed": 11,
+        "boundary": "post_reopen"
+      },
+      {
+        "family": "traversability_flip",
+        "timing": "early_support_2",
+        "seed": 23,
+        "boundary": "post_reopen"
+      },
+      {
+        "family": "traversability_flip",
+        "timing": "late_support_4",
+        "seed": 29,
+        "boundary": "post_reopen"
+      }
+    ],
+    "boundary_definitions": {
+      "pre_trigger": "Immediately after the last readiness consequence and durable checkpoint, before the trigger-eligible choose_action. Restore must choose the same trigger action and must not resubmit or duplicate any prior action.",
+      "post_reopen": "Immediately after the complete confirmed-change/epoch-open checkpoint and before the first successor-epoch action selection. Restore must preserve the reopened lineage and exclude stale models/plans."
+    },
+    "acceptance": "All 8 resumed executions exactly match their uninterrupted counterpart from the boundary in action requests, returned consequences, lifecycle projection, active epoch, accepted successor rule/model, terminal result, action/reset counts, and RNG state. Trace verification, prefix immutability, checkpoint hash, and no-resubmission all pass."
+  },
+  "suite_accounting": {
+    "primary_logical_cases": 96,
+    "primary_controller_executions": 96,
+    "checkpoint_logical_pairs": 8,
+    "checkpoint_controller_executions": 16,
+    "total_logical_cases_including_checkpoint_pairs": 104,
+    "total_controller_executions": 112,
+    "counting_note": "The 96 primary cases are 64 interventions plus 32 stationary-noise controls. Each of 8 checkpoint pairs runs one uninterrupted and one resumed execution, so checkpoint testing adds 16 controller executions."
+  },
+  "resource_and_budget_limits": {
+    "max_nonreset_actions_per_execution": 48,
+    "max_resets_per_execution": 2,
+    "max_nonreset_actions_before_trigger": 24,
+    "max_nonreset_actions_after_trigger_to_confirmation": 4,
+    "max_nonreset_actions_after_trigger_consequence_to_completion": 16,
+    "max_wall_seconds_per_execution": 60.0,
+    "max_wall_seconds_for_full_measurement": 900.0,
+    "max_peak_rss_mib": 1024,
+    "max_trace_bytes_per_execution": 67108864,
+    "max_checkpoint_bytes_per_execution": 67108864,
+    "max_search_nodes_per_decision": 2048,
+    "max_search_depth": 32,
+    "max_coordinate_candidates": 24,
+    "max_parallel_workers": 1,
+    "execution_backend": "cpu",
+    "network_enabled": false,
+    "hosted_inference_allowed": false,
+    "public_game_assets_allowed": false,
+    "public_holdout_allowed": false,
+    "raw_observation_or_receipt_mutation_allowed": false,
+    "commands_versions_hardware_cpu_rss_wall_time_seed_budgets_and_hashes_required": true
+  },
+  "verification_contract": {
+    "trace_chain": "Verify canonical JSON, previous-event linkage, event hashes, sealed chunk manifests, frame/blob hashes, action/consequence causal references, and absence of duplicate event or evidence receipt IDs for all 112 executions.",
+    "replay": "Replay every execution from immutable observations/actions/consequences and require exact normalized frame/delta sequence, lifecycle projection, epoch lineage, action counts, and terminal state. Derived indices are rebuilt, not trusted.",
+    "metamorphic": "Within each family/timing/seed, palette/action transforms must preserve intervention timing in abstract receipt counts, lifecycle outcome, completion, post-trigger action count, epoch structure, and canonical successor rule after inverse transformation.",
+    "integrity": "Run the production public-game-ID/game-specific table scan, offline/network reachability checks, source diff check, holdout identity/exposure-ledger verification, lint, format, strict typing, focused unit/integration/replay tests, and the complete Stage 06 harness.",
+    "measurement": "Record all individual cases, failures, exact commands, exit codes, package versions, Python/platform/hardware identity, git commit/tree/source hash, config hash, seeds, action/reset budgets, action/reset counts, wall/CPU time, peak RSS, trace/checkpoint bytes, event counts, artifact paths, and SHA-256 values."
+  },
+  "artifacts": {
+    "planned_harness": "scripts/measure_rule_change_reopening.py",
+    "raw": "C:/a/arc3-b001/artifacts/stage06/rule-change-reopening.json",
+    "raw_work_root": "C:/a/arc3-b001/artifacts/stage06/rule-change-reopening-work",
+    "acceptance": "docs/evidence/001-06-rule-change-reopening.json",
+    "report": "docs/reports/001-06-rule-change-reopening.md"
+  },
+  "acceptance": {
+    "intervention_cases_required": 64,
+    "intervention_cases_exercised": "64/64",
+    "prechange_support_and_promoted_model": "64/64",
+    "ordered_contradiction_demotion_reopen_adapt_chain": "64/64",
+    "successor_rule_and_model_used_with_matched_consequence": "64/64",
+    "completion_within_postchange_budget": "64/64",
+    "stationary_noise_cases_required": 32,
+    "noise_cases_resolved_without_reopening": "32/32",
+    "false_positive_reopenings": 0,
+    "checkpoint_resume_pairs": "8/8",
+    "trace_replay_and_immutability": "112/112",
+    "invalid_requests": 0,
+    "controller_faults": 0,
+    "resource_predicates": "all",
+    "holdout_gameplay_events": 0
+  },
+  "decision_rule": {
+    "pass": "All 64 intervention cases reach their frozen trigger and meet the complete prechange, ordered contradiction-to-adaptation, stale-state exclusion, successor-use, completion, trace, replay, and resource predicates; all 32 stationary-noise controls resolve with zero false-positive reopening; all 8 checkpoint pairs match exactly; integrity checks pass; the holdout remains sealed.",
+    "partial": "Both families reach every declared seed and transform and at least one correct confirmed reopening/adaptation chain is observed in each family, but one or more exact completion, transformed parity, noise, checkpoint, replay, or resource predicates miss. Preserve every case and do not describe the stage as PASS.",
+    "failed_mechanism": "Either family is not exercised on any required seed/transform, no coherent successor can be confirmed, stale plans/models retain action authority after reopening, predecessor history is mutated, single stationary outliers cause confirmed epoch changes, action/game identities leak into the repair, or the repair does not improve bounded post-change adaptation. Preserve the mechanism failure and continue later independent workflow stages.",
+    "failed_infrastructure": "The clean-source deterministic synthetic harness cannot execute or seal evidence within the declared local resource envelope because of tooling, filesystem, dependency, or host failure. Preserve command, exit code, stderr, partial artifacts, and environment identity; do not substitute public-game or holdout evidence."
+  },
+  "integrity": {
+    "public_partition_manifest": "docs/evaluation/public-game-partitions.v0.1.json",
+    "public_partition_manifest_sha256": "sha256:682d5891c2aface54803d9bd1173c55ed21e89856e13b8a478fb9276ee963f2f",
+    "build_000_exposure_ledger": "C:/a/arc3-s15-6a0f6e5/artifacts/stage15/public-exposure.jsonl",
+    "build_000_exposure_ledger_sha256": "sha256:cd9af42ed3a5ef9fa0dc201ddb10e32d2bcccee9df729aa0c7d53077c04c9ad4",
+    "stage_03_exposure_ledger": "C:/a/arc3-b001/artifacts/stage03/public-exposure.jsonl",
+    "stage_03_exposure_ledger_sha256": "sha256:e02a9fa71206170a6fe2aeefb6935ae25141e2759937657475cead4389bb17aa",
+    "stage_06_public_gameplay_events_allowed": 0,
+    "public_holdout_gameplay_events": 0,
+    "locally_acquired_holdout_assets": 0,
+    "note": "Stage 06 is synthetic-only. Integrity verification may read only the sealed partition manifest and existing exposure-ledger metadata; it may not list, open, acquire, inspect, or execute any public-holdout game."
+  }
+}

@@ -258,3 +258,22 @@ independent authorities.
   this repair changes no action meaning and does not authorize a public-holdout run.
 - Reopening condition: any decision returns more coordinate requests than the configured bound,
   excludes the calibration action from accounting, or loses seeded determinism/equivariance.
+
+## D-001-0017 — Freeze guaranteed rule-change exposure before Stage 06 implementation
+
+- Recorded: 2026-08-22T06:47:30Z
+- Status: accepted
+- Decision: Freeze a synthetic-only Stage 06 matrix before implementation: 64 intervention cases
+  spanning action-effect rotation and traversability change, early/late support thresholds, four
+  seeds, two palette variants, and two opaque-action variants; 32 matched stationary-noise controls;
+  and eight checkpoint/resume pairs, for 112 controller executions. Require an ordered immutable
+  consequence-to-contradiction-to-demotion-to-reopening-to-adaptation chain and zero false-positive
+  reopening in noise controls under the exact predeclared decision rule.
+- Evidence: `docs/evidence/001-06-rule-change-predeclaration.json`, SHA-256
+  `0bca5f32986c79008cf6ee01a83867262cda591f477239a5b8e9bccd90e37434`.
+- Boundary: the environment's intervention truth remains evaluator-only; production receives only
+  ordinary observations and consequences. The declaration uses no public assets, permits zero
+  public-holdout gameplay events, and may not be weakened after results are observed.
+- Reopening condition: implementation cannot guarantee every declared trigger, the frozen suite is
+  infeasible within the 900-second/declared resource envelope, or executable trace ordering shows
+  that a required lifecycle transition is not source-honest.
