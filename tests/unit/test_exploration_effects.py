@@ -48,7 +48,7 @@ def test_classifies_noop_movement_and_metadata_only_without_causal_overclaim() -
     assert metadata_only.kinds == frozenset({EffectKind.METADATA_ONLY})
 
 
-def test_classifies_selection_interaction_supported_undo_and_terminal() -> None:
+def test_classifies_interaction_restore_for_any_handle_and_terminal() -> None:
     start = _observation([[0, 0, 0], [0, 1, 0], [0, 0, 0]])
     changed = _observation([[0, 0, 0], [0, 2, 0], [0, 0, 0]], metadata=(("step", 1),))
     terminal = _observation(
@@ -58,21 +58,21 @@ def test_classifies_selection_interaction_supported_undo_and_terminal() -> None:
     )
     action6 = ActionRequest(ActionName.ACTION6, Coordinate(1, 1))
 
-    selection = classify_effect(start, changed, action6)
+    coordinate_interaction = classify_effect(start, changed, action6)
     interaction = classify_effect(start, changed, ActionRequest(ActionName.ACTION5))
-    undo = classify_effect(
+    restored = classify_effect(
         changed,
         start,
-        ActionRequest(ActionName.ACTION7),
+        ActionRequest(ActionName.ACTION2),
         undo_target=start.frames[-1].digest,
     )
     ended = classify_effect(start, terminal, action6)
 
-    assert selection.primary is EffectKind.SELECTION
+    assert coordinate_interaction.primary is EffectKind.INTERACTION
     assert interaction.primary is EffectKind.INTERACTION
-    assert undo.primary is EffectKind.UNDO
+    assert restored.primary is EffectKind.UNDO
     assert EffectKind.TERMINAL in ended.kinds
-    assert EffectKind.SELECTION in ended.kinds
+    assert EffectKind.INTERACTION in ended.kinds
 
 
 def test_stationary_duplicate_components_do_not_create_false_movement() -> None:
@@ -85,11 +85,26 @@ def test_stationary_duplicate_components_do_not_create_false_movement() -> None:
     assert EffectKind.MOVEMENT not in effect.kinds
 
 
-def test_observation_overrides_weak_directional_prior_within_condition() -> None:
+def test_restore_classification_retains_simultaneous_translation() -> None:
+    prior = _observation([[0, 0, 0], [0, 1, 0], [0, 0, 0]])
+    displaced = _observation([[0, 0, 0], [0, 0, 1], [0, 0, 0]])
+
+    effect = classify_effect(
+        displaced,
+        prior,
+        ActionRequest(ActionName.ACTION2),
+        prior_frame_hashes=(prior.frames[-1].digest,),
+    )
+
+    assert effect.kinds == frozenset({EffectKind.MOVEMENT, EffectKind.UNDO})
+    assert effect.displacement == (-1, 0)
+
+
+def test_statistics_starts_unknown_and_uses_only_observed_effects() -> None:
     observation = _observation([[0, 0, 0], [0, 1, 0], [0, 0, 0]])
     features = state_features(observation)
     action = ActionRequest(ActionName.ACTION1)
-    statistics = ActionEffectStatistics(directional_prior_weight=0.25)
+    statistics = ActionEffectStatistics()
 
     prior = statistics.estimate(features, action)
     statistics.observe(
@@ -104,7 +119,8 @@ def test_observation_overrides_weak_directional_prior_within_condition() -> None
     learned = statistics.estimate(features, action)
 
     assert prior.prior_only is True
-    assert prior.displacement == (0, -1)
+    assert prior.kind is None
+    assert prior.displacement is None
     assert learned.prior_only is False
     assert learned.displacement == (1, 0)
     assert learned.observations == 1

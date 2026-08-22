@@ -272,6 +272,69 @@ def test_unknown_state_is_not_authorized_to_act(tmp_path: Path) -> None:
         controller.choose_action()
 
 
+def test_full_controller_calibrates_each_advertised_handle_once_in_wire_order(
+    tmp_path: Path,
+) -> None:
+    advertised = (
+        ActionName.ACTION7,
+        ActionName.ACTION6,
+        ActionName.ACTION2,
+        ActionName.ACTION5,
+    )
+    observation = Observation(
+        game_id=GameId(SYNTHETIC_GAME_ID),
+        frames=(GridFrame.from_rows(((0, 1, 0), (0, 0, 2), (0, 0, 0))),),
+        state=GameStateName.NOT_FINISHED,
+        levels_completed=0,
+        win_levels=1,
+        available_actions=advertised,
+    )
+    controller = ARC3Controller(ControllerPreset.FULL)
+    controller.reset(_context(tmp_path))
+    controller.observe(observation)
+
+    selected: list[ActionRequest] = []
+    for expected_name in (
+        ActionName.ACTION2,
+        ActionName.ACTION5,
+        ActionName.ACTION6,
+        ActionName.ACTION7,
+    ):
+        decision = controller.choose_action()
+        selected.append(decision.action)
+        assert decision.action.name is expected_name
+        assert decision.rationale_summary == "frozen one-receipt opaque-handle calibration"
+        controller.apply_consequence(
+            Observation(
+                game_id=observation.game_id,
+                frames=observation.frames,
+                state=observation.state,
+                levels_completed=0,
+                win_levels=1,
+                available_actions=advertised,
+                returned_action=decision.action,
+            )
+        )
+
+    assert selected[2].coordinate is not None
+    assert (selected[2].coordinate.x, selected[2].coordinate.y) == (3, 3)
+    assert all(action.coordinate is None for index, action in enumerate(selected) if index != 2)
+    assert controller.snapshot.actions_used == 4
+    assert controller.action_calibration_projection == {
+        "level_index": 0,
+        "handles": ["ACTION2", "ACTION5", "ACTION6", "ACTION7"],
+        "completed_handles": ["ACTION2", "ACTION5", "ACTION6", "ACTION7"],
+        "cursor": 4,
+        "pending_handle": None,
+    }
+    assert controller.action_effect_projection["observation_counts"] == {
+        "ACTION2": 1,
+        "ACTION5": 1,
+        "ACTION6": 1,
+        "ACTION7": 1,
+    }
+
+
 def _manual_observation(
     *,
     state: GameStateName,

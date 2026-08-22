@@ -69,6 +69,7 @@ CORE_EVENT_TYPES: Final[frozenset[str]] = frozenset(
         "goal.reopened",
         "goal.retired",
         "action.candidates_generated",
+        "action.effect_observed",
         "action.selected",
         "action.validated",
         "action.submitted",

@@ -30,7 +30,7 @@ class RecoveryContext:
     goal_id: str
     failed_action: ActionRequest | None = None
     game_over: bool = False
-    undo_supported: bool = False
+    restore_action: ActionRequest | None = None
     same_model_viable: bool = True
     models_disagree: bool = False
     discriminating_probe: ActionRequest | None = None
@@ -89,10 +89,10 @@ class RecoveryPolicy:
             mode = RecoveryMode.STOP_NO_RECOVERY
             action = None
             rationale = "recovery disabled by named ablation; blind continuation refused"
-        elif context.undo_supported:
+        elif context.restore_action is not None:
             mode = RecoveryMode.SUPPORTED_UNDO
-            action = ActionRequest(ActionName.ACTION7)
-            rationale = "failed transition is reversible under observed undo support"
+            action = context.restore_action
+            rationale = "failed transition is reversible under handle-specific restore evidence"
         elif context.models_disagree and context.discriminating_probe is not None:
             mode = RecoveryMode.DISCRIMINATING_PROBE
             action = context.discriminating_probe

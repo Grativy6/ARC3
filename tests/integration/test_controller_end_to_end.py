@@ -7,12 +7,10 @@ import pytest
 from arc3.adapters import GridFrame, Observation
 from arc3.adapters.synthetic import SYNTHETIC_GAME_ID, SyntheticAdapter
 from arc3.config import ARC3Config, BudgetConfig
-from arc3.goals import GoalStatus
-from arc3.hypotheses import HypothesisScope
 from arc3.policy import ARC3Controller, ControllerPhase, ControllerPreset, RunContext
 from arc3.policy.baselines import ActionCyclePolicy
 from arc3.trace import verify_event_chain
-from arc3.types import ActionName, EnvironmentMode, GameId, GameStateName, HypothesisStatus
+from arc3.types import ActionName, EnvironmentMode, GameId, GameStateName
 
 
 def _context(tmp_path: Path, *, seed: int, label: str) -> RunContext:
@@ -117,8 +115,16 @@ def test_probe_plan_fallback_and_reset_paths_all_accept_consequences(
     controller.reset(_context(tmp_path, seed=7, label="paths"))
     controller.observe(session.observation)
 
-    probe = controller.choose_action()
-    controller.apply_consequence(session.step(probe.action))
+    for expected in (
+        ActionName.ACTION1,
+        ActionName.ACTION2,
+        ActionName.ACTION3,
+        ActionName.ACTION4,
+    ):
+        calibration = controller.choose_action()
+        assert calibration.action.name is expected
+        assert calibration.rationale_summary == "frozen one-receipt opaque-handle calibration"
+        controller.apply_consequence(session.step(calibration.action))
     plan = controller.choose_action()
     assert plan.rationale_summary == "bounded A* plan under retrodicted model"
     controller.apply_consequence(session.step(plan.action))
@@ -133,7 +139,7 @@ def test_probe_plan_fallback_and_reset_paths_all_accept_consequences(
 
 
 @pytest.mark.integration
-def test_level_transition_closes_old_scope_and_reseeds_collision_free_history(
+def test_level_transition_records_old_effect_before_resetting_successor_registry(
     tmp_path: Path,
 ) -> None:
     controller = ARC3Controller(ControllerPreset.FULL)
@@ -152,16 +158,12 @@ def test_level_transition_closes_old_scope_and_reseeds_collision_free_history(
         ),
     )
     controller.observe(before)
-    old_hypothesis_ids = {
-        record.hypothesis_id
-        for record in controller._hypotheses.all()
-        if record.scope is HypothesisScope.LEVEL and record.scope_ref == "level:0"
-    }
     old_goal_ids = {
         record.candidate.goal_id
         for record in controller._goals.records()
         if record.candidate.scope_ref == "level:0"
     }
+    assert old_goal_ids
     decision = controller.choose_action()
     controller.apply_consequence(
         Observation(
@@ -176,23 +178,18 @@ def test_level_transition_closes_old_scope_and_reseeds_collision_free_history(
     )
 
     assert controller.snapshot.level_index == 1
-    all_hypotheses = controller._hypotheses.all()
-    new_hypothesis_ids = {
-        record.hypothesis_id
-        for record in all_hypotheses
-        if record.scope is HypothesisScope.LEVEL and record.scope_ref == "level:1"
+    assert controller.action_effect_projection["level_index"] == 1
+    assert controller.action_effect_projection["candidates"] == []
+    assert controller.action_effect_projection["observation_counts"] == {
+        action.value: 0 for action in before.available_actions
     }
-    assert old_hypothesis_ids
-    assert len(new_hypothesis_ids) == len(old_hypothesis_ids)
-    assert old_hypothesis_ids.isdisjoint(new_hypothesis_ids)
-    assert all(
-        controller._hypotheses.get(identifier).status is HypothesisStatus.SUPERSEDED
-        for identifier in old_hypothesis_ids
-    )
-    assert all(
-        controller._goals.get(identifier).status is GoalStatus.RETIRED
-        for identifier in old_goal_ids
-    )
+    assert controller.action_calibration_projection == {
+        "level_index": 1,
+        "handles": [action.value for action in before.available_actions],
+        "completed_handles": [],
+        "cursor": 0,
+        "pending_handle": None,
+    }
     assert any(
         record.candidate.scope_ref == "level:1"
         for record in controller._goals.records(include_retired=False)
@@ -207,48 +204,16 @@ def test_level_transition_closes_old_scope_and_reseeds_collision_free_history(
     )
     assert consequence.level_index == 0
     assert new_observation.level_index == 1
-    superseded = [event for event in events if event.event_type == "hypothesis.superseded"]
+    registry_update = next(
+        event for event in events if event.event_type == "action.effect_observed"
+    )
+    assert registry_update.payload["registry_level_index"] == 0
+    assert registry_update.payload["raw_handle"] == decision.action.name.value
+    assert registry_update.payload["candidate_count"] == 1
     retired = [event for event in events if event.event_type == "goal.retired"]
-    assert len(superseded) == len(old_hypothesis_ids)
     assert retired
-    assert all(event.payload["evidence_event_ids"] for event in superseded)
     assert all(event.payload["source_event_ids"] for event in retired)
 
     second = controller.choose_action()
-    controller.apply_consequence(
-        Observation(
-            game_id=before.game_id,
-            frames=before.frames,
-            state=GameStateName.NOT_FINISHED,
-            levels_completed=0,
-            win_levels=2,
-            available_actions=before.available_actions,
-            full_reset=True,
-            returned_action=second.action,
-        )
-    )
-    revisited_level_ids = {
-        record.hypothesis_id
-        for record in controller._hypotheses.all()
-        if record.scope_ref == "level:0" and record.status is not HypothesisStatus.SUPERSEDED
-    }
-    assert len(revisited_level_ids) == len(old_hypothesis_ids)
-    assert revisited_level_ids.isdisjoint(old_hypothesis_ids)
-    assert all(
-        controller._hypotheses.get(identifier).status is HypothesisStatus.SUPERSEDED
-        for identifier in new_hypothesis_ids
-    )
-    live_revisited_goals = {
-        record.candidate.goal_id
-        for record in controller._goals.records(include_retired=False)
-        if record.candidate.scope_ref == "level:0"
-    }
-    assert live_revisited_goals
-    assert live_revisited_goals.isdisjoint(old_goal_ids)
-    reset_transition = [
-        event
-        for event in controller.journal.verify_manifest()
-        if event.event_type == "observation.metadata_changed"
-        and event.payload.get("transition_kind") == "level-index-reopened-or-reset"
-    ]
-    assert len(reset_transition) == 1
+    assert second.action == decision.action
+    assert second.rationale_summary == "frozen one-receipt opaque-handle calibration"

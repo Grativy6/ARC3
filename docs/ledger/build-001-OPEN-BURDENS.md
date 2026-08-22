@@ -233,3 +233,24 @@ does not erase earlier uncertainty or failed mechanisms.
   and Stage 08 controller cadence are measured.
 - Resolution condition: matched robustness evidence shows no material aggregate efficiency loss, or
   a generic repair restores the action without weakening palette/action equivariance.
+
+## B-001-0018 — Whole-effect identity fragmented a stable translation facet
+
+- Status: RESOLVED
+- Stage: 05
+- Opened: 2026-08-22
+- Failed approaches: The first action registry treated a translation that happened to restore a
+  prior frame as a different mutually exclusive semantic identity from the same ordinary
+  translation. One paired smoke reached only 5/12 inverse requests, and the integrated 16-seed
+  regression fell to 15/16 because seed 13 oscillated until its action budget expired.
+- Preserved failure evidence: `C:/a/arc3-b001/stage05-smoke-pair-02`; and the 45-file, 3,030,753-byte
+  seed-13 trace/checkpoint bundle at
+  `C:/a/arc3-b001/artifacts/stage05/failed-mechanisms/seed13-pre-translation-facet`, whose
+  `trace/active.jsonl` SHA-256 is
+  `0f14f37dad736d3f279920949b4e2c54911d916a124a00493337efa7cdfc9c76`.
+- Resolution: Add the conservative conditioned displacement projection recorded in D-001-0014.
+  The resolving smoke passed 4/4; all six seed-13 permutations passed 4/4; all 16 compatibility
+  seeds completed within 3–13 actions; multi-displacement controls remained unresolved.
+- Resolution receipt: `C:/a/arc3-b001/stage05-smoke-pair-04`,
+  `C:/a/arc3-b001/stage05-seed13-after-translation-facet`, 67/67 focused tests, and the official
+  clean Stage 05 artifact once sealed. The failed evidence remains retained after resolution.

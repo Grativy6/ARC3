@@ -7,12 +7,12 @@
   "build_status": "IN_PROGRESS",
   "status": "IN_PROGRESS",
   "current_stage": "05",
-  "current_task": "Implement the frozen Stage 05 evidence-derived action registry and paired action-equivariance harness",
+  "current_task": "Commit the verified Stage 05 implementation, then run the frozen clean-source action-equivariance acceptance harness",
   "implementation_branch": "build/001-local-public-recovery",
   "pull_request": "https://github.com/Grativy6/ARC3/pull/5",
   "started_at": "2026-08-21T15:41:02Z",
-  "last_checkpoint_at": "2026-08-22T05:29:04Z",
-  "last_checkpoint_commit": "ed0c5e691ed09614a29f5bdb90cc1cc328254dbd",
+  "last_checkpoint_at": "2026-08-22T06:12:17Z",
+  "last_checkpoint_commit": "8cd292daa15bd9cdd82ffe4b02e17d0f516da161",
   "base": {
     "main_commit": "28c7a00732ce48e5c231211b01bc6eba7d0d71b4",
     "main_tree": "4586299448e9b1b585a0878674ed5f9afa60c384",
@@ -178,6 +178,25 @@
       "causal_controls_predeclared": 64,
       "checkpoint_resume_pairs_predeclared": 16,
       "historical_action_remap_cases": 2,
+      "implementation_status": "VERIFIED_PRECOMMIT",
+      "implementation_verification": {
+        "focused_tests": "PASS:67",
+        "broad_tests": "PASS:114",
+        "post_trace_refinement_tests": "PASS:30",
+        "offline_integrity_tests": "PASS:11",
+        "ruff_check": "PASS",
+        "ruff_format_check": "PASS",
+        "mypy_strict": "PASS:151-source-files",
+        "static_action_semantics": "PASS:0-findings",
+        "competition_integrity_secret_scan": "PASS:0-findings",
+        "holdout": "SEALED_UNCONSUMED:2-ledgers+2-roots"
+      },
+      "resolved_failed_mechanism": {
+        "burden": "B-001-0018",
+        "failed_inverse_smoke": "C:/a/arc3-b001/stage05-smoke-pair-02",
+        "failed_seed_13_trace_sha256": "sha256:0f14f37dad736d3f279920949b4e2c54911d916a124a00493337efa7cdfc9c76",
+        "resolving_seed_13_completion": "PASS:16/16-seeds+6/6-permutations"
+      },
       "public_holdout_consumed": false
     }
   },

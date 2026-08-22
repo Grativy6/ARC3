@@ -193,3 +193,25 @@ independent authorities.
 - Reopening condition: any calibration action is omitted from action/efficiency accounting, a raw
   identifier supplies gameplay meaning before evidence, ambiguity is broken by numeric identity,
   or the post-prefix inverse-request rate is less than the frozen exact threshold.
+
+## D-001-0014 — Resolve displacement as an evidence facet without erasing whole-effect ambiguity
+
+- Recorded: 2026-08-22T06:12:17Z
+- Status: accepted
+- Decision: Keep each complete observed effect revisable, including restore digest, terminal state,
+  coordinate relation, and condition, while permitting a handle's displacement facet to resolve
+  only when every live conditioned candidate carries the same non-null translation and at least one
+  has net support. A live no-op, transform, missing displacement, or conflicting vector keeps that
+  facet unresolved. Use the facet for semantic ordering, planning, contact probes, and hypothesis
+  projection without rewriting or merging the underlying candidates.
+- Evidence: the preserved pre-fix seed-13 trace at
+  `C:/a/arc3-b001/artifacts/stage05/failed-mechanisms/seed13-pre-translation-facet/trace/active.jsonl`
+  (`sha256:0f14f37dad736d3f279920949b4e2c54911d916a124a00493337efa7cdfc9c76`),
+  the failed 5/12 inverse smoke at `C:/a/arc3-b001/stage05-smoke-pair-02`, the resolving
+  4/4 smoke at `C:/a/arc3-b001/stage05-smoke-pair-04`, and focused registry/controller tests.
+- Boundary: a displacement facet is a derived conditional projection, not proof that the complete
+  effect is stationary or globally understood. Restore provenance and every contradictory source
+  event remain visible; raw action identity never supplies the vector.
+- Reopening condition: any conflicting live displacement is silently discarded, a no-op/transform
+  alternative still resolves as movement, checkpoint roundtrip changes the facet, or inverse paired
+  behavior depends on raw handle ordering rather than learned semantics.

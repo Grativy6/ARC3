@@ -38,7 +38,11 @@ def test_pending_action_checkpoint_restores_without_resubmission(tmp_path: Path)
     original.reset(context)
     original.observe(session.observation)
     decision = original.choose_action()
+    assert decision.action.name is ActionName.ACTION1
+    assert original.action_calibration_projection["pending_handle"] == "ACTION1"
     checkpoint = original.checkpoint()
+    expected_registry = original.action_effect_projection
+    expected_calibration = original.action_calibration_projection
     event_count = original.journal.event_count
     original.close()
 
@@ -49,6 +53,8 @@ def test_pending_action_checkpoint_restores_without_resubmission(tmp_path: Path)
     )
     assert restored.phase is ControllerPhase.AWAITING_CONSEQUENCE
     assert restored.snapshot.pending_action == decision.action
+    assert restored.action_effect_projection == expected_registry
+    assert restored.action_calibration_projection == expected_calibration
     assert restored.journal.event_count == event_count
     with pytest.raises(PolicyError, match="do not resubmit"):
         restored.choose_action()
@@ -57,6 +63,8 @@ def test_pending_action_checkpoint_restores_without_resubmission(tmp_path: Path)
     receipt = restored.apply_consequence(session.step(decision.action))
     assert receipt.phase is ControllerPhase.OBSERVED
     assert restored.snapshot.pending_action is None
+    assert restored.action_calibration_projection["completed_handles"] == ["ACTION1"]
+    assert restored.action_effect_projection["observation_counts"]["ACTION1"] == 1
     assert restored.journal.event_count > event_count
 
     actions = 1
@@ -76,13 +84,23 @@ def test_pending_plan_and_prediction_restore_exactly(tmp_path: Path) -> None:
     original = ARC3Controller(ControllerPreset.FULL)
     original.reset(context)
     original.observe(session.observation)
-    probe = original.choose_action()
-    original.apply_consequence(session.step(probe.action))
+    for expected_name in (
+        ActionName.ACTION1,
+        ActionName.ACTION2,
+        ActionName.ACTION3,
+        ActionName.ACTION4,
+    ):
+        calibration = original.choose_action()
+        assert calibration.action.name is expected_name
+        original.apply_consequence(session.step(calibration.action))
+    assert original.action_calibration_projection["cursor"] == 4
     planned = original.choose_action()
     assert planned.rationale_summary == "bounded A* plan under retrodicted model"
     assert planned.prediction_receipt_id is not None
     checkpoint = original.checkpoint()
     expected = original.snapshot
+    expected_registry = original.action_effect_projection
+    expected_calibration = original.action_calibration_projection
     event_count = original.journal.event_count
     original.close()
 
@@ -93,11 +111,13 @@ def test_pending_plan_and_prediction_restore_exactly(tmp_path: Path) -> None:
     )
     assert restored.snapshot.phase is ControllerPhase.AWAITING_CONSEQUENCE
     assert restored.snapshot.pending_action == expected.pending_action == planned.action
-    assert restored.snapshot.actions_used == expected.actions_used == 1
+    assert restored.snapshot.actions_used == expected.actions_used == 4
+    assert restored.action_effect_projection == expected_registry
+    assert restored.action_calibration_projection == expected_calibration
     assert restored.journal.event_count == event_count
     receipt = restored.apply_consequence(session.step(planned.action))
     assert receipt.matched_prediction is not None
-    assert restored.snapshot.actions_used == 2
+    assert restored.snapshot.actions_used == 5
 
 
 @pytest.mark.replay
@@ -152,6 +172,7 @@ def test_action6_explored_coordinate_continues_after_restore(tmp_path: Path) -> 
     controller.observe(observation)
     selected = controller.choose_action()
     assert selected.action.coordinate is not None
+    assert (selected.action.coordinate.x, selected.action.coordinate.y) == (3, 3)
     controller.apply_consequence(
         Observation(
             game_id=observation.game_id,

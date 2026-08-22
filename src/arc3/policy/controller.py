@@ -30,6 +30,14 @@ from arc3.exploration import (
 from arc3.exploration import (
     ModelPrediction as ExplorationPrediction,
 )
+from arc3.exploration.action_registry import (
+    ActionEffectObservation,
+    ActionEffectRegistry,
+    ActionEffectStatus,
+    CanonicalActionEffect,
+    CanonicalEffectKind,
+    action_condition_signature,
+)
 from arc3.goals import (
     ActionGoalEstimate,
     EvidenceDirection,
@@ -90,6 +98,7 @@ from arc3.types import (
     ActionName,
     ActionRequest,
     Coordinate,
+    FrameHash,
     GameId,
     GameStateName,
     HypothesisStatus,
@@ -129,13 +138,6 @@ from .models import (
     preset_features,
 )
 from .proposal import LocalProposalProvider, ProposalContext
-
-_DIRECTIONAL_PRIORS: tuple[tuple[ActionName, int, int], ...] = (
-    (ActionName.ACTION1, 0, -1),
-    (ActionName.ACTION2, 0, 1),
-    (ActionName.ACTION3, -1, 0),
-    (ActionName.ACTION4, 1, 0),
-)
 
 
 class _HotPathProfiler(Protocol):
@@ -342,7 +344,8 @@ class ARC3Controller:
         self._hypotheses = HypothesisRegistry()
         self._goals = GoalRegistry()
         self._goal_acquirer = GoalAcquirer(self._goals)
-        self._exploration = ExplorationPlanner()
+        self._action_effects = ActionEffectRegistry(level_index=0)
+        self._exploration = ExplorationPlanner(action_registry=self._action_effects)
         self._memory = PersistentMemory()
         self._plan_executor = PlanExecutor()
         self._pending_plan_emission = False
@@ -353,6 +356,12 @@ class ARC3Controller:
         self._transition_levels: dict[str, int] = {}
         self._transition_summaries: dict[int, list[PreservedTransition]] = {}
         self._palette_roles = PaletteRoleRegistry(level_index=0)
+        self._calibration_handles: tuple[ActionName, ...] = ()
+        self._calibrated_handles: set[ActionName] = set()
+        self._calibration_pending_handle: ActionName | None = None
+        self._pending_canonical_effect: CanonicalActionEffect | None = None
+        self._pending_resolution_kind: str | None = None
+        self._recent_frame_hashes: list[FrameHash] = []
         self._component_to_entity: dict[str, str] = {}
         self._provisional_mover_id: str | None = None
         self._goal_targets: dict[str, tuple[str, str]] = {}
@@ -392,6 +401,37 @@ class ARC3Controller:
         """Expose only the raw-color-free role projection for verification."""
 
         return self._palette_roles.canonical_projection()
+
+    @property
+    def action_effect_projection(self) -> dict[str, JSONValue]:
+        """Expose the bounded derived registry for synthetic verification."""
+
+        return self._action_effects.projection()
+
+    @property
+    def action_calibration_projection(self) -> dict[str, JSONValue]:
+        """Expose calibration progress without promoting opaque handle meanings."""
+
+        return {
+            "level_index": self._level_index,
+            "handles": [item.value for item in self._calibration_handles],
+            "completed_handles": [
+                item.value for item in self._calibration_handles if item in self._calibrated_handles
+            ],
+            "cursor": self._calibration_cursor,
+            "pending_handle": (
+                self._calibration_pending_handle.value
+                if self._calibration_pending_handle is not None
+                else None
+            ),
+        }
+
+    @property
+    def _calibration_cursor(self) -> int:
+        for index, handle in enumerate(self._calibration_handles):
+            if handle not in self._calibrated_handles:
+                return index
+        return len(self._calibration_handles)
 
     @property
     def snapshot(self) -> ControllerSnapshot:
@@ -516,8 +556,10 @@ class ARC3Controller:
         self._latest_receipt = receipt
         self._latest_view = view
         self._phase_from_observation(observation)
+        self._prepare_action_level(observation)
+        self._remember_frame(observation.frames[-1].digest)
+        self._set_provisional_mover(view)
         if self.features.use_hypotheses:
-            self._seed_directional_hypotheses(receipt, view)
             self._update_world_models(observation)
         if self.features.use_goals:
             self._seed_contact_goal(observation, receipt, view)
@@ -812,16 +854,99 @@ class ARC3Controller:
         else:
             self._phase = ControllerPhase.OBSERVED
 
-    @_profiled("hypothesis_update")
-    def _seed_directional_hypotheses(
+    def _prepare_action_level(self, observation: Observation) -> None:
+        """Bind a fresh level to its initially advertised opaque handles."""
+
+        if self._action_effects.level_index != self._level_index:
+            self._action_effects = ActionEffectRegistry(level_index=self._level_index)
+            self._exploration.action_registry = self._action_effects
+            self._calibration_handles = ()
+            self._calibrated_handles.clear()
+            self._calibration_pending_handle = None
+            self._recent_frame_hashes.clear()
+        self._action_effects.register_handles(observation.available_actions)
+        if not self._calibration_handles and observation.state not in {
+            GameStateName.NOT_PLAYED,
+            GameStateName.GAME_OVER,
+            GameStateName.WIN,
+        }:
+            advertised = set(observation.available_actions)
+            self._calibration_handles = tuple(
+                item for item in ActionName if item is not ActionName.RESET and item in advertised
+            )
+
+    def _remember_frame(self, digest: FrameHash) -> None:
+        self._recent_frame_hashes.append(digest)
+        del self._recent_frame_hashes[:-32]
+
+    def _next_calibration_action(self, observation: Observation) -> ActionRequest | None:
+        if self._calibration_cursor >= len(self._calibration_handles):
+            return None
+        handle = self._calibration_handles[self._calibration_cursor]
+        if handle not in observation.available_actions:
+            return None
+        coordinate = Coordinate(3, 3) if handle is ActionName.ACTION6 else None
+        return ActionRequest(handle, coordinate)
+
+    def _resolved_effect_for(
         self,
-        receipt: ObservationReceipt,
+        observation: Observation,
+        action: ActionRequest,
+    ) -> tuple[CanonicalActionEffect | None, str | None]:
+        condition = action_condition_signature(observation)
+        effects = self._action_effects.accepted_effects(
+            action.name,
+            condition_signature=condition,
+        )
+        if len(effects) == 1:
+            return effects[0], "accepted-effect-binding"
+        translation = self._action_effects.accepted_translation(
+            action.name,
+            condition_signature=condition,
+        )
+        if translation is None:
+            return None, None
+        representatives = tuple(
+            candidate.canonical_effect
+            for candidate in self._action_effects.candidates_for(
+                action.name,
+                condition_signature=condition,
+            )
+            if candidate.status is not ActionEffectStatus.CONTRADICTED
+            and candidate.canonical_effect.translation == translation
+        )
+        return (
+            min(representatives, key=lambda item: item.semantic_key),
+            "accepted-translation-facet-binding",
+        )
+
+    def _learned_restore_action(self, observation: Observation) -> ActionRequest | None:
+        condition = action_condition_signature(observation)
+        for handle in self._action_effects.canonical_order(
+            observation.available_actions,
+            condition_signature=condition,
+        ):
+            if handle.requires_coordinates:
+                continue
+            effects = self._action_effects.accepted_effects(
+                handle,
+                condition_signature=condition,
+            )
+            if len(effects) == 1 and effects[0].effect_kind is CanonicalEffectKind.RESTORE:
+                return ActionRequest(handle)
+        return None
+
+    def _set_provisional_mover(
+        self,
         view: _PerceptionView,
         *,
         observed_mover_id: str | None = None,
-    ) -> dict[ActionName, str]:
+    ) -> None:
+        """Select a structural entity candidate without assigning action semantics."""
+
         if not view.symbolic_state.entities:
-            return {}
+            self._provisional_mover_id = None
+            return
 
         def structural_provisional_key(entity: SymbolicEntity) -> tuple[int, int, str]:
             boundary_evidence = (
@@ -842,76 +967,6 @@ class ARC3Controller:
         if provisional is None:
             raise PolicyError("observed mover is absent from the current symbolic state")
         self._provisional_mover_id = provisional.entity_id
-        scope_ref = f"level:{self._level_index}"
-        existing = {
-            record.statement.action: record.hypothesis_id
-            for record in self._hypotheses.all()
-            if isinstance(record.statement, ActionSemanticsStatement)
-            and record.scope is HypothesisScope.LEVEL
-            and record.scope_ref == scope_ref
-            and record.status not in {HypothesisStatus.REJECTED, HypothesisStatus.SUPERSEDED}
-        }
-        seeded: dict[ActionName, str] = {}
-        for action, dx, dy in _DIRECTIONAL_PRIORS:
-            existing_id = existing.get(action.value)
-            if existing_id is not None:
-                existing_record = self._hypotheses.get(existing_id)
-                if (
-                    isinstance(existing_record.statement, ActionSemanticsStatement)
-                    and existing_record.statement.parameters.get("entity_id")
-                    == provisional.entity_id
-                ):
-                    seeded[action] = existing_id
-                    continue
-            receipt_identity = receipt.observation_event_hash.removeprefix("sha256:")[:12]
-            hypothesis_id = f"H-DIRECTIONAL-L{self._level_index}-{action.value}-{receipt_identity}"
-            record = self._hypotheses.create(
-                statement=ActionSemanticsStatement(
-                    action=action.value,
-                    effect="movement",
-                    parameters={
-                        "dx": dx,
-                        "dy": dy,
-                        "entity_id": provisional.entity_id,
-                    },
-                ),
-                scope=HypothesisScope.LEVEL,
-                scope_ref=scope_ref,
-                created_from_event_ids=(receipt.observation_event_id,),
-                occurred_step=self._step_index,
-                hypothesis_id=hypothesis_id,
-                initial_rank_weight=0,
-                note="weak generic directional prior; not accepted evidence",
-            )
-            self._append(
-                self.context.game_id,
-                "hypothesis.created",
-                {
-                    "hypothesis_id": record.hypothesis_id,
-                    "family": record.family.value,
-                    "statement": record.statement.to_dict(),
-                    "created_from_event_ids": list(record.created_from_event_ids),
-                    "status": record.status.value,
-                    "weight_kind": "uncalibrated_rank",
-                    "note": "weak generic prior",
-                },
-            )
-            seeded[action] = hypothesis_id
-            if existing_id is not None:
-                self._hypotheses.supersede(
-                    existing_id,
-                    hypothesis_id,
-                    occurred_step=self._step_index,
-                    caused_by_event_ids=(receipt.observation_event_id,),
-                    note="observed translation revised the provisional controllable entity",
-                )
-                superseded = self._hypotheses.events[-1]
-                self._append(
-                    self.context.game_id,
-                    superseded.event_type.value,
-                    superseded.to_trace_payload(),
-                )
-        return seeded
 
     def _adopt_observed_mover(
         self,
@@ -940,11 +995,7 @@ class ARC3Controller:
         if mover_id is None or mover_id == self._provisional_mover_id:
             return
         prior_mover_id = self._provisional_mover_id
-        self._seed_directional_hypotheses(
-            receipt,
-            view,
-            observed_mover_id=mover_id,
-        )
+        self._set_provisional_mover(view, observed_mover_id=mover_id)
         if self._active_goal_id is not None:
             other_entities = tuple(
                 item for item in view.symbolic_state.entities if item.entity_id != mover_id
@@ -1214,7 +1265,19 @@ class ARC3Controller:
         if observation.state in {GameStateName.GAME_OVER, GameStateName.NOT_PLAYED}:
             return (ActionRequest(ActionName.RESET),)
         actions: list[ActionRequest] = []
-        for name in observation.available_actions:
+        names: tuple[ActionName, ...]
+        if self._calibration_cursor < len(self._calibration_handles):
+            advertised = set(observation.available_actions)
+            names = tuple(
+                item for item in ActionName if item is not ActionName.RESET and item in advertised
+            )
+        else:
+            names = self._action_effects.canonical_order(
+                observation.available_actions,
+                condition_signature=action_condition_signature(observation),
+            )
+        calibration = self._next_calibration_action(observation)
+        for name in names:
             if name is ActionName.ACTION6:
                 limit = min(self.context.config.budgets.max_coordinate_candidates, 24)
                 if self.features.use_coordinate_salience:
@@ -1242,6 +1305,12 @@ class ARC3Controller:
                         Coordinate(x, y) for y in range(frame.height) for x in range(frame.width)
                     ]
                     coordinates = tuple(self._rng.sample(population, k=min(limit, len(population))))
+                if calibration is not None and calibration.name is ActionName.ACTION6:
+                    calibration_coordinate = Coordinate(3, 3)
+                    coordinates = (
+                        calibration_coordinate,
+                        *(item for item in coordinates if item != calibration_coordinate),
+                    )
                 actions.extend(ActionRequest(name, coordinate) for coordinate in coordinates)
             else:
                 actions.append(ActionRequest(name))
@@ -1402,10 +1471,16 @@ class ARC3Controller:
             or view.symbolic_state.entity(target_id) is None
         ):
             return None
+        condition = action_condition_signature(observation)
         actions = tuple(
             action
             for action in self._legal_actions(observation, view)
-            if action.name in {item[0] for item in _DIRECTIONAL_PRIORS}
+            if not action.name.requires_coordinates
+            and self._action_effects.accepted_translation(
+                action.name,
+                condition_signature=condition,
+            )
+            is not None
         )
         if not actions:
             return None
@@ -1487,13 +1562,12 @@ class ARC3Controller:
             return None
         dx = target.anchor.x - mover.anchor.x
         dy = target.anchor.y - mover.anchor.y
-        action_name = {
-            (0, -1): ActionName.ACTION1,
-            (0, 1): ActionName.ACTION2,
-            (-1, 0): ActionName.ACTION3,
-            (1, 0): ActionName.ACTION4,
-        }.get((dx, dy))
-        if action_name is None or action_name not in observation.available_actions:
+        action_name = self._action_effects.resolve_translation(
+            (dx, dy),
+            condition_signature=action_condition_signature(observation),
+            available_actions=observation.available_actions,
+        )
+        if action_name is None or action_name.requires_coordinates:
             return None
         return (
             ActionRequest(action_name),
@@ -1590,6 +1664,19 @@ class ARC3Controller:
             {
                 "source_observation_event_id": receipt.observation_event_id,
                 "candidates": [item.to_trace_payload() for item in candidates],
+                "candidate_bindings": {
+                    name.value: [
+                        candidate.projection()
+                        for candidate in self._action_effects.candidates_for(
+                            name,
+                            condition_signature=action_condition_signature(observation),
+                        )
+                    ]
+                    for name in self._action_effects.canonical_order(
+                        observation.available_actions,
+                        condition_signature=action_condition_signature(observation),
+                    )
+                },
                 "alternatives_summary": "legal actions ranked by declared generic terms",
             },
         )
@@ -1599,6 +1686,9 @@ class ARC3Controller:
         self._pending_plan_emission = False
         rationale = "deterministic action cycle preset"
         rationale_category = RationaleCategory.BASELINE
+        self._calibration_pending_handle = None
+        self._pending_canonical_effect = None
+        self._pending_resolution_kind = None
         try:
             if self.preset in {ControllerPreset.BASELINE, ControllerPreset.TRACE}:
                 action = self._baseline_action(observation)
@@ -1607,11 +1697,25 @@ class ARC3Controller:
                 rationale = "game over permits only reset"
                 rationale_category = RationaleCategory.MANDATORY_RESET
             else:
-                contact_probe = self._contact_probe_action(observation, view)
-                planned = (
-                    None if contact_probe is not None else self._plan_action(observation, view)
+                calibration = self._next_calibration_action(observation)
+                contact_probe = (
+                    None
+                    if calibration is not None
+                    else self._contact_probe_action(observation, view)
                 )
-                if contact_probe is not None:
+                planned = (
+                    None
+                    if calibration is not None or contact_probe is not None
+                    else self._plan_action(observation, view)
+                )
+                if calibration is not None:
+                    action = calibration
+                    self._calibration_pending_handle = action.name
+                    self._pending_resolution_kind = "calibration-prefix"
+                    plan_or_probe_id = candidate_event_id
+                    rationale = "frozen one-receipt opaque-handle calibration"
+                    rationale_category = RationaleCategory.DISCRIMINATE_MODELS
+                elif contact_probe is not None:
                     action, plan_or_probe_id, rationale = contact_probe
                     rationale_category = RationaleCategory.DISCRIMINATE_MODELS
                 elif planned is not None:
@@ -1625,14 +1729,11 @@ class ARC3Controller:
                     rationale_category = RationaleCategory.DISCRIMINATE_MODELS
         except Exception as error:
             self._fault_count += 1
-            action = min(
-                candidates,
-                key=lambda item: (
-                    self._action_counts[item.action],
-                    item.action.name.value,
-                    repr(item.action.coordinate),
-                ),
-            ).action
+            _, fallback = min(
+                enumerate(candidates),
+                key=lambda item: (self._action_counts[item[1].action], item[0]),
+            )
+            action = fallback.action
             rationale = f"deterministic legal fallback after {type(error).__name__}"
             rationale_category = RationaleCategory.FAULT_FALLBACK
             self._append(
@@ -1649,6 +1750,17 @@ class ARC3Controller:
                 str(observation.game_id),
                 "action.fallback_used",
                 {"action": _action_payload(action), "fault_type": type(error).__name__},
+            )
+
+        if self._pending_resolution_kind is None:
+            resolved_effect, resolved_kind = self._resolved_effect_for(observation, action)
+            self._pending_canonical_effect = resolved_effect
+            self._pending_resolution_kind = (
+                "lifecycle-interface"
+                if action.name is ActionName.RESET
+                else resolved_kind
+                if resolved_kind is not None
+                else "unresolved-information-probe"
             )
 
         self._ensure_budget_available(action)
@@ -1683,6 +1795,12 @@ class ARC3Controller:
                 "decision_id": decision_id,
                 "source_observation_event_id": receipt.observation_event_id,
                 "selected_action": _action_payload(action),
+                "selected_canonical_effect": (
+                    self._pending_canonical_effect.projection()
+                    if self._pending_canonical_effect is not None
+                    else None
+                ),
+                "raw_resolution_kind": self._pending_resolution_kind,
                 "candidate_utilities": [item.to_trace_payload() for item in candidates],
                 "selected_probe_or_plan_id": plan_or_probe_id,
                 "active_hypothesis_ids": list(active_hypothesis_ids),
@@ -1748,6 +1866,12 @@ class ARC3Controller:
                 "selected_event_id": selected_id,
                 "validated_event_id": validated_id,
                 "action": _action_payload(action),
+                "selected_canonical_effect": (
+                    self._pending_canonical_effect.projection()
+                    if self._pending_canonical_effect is not None
+                    else None
+                ),
+                "raw_resolution_kind": self._pending_resolution_kind,
                 "adapter_boundary": "delivered-to-runtime-adapter",
                 "prediction_receipt_id": prediction_receipt_id,
             },
@@ -1885,6 +2009,9 @@ class ARC3Controller:
             self._before_action_state = None
             self._before_action_features = None
             self._pending_plan_emission = False
+            self._calibration_pending_handle = None
+            self._pending_canonical_effect = None
+            self._pending_resolution_kind = None
             self._plan_executor = PlanExecutor()
             self._phase = ControllerPhase.FAULTED
             if self.features.use_memory:
@@ -1894,7 +2021,45 @@ class ARC3Controller:
                 f"raw receipt preserved as {rejected.event_id}"
             )
 
-        effect = classify_effect(before, after, pending.action)
+        action_effect_observation: ActionEffectObservation | None = None
+        if pending.action.name is not ActionName.RESET:
+            action_effect_observation = self._action_effects.observe_transition(
+                before,
+                pending.action,
+                after,
+                source_event_id=consequence_id,
+                prior_frame_hashes=tuple(self._recent_frame_hashes),
+            )
+            if self._calibration_pending_handle is pending.action.name:
+                self._calibrated_handles.add(pending.action.name)
+            self._append(
+                str(after.game_id),
+                "action.effect_observed",
+                {
+                    "source_consequence_event_id": consequence_id,
+                    "raw_handle": pending.action.name.value,
+                    "canonical_effects": [
+                        item.projection() for item in action_effect_observation.canonical_effects
+                    ],
+                    "ambiguous": action_effect_observation.ambiguous,
+                    "before_digest": str(action_effect_observation.before_digest),
+                    "after_digest": str(action_effect_observation.after_digest),
+                    "candidates": [
+                        item.projection()
+                        for item in self._action_effects.candidates_for(pending.action.name)
+                    ],
+                    "candidate_count": self._action_effects.candidate_count,
+                    "calibration_cursor": self._calibration_cursor,
+                    "registry_level_index": self._action_effects.level_index,
+                },
+            )
+
+        effect = classify_effect(
+            before,
+            after,
+            pending.action,
+            prior_frame_hashes=tuple(self._recent_frame_hashes),
+        )
         self._exploration.record_outcome(before_context, pending.action, effect)
 
         matched_prediction: bool | None = None
@@ -1944,7 +2109,7 @@ class ARC3Controller:
             planning_consequence = self._plan_executor.apply_consequence(
                 observed_state,
                 game_state=after.state,
-                undo_supported=self._exploration.statistics.supported_undo,
+                restore_action=self._learned_restore_action(after),
                 same_model_viable=matched_prediction is not False,
             )
             if planning_consequence.recovery is not None:
@@ -1970,7 +2135,12 @@ class ARC3Controller:
             self._transition_levels[transition.transition_id] = previous_level
             self._transition_summaries.setdefault(previous_level, []).append(transition)
             if self.features.use_hypotheses:
-                self._update_action_hypothesis(after, transition, consequence_id)
+                self._update_action_hypothesis(
+                    after,
+                    transition,
+                    consequence_id,
+                    action_effect_observation,
+                )
 
         progress_ids: tuple[str, ...] = ()
         if self.features.use_goals:
@@ -2026,6 +2196,9 @@ class ARC3Controller:
         self._before_action_observation = None
         self._before_action_state = None
         self._before_action_features = None
+        self._calibration_pending_handle = None
+        self._pending_canonical_effect = None
+        self._pending_resolution_kind = None
         self._phase_from_observation(after)
         if after.levels_completed != previous_level:
             self._rotate_level_scope(
@@ -2035,6 +2208,9 @@ class ARC3Controller:
                 previous_level=previous_level,
                 consequence_event_id=consequence_id,
             )
+        else:
+            self._prepare_action_level(after)
+            self._remember_frame(after.frames[-1].digest)
         if self.features.use_world_model and after.state is not GameStateName.WIN:
             self._update_world_models(after)
         if self.features.use_memory:
@@ -2103,14 +2279,6 @@ class ARC3Controller:
         )
 
         previous_scope = f"level:{previous_level}"
-        old_hypotheses = {
-            record.statement.action: record.hypothesis_id
-            for record in self._hypotheses.all()
-            if isinstance(record.statement, ActionSemanticsStatement)
-            and record.scope is HypothesisScope.LEVEL
-            and record.scope_ref == previous_scope
-            and record.status not in {HypothesisStatus.REJECTED, HypothesisStatus.SUPERSEDED}
-        }
         for record in self._goals.records(include_retired=False):
             if (
                 record.candidate.scope is HypothesisScope.LEVEL
@@ -2129,23 +2297,18 @@ class ARC3Controller:
         self._model_candidates = ()
         self._provisional_mover_id = None
         self._planning_disabled_after_mismatch = False
+        self._action_effects = ActionEffectRegistry(level_index=self._level_index)
+        self._exploration.action_registry = self._action_effects
+        self._calibration_handles = ()
+        self._calibrated_handles.clear()
+        self._calibration_pending_handle = None
+        self._recent_frame_hashes.clear()
+        self._prepare_action_level(observation)
+        self._remember_frame(observation.frames[-1].digest)
         if observation.state is GameStateName.WIN:
             return
 
-        seeded = self._seed_directional_hypotheses(receipt, view)
-        for action, old_id in sorted(old_hypotheses.items()):
-            new_id = seeded.get(ActionName(action))
-            if new_id is None or new_id == old_id:
-                continue
-            self._hypotheses.supersede(
-                old_id,
-                new_id,
-                occurred_step=self._step_index,
-                caused_by_event_ids=sources,
-                note="prior level scope closed; successor remains a fresh candidate",
-            )
-            event = self._hypotheses.events[-1]
-            self._append(str(observation.game_id), event.event_type.value, event.to_trace_payload())
+        self._set_provisional_mover(view)
         if self.features.use_goals:
             self._seed_contact_goal(observation, receipt, view)
 
@@ -2155,13 +2318,74 @@ class ARC3Controller:
         observation: Observation,
         transition: PreservedTransition,
         consequence_event_id: str,
+        action_effect_observation: ActionEffectObservation | None,
     ) -> None:
+        scope_ref = f"level:{self._transition_levels[transition.transition_id]}"
+        if action_effect_observation is not None and self._provisional_mover_id is not None:
+            condition = action_effect_observation.canonical_effects[0].condition_signature
+            translation = self._action_effects.accepted_translation(
+                transition.action.name,
+                condition_signature=condition,
+            )
+            if translation is not None:
+                dx, dy = translation
+                statement = ActionSemanticsStatement(
+                    action=transition.action.name.value,
+                    effect="translation",
+                    parameters={
+                        "dx": dx,
+                        "dy": dy,
+                        "entity_id": self._provisional_mover_id,
+                        "condition_signature": condition,
+                    },
+                )
+                existing = tuple(
+                    record
+                    for record in self._hypotheses.all()
+                    if isinstance(record.statement, ActionSemanticsStatement)
+                    and record.scope_ref == scope_ref
+                    and record.statement.to_dict() == statement.to_dict()
+                    and record.status
+                    not in {HypothesisStatus.REJECTED, HypothesisStatus.SUPERSEDED}
+                )
+                if not existing:
+                    digest = sha256_json(
+                        {
+                            "statement": statement.to_dict(),
+                            "level_index": self._transition_levels[transition.transition_id],
+                            "source_event_id": consequence_event_id,
+                        }
+                    ).removeprefix("sha256:")[:24]
+                    created = self._hypotheses.create(
+                        statement=statement,
+                        scope=HypothesisScope.LEVEL,
+                        scope_ref=scope_ref,
+                        created_from_event_ids=transition.source_event_ids,
+                        occurred_step=self._step_index,
+                        hypothesis_id=f"H-ACTION-EFFECT-{digest}",
+                        initial_rank_weight=0,
+                        note="translation induced from an unambiguous returned consequence",
+                    )
+                    self._append(
+                        str(observation.game_id),
+                        "hypothesis.created",
+                        {
+                            "hypothesis_id": created.hypothesis_id,
+                            "family": created.family.value,
+                            "statement": created.statement.to_dict(),
+                            "created_from_event_ids": list(created.created_from_event_ids),
+                            "status": created.status.value,
+                            "weight_kind": "uncalibrated_rank",
+                            "note": "receipt-derived opaque-handle binding",
+                        },
+                    )
+
         matching = tuple(
             record
             for record in self._hypotheses.all()
             if isinstance(record.statement, ActionSemanticsStatement)
             and record.statement.action == transition.action.name.value
-            and record.scope_ref == f"level:{self._transition_levels[transition.transition_id]}"
+            and record.scope_ref == scope_ref
             and record.status not in {HypothesisStatus.REJECTED, HypothesisStatus.SUPERSEDED}
             and (self.features.retain_rejected_hypotheses or not record.contradiction_receipts)
         )
@@ -2241,6 +2465,25 @@ class ARC3Controller:
                 "actions_used": self._actions_used,
                 "resets_used": self._resets_used,
                 "fault_count": self._fault_count,
+                "registry": self._action_effects.projection(),
+                "calibration_handles": [item.value for item in self._calibration_handles],
+                "calibrated_handles": [
+                    item.value
+                    for item in self._calibration_handles
+                    if item in self._calibrated_handles
+                ],
+                "calibration_pending_handle": (
+                    self._calibration_pending_handle.value
+                    if self._calibration_pending_handle is not None
+                    else None
+                ),
+                "pending_canonical_effect": (
+                    self._pending_canonical_effect.projection()
+                    if self._pending_canonical_effect is not None
+                    else None
+                ),
+                "pending_resolution_kind": self._pending_resolution_kind,
+                "recent_frame_hashes": [str(item) for item in self._recent_frame_hashes],
                 "action_counts": [
                     {"action": _action_payload(action), "count": count}
                     for action, count in sorted(
@@ -2367,11 +2610,11 @@ class ARC3Controller:
         controller._step_index = state.step_index
         controller._level_index = state.level_index
         controller._memory = state.memory
+        controller._pending_action = state.pending_action
         controller._restore_action_counts(state.action_semantics)
         controller._hypotheses = HypothesisRegistry.from_dict(
             cast(Mapping[str, object], state.hypothesis_registry)
         )
-        controller._pending_action = state.pending_action
         controller._provisional_mover_id = cast(
             str | None, state.perception_state.get("provisional_mover_id")
         )
@@ -2432,6 +2675,95 @@ class ARC3Controller:
         return controller
 
     def _restore_action_counts(self, value: Mapping[str, JSONValue]) -> None:
+        raw_registry = value.get("registry")
+        if raw_registry is None:
+            self._action_effects = ActionEffectRegistry(level_index=self._level_index)
+        elif isinstance(raw_registry, Mapping):
+            try:
+                self._action_effects = ActionEffectRegistry.from_projection(
+                    cast(Mapping[str, object], raw_registry)
+                )
+            except ValueError as error:
+                raise PolicyError("checkpoint action-effect registry is malformed") from error
+        else:
+            raise PolicyError("checkpoint action-effect registry must be an object")
+        if self._action_effects.level_index != self._level_index:
+            raise PolicyError("checkpoint action-effect registry level does not match controller")
+        self._exploration.action_registry = self._action_effects
+
+        raw_calibration = value.get("calibration_handles", [])
+        raw_calibrated = value.get("calibrated_handles", [])
+        if (
+            not isinstance(raw_calibration, list)
+            or not all(isinstance(item, str) for item in raw_calibration)
+            or not isinstance(raw_calibrated, list)
+            or not all(isinstance(item, str) for item in raw_calibrated)
+        ):
+            raise PolicyError("checkpoint action calibration handles are malformed")
+        try:
+            calibration = tuple(ActionName(cast(str, item)) for item in raw_calibration)
+            calibrated = tuple(ActionName(cast(str, item)) for item in raw_calibrated)
+        except ValueError as error:
+            raise PolicyError("checkpoint action calibration handle is invalid") from error
+        expected_order = tuple(
+            item for item in ActionName if item is not ActionName.RESET and item in calibration
+        )
+        if (
+            ActionName.RESET in calibration
+            or len(set(calibration)) != len(calibration)
+            or calibration != expected_order
+            or calibrated != calibration[: len(calibrated)]
+        ):
+            raise PolicyError("checkpoint action calibration order is invalid")
+        self._calibration_handles = calibration
+        self._calibrated_handles = set(calibrated)
+
+        raw_pending_handle = value.get("calibration_pending_handle")
+        if raw_pending_handle is None:
+            self._calibration_pending_handle = None
+        elif isinstance(raw_pending_handle, str):
+            try:
+                self._calibration_pending_handle = ActionName(raw_pending_handle)
+            except ValueError as error:
+                raise PolicyError("checkpoint pending calibration handle is invalid") from error
+        else:
+            raise PolicyError("checkpoint pending calibration handle is malformed")
+        if self._calibration_pending_handle is not None:
+            if (
+                self._calibration_cursor >= len(self._calibration_handles)
+                or self._calibration_handles[self._calibration_cursor]
+                is not self._calibration_pending_handle
+                or self._pending_action is None
+                or self._pending_action.action.name is not self._calibration_pending_handle
+            ):
+                raise PolicyError("checkpoint pending calibration boundary is inconsistent")
+
+        raw_effect = value.get("pending_canonical_effect")
+        if raw_effect is None:
+            self._pending_canonical_effect = None
+        elif isinstance(raw_effect, Mapping):
+            try:
+                self._pending_canonical_effect = CanonicalActionEffect.from_projection(
+                    cast(Mapping[str, object], raw_effect)
+                )
+            except ValueError as error:
+                raise PolicyError("checkpoint pending canonical effect is invalid") from error
+        else:
+            raise PolicyError("checkpoint pending canonical effect is malformed")
+        raw_resolution = value.get("pending_resolution_kind")
+        if raw_resolution is not None and not isinstance(raw_resolution, str):
+            raise PolicyError("checkpoint pending action resolution is malformed")
+        self._pending_resolution_kind = raw_resolution
+
+        raw_hashes = value.get("recent_frame_hashes", [])
+        if (
+            not isinstance(raw_hashes, list)
+            or len(raw_hashes) > 32
+            or not all(isinstance(item, str) and item.startswith("sha256:") for item in raw_hashes)
+        ):
+            raise PolicyError("checkpoint recent frame hashes are malformed")
+        self._recent_frame_hashes = [FrameHash(cast(str, item)) for item in raw_hashes]
+
         raw = value.get("action_counts", [])
         if not isinstance(raw, list):
             raise PolicyError("checkpoint action_counts must be an array")
