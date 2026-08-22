@@ -311,16 +311,19 @@
       ],
       "predeclaration": "docs/evidence/001-07-retrodiction-predeclaration.json",
       "predeclaration_sha256": "sha256:d4eb82f2e0c04e1c94be4d6fbaa8862aa808cc07932042a02d0c5fbcc02dc608",
+      "predeclaration_amendment": "docs/evidence/001-07-retrodiction-predeclaration-amendment-01.json",
+      "predeclaration_amendment_sha256": "sha256:5c8ff0c91602d86ecaadd61197dfb80681f618ad4e6c810c26933ca337fdcc3b",
       "source_baseline_commit": "8e3400cebda87f75b8bb3fd0c8d592d2125a6869",
       "source_baseline_tree": "69fd3a35c110e411e89e368e93d6f7110bc4673c",
       "modes_predeclared": 5,
       "evaluation_cells_predeclared": 280,
       "stage_14_cases": 14,
       "false_rule_histories": 8,
+      "false_rule_case_seeds": [1, 2, 3, 4, 5, 6, 7, 8],
       "rule_change_and_noise_cases": 32,
       "local_public_development_cases": 2,
       "micro_history_sizes": 6,
-      "implementation_status": "PREDECLARED_BEFORE_IMPLEMENTATION_AND_MEASUREMENT",
+      "implementation_status": "COMPOSITE_PROTOCOL_PREDECLARED_BEFORE_IMPLEMENTATION_MEASUREMENT",
       "production_default": "FULL_UNCHANGED_PENDING_MEASURED_DECISION",
       "public_holdout_consumed": false
     }
@@ -425,6 +428,10 @@
     "stage_07_predeclaration": {
       "path": "docs/evidence/001-07-retrodiction-predeclaration.json",
       "sha256": "d4eb82f2e0c04e1c94be4d6fbaa8862aa808cc07932042a02d0c5fbcc02dc608"
+    },
+    "stage_07_predeclaration_amendment_01": {
+      "path": "docs/evidence/001-07-retrodiction-predeclaration-amendment-01.json",
+      "sha256": "5c8ff0c91602d86ecaadd61197dfb80681f618ad4e6c810c26933ca337fdcc3b"
     }
   },
   "blocked_items": [],

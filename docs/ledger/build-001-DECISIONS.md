@@ -377,3 +377,28 @@ independent authorities.
 - Reopening condition: an identity/count audit finds the matrix was not frozen as declared, a
   mode can reuse authority without its required receipts, cache/checkpoint tamper survives restore,
   or an official measurement begins from a source that does not contain this unchanged declaration.
+
+## D-001-0023 — Amend the infeasible B07 construction and bind B seeds before measurement
+
+- Recorded: 2026-08-22T15:42:41.2920389Z
+- Status: accepted
+- Decision: Preserve the committed Stage 07 declaration at SHA-256
+  `d4eb82f2e0c04e1c94be4d6fbaa8862aa808cc07932042a02d0c5fbcc02dc608` unchanged. Bind a
+  premeasurement amendment that changes B07 from overlapping contact at beacon x3 to adjacent
+  contact after the mover advances x2 to x3 beside beacon x4. Keep exactly one shared movement and
+  one candidate-specific rare contact rule; do not add a collision rule or alter production world-
+  model semantics to manufacture fixture feasibility. The same amendment binds B01 through B08 to
+  seeds 1 through 8 because the base paired-seed rule omitted their concrete values.
+- Evidence: `src/arc3/world_model/rules.py` blob
+  `751bb35efabd14f028ad2d3b54ee0814dd7176ee` defaults an unmatched overlap to `BLOCK` before
+  applying contacts. Amendment
+  `docs/evidence/001-07-retrodiction-predeclaration-amendment-01.json`, SHA-256
+  `5c8ff0c91602d86ecaadd61197dfb80681f618ad4e6c810c26933ca337fdcc3b`, was written before any
+  Stage 07 measurement or public-development attempt.
+- Boundary: no mode, case ID, previously declared A/C/D seed, count, budget, rank, decision gate,
+  public partition, or holdout rule changes. The B seeds are newly fixed before results rather than
+  changed from prior values. The construction and underbinding failures remain preserved; the
+  amendment supplies no evidence for a retrodiction mode.
+- Reopening condition: B07 cannot execute exactly under the amended adjacent-contact composition,
+  its before/after truth differs from the amendment, or any official artifact fails to bind both
+  the base and amendment hashes.

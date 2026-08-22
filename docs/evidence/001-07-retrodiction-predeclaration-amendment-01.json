@@ -1,0 +1,75 @@
+{
+  "schema": "arc3.build-001.stage-07-retrodiction-predeclaration-amendment.v0.1",
+  "status": "PREDECLARED_AMENDMENT",
+  "created_at": "2026-08-22T15:42:41.2920389Z",
+  "workflow": "docs/workflows/001-local-public-failure-recovery.md",
+  "amendment_id": "stage07-premeasurement-construction-binding-01",
+  "applies_to": {
+    "path": "docs/evidence/001-07-retrodiction-predeclaration.json",
+    "sha256": "sha256:d4eb82f2e0c04e1c94be4d6fbaa8862aa808cc07932042a02d0c5fbcc02dc608",
+    "commit": "1c2f659c410fd2dd999bc30524e66e23fd90eca4",
+    "immutable": true
+  },
+  "timing": {
+    "official_stage_07_measurements_started": false,
+    "stage_07_result_artifact_exists": false,
+    "public_development_stage_07_attempts": 0,
+    "public_holdout_gameplay_events": 0,
+    "reason": "A construction feasibility audit occurred after declaration commit and before any implementation measurement or observed mode result."
+  },
+  "failure": {
+    "classification": "FAILED_MECHANISM_PREMEASUREMENT_CONSTRUCTION",
+    "case_id": "stage07-false-rule-b07-contact-effect",
+    "frozen_construction": "One unconditional MovementRule moves mover x2 into beacon x3, and one rare OVERLAP ContactRule distinguishes ADD_FACT from SET_TOGGLE. No CollisionRule is present or permitted.",
+    "executable_conflict": "The pinned executor treats every overlapping entity without a matching CollisionRule as BLOCK. The mover therefore remains x2, and post-movement contact application never receives an overlapping mover. Neither TRUE nor FALSE rare contact rule can execute.",
+    "source": {
+      "path": "src/arc3/world_model/rules.py",
+      "git_blob": "751bb35efabd14f028ad2d3b54ee0814dd7176ee",
+      "default_block_line": 359,
+      "post_move_contact_line": 387,
+      "existing_regression": "tests/unit/test_world_model_rules.py::test_movement_collision_and_contact_are_executable_and_visible requires an explicit PASS CollisionRule for overlap contact"
+    },
+    "result_boundary": "This is not a retrodiction-mode result and supplies no evidence for FULL or any replacement. It is a failed frozen fixture construction discovered before measurement."
+  },
+  "single_override": {
+    "path": "group_B_false_rule_histories.cases[case_id=stage07-false-rule-b07-contact-effect]",
+    "case_id": "stage07-false-rule-b07-contact-effect",
+    "action": "ACTION3",
+    "rare_true": "Contact(mover,target,ADJACENT,ADD_FACT,contacted)",
+    "rare_false": "Contact(mover,target,ADJACENT,SET_TOGGLE,contacted=on)",
+    "ordinary_shared": "Movement(mover,+1,0)",
+    "t00_before": "mover x2 and beacon target x4 with fact rare",
+    "t00_after": "mover x3, beacon target x4, and fact contacted present",
+    "model_composition": "The TRUE and FALSE candidates share exactly one unconditional R-B07-SHARED-NORMAL MovementRule for ACTION3, mover kind, and +1 x displacement. TRUE adds exactly R-B07-TRUE-RARE and FALSE adds exactly R-B07-FALSE-RARE, each conditioned on FACT_PRESENT rare with ADJACENT relation. No CollisionRule, second movement, or fallback rule is present.",
+    "ordinary_history": "T01 through T11 contain no beacon and no rare fact; the shared movement rule produces the declared ordinary +1 consequence.",
+    "why_executable": "After the shared move from x2 to x3, mover and beacon x4 are adjacent without overlapping cells, so default collision blocking is not invoked and the rare ContactRule can distinguish TRUE from FALSE."
+  },
+  "paired_seed_binding": {
+    "reason": "The base declaration requires controller seed equals case seed but omitted seeds for B01 through B08. Leaving them implicit would permit post-result seed choice.",
+    "case_seeds": {
+      "stage07-false-rule-b01-movement-sign": 1,
+      "stage07-false-rule-b02-noop-vs-translation": 2,
+      "stage07-false-rule-b03-collision-pass-vs-block": 3,
+      "stage07-false-rule-b04-toggle-cycle": 4,
+      "stage07-false-rule-b05-counter-delta": 5,
+      "stage07-false-rule-b06-recolor-value": 6,
+      "stage07-false-rule-b07-contact-effect": 7,
+      "stage07-false-rule-b08-coordinate-selection": 8
+    },
+    "controller_seed_rule": "Controller seed equals the listed case seed for every mode.",
+    "manifest_rule": "The sealed false-rule case manifest must repeat these exact seeds and reject omissions, duplicates, or alternate values."
+  },
+  "unchanged": [
+    "all five retrodiction modes and their order",
+    "280-cell matrix count and A, B, C, D group counts",
+    "all case IDs, all previously declared A, C, and D seeds, budgets, labels, and execution order",
+    "B07 hypothesis, rule, transition, and source-event naming",
+    "B07 TRUE rank 1 and FALSE rank 9",
+    "all other B histories and every A, C, and D case",
+    "cache, checkpoint, trace, promotion, replacement, resource, and integrity gates",
+    "FULL production and competition default",
+    "sealed public holdout"
+  ],
+  "composite_contract": "Official Stage 07 implementation and measurement must bind both the unchanged base declaration SHA-256 and this amendment SHA-256. The amendment overrides only the exact B07 fields listed above. Any other divergence is a protocol failure.",
+  "claim_limit": "NO_GENERALIZATION_CLAIM"
+}

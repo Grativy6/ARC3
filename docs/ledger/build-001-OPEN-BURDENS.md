@@ -536,3 +536,34 @@ does not erase earlier uncertainty or failed mechanisms.
   self-hash
   `sha256:4edb729d70ebcd1b5b3cd92de99b8183a7ff198440e51dce2a9201630da2a711`;
   `docs/evidence/001-06-rule-change-reopening.json`.
+
+## B-001-0027 — Frozen Stage 07 B07 overlap-contact construction was infeasible
+
+- Status: RESOLVED
+- Stage: 07
+- Opened: 2026-08-22
+- Burden: the committed B07 false-rule case required a mover to overlap a beacon using only one
+  movement rule and one contact rule, while explicitly prohibiting a collision rule. The pinned
+  executor defaults every unmatched overlap to `BLOCK`, so neither rare contact rule could execute.
+  Running the case unchanged would structurally predetermine a false-rule gate failure.
+- Preserved failure: base declaration
+  `docs/evidence/001-07-retrodiction-predeclaration.json`, SHA-256
+  `d4eb82f2e0c04e1c94be4d6fbaa8862aa808cc07932042a02d0c5fbcc02dc608`; rule-engine blob
+  `751bb35efabd14f028ad2d3b54ee0814dd7176ee`; no Stage 07 measurement had begun.
+- Resolution: amendment 01 changes only B07 to an adjacent contact after mover x2 advances to x3
+  beside beacon x4. It adds no production rule and changes no mode, count, seed, budget, rank, or
+  decision gate.
+- Resolution receipt: `docs/evidence/001-07-retrodiction-predeclaration-amendment-01.json`, SHA-256
+  `5c8ff0c91602d86ecaadd61197dfb80681f618ad4e6c810c26933ca337fdcc3b`.
+
+## B-001-0028 — Frozen Stage 07 false-rule cases omitted concrete paired seeds
+
+- Status: RESOLVED
+- Stage: 07
+- Opened: 2026-08-22
+- Burden: the base declaration required controller seed equals case seed but did not assign B01
+  through B08 concrete seeds. A harness could therefore choose them after observing results.
+- Resolution: before implementation measurement, amendment 01 binds B01 through B08 to seeds 1
+  through 8 respectively and requires the sealed case manifest to repeat and validate them.
+- Resolution receipt: `docs/evidence/001-07-retrodiction-predeclaration-amendment-01.json`, SHA-256
+  `5c8ff0c91602d86ecaadd61197dfb80681f618ad4e6c810c26933ca337fdcc3b`.
