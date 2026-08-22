@@ -950,10 +950,12 @@ def run_public_episode(
         except Exception:
             invalid_actions += 1
             raise
-        policy.accept_consequence(observation)
         if trace_sink is not None:
             trace_sink.record_consequence(before, action, observation)
             trace_sink.record_observation(observation)
+        # The returned environment receipt is an authority boundary. Preserve it
+        # before any derived policy fold that can fail.
+        policy.accept_consequence(observation)
         if action.name is ActionName.RESET:
             resets += 1
         else:

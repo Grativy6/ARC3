@@ -7,6 +7,7 @@ import json
 import multiprocessing
 import os
 import shlex
+import socket
 import subprocess
 import sys
 import time
@@ -19,6 +20,7 @@ from typing import Any, cast
 from arc3.adapters.arc_agi import ARC_AGI_VERSION, ARCENGINE_VERSION, ArcAGIAdapter
 from arc3.config import ARC3Config
 from arc3.errors import EvaluationError, TraceError
+from arc3.profiling.runtime import process_memory_sample
 from arc3.trace import BaselineTraceSink, CodeIdentity, EventJournal, SourceIdentity
 from arc3.types import EnvironmentMode, EvaluationSurface
 
@@ -41,6 +43,7 @@ from .public import (
     LocalAssetIdentity,
     PublicEvaluationConfig,
     PublicExposureLedger,
+    PublicGameEntry,
     PublicPartitionManifest,
     _first_party_source_hash,
     _hardware,
@@ -130,6 +133,8 @@ def _specifications(
     identity: dict[str, object],
 ) -> list[dict[str, object]]:
     specifications: list[dict[str, object]] = []
+    raw_assets = identity.get("asset_identities")
+    asset_identities = raw_assets if isinstance(raw_assets, dict) else {}
     for entry in config.selected_games(manifest):
         for agent in config.agents:
             for seed in config.seeds:
@@ -151,6 +156,11 @@ def _specifications(
                     "surface": config.surface,
                     "network_mode": config.network_mode,
                     "identity_hash": identity["identity_hash"],
+                    "asset_aggregate_sha256_before": (
+                        expected_asset.get("aggregate_sha256")
+                        if isinstance((expected_asset := asset_identities.get(entry.game_id)), dict)
+                        else None
+                    ),
                 }
                 specification["run_spec_hash"] = sha256_bytes(canonical_json_bytes(specification))
                 specifications.append(specification)
@@ -184,8 +194,47 @@ def _empty_metrics() -> dict[str, object]:
         "state_revisitation_rate": 0.0,
         "decision_latency_seconds": {"p50": None, "p95": None, "p99": None},
         "total_wall_clock_seconds": 0.0,
+        "total_cpu_seconds": None,
         "peak_python_allocation_bytes": None,
+        "process_memory_before": None,
+        "process_memory_after": None,
+        "peak_rss_bytes": None,
+        "network_attempt_count": None,
+        "policy_close_status": "not-opened",
+        "session_close_status": "not-opened",
+        "journal_close_status": "not-opened",
         "fault_count": 1,
+    }
+
+
+def _asset_identity_check(
+    specification: dict[str, object],
+    asset_identity_after: dict[str, object] | None,
+) -> dict[str, object]:
+    """Project the local asset boundary without converting drift into success."""
+
+    expected = specification.get("asset_aggregate_sha256_before")
+    observed = (
+        asset_identity_after.get("aggregate_sha256")
+        if isinstance(asset_identity_after, dict)
+        else None
+    )
+    if specification.get("surface") == "online-public":
+        status = "not-applicable"
+    elif not isinstance(observed, str):
+        status = "unavailable"
+    elif not isinstance(expected, str):
+        status = "recorded-uncompared"
+    elif observed == expected:
+        status = "matched"
+    else:
+        status = "changed"
+    return {
+        "schema": "arc3.evaluation.asset-boundary-check.v0.1",
+        "status": status,
+        "expected_aggregate_sha256": expected if isinstance(expected, str) else None,
+        "observed_aggregate_sha256": observed if isinstance(observed, str) else None,
+        "integrity_failure": status in {"changed", "unavailable"},
     }
 
 
@@ -200,6 +249,7 @@ def _failure_result(
     metrics: dict[str, object] | None = None,
     trace: dict[str, object] | None = None,
     asset_identity_after: dict[str, object] | None = None,
+    recovered_score: dict[str, object] | None = None,
 ) -> dict[str, Any]:
     expected_surface = (
         EvaluationSurface.ONLINE_PUBLIC
@@ -248,14 +298,21 @@ def _failure_result(
             "started_at": started_at,
             "completed_at": _utc_now(),
             "identity_hash": identity["identity_hash"],
-            "score": _score_payload(None, expected_surface=expected_surface),
+            "score": recovered_score
+            if recovered_score is not None
+            else _score_payload(None, expected_surface=expected_surface),
             "metrics": resolved_metrics,
             "trace": trace,
             "asset_identity_after": asset_identity_after,
+            "asset_identity_check": _asset_identity_check(specification, asset_identity_after),
             "asset_identity_after_reason": (
                 "official ONLINE mode evaluates remotely and does not download game source"
                 if specification.get("surface") == "online-public"
-                else "asset identity is frozen in the evaluation manifest"
+                else (
+                    "local asset bytes were rehashed after the terminal or failure boundary"
+                    if asset_identity_after is not None
+                    else "local asset identity was unavailable after the boundary"
+                )
             ),
             "environment_transport": specification.get("network_mode"),
             "failure": {"kind": kind, "message": message[:500]},
@@ -295,12 +352,12 @@ def _salvage_trace(
     return trace, metrics
 
 
-def _holdout_asset_after(
+def _local_asset_after(
     manifest: PublicPartitionManifest,
     config: PublicEvaluationConfig,
     game_id: str,
 ) -> dict[str, object] | None:
-    if config.partition != "public-holdout":
+    if config.surface == "online-public":
         return None
     entry = next(
         (item for item in manifest.games(config.partition) if item.game_id == game_id), None
@@ -314,9 +371,83 @@ def _holdout_asset_after(
     return identity.to_dict() if identity is not None else None
 
 
+def _worker_asset_after(spec: dict[str, Any]) -> dict[str, object] | None:
+    """Hash the selected local asset without inspecting its semantic source."""
+
+    specification = cast(dict[str, object], spec["specification"])
+    if specification.get("surface") == "online-public":
+        return None
+    game_id = str(specification["game_id"])
+    stable_name = str(specification["stable_name"])
+    entry = PublicGameEntry(
+        game_id=game_id,
+        stable_name=stable_name,
+        assignment_hash="worker-content-identity-only",
+        partition=str(specification["partition"]),
+        exposure="worker-content-identity-only",
+    )
+    identity = local_asset_identity(str(spec["environments_dir"]), entry)
+    if identity is None:
+        raise EvaluationError("local asset identity is unavailable after the run boundary")
+    return identity.to_dict()
+
+
+class _OfflineSocketGuard:
+    """Count and deny process-local socket entry points during local evaluation."""
+
+    def __init__(self, *, enabled: bool) -> None:
+        self.enabled = enabled
+        self.attempt_count = 0
+        self._originals: dict[tuple[object, str], object] = {}
+
+    def install(self) -> None:
+        if not self.enabled or self._originals:
+            return
+
+        def deny(*_args: object, **_kwargs: object) -> Any:
+            self.attempt_count += 1
+            raise EvaluationError("offline local evaluation blocked a network attempt")
+
+        try:
+            for owner, name in (
+                (socket, "create_connection"),
+                (socket, "getaddrinfo"),
+                (socket.socket, "connect"),
+                (socket.socket, "connect_ex"),
+                (socket.socket, "sendto"),
+            ):
+                self._originals[(owner, name)] = getattr(owner, name)
+                setattr(owner, name, deny)
+        except Exception:
+            self.restore()
+            raise
+
+    def restore(self) -> None:
+        for (owner, name), original in self._originals.items():
+            setattr(owner, name, original)
+        self._originals.clear()
+
+
 def _worker(spec: dict[str, Any], receipt_path: str) -> None:
+    specification = cast(dict[str, object], spec["specification"])
+    network_guard = _OfflineSocketGuard(enabled=specification.get("surface") != "online-public")
+    network_guard.install()
+    try:
+        _worker_body(spec, receipt_path, network_guard=network_guard)
+    finally:
+        network_guard.restore()
+
+
+def _worker_body(
+    spec: dict[str, Any],
+    receipt_path: str,
+    *,
+    network_guard: _OfflineSocketGuard,
+) -> None:
     started_at = _utc_now()
     started = time.perf_counter()
+    cpu_started = time.process_time()
+    memory_before = process_memory_sample()
     specification = cast(dict[str, object], spec["specification"])
     identity = cast(dict[str, object], spec["identity"])
     run_id = str(specification["run_id"])
@@ -334,6 +465,11 @@ def _worker(spec: dict[str, Any], receipt_path: str) -> None:
     scorecard = None
     score_payload: dict[str, object] | None = None
     asset_identity_after: dict[str, object] | None = None
+    close_status = {
+        "policy_close_status": "not-opened",
+        "session_close_status": "not-opened",
+        "journal_close_status": "not-opened",
+    }
     if python_allocation_tracing:
         tracemalloc.start()
     try:
@@ -375,6 +511,8 @@ def _worker(spec: dict[str, Any], receipt_path: str) -> None:
             hot_path_profiler=hot_path_profiler,
             automatic_checkpointing=automatic_checkpointing,
         )
+        if policy.manages_trace:
+            close_status["journal_close_status"] = "policy-managed-pending"
         sink: BaselineTraceSink | None = None
         if not policy.manages_trace:
             journal = EventJournal(trace_path, run_id=run_id)
@@ -416,7 +554,15 @@ def _worker(spec: dict[str, Any], receipt_path: str) -> None:
                 )
                 with finalize_span:
                     policy.close()
+                close_status["policy_close_status"] = "closed"
+                if policy.manages_trace:
+                    close_status["journal_close_status"] = "closed-by-policy"
             except Exception as error:
+                close_status["policy_close_status"] = f"failed:{type(error).__name__}"
+                if policy.manages_trace:
+                    close_status["journal_close_status"] = (
+                        f"policy-close-failed:{type(error).__name__}"
+                    )
                 caught = caught or error
         if session is not None and scorecard is None:
             try:
@@ -427,8 +573,12 @@ def _worker(spec: dict[str, Any], receipt_path: str) -> None:
                 )
                 with finalize_span:
                     scorecard = session.close()
+                close_status["session_close_status"] = "closed"
             except Exception as error:
+                close_status["session_close_status"] = f"failed:{type(error).__name__}"
                 caught = caught or error
+        elif session is not None:
+            close_status["session_close_status"] = "closed-by-episode-runner"
         if journal is not None:
             try:
                 trace_span = (
@@ -438,7 +588,9 @@ def _worker(spec: dict[str, Any], receipt_path: str) -> None:
                 )
                 with trace_span:
                     journal.close()
+                close_status["journal_close_status"] = "closed"
             except Exception as error:
+                close_status["journal_close_status"] = f"failed:{type(error).__name__}"
                 caught = caught or error
         try:
             if trace_path.is_dir():
@@ -454,6 +606,17 @@ def _worker(spec: dict[str, Any], receipt_path: str) -> None:
                         relative_path=trace_relative,
                     )
         except (OSError, TraceError, ValueError) as error:
+            caught = caught or error
+        try:
+            asset_identity_after = _worker_asset_after(spec)
+            expected_asset_hash = specification.get("asset_aggregate_sha256_before")
+            if (
+                isinstance(expected_asset_hash, str)
+                and asset_identity_after is not None
+                and asset_identity_after.get("aggregate_sha256") != expected_asset_hash
+            ):
+                raise EvaluationError("local asset identity changed during the run")
+        except (EvaluationError, OSError) as error:
             caught = caught or error
         telemetry_span = (
             hot_path_profiler.span("profiler_telemetry")
@@ -471,17 +634,32 @@ def _worker(spec: dict[str, Any], receipt_path: str) -> None:
         metrics["python_allocation_tracing_enabled"] = python_allocation_tracing
         metrics["automatic_checkpointing_enabled"] = automatic_checkpointing
         metrics["total_wall_clock_seconds"] = time.perf_counter() - started
+        metrics["total_cpu_seconds"] = time.process_time() - cpu_started
+        memory_after = process_memory_sample()
+        metrics["process_memory_before"] = memory_before
+        metrics["process_memory_after"] = memory_after
+        metrics["peak_rss_bytes"] = memory_after.get("peak_rss_bytes")
+        metrics["network_attempt_count"] = (
+            network_guard.attempt_count if network_guard.enabled else None
+        )
+        metrics.update(close_status)
         if hot_path_profiler is not None:
             metrics["hot_path_profile"] = hot_path_profiler.summary()
         if trace is not None:
             counts_value = trace.get("event_type_counts")
             counts = counts_value if isinstance(counts_value, dict) else {}
-            metrics["fault_count"] = int(counts.get("run.environment_fault", 0))
+            metrics["environment_actions"] = _as_int(
+                trace["environment_action_count"], field="environment_action_count"
+            )
+            metrics["resets"] = _as_int(trace["reset_count"], field="reset_count")
+            metrics["fault_count"] = max(
+                int(counts.get("run.environment_fault", 0)), int(caught is not None)
+            )
             consequences = int(cast(int, trace["consequence_count"]))
             metrics["trace_bytes_per_action"] = (
                 int(cast(int, trace["byte_length"])) / consequences if consequences else None
             )
-        if scorecard is not None and caught is None:
+        if scorecard is not None:
             try:
                 expected_surface = (
                     EvaluationSurface.ONLINE_PUBLIC
@@ -494,7 +672,9 @@ def _worker(spec: dict[str, Any], receipt_path: str) -> None:
                     expected_surface=expected_surface,
                 )
             except EvaluationError as error:
-                caught = error
+                caught = caught or error
+        if caught is not None:
+            metrics["fault_count"] = max(1, int(cast(int, metrics["fault_count"])))
     if caught is not None or scorecard is None or score_payload is None:
         result = _failure_result(
             specification,
@@ -510,6 +690,7 @@ def _worker(spec: dict[str, Any], receipt_path: str) -> None:
             metrics=metrics,
             trace=trace,
             asset_identity_after=asset_identity_after,
+            recovered_score=score_payload,
         )
     else:
         result = seal_object(
@@ -534,11 +715,12 @@ def _worker(spec: dict[str, Any], receipt_path: str) -> None:
                 "metrics": metrics,
                 "trace": trace,
                 "asset_identity_after": asset_identity_after,
+                "asset_identity_check": _asset_identity_check(specification, asset_identity_after),
                 "environment_transport": specification["network_mode"],
                 "asset_identity_after_reason": (
                     "official ONLINE mode evaluates remotely and does not download game source"
                     if specification["surface"] == "online-public"
-                    else "asset identity is frozen in the evaluation manifest"
+                    else "local asset bytes were rehashed after the terminal boundary"
                 ),
                 "failure": None,
             },
@@ -573,6 +755,14 @@ def _receipt_valid(
     metrics = receipt.get("metrics")
     if not isinstance(score, dict) or not isinstance(metrics, dict):
         return False
+    score_verified = score.get("verified")
+    if not isinstance(score_verified, bool):
+        return False
+    if score_verified:
+        if score.get("official_run_game_id") != specification.get("game_id"):
+            return False
+    elif score.get("official_run_game_id") is not None:
+        return False
     for field, metric_field in (
         ("python_allocation_tracing", "python_allocation_tracing_enabled"),
         ("automatic_checkpointing", "automatic_checkpointing_enabled"),
@@ -580,6 +770,94 @@ def _receipt_valid(
         if field in specification and (
             receipt.get(field) != specification[field]
             or metrics.get(metric_field) != specification[field]
+        ):
+            return False
+    asset_identity_after = receipt.get("asset_identity_after")
+    if "asset_aggregate_sha256_before" in specification:
+        if specification.get("surface") == "online-public":
+            if asset_identity_after is not None:
+                return False
+        elif asset_identity_after is not None and (
+            not isinstance(asset_identity_after, dict)
+            or asset_identity_after.get("game_id") != specification.get("game_id")
+            or not isinstance(asset_identity_after.get("aggregate_sha256"), str)
+            or not isinstance(asset_identity_after.get("files"), list)
+            or asset_identity_after.get("source_semantically_inspected") is not False
+        ):
+            return False
+        expected_asset_check = _asset_identity_check(
+            specification,
+            cast(dict[str, object] | None, asset_identity_after),
+        )
+        if receipt.get("asset_identity_check") != expected_asset_check:
+            return False
+        acceptable_success_statuses = (
+            {"not-applicable"}
+            if specification.get("surface") == "online-public"
+            else {"matched", "recorded-uncompared"}
+        )
+        if status == "success" and expected_asset_check["status"] not in (
+            acceptable_success_statuses
+        ):
+            return False
+        required_metric_fields = {
+            "total_cpu_seconds",
+            "process_memory_before",
+            "process_memory_after",
+            "peak_rss_bytes",
+            "network_attempt_count",
+            "policy_close_status",
+            "session_close_status",
+            "journal_close_status",
+        }
+        if not required_metric_fields.issubset(metrics):
+            return False
+        cpu_seconds = metrics.get("total_cpu_seconds")
+        if cpu_seconds is not None and (
+            isinstance(cpu_seconds, bool)
+            or not isinstance(cpu_seconds, (int, float))
+            or cpu_seconds < 0
+        ):
+            return False
+        memory_before = metrics.get("process_memory_before")
+        memory_after = metrics.get("process_memory_after")
+        if memory_before is not None and not _process_memory_sample_valid(memory_before):
+            return False
+        if memory_after is not None and not _process_memory_sample_valid(memory_after):
+            return False
+        peak_rss = metrics.get("peak_rss_bytes")
+        if peak_rss is not None and (
+            isinstance(peak_rss, bool) or not isinstance(peak_rss, int) or peak_rss < 0
+        ):
+            return False
+        network_attempts = metrics.get("network_attempt_count")
+        if specification.get("surface") == "online-public":
+            if network_attempts is not None:
+                return False
+        elif network_attempts is not None and (
+            isinstance(network_attempts, bool)
+            or not isinstance(network_attempts, int)
+            or network_attempts < 0
+        ):
+            return False
+        close_fields = (
+            metrics.get("policy_close_status"),
+            metrics.get("session_close_status"),
+            metrics.get("journal_close_status"),
+        )
+        if any(not isinstance(item, str) or not item for item in close_fields):
+            return False
+        expected_success_network_attempts = (
+            None if specification.get("surface") == "online-public" else 0
+        )
+        if status == "success" and (
+            cpu_seconds is None
+            or memory_before is None
+            or memory_after is None
+            or network_attempts != expected_success_network_attempts
+            or metrics.get("policy_close_status") != "closed"
+            or metrics.get("session_close_status") != "closed-by-episode-runner"
+            or metrics.get("journal_close_status") not in {"closed", "closed-by-policy"}
         ):
             return False
     if not _hot_path_profile_valid(
@@ -606,6 +884,20 @@ def _receipt_valid(
         and verify_object_hash(receipt, hash_field="receipt_hash")
         and receipt.get("identity_hash") == identity_hash
         and receipt.get("surface") == specification.get("surface")
+    )
+
+
+def _process_memory_sample_valid(value: object) -> bool:
+    if not isinstance(value, dict):
+        return False
+    for field in ("current_rss_bytes", "peak_rss_bytes"):
+        item = value.get(field)
+        if item is not None and (isinstance(item, bool) or not isinstance(item, int) or item < 0):
+            return False
+    return bool(
+        isinstance(value.get("measurement_source"), str)
+        and value.get("measurement_source")
+        and (value.get("reason") is None or isinstance(value.get("reason"), str))
     )
 
 
@@ -1349,7 +1641,7 @@ def run_public_evaluation(config: PublicEvaluationConfig) -> EvaluationOutcome:
                 status="interrupted",
                 kind="holdout_run_already_opened",
                 message="holdout run had an exposure receipt but no valid terminal run receipt",
-                asset_identity_after=_holdout_asset_after(
+                asset_identity_after=_local_asset_after(
                     manifest, config, str(specification["game_id"])
                 ),
             )
@@ -1437,7 +1729,7 @@ def run_public_evaluation(config: PublicEvaluationConfig) -> EvaluationOutcome:
                     message=f"worker exceeded {config.timeout_seconds} seconds",
                     metrics=metrics,
                     trace=trace,
-                    asset_identity_after=_holdout_asset_after(
+                    asset_identity_after=_local_asset_after(
                         manifest, config, str(specification["game_id"])
                     ),
                 )
@@ -1458,7 +1750,7 @@ def run_public_evaluation(config: PublicEvaluationConfig) -> EvaluationOutcome:
                     message=f"isolated worker exited with code {process.exitcode}",
                     metrics=metrics,
                     trace=trace,
-                    asset_identity_after=_holdout_asset_after(
+                    asset_identity_after=_local_asset_after(
                         manifest, config, str(specification["game_id"])
                     ),
                 )
@@ -1474,7 +1766,7 @@ def run_public_evaluation(config: PublicEvaluationConfig) -> EvaluationOutcome:
                 kind="process_start_failed",
                 message=f"{type(error).__name__}: {error}",
                 metrics=metrics,
-                asset_identity_after=_holdout_asset_after(
+                asset_identity_after=_local_asset_after(
                     manifest, config, str(specification["game_id"])
                 ),
             )
@@ -1497,7 +1789,7 @@ def run_public_evaluation(config: PublicEvaluationConfig) -> EvaluationOutcome:
                 message="worker receipt could not be loaded",
                 metrics=metrics,
                 trace=trace,
-                asset_identity_after=_holdout_asset_after(
+                asset_identity_after=_local_asset_after(
                     manifest, config, str(specification["game_id"])
                 ),
             )
@@ -1519,7 +1811,7 @@ def run_public_evaluation(config: PublicEvaluationConfig) -> EvaluationOutcome:
                 message="worker receipt failed its hash or frozen run identity",
                 metrics=metrics,
                 trace=trace,
-                asset_identity_after=_holdout_asset_after(
+                asset_identity_after=_local_asset_after(
                     manifest, config, str(specification["game_id"])
                 ),
             )

@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 import json
+import socket
+from collections.abc import Mapping
+from copy import deepcopy
 from dataclasses import replace
 from pathlib import Path
 from typing import Any, cast
@@ -10,7 +13,13 @@ from typing import Any, cast
 import pytest
 from scripts.evaluate_public import build_parser
 
-from arc3.adapters import EnvironmentDescriptor
+from arc3.adapters import (
+    EnvironmentDescriptor,
+    GridFrame,
+    Observation,
+    ScoreRunSummary,
+    ScoreSummary,
+)
 from arc3.competition_runtime import FROZEN_COMPETITION_RUNTIME
 from arc3.errors import EvaluationError
 from arc3.evaluation.artifacts import (
@@ -27,6 +36,7 @@ from arc3.evaluation.public import (
     PUBLIC_RUN_SCHEMA,
     PublicEvaluationConfig,
     PublicExposureLedger,
+    PublicGameEntry,
     PublicPartitionManifest,
     _run_context,
     local_asset_identity,
@@ -35,14 +45,26 @@ from arc3.evaluation.public import (
 )
 from arc3.evaluation.public_runner import (
     _aggregate,
+    _asset_identity_check,
+    _failure_result,
     _hot_path_profile_valid,
+    _OfflineSocketGuard,
     _receipt_valid,
     _reproduction_argv,
+    _worker,
     verify_public_evaluation,
 )
 from arc3.policy import ControllerPreset, RunContext, preset_features
 from arc3.profiling.hot_path import HotPathProfiler
-from arc3.types import GameId
+from arc3.trace import BaselineTraceSink, CodeIdentity, EventJournal, SourceIdentity
+from arc3.types import (
+    ActionName,
+    ActionRequest,
+    EvaluationSurface,
+    GameId,
+    GameStateName,
+    JSONValue,
+)
 
 ROOT = Path(__file__).resolve().parents[2]
 MANIFEST = ROOT / "docs" / "evaluation" / "public-game-partitions.v0.1.json"
@@ -455,6 +477,38 @@ def _minimal_run(specification: dict[str, object], identity_hash: str) -> dict[s
         if field in specification:
             diagnostics[field] = specification[field]
             metrics[metric_field] = specification[field]
+    if "asset_aggregate_sha256_before" in specification:
+        memory_sample: dict[str, object] = {
+            "current_rss_bytes": 1,
+            "peak_rss_bytes": 2,
+            "measurement_source": "fixture-kernel-rss",
+            "reason": None,
+        }
+        metrics.update(
+            {
+                "total_cpu_seconds": 0.01,
+                "process_memory_before": memory_sample,
+                "process_memory_after": memory_sample,
+                "peak_rss_bytes": 2,
+                "network_attempt_count": (
+                    None if specification["surface"] == "online-public" else 0
+                ),
+                "policy_close_status": "closed",
+                "session_close_status": "closed-by-episode-runner",
+                "journal_close_status": "closed-by-policy",
+            }
+        )
+    expected_asset_hash = specification.get("asset_aggregate_sha256_before")
+    asset_identity_after = (
+        {
+            "game_id": specification["game_id"],
+            "files": [],
+            "aggregate_sha256": expected_asset_hash,
+            "source_semantically_inspected": False,
+        }
+        if isinstance(expected_asset_hash, str)
+        else None
+    )
     return seal_object(
         {
             "schema": PUBLIC_RUN_SCHEMA,
@@ -462,11 +516,11 @@ def _minimal_run(specification: dict[str, object], identity_hash: str) -> dict[s
             "run_id": specification["run_id"],
             "run_spec_hash": specification["run_spec_hash"],
             "game_id": specification["game_id"],
-            "baseline_id": "B1",
-            "agent": "cycle",
-            "seed": 7,
+            "baseline_id": specification["baseline_id"],
+            "agent": specification["agent"],
+            "seed": specification["seed"],
             "surface": specification["surface"],
-            "partition": "smoke",
+            "partition": specification["partition"],
             **diagnostics,
             "status": "success",
             "identity_hash": identity_hash,
@@ -479,7 +533,12 @@ def _minimal_run(specification: dict[str, object], identity_hash: str) -> dict[s
             },
             "metrics": metrics,
             "trace": {"replay_verified": True},
-            "asset_identity_after": None,
+            "asset_identity_after": asset_identity_after,
+            **(
+                {"asset_identity_check": _asset_identity_check(specification, asset_identity_after)}
+                if "asset_aggregate_sha256_before" in specification
+                else {}
+            ),
             "environment_transport": specification["network_mode"],
             "failure": None,
         },
@@ -529,6 +588,421 @@ def test_stage03_diagnostic_switches_are_bound_into_receipts(
     mismatched["metrics"] = mismatched_metrics
     resealed = seal_object(mismatched, hash_field="receipt_hash")
     assert not _receipt_valid(resealed, specification, identity_hash)
+
+
+def test_local_success_receipt_binds_post_run_asset_identity() -> None:
+    identity_hash = "sha256:" + "1" * 64
+    asset_hash = "sha256:" + "2" * 64
+    specification: dict[str, object] = {
+        "evaluation_id": "asset-boundary-fixture",
+        "run_id": "fixture-B4-full-seed-7",
+        "game_id": "fixture-v1",
+        "stable_name": "fixture",
+        "partition": "development",
+        "surface": "local-public",
+        "network_mode": "offline-evaluation",
+        "baseline_id": "B1",
+        "agent": "cycle",
+        "seed": 7,
+        "identity_hash": identity_hash,
+        "hot_path_profile": False,
+        "asset_aggregate_sha256_before": asset_hash,
+    }
+    specification["run_spec_hash"] = seal_object(specification, hash_field="run_spec_hash")[
+        "run_spec_hash"
+    ]
+    receipt = _minimal_run(specification, identity_hash)
+
+    assert _receipt_valid(receipt, specification, identity_hash)
+
+    missing_resource = deepcopy(receipt)
+    missing_resource.pop("receipt_hash")
+    cast(dict[str, object], missing_resource["metrics"]).pop("total_cpu_seconds")
+    assert not _receipt_valid(
+        seal_object(missing_resource, hash_field="receipt_hash"),
+        specification,
+        identity_hash,
+    )
+
+    mismatched = dict(receipt)
+    mismatched.pop("receipt_hash")
+    mismatched["asset_identity_after"] = {
+        "game_id": "fixture-v1",
+        "files": [],
+        "aggregate_sha256": "sha256:" + "3" * 64,
+        "source_semantically_inspected": False,
+    }
+    assert not _receipt_valid(
+        seal_object(mismatched, hash_field="receipt_hash"),
+        specification,
+        identity_hash,
+    )
+
+    changed_failure = deepcopy(mismatched)
+    changed_failure["status"] = "failure"
+    changed_failure["failure"] = {
+        "kind": "EvaluationError",
+        "message": "local asset identity changed during the run",
+    }
+    changed_failure["asset_identity_check"] = _asset_identity_check(
+        specification,
+        cast(dict[str, object], changed_failure["asset_identity_after"]),
+    )
+    changed_failure = seal_object(changed_failure, hash_field="receipt_hash")
+    assert _receipt_valid(changed_failure, specification, identity_hash)
+    assert changed_failure["asset_identity_check"]["status"] == "changed"
+    assert changed_failure["asset_identity_check"]["integrity_failure"] is True
+
+    wrong_score = deepcopy(changed_failure)
+    wrong_score.pop("receipt_hash")
+    cast(dict[str, object], wrong_score["score"])["official_run_game_id"] = "wrong-v1"
+    assert not _receipt_valid(
+        seal_object(wrong_score, hash_field="receipt_hash"),
+        specification,
+        identity_hash,
+    )
+
+
+def test_asset_boundary_accepts_recorded_uncompared_and_rejects_online_assets() -> None:
+    identity_hash = "sha256:" + "1" * 64
+    base: dict[str, object] = {
+        "evaluation_id": "uncompared-asset-fixture",
+        "run_id": "fixture-B1-cycle-seed-7",
+        "game_id": "fixture-v1",
+        "stable_name": "fixture",
+        "partition": "development",
+        "surface": "local-public",
+        "network_mode": "offline-evaluation",
+        "baseline_id": "B1",
+        "agent": "cycle",
+        "seed": 7,
+        "identity_hash": identity_hash,
+        "hot_path_profile": False,
+        "asset_aggregate_sha256_before": None,
+    }
+    base["run_spec_hash"] = seal_object(base, hash_field="run_spec_hash")["run_spec_hash"]
+    local = _minimal_run(base, identity_hash)
+    local.pop("receipt_hash")
+    local_asset: dict[str, object] = {
+        "game_id": "fixture-v1",
+        "files": [],
+        "aggregate_sha256": "sha256:" + "7" * 64,
+        "source_semantically_inspected": False,
+    }
+    local["asset_identity_after"] = local_asset
+    local["asset_identity_check"] = _asset_identity_check(base, local_asset)
+    assert _receipt_valid(
+        seal_object(local, hash_field="receipt_hash"),
+        base,
+        identity_hash,
+    )
+
+    missing = deepcopy(local)
+    missing["asset_identity_after"] = None
+    missing["asset_identity_check"] = _asset_identity_check(base, None)
+    assert not _receipt_valid(
+        seal_object(missing, hash_field="receipt_hash"),
+        base,
+        identity_hash,
+    )
+
+    online_specification = dict(base)
+    online_specification.update(
+        {
+            "surface": "online-public",
+            "network_mode": "official-online-one-shot",
+        }
+    )
+    online_specification["run_spec_hash"] = seal_object(
+        online_specification, hash_field="run_spec_hash"
+    )["run_spec_hash"]
+    online = _minimal_run(online_specification, identity_hash)
+    online.pop("receipt_hash")
+    online["asset_identity_after"] = local_asset
+    online["asset_identity_check"] = _asset_identity_check(online_specification, local_asset)
+    assert not _receipt_valid(
+        seal_object(online, hash_field="receipt_hash"),
+        online_specification,
+        identity_hash,
+    )
+
+
+def test_failure_receipt_preserves_a_recovered_official_score() -> None:
+    identity_hash = "sha256:" + "1" * 64
+    specification: dict[str, object] = {
+        "evaluation_id": "terminal-failure-fixture",
+        "run_id": "fixture-B4-full-seed-7",
+        "run_spec_hash": "sha256:" + "2" * 64,
+        "game_id": "fixture-v1",
+        "baseline_id": "B4",
+        "agent": "full",
+        "seed": 7,
+        "partition": "development",
+        "surface": "local-public",
+        "network_mode": "offline-evaluation",
+    }
+    identity: dict[str, object] = {"identity_hash": identity_hash}
+    recovered_score: dict[str, object] = {
+        "verified": True,
+        "official_run_game_id": "fixture-v1",
+        "score": 1.0,
+        "levels_completed": 1,
+        "completed": True,
+    }
+
+    receipt = _failure_result(
+        specification,
+        identity,
+        started_at="2026-08-22T00:00:00Z",
+        status="failure",
+        kind="PolicyError",
+        message="derived processing failed after the returned consequence",
+        recovered_score=recovered_score,
+    )
+
+    assert receipt["status"] == "failure"
+    assert receipt["score"] == recovered_score
+    assert receipt["failure"]["kind"] == "PolicyError"
+
+
+def test_worker_seals_trace_score_resources_asset_and_close_after_policy_fault(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    game_id = "fixture-v1"
+    trace_path = tmp_path / "trace"
+    checkpoint_path = tmp_path / "checkpoint"
+    environments_dir = tmp_path / "environments"
+    asset_dir = environments_dir / "fixture" / "v1"
+    asset_dir.mkdir(parents=True)
+    (asset_dir / "metadata.json").write_text("{}\n", encoding="utf-8")
+    asset = local_asset_identity(
+        environments_dir,
+        PublicGameEntry(
+            game_id=game_id,
+            stable_name="fixture",
+            assignment_hash="fixture-assignment",
+            partition="development",
+            exposure="fixture-only",
+        ),
+    )
+    assert asset is not None
+
+    def observation(
+        value: int,
+        *,
+        state: GameStateName,
+        levels: int,
+        returned: ActionRequest | None = None,
+    ) -> Observation:
+        return Observation(
+            game_id=GameId(game_id),
+            frames=(GridFrame(((value, 0), (0, 0))),),
+            state=state,
+            levels_completed=levels,
+            win_levels=1,
+            available_actions=(ActionName.ACTION1,),
+            returned_action=returned,
+        )
+
+    class FaultSession:
+        def __init__(self) -> None:
+            self._observation = observation(
+                1,
+                state=GameStateName.NOT_FINISHED,
+                levels=0,
+            )
+            self.close_count = 0
+
+        @property
+        def observation(self) -> Observation:
+            return self._observation
+
+        def step(
+            self,
+            action: ActionRequest,
+            *,
+            reasoning: Mapping[str, JSONValue] | None = None,
+        ) -> Observation:
+            assert reasoning is not None
+            self._observation = observation(
+                2,
+                state=GameStateName.WIN,
+                levels=1,
+                returned=action,
+            )
+            return self._observation
+
+        def close(self) -> ScoreSummary:
+            self.close_count += 1
+            return ScoreSummary(
+                surface=EvaluationSurface.LOCAL_PUBLIC,
+                verified=True,
+                scorer="fault-injection-local-scorecard",
+                score=1.0,
+                runs=(
+                    ScoreRunSummary(
+                        game_id=GameId(game_id),
+                        score=1.0,
+                        levels_completed=1,
+                        actions=1,
+                        resets=0,
+                        state=GameStateName.WIN,
+                        completed=True,
+                        level_scores=(1.0,),
+                        level_actions=(1,),
+                        level_baseline_actions=(1,),
+                    ),
+                ),
+            )
+
+    class FaultPolicy:
+        manages_trace = True
+
+        def __init__(self) -> None:
+            self.journal = EventJournal(trace_path, run_id="fault-run")
+            self.sink = BaselineTraceSink(
+                journal=self.journal,
+                episode_id="episode:fault-run",
+                source=SourceIdentity("fault_fixture", "1"),
+                code_identity=CodeIdentity(
+                    "fixture-commit",
+                    "sha256:" + "4" * 64,
+                ),
+            )
+            self.before: Observation | None = None
+            self.action: ActionRequest | None = None
+            self.closed = False
+
+        def select(self, current: Observation) -> ActionRequest:
+            self.before = current
+            self.action = ActionRequest(ActionName.ACTION1)
+            self.sink.record_observation(current)
+            self.sink.record_candidates(current)
+            self.sink.record_selected(current, self.action)
+            self.sink.record_submitted(current, self.action)
+            return self.action
+
+        def accept_consequence(self, returned: Observation) -> None:
+            assert self.before is not None
+            assert self.action is not None
+            self.sink.record_consequence(self.before, self.action, returned)
+            self.sink.record_observation(returned)
+            self.journal.flush()
+            raise RuntimeError("injected post-action policy fault")
+
+        def close(self) -> None:
+            self.closed = True
+            self.journal.close()
+
+    session = FaultSession()
+    policy = FaultPolicy()
+
+    class Adapter:
+        def __init__(self, *_args: object, **_kwargs: object) -> None:
+            pass
+
+        def open(self, selected_game_id: str, *, seed: int) -> FaultSession:
+            assert selected_game_id == game_id
+            assert seed == 7
+            return session
+
+    monkeypatch.setattr("arc3.evaluation.public_runner.ArcAGIAdapter", Adapter)
+    monkeypatch.setattr(
+        "arc3.evaluation.public_runner.make_evaluation_policy",
+        lambda *_args, **_kwargs: policy,
+    )
+
+    identity_hash = "sha256:" + "5" * 64
+    specification: dict[str, object] = {
+        "evaluation_id": "worker-fault-fixture",
+        "run_id": "fault-run",
+        "game_id": game_id,
+        "stable_name": "fixture",
+        "baseline_id": "B4",
+        "agent": "full",
+        "seed": 7,
+        "partition": "development",
+        "surface": "local-public",
+        "network_mode": "offline-evaluation",
+        "identity_hash": identity_hash,
+        "hot_path_profile": False,
+        "python_allocation_tracing": False,
+        "automatic_checkpointing": True,
+        "max_actions": 8,
+        "max_resets": 1,
+        "asset_aggregate_sha256_before": asset.aggregate_sha256,
+    }
+    specification["run_spec_hash"] = seal_object(specification, hash_field="run_spec_hash")[
+        "run_spec_hash"
+    ]
+    identity: dict[str, object] = {
+        "git_commit": "fixture-commit",
+        "config_hash": "sha256:" + "4" * 64,
+        "first_party_source_hash": "sha256:" + "6" * 64,
+        "identity_hash": identity_hash,
+    }
+    receipt_path = tmp_path / "receipt.json"
+    _worker(
+        {
+            "identity": identity,
+            "specification": specification,
+            "trace_path": str(trace_path),
+            "trace_relative": "t/fault-run",
+            "checkpoint_path": str(checkpoint_path),
+            "environments_dir": str(environments_dir),
+            "recordings_dir": str(tmp_path / "recordings"),
+            "timeout_seconds": 30.0,
+            "max_actions": 8,
+            "max_resets": 1,
+            "seed": 7,
+            "run_id": "fault-run",
+            "game_id": game_id,
+            "git_commit": "fixture-commit",
+        },
+        str(receipt_path),
+    )
+    receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+
+    assert receipt["status"] == "failure"
+    assert receipt["failure"]["kind"] == "RuntimeError"
+    assert receipt["score"]["verified"] is True
+    assert receipt["score"]["official_run_actions"] == 1
+    assert receipt["metrics"]["environment_actions"] == 1
+    assert receipt["metrics"]["resets"] == 0
+    assert receipt["metrics"]["fault_count"] == 1
+    assert receipt["metrics"]["total_cpu_seconds"] >= 0.0
+    assert receipt["metrics"]["process_memory_before"]["measurement_source"]
+    assert receipt["metrics"]["process_memory_after"]["measurement_source"]
+    assert receipt["metrics"]["network_attempt_count"] == 0
+    assert receipt["metrics"]["policy_close_status"] == "closed"
+    assert receipt["metrics"]["session_close_status"] == "closed"
+    assert receipt["metrics"]["journal_close_status"] == "closed-by-policy"
+    assert receipt["trace"]["submitted_action_count"] == 1
+    assert receipt["trace"]["consequence_count"] == 1
+    assert receipt["trace"]["tail_event_hash"].startswith("sha256:")
+    assert receipt["trace"]["replay_verified"] is True
+    assert receipt["asset_identity_after"]["aggregate_sha256"] == asset.aggregate_sha256
+    assert policy.closed is True
+    assert session.close_count == 1
+    assert _receipt_valid(receipt, specification, identity_hash)
+
+
+def test_local_worker_socket_guard_counts_denial_and_restores_entry_points() -> None:
+    original_create_connection = socket.create_connection
+    original_connect = socket.socket.connect
+    guard = _OfflineSocketGuard(enabled=True)
+
+    guard.install()
+    try:
+        with pytest.raises(EvaluationError, match="blocked a network attempt"):
+            socket.create_connection(("203.0.113.1", 9))
+        assert guard.attempt_count == 1
+    finally:
+        guard.restore()
+
+    assert socket.create_connection is original_create_connection
+    assert socket.socket.connect is original_connect
 
 
 def test_public_artifact_verifier_detects_mutation(tmp_path: Path) -> None:
