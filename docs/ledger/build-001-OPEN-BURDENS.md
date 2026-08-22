@@ -869,3 +869,93 @@ does not erase earlier uncertainty or failed mechanisms.
   evaluation reverified with 56 artifacts, one run, and zero errors.
 - Compatibility boundary: new failed-only policy means are JSON null rather than numeric zero.
   Consumers must branch on summary schema v0.2; built-in verification accepts v0.1 and v0.2.
+
+---
+
+## 2026-08-22 Stage 08 integration updates
+
+### B-001-0002 — Palette and action equivariance failures
+
+- Status update: RESOLVED for the declared Build 001 mechanisms.
+- Current evidence: Stage 04 passed 256/256 palette pairs and 16/16 palette checkpoint pairs.
+  Stage 05 passed 128/128 action-remap pairs, 528/528 post-calibration inverse requests, 64/64
+  causal controls, and 16/16 checkpoint pairs. The historical Build 000 failures remain preserved.
+- Resolution receipt: `docs/evidence/001-04-palette-equivariance.json` and
+  `docs/evidence/001-05-action-equivariance.json`.
+
+### B-001-0003 — Rule-change exposure is incomplete
+
+- Status update: RESOLVED_FOR_EXPOSURE; the attempted mechanism remains failed.
+- Current evidence: Stage 06 guaranteed the intervention and exercised 32/32 action-effect rotation
+  and 32/32 traversability-flip cases plus 32/32 stationary-noise controls. Action-effect rotation
+  passed, while traversability recognition and the declared noise classification gate each failed;
+  Stage 06 is honestly `FAILED_MECHANISM`.
+- Remaining burden: the mechanism failures remain under B-001-0022, B-001-0023, and B-001-0024.
+- Resolution receipt: `docs/evidence/001-06-rule-change-reopening.json`.
+
+### B-001-0004 — Retrodiction evidence conflicts
+
+- Status update: RESOLVED_AS_KEEP_FULL_FOR_BUILD_001.
+- Current evidence: the unique frozen Stage 07 attempt ended `FAILED_INFRASTRUCTURE` after 279/280
+  cells, zero microbenchmarks, and nine local-public mechanics-capacity faults. No replacement gate
+  was eligible to run, so production correctly retained FULL. The partial evidence does not resolve
+  the scientific benefit/cost conflict and cannot be promoted into a replacement claim.
+- Resolution receipt: `docs/evidence/001-07-retrodiction-decision.json` and
+  `docs/evidence/001-07-failed-infrastructure-attempt-01.json`.
+
+### B-001-0009 — Explicit short pytest parent recurred once
+
+- Status update: RESOLVED recurrence.
+- Current evidence: the first three-test Stage 08 command returned three setup errors because
+  `C:\a\arc3-b001-28c7a00\t` did not exist. Creating only that declared parent and rerunning the
+  unchanged tests produced the expected code-level results; the final 19-test and 76-test suites
+  both passed under explicit short base-temp roots.
+- Resolution receipt: commit `df0cf75c63c37a784f6ca2df8b87e24d6404a6cb` records the verified
+  source; the setup error is infrastructure evidence and makes no policy claim.
+
+### B-001-0014 — Redundant prediction and state hashing lack an end-to-end repair receipt
+
+- Status update: NARROWED; implementation parity passes, measured end-to-end savings remain open.
+- Current evidence: Stage 08 now has a bounded evidence/configuration-keyed prediction cache,
+  typed cache telemetry, reopening invalidation, exact restore validation, and no-cache parity
+  coverage. The 19-test lifecycle suite and 76-test focused suite pass at `df0cf75`.
+- Next discriminating action: run the frozen 20-cell A/B/C/D harness and evaluate the predeclared
+  paired timing/materiality gates without changing the cache or cadence after observing results.
+- Resolution receipt: none until the Stage 08 acceptance artifact is sealed.
+
+### B-001-0042 — Every attempted Stage 07 local-public mode exceeded the mechanics epoch bound
+
+- Status update: NARROWED by a generic capacity repair; public resolution remains open.
+- Current evidence: mechanics transition capacity now derives from the config-hashed environment
+  action budget and restores exactly. Focused lifecycle/controller/retrodiction/replay verification
+  passed at commit `5d1a67840bf75a939e25832d8300fa9c835c0e1d`. No Stage 07 artifact was
+  rewritten and no new local-public run has yet established that the repaired controller completes.
+- Next discriminating action: the frozen Stage 08 public cells and Stage 09 development suite must
+  exercise the unchanged generic repair inside their declared action and wall budgets.
+- Resolution receipt: none; the nine Stage 07 failures remain immutable.
+
+## B-001-0045 — Legacy cadence migration cannot honestly cross source identity
+
+- Status: OPEN_IN_REPAIR
+- Stage: 08
+- Opened: 2026-08-22
+- Burden: a cadence-less checkpoint generated at commit
+  `df961c7acd67cbe382e5a56a44d6e1358c61278d` cannot enter the intended migration branch when
+  restored under the honest current source identity. Forcing the legacy commit into `RunContext`
+  makes compatibility restore succeed but falsely stamps newly emitted cadence receipts with the
+  old source identity.
+- Why it matters: accepting the compatibility-only path would make a successful restart receipt
+  misrepresent the source that actually produced it. Relaxing ordinary commitment validation would
+  also weaken checkpoint authority.
+- Current evidence: pristine 13-event legacy trace SHA-256
+  `b3878c197f25693ab64893a1c2a774dba89264cde8c63d719ca3b94fe33e8aca`; checkpoint file SHA-256
+  `f0eb87b174443acb9c805c0e3c4ca4b8c52c65a689769fb9c2c8d462bc67597f`; envelope hash
+  `7e96ceddd19c4d078b8a172a45e02987e7bfc3f43107b03ed54cc8308bb654d7`. Honest current restore
+  fails with `checkpoint commitment receipt is not exactly bound to its prior trace tail`.
+- Next discriminating action: add an explicit dual-identity migration API that validates the old
+  artifact under an exact caller-supplied legacy identity, rejects cadence-bearing or wrong-identity
+  inputs, and emits one activation plus all subsequent commitments under current identity.
+- Resolution condition: pristine legacy bytes remain unchanged; pending action and exact replay are
+  preserved without resubmission; wrong/missing legacy identity fails; activation occurs once under
+  current source; and later checkpoint/continuation receipts validate under current identity.
+- Resolution receipt: none.

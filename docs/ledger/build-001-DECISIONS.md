@@ -599,3 +599,26 @@ independent authorities.
 - Reopening condition: the harness can omit a declared cell or counter without failing closed,
   unavailable Build 000 work is coerced to zero, a failed score enters successful metrics, or the
   executable matrix differs from the frozen predeclaration.
+
+## D-001-0033 — Bind two-speed policy authority to immutable cadence receipts
+
+- Recorded: 2026-08-22T21:37:59.6950190Z
+- Status: accepted
+- Decision: Integrate the frozen typed cadence as an explicit policy layer. Every action selection
+  retains observation, interpretation, hypothesis, world-model, goal, plan/probe, alternative,
+  submission, consequence, and update receipts. FAST may reuse only evidence/configuration-keyed
+  pure predictions and known plans; DEEP requires an ordered typed trigger and a terminal cadence
+  receipt. A crash may abandon only the closed allowlist of revisable derived events after the last
+  committed boundary. Action, consequence, observation, checkpoint, run, migration, and evaluation
+  receipts can never be discarded as interrupted deliberation.
+- Evidence: commit `df0cf75c63c37a784f6ca2df8b87e24d6404a6cb`, tree
+  `4eb163c09b5ac80513dfdacfdf18f318b79813c4`; 19/19 rule-change and reopening tests passed in
+  577.12 seconds; 76/76 cadence, replay, checkpoint, planning, trace-authority, and cache tests
+  passed in 151.65 seconds; Ruff check, Ruff format check, and strict mypy across nine changed
+  source modules passed.
+- Boundary: this is implementation and `synthetic` verification, not a throughput result or a
+  public-game recovery claim. The predeclared 20-cell Stage 08 measurement has not run. The
+  ten-game public holdout remains sealed and unconsumed.
+- Reopening condition: any FAST/DEEP transition cannot replay exactly; cache reuse changes an
+  environment action; a reopening leaves stale cache authority; a non-revisable receipt enters the
+  abandoned suffix; or the measured harness violates behavior, resource, or receipt parity.
