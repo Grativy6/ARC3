@@ -249,9 +249,72 @@ def test_event_triggered_reuses_only_complete_matched_source_ordered_evidence() 
     assert accepted_plan.reason is RetrodictionReason.EVENT_RECEIPT_REUSE
     assert accepted.reused
     assert accepted.artifact == retrodict(model, history)
+    assert accepted_plan.to_trace_payload()["authorizing_matched_prediction_evidence"] == [
+        _matched(suffix, model.model_id).to_dict()
+    ]
     assert missing.reason is RetrodictionReason.EVENT_FULL_AUDIT
     assert missing.full_audit and not missing.cache_hit
+    assert missing.to_trace_payload()["authorizing_matched_prediction_evidence"] == []
     assert rejected.reason is RetrodictionReason.EVENT_FULL_AUDIT
+    assert rejected.to_trace_payload()["authorizing_matched_prediction_evidence"] == []
+
+
+def test_event_triggered_payload_orders_only_authorizing_suffix_evidence() -> None:
+    runtime = RetrodictionRuntime(RetrodictionConfig(RetrodictionMode.EVENT_TRIGGERED))
+    prefix = (_transition(0), _transition(1))
+    _evaluate_and_commit(runtime, _request(prefix), receipt="E-COMPLETE-1")
+    suffix = (_transition(2), _transition(3))
+    history = (*prefix, *suffix)
+    model = _model()
+    ordered = tuple(_matched(item, model.model_id) for item in suffix)
+    unrelated_prefix_evidence = _matched(prefix[0], model.model_id)
+    request = _request(
+        history,
+        model=model,
+        evidence=(ordered[1], unrelated_prefix_evidence, ordered[0]),
+    )
+
+    plan = runtime.plan(request)
+
+    assert plan.reason is RetrodictionReason.EVENT_RECEIPT_REUSE
+    assert plan.authorizing_matched_prediction_evidence == ordered
+    assert plan.to_trace_payload()["authorizing_matched_prediction_evidence"] == [
+        item.to_dict() for item in ordered
+    ]
+    with pytest.raises(WorldModelError, match="ordered and bound"):
+        replace(plan, authorizing_matched_prediction_evidence=tuple(reversed(ordered)))
+
+    evaluation = runtime.execute(plan)
+    runtime.commit(evaluation, source_receipt_event_id="E-COMPLETE-2")
+    exact_plan = runtime.plan(request)
+    assert exact_plan.reason is RetrodictionReason.EXACT_CACHE_HIT
+    assert exact_plan.to_trace_payload()["authorizing_matched_prediction_evidence"] == []
+
+
+def test_non_event_reuse_payload_omits_supplied_matched_evidence() -> None:
+    transition = _transition(0)
+    model = _model()
+    request = _request(
+        (transition,),
+        model=model,
+        evidence=(_matched(transition, model.model_id),),
+    )
+
+    full_plan = RetrodictionRuntime(RetrodictionConfig(RetrodictionMode.FULL)).plan(request)
+    first_use_plan = RetrodictionRuntime(RetrodictionConfig(RetrodictionMode.EVENT_TRIGGERED)).plan(
+        request
+    )
+
+    assert full_plan.reason is RetrodictionReason.FULL
+    assert first_use_plan.reason is RetrodictionReason.FIRST_USE
+    for plan in (full_plan, first_use_plan):
+        assert plan.authorizing_matched_prediction_evidence == ()
+        assert plan.to_trace_payload()["authorizing_matched_prediction_evidence"] == []
+        with pytest.raises(WorldModelError, match="only event-receipt reuse"):
+            replace(
+                plan,
+                authorizing_matched_prediction_evidence=request.matched_evidence,
+            )
 
 
 def test_lru_eviction_is_access_ordinal_then_cache_key_deterministic() -> None:

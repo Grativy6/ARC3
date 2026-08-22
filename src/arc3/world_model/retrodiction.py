@@ -56,6 +56,7 @@ class TransitionOutcomeKind(StrEnum):
 
 RETRODICTION_CACHE_SCHEMA = "arc3.retrodiction-cache.v0.1"
 DEFAULT_PROJECTION_VERSION = "arc3.candidate-retrodiction.v0.1"
+EVENT_REUSE_MATCH_SCOPES = frozenset({"whole-symbolic-state", "controlled-entity-projection"})
 
 
 def _require_text(value: str, *, field: str) -> str:
@@ -665,11 +666,39 @@ class RetrodictionPlan:
     cache_hit: bool
     prefix_count: int
     suffix_count: int
+    authorizing_matched_prediction_evidence: tuple[MatchedPredictionEvidence, ...]
     prior_entry: RetrodictionCacheEntry | None
     generation: int
     complete_scope: bool
     full_audit: bool
     state_access_ordinal: int
+
+    def __post_init__(self) -> None:
+        evidence = self.authorizing_matched_prediction_evidence
+        if self.reason is not RetrodictionReason.EVENT_RECEIPT_REUSE:
+            if evidence:
+                raise WorldModelError(
+                    "only event-receipt reuse may carry authorizing matched evidence"
+                )
+            return
+        if self.mode is not RetrodictionMode.EVENT_TRIGGERED:
+            raise WorldModelError("event-receipt reuse requires EVENT_TRIGGERED mode")
+        if self.full_audit or not self.cache_hit or self.prior_entry is None:
+            raise WorldModelError("event-receipt reuse requires a reusable cache prefix")
+        expected_suffix = self.request.transitions[self.prefix_count :]
+        if self.suffix_count != len(expected_suffix) or len(evidence) != len(expected_suffix):
+            raise WorldModelError("authorizing evidence must cover the exact reused suffix")
+        for transition, item in zip(expected_suffix, evidence, strict=True):
+            if (
+                item.transition_id != transition.transition_id
+                or item.model_id != self.request.model.model_id
+                or not item.matched
+                or not item.source_ordered
+                or item.match_scope not in EVENT_REUSE_MATCH_SCOPES
+            ):
+                raise WorldModelError(
+                    "authorizing evidence must be ordered and bound to the reused suffix"
+                )
 
     @property
     def prior_artifact_id(self) -> str | None:
@@ -681,6 +710,9 @@ class RetrodictionPlan:
 
     def to_trace_payload(self) -> dict[str, JSONValue]:
         return {
+            "authorizing_matched_prediction_evidence": [
+                item.to_dict() for item in self.authorizing_matched_prediction_evidence
+            ],
             "cache_hit": self.cache_hit,
             "cache_key": self.cache_key,
             "complete_scope": self.complete_scope,
@@ -939,6 +971,7 @@ class RetrodictionRuntime:
         full_audit = True
         reason = RetrodictionReason.FULL
         omitted = request.omissions
+        authorizing_evidence: tuple[MatchedPredictionEvidence, ...] = ()
 
         invalidated = bool(request.force_full_source_event_ids)
         if mode is RetrodictionMode.NONE:
@@ -995,13 +1028,18 @@ class RetrodictionRuntime:
                 suffix_count = 0
                 full_audit = False
                 reason = RetrodictionReason.EXACT_CACHE_HIT
-            elif prefix is not None and self._event_evidence_covers_suffix(request, prefix):
-                prior = prefix
-                cache_hit = True
-                prefix_count = prefix.prefix_length
-                suffix_count = len(request.transitions) - prefix.prefix_length
-                full_audit = False
-                reason = RetrodictionReason.EVENT_RECEIPT_REUSE
+            elif prefix is not None:
+                suffix_evidence = self._authorizing_event_evidence_for_suffix(request, prefix)
+                if suffix_evidence is not None:
+                    prior = prefix
+                    cache_hit = True
+                    prefix_count = prefix.prefix_length
+                    suffix_count = len(request.transitions) - prefix.prefix_length
+                    full_audit = False
+                    reason = RetrodictionReason.EVENT_RECEIPT_REUSE
+                    authorizing_evidence = suffix_evidence
+                else:
+                    reason = RetrodictionReason.EVENT_FULL_AUDIT
             elif namespace_entries:
                 reason = RetrodictionReason.EVENT_FULL_AUDIT
             else:
@@ -1031,6 +1069,7 @@ class RetrodictionRuntime:
             cache_hit=cache_hit,
             prefix_count=prefix_count,
             suffix_count=suffix_count,
+            authorizing_matched_prediction_evidence=authorizing_evidence,
             prior_entry=prior,
             generation=generation,
             complete_scope=complete_scope,
@@ -1156,15 +1195,14 @@ class RetrodictionRuntime:
         )
         self._validate_state()
 
-    def _event_evidence_covers_suffix(
+    def _authorizing_event_evidence_for_suffix(
         self,
         request: RetrodictionRequest,
         prefix: RetrodictionCacheEntry,
-    ) -> bool:
+    ) -> tuple[MatchedPredictionEvidence, ...] | None:
         evidence = {item.transition_id: item for item in request.matched_evidence}
         suffix = request.transitions[prefix.prefix_length :]
-        if not suffix:
-            return True
+        authorizing: list[MatchedPredictionEvidence] = []
         for transition in suffix:
             item = evidence.get(transition.transition_id)
             if (
@@ -1172,10 +1210,11 @@ class RetrodictionRuntime:
                 or item.model_id != request.model.model_id
                 or not item.matched
                 or not item.source_ordered
-                or item.match_scope not in {"whole-symbolic-state", "controlled-entity-projection"}
+                or item.match_scope not in EVENT_REUSE_MATCH_SCOPES
             ):
-                return False
-        return True
+                return None
+            authorizing.append(item)
+        return tuple(authorizing)
 
     def _validate_state(self) -> None:
         for entry in self._state.cache_entries:
