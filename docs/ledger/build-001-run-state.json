@@ -7,12 +7,12 @@
   "build_status": "IN_PROGRESS",
   "status": "IN_PROGRESS",
   "current_stage": "06",
-  "current_task": "Repair the preserved Attempt 01 Windows path-length infrastructure failure, freeze the bounded workspace mapping, and rerun the unchanged 112-execution matrix as Attempt 02",
+  "current_task": "Repair the preserved preflight 058 causal support-order failure, revalidate the bounded path mapping, and run the unchanged 112-execution matrix as Attempt 02",
   "implementation_branch": "build/001-local-public-recovery",
   "pull_request": "https://github.com/Grativy6/ARC3/pull/5",
   "started_at": "2026-08-21T15:41:02Z",
-  "last_checkpoint_at": "2026-08-22T13:22:44.1023602Z",
-  "last_checkpoint_commit": "d1866e014ae4ff7ee6f24beb2f92688b5fd7ec17",
+  "last_checkpoint_at": "2026-08-22T13:46:20.2219625Z",
+  "last_checkpoint_commit": "7b6133d8a1a2b5e64ba1aca7d2deba13786259c2",
   "base": {
     "main_commit": "28c7a00732ce48e5c231211b01bc6eba7d0d71b4",
     "main_tree": "4586299448e9b1b585a0878674ed5f9afa60c384",
@@ -232,7 +232,7 @@
       "stationary_noise_cases_predeclared": 32,
       "checkpoint_resume_pairs_predeclared": 8,
       "controller_executions_predeclared": 112,
-      "implementation_status": "FAILED_INFRASTRUCTURE_ATTEMPT_01_PATH_LENGTH_REPAIR_IN_PROGRESS",
+      "implementation_status": "FAILED_MECHANISM_PREFLIGHT_058_SUPPORT_ORDER_REPAIR_IN_PROGRESS",
       "preimplementation_integrity": "PASS:0-blocking+0-warnings+0-secrets",
       "preimplementation_integrity_receipt_hash": "sha256:993bbce75fb055058711949d873ac5c73e6cc0a6cabe2cf4e93cf04fd12923a3",
       "official_attempt_01": {
@@ -243,6 +243,16 @@
         "failure_receipt": "docs/evidence/001-06-failed-infrastructure-attempt-01.json",
         "failure_receipt_sha256": "sha256:749bdf1673b44fe5272ac4445bb21299b54f7835634ab87e74e86d6d274c3029",
         "partial_work_manifest_sha256": "sha256:66e31a5df20dbdc5629eae1a063c001cd62e50615519c2c4095422eb77bda080"
+      },
+      "runtime_path_preflight_058": {
+        "status": "FAILED_MECHANISM",
+        "source_commit": "7b6133d8a1a2b5e64ba1aca7d2deba13786259c2",
+        "path_runtime": "PASS:0-path-failures+247-character-stronger-root",
+        "checkpoint_pair": "PASS:24/24",
+        "intervention_case": "FAILED_MECHANISM:WIN18-but-causal-support-order-misaligned",
+        "failure_receipt": "docs/evidence/001-06-preflight-058-failed-mechanism.json",
+        "raw_file_sha256": "sha256:b864d5391a45ed12468d8c7a0ec97f6fabe4c5e7cb09ae3b80f140d5e086b91b",
+        "raw_core_hash": "sha256:9534e8b993f6cda329fc07545bf785b6ab92f91df4c320ef1fef1b436573e23c"
       },
       "public_holdout_consumed": false
     }
@@ -331,10 +341,14 @@
     "stage_06_failed_infrastructure_attempt_01": {
       "path": "docs/evidence/001-06-failed-infrastructure-attempt-01.json",
       "sha256": "749bdf1673b44fe5272ac4445bb21299b54f7835634ab87e74e86d6d274c3029"
+    },
+    "stage_06_preflight_058_failed_mechanism": {
+      "path": "docs/evidence/001-06-preflight-058-failed-mechanism.json",
+      "sha256": "822c690a02c65e7c6684bcf461f48824fb0f2d61e4b9114a94618a801c77f3e4"
     }
   },
   "blocked_items": [],
-  "next_action": "Commit the frozen Attempt 01 failure receipt and deterministic bounded workspace mapping, re-run clean verification and CI, then execute the unchanged matrix at the predeclared Attempt 02 artifact paths.",
+  "next_action": "Commit the frozen preflight 058 failure receipt, implement and adversarially test arrival-ordered mechanics support tuples, rerun a new clean path preflight, then requalify Attempt 02.",
   "notes": [
     "Build 000 ledgers and reports are immutable historical evidence and are not overwritten by Build 001.",
     "The owner explicitly approved MIT-0 for ARC3 first-party source in the active Build 001 instruction.",

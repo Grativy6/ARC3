@@ -1,0 +1,115 @@
+{
+  "schema": "arc3.build-001.stage-06-preflight-failed-mechanism.v0.1",
+  "status": "FAILED_MECHANISM",
+  "evidence_label": "synthetic",
+  "preflight_id": "058",
+  "recorded_at": "2026-08-22T13:38:28Z",
+  "claim_boundary": "This receipt records a causal trace-alignment failure in one nonpromotable synthetic preflight. The episode's WIN does not override the failed lifecycle predicate and is not a benchmark or generalization result.",
+  "source": {
+    "git_commit": "7b6133d8a1a2b5e64ba1aca7d2deba13786259c2",
+    "git_tree": "f1172ac0e39b92831d58e9edf795d2c985960f78",
+    "branch": "build/001-local-public-recovery",
+    "source_identity_hash": "sha256:a1005932f11e8b0288256cfcdcabdab3405baa71320ed393d3c9b54ff286950c",
+    "worktree_clean_and_stable": true,
+    "predeclaration_sha256": "sha256:0bca5f32986c79008cf6ee01a83867262cda591f477239a5b8e9bccd90e37434"
+  },
+  "raw_artifact": {
+    "path": "C:/a/arc3-b001/artifacts/stage06/failed-mechanisms/s058-path-preflight-7b6133d/result.json",
+    "bytes": 493001,
+    "file_sha256": "sha256:b864d5391a45ed12468d8c7a0ec97f6fabe4c5e7cb09ae3b80f140d5e086b91b",
+    "preflight_core_hash": "sha256:9534e8b993f6cda329fc07545bf785b6ab92f91df4c320ef1fef1b436573e23c",
+    "case_core_hash": "sha256:9c93e4cf5a5e8fefc17cea5e4b1398594969761d6f86a5697ebd5d38c3847308",
+    "pair_core_hash": "sha256:eec11706bf84bfe9be2f0acd9627b64d113d2ced8e6453534ec9488b2bfbd8a3"
+  },
+  "trace": {
+    "path": "C:/a/arc3-b001/artifacts/stage06/failed-mechanisms/s058-path-preflight-7b6133d/i/i-aa78a6eebc9b5359c6c0898b949bbf03/trace/active.jsonl",
+    "sha256": "sha256:57077d0301dafef5502d38c70f2d40862dd005aa322535d3b43f9b74191ef350",
+    "candidate_id": "mechanics-change:59044c055fea1b9299a68d97"
+  },
+  "preflight_results": {
+    "path_runtime": {
+      "status": "PASS",
+      "path_failures": 0,
+      "socket_attempts": 0,
+      "base_path_characters": 78,
+      "attempt_02_base_path_characters": 70,
+      "maximum_existing_path_characters": 209,
+      "maximum_projected_temporary_blob_characters": 247
+    },
+    "checkpoint_pair": {
+      "status": "PASS",
+      "predicates": "24/24",
+      "uninterrupted": "WIN:18-actions:trigger-6:confirmation-7",
+      "resumed": "WIN:18-actions:trigger-6:confirmation-7"
+    },
+    "intervention_case": {
+      "status": "FAILED_MECHANISM",
+      "terminal_state": "WIN",
+      "action_count": 18,
+      "trigger_step": 6,
+      "confirmation_step": 7,
+      "controller_fault_count": 0,
+      "case_passed": false,
+      "failed_boundary": "confirmation support arrays do not preserve the support-index association"
+    }
+  },
+  "ordered_support_receipts": [
+    {
+      "support_index": 1,
+      "raw_action_handle": "ACTION4",
+      "contradiction_event_id": "E-01787405887336154400-00000086-cc752700bdce4d5d94efcb5c3855218c",
+      "source_transition_id": "transition:E-01787405887141110400-0000007c-c0be2f99fa3742efb1f052eb48a16257",
+      "discrimination_context_id": "opaque-handle:ACTION4"
+    },
+    {
+      "support_index": 2,
+      "raw_action_handle": "ACTION1",
+      "contradiction_event_id": "E-01787405887501193100-0000009a-5e06e6a826404250a57b68d7080f3dd1",
+      "source_transition_id": "transition:E-01787405887360159400-00000091-c0faf563504949b2b6fe2717bc868550",
+      "discrimination_context_id": "opaque-handle:ACTION1"
+    }
+  ],
+  "confirmed_projection": {
+    "event_id": "E-01787405887508195600-000000a1-43201af9a7fc46ebbcce5e4f9fd8ca07",
+    "supporting_contradiction_event_ids": [
+      "E-01787405887336154400-00000086-cc752700bdce4d5d94efcb5c3855218c",
+      "E-01787405887501193100-0000009a-5e06e6a826404250a57b68d7080f3dd1"
+    ],
+    "supporting_successor_transition_ids": [
+      "transition:E-01787405887141110400-0000007c-c0be2f99fa3742efb1f052eb48a16257",
+      "transition:E-01787405887360159400-00000091-c0faf563504949b2b6fe2717bc868550"
+    ],
+    "supporting_discrimination_context_ids": [
+      "opaque-handle:ACTION1",
+      "opaque-handle:ACTION4"
+    ],
+    "contradiction": "Only the context array was independently lexicographically reordered, so its indices no longer identify the contexts of the corresponding contradiction and transition receipts."
+  },
+  "root_cause": {
+    "component": "src/arc3/world_model/lifecycle.py:MechanicsChangeCandidate",
+    "mechanism": "The generic set-sorting normalizer was applied independently to three causally parallel support arrays during construction, update, and restore.",
+    "masked_restore_check": "The checkpoint evidence fold also independently sorted the three traced dimensions instead of comparing support-index order."
+  },
+  "frozen_repair_boundary": {
+    "required_invariant": "Support is one arrival-ordered vector of contradiction, transition, and context triples indexed by the immutable mechanics.successor_evidence_supported support_index.",
+    "required_guards": [
+      "all three arrays have equal length",
+      "contradiction and transition IDs are unique",
+      "the first contradiction remains at index zero",
+      "an exact already-recorded support pair may no-op but partial duplicate aliasing fails closed",
+      "contexts may repeat while provisional and distinct-context confirmation uses set cardinality",
+      "checkpoint restore compares ordered receipt vectors and rejects independent context-order tampering"
+    ],
+    "forbidden_changes": [
+      "weakening the harness causal linkage predicate",
+      "changing any frozen schedule member, seed, budget, or threshold",
+      "using terminal WIN to override a failed lifecycle predicate",
+      "changing public holdout state"
+    ]
+  },
+  "holdout": {
+    "status": "SEALED_UNCONSUMED",
+    "public_holdout_gameplay_events": 0,
+    "locally_acquired_holdout_assets": 0
+  }
+}

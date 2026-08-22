@@ -295,3 +295,21 @@ independent authorities.
   Attempt 02 remains bound to the unchanged Stage 06 predeclaration.
 - Reopening condition: any content-addressed component collides across the frozen schedule, any
   receipt loses its full case identity, or any frozen matrix field changes.
+
+## D-001-0019 — Preserve mechanics support as an ordered causal vector
+
+- Recorded: 2026-08-22T13:46:20Z
+- Status: accepted
+- Decision: Treat the three mechanics successor-support dimensions as one arrival-ordered vector
+  of `(contradiction_event_id, transition_id, discrimination_context_id)` triples, indexed by the
+  immutable one-based `mechanics.successor_evidence_supported.support_index`. Preserve that order
+  in candidate state, confirmation payloads, checkpoint serialization, restore, and trace folds.
+- Evidence: `docs/evidence/001-06-preflight-058-failed-mechanism.json`; support arrived as
+  `ACTION4`, `ACTION1`, but the confirmed context projection was independently sorted as
+  `ACTION1`, `ACTION4` and failed exact linkage despite terminal `WIN`.
+- Boundary: keep set/sorted normalization for genuinely unordered fields. Do not weaken the
+  harness, change the frozen matrix, or infer causal association from lexical action order. Contexts
+  may repeat while a candidate is provisional; distinct-context gates count unique contexts.
+- Reopening condition: any support dimension loses index alignment, a partial duplicate is
+  silently deduplicated, restore accepts an independently permuted dimension, or receipt order is
+  confused with raw/canonical action order.

@@ -461,3 +461,31 @@ does not erase earlier uncertainty or failed mechanisms.
 - Resolution condition: the path mapping tests, repository verification, and superseding frozen
   matrix complete without path failure; Attempt 01 remains preserved and separately labeled.
 - Resolution receipt: none.
+
+## B-001-0026 — Independent sorting broke causal support-tuple alignment
+
+- Status: OPEN
+- Stage: 06
+- Opened: 2026-08-22
+- Burden: Nonpromotable runtime path preflight 058 proved the Windows path repair but stopped on a
+  separate source-honesty failure. The candidate received support in `ACTION4`, then `ACTION1`
+  order. Its contradiction and transition arrays retained arrival order, while the context array
+  was independently sorted to `ACTION1`, `ACTION4`. Positional causal linkage therefore failed.
+  The terminal `WIN` in 18 actions does not override `case_passed=false`.
+- Preserved evidence: `docs/evidence/001-06-preflight-058-failed-mechanism.json`; external receipt
+  `C:/a/arc3-b001/artifacts/stage06/failed-mechanisms/s058-path-preflight-7b6133d/result.json`,
+  file SHA-256 `b864d5391a45ed12468d8c7a0ec97f6fabe4c5e7cb09ae3b80f140d5e086b91b`,
+  self-hash `sha256:9534e8b993f6cda329fc07545bf785b6ab92f91df4c320ef1fef1b436573e23c`;
+  immutable trace SHA-256
+  `57077d0301dafef5502d38c70f2d40862dd005aa322535d3b43f9b74191ef350`.
+- Contradictory evidence preserved: the clean 592-test suite at `7b6133d` passed in 356.84 seconds,
+  showing this ordering case was absent from prior coverage. Green tests are not promoted over the
+  failed trace predicate.
+- Next discriminating action: preserve the three support dimensions as one arrival-ordered typed
+  receipt vector, strengthen restore to compare that order directly, reject partial duplicate
+  aliasing, and add non-lexicographic, repeated-context, transformed-handle, checkpoint, and tamper
+  regressions without weakening the harness.
+- Resolution condition: the exact failed case and adversarial regressions pass from clean source;
+  preflight 058 remains immutable and a new path preflight receipt is created rather than replacing
+  it.
+- Resolution receipt: none.
