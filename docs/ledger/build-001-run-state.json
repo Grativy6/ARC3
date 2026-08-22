@@ -11,8 +11,8 @@
   "implementation_branch": "build/001-local-public-recovery",
   "pull_request": null,
   "started_at": "2026-08-21T15:41:02Z",
-  "last_checkpoint_at": "2026-08-22T03:11:34Z",
-  "last_checkpoint_commit": null,
+  "last_checkpoint_at": "2026-08-22T03:15:11Z",
+  "last_checkpoint_commit": "ca83b69d8734f76896896dabd99e830d73e783a0",
   "base": {
     "main_commit": "28c7a00732ce48e5c231211b01bc6eba7d0d71b4",
     "main_tree": "4586299448e9b1b585a0878674ed5f9afa60c384",
@@ -58,7 +58,7 @@
       "acceptance": "docs/evidence/001-00-preflight-acceptance.json",
       "acceptance_sha256": "sha256:65eb293aff43fb50f7ab5b52bef3af99331fd5f02f8b5197e1f8a10e2a2a68ff",
       "integrity_receipt_sha256": "sha256:abca6b103f8cbef43cd206baaac6d25f50367081e80375f56c6a31d7fe6cd162",
-      "checkpoint_commit": null,
+      "checkpoint_commit": "ca83b69d8734f76896896dabd99e830d73e783a0",
       "verification": {
         "base_and_branch": "PASS",
         "build_000_artifacts": "PASS:48-hashes+22-commit-objects",
@@ -89,11 +89,11 @@
     },
     "license_decision": {
       "path": "docs/legal/LICENSE-DECISION.md",
-      "sha256": "45a6c3bbb9b0ead940b9b2c1c628295d8c4b0a317ea28dc8a09b840f5f55bddf"
+      "sha256": "c79c854fe046551fdc21b94b093d15220728f00b93e1b129dd507edba418444f"
     }
   },
   "blocked_items": [],
-  "next_action": "Commit and bind the Stage 00 checkpoint, then predeclare the frozen-policy Stage 01 development-only reproduction without opening holdout games.",
+  "next_action": "Predeclare the frozen-policy Stage 01 development-only reproduction without opening holdout games.",
   "notes": [
     "Build 000 ledgers and reports are immutable historical evidence and are not overwritten by Build 001.",
     "The owner explicitly approved MIT-0 for ARC3 first-party source in the active Build 001 instruction.",

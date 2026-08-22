@@ -19,7 +19,7 @@ Selected license: MIT-0
 Scope: ARC3 first-party source
 Owner instruction/source: Active Build 001 Codex handoff — "I approve MIT-0 for ARC3 first-party source."
 Implementing branch: build/001-local-public-recovery
-Implementing commit: recorded by the Build 001 Stage 00 ledger after checkpoint
+Implementing commit: ca83b69d8734f76896896dabd99e830d73e783a0
 Competition-rule source and access date: ARC Prize 2026 rules and ARC-AGI-3 competition page, accessed 2026-08-21
 ```
 
