@@ -1253,6 +1253,11 @@ def _declared_manifest_binding(
             value = artifact.get("sha256")
             if isinstance(value, str):
                 declarations.append(value)
+    holdout = document.get("holdout")
+    if isinstance(holdout, dict) and holdout.get("manifest") == manifest_label:
+        value = holdout.get("manifest_sha256")
+        if isinstance(value, str):
+            declarations.append(value)
     try:
         declared_digests = {_normalize_sha256(value) for value in declarations}
     except ValueError as error:
