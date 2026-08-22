@@ -2081,7 +2081,9 @@ def _apply_global_integrity(
     )
     development_cells = raw_development_cells if isinstance(raw_development_cells, Mapping) else {}
     for cell in cells:
-        item = by_id[cell.cell_id]
+        item = by_id.get(cell.cell_id)
+        if item is None:
+            continue
         parity = item.full_artifact_parity
         if cell.mode is RetrodictionMode.CACHED_INCREMENTAL:
             full_cell = by_pair_mode[(cell.pair_key, RetrodictionMode.FULL)]

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import socket
 import subprocess
 from dataclasses import replace
@@ -32,6 +33,7 @@ from scripts.measure_retrodiction_decision import (
     _SocketDeny,
     _source_stability,
     build_micro_history,
+    main,
     measure_microbenchmark_cell,
 )
 
@@ -900,6 +902,44 @@ def test_cached_false_rule_parity_is_paired_to_full_not_self_roundtrip() -> None
     )
     cached_measurement = next(item for item in updated if item.cell_id == cached.cell_id)
     assert cached_measurement.full_artifact_parity is False
+
+
+def test_global_integrity_preserves_an_incomplete_measured_prefix() -> None:
+    matrix = build_evaluation_matrix()
+    measurements = _complete_measurements()[:-1]
+
+    updated = _apply_global_integrity(
+        matrix,
+        measurements,
+        {},
+        source_valid=True,
+        holdout_exposure_count=0,
+    )
+
+    assert len(updated) == 279
+    assert tuple(item.cell_id for item in updated) == tuple(item.cell_id for item in measurements)
+    assert matrix[-1].cell_id not in {item.cell_id for item in updated}
+
+
+def test_main_serializes_partial_result_and_returns_nonzero(tmp_path: Path) -> None:
+    output = tmp_path / "partial.json"
+    partial = {
+        "artifact_core_hash": "sha256:partial",
+        "decision": "KEEP_FULL",
+        "status": "PARTIAL",
+    }
+
+    with (
+        patch("scripts.measure_retrodiction_decision._require_composite_contract", return_value={}),
+        patch(
+            "scripts.measure_retrodiction_decision.measure_retrodiction_decision",
+            return_value=partial,
+        ),
+    ):
+        returncode = main(["--execute", "--output", str(output)])
+
+    assert returncode == 1
+    assert json.loads(output.read_text(encoding="utf-8")) == partial
 
 
 def test_replacement_gate_rejects_a_frozen_cell_wall_budget_overrun() -> None:
