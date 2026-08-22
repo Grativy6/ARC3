@@ -33,6 +33,7 @@ from scripts.measure_rule_change_reopening import (
     _checkpoint_resource_report,
     _classify_stage_status,
     _coherent_candidate_confirmation,
+    _event_source_closure_after,
     _failed_mechanism_predicates,
     _fold_lifecycle_timeline,
     _holdout_source_bindings,
@@ -1365,6 +1366,92 @@ def test_candidate_confirmation_and_successor_use_require_exact_causal_chain() -
     )
     confirmed = next(event for event in events if event.event_type == "mechanics.change_confirmed")
     assert _linked_candidate_confirmation_support(events, created, confirmed)["passed"] is True
+
+
+def test_post_boundary_source_closure_is_recursive_explicit_and_narrative_blind() -> None:
+    action = {"coordinate": None, "name": "ACTION1"}
+    root_observation = _observation("E-PREFIX-OBSERVATION", "ACTION1", step=1)
+    selected_payload = deepcopy(
+        _selected(
+            "E-PREFIX-SELECTED",
+            "ACTION1",
+            step=1,
+            epoch_id="mechanics-epoch:L0:0000",
+            probe_or_plan_id="plan:old",
+            reexploration=False,
+            decision_id="decision:prefix",
+        ).payload
+    )
+    selected_payload["source_observation_event_id"] = root_observation.event_id
+    selected = _event(
+        "E-PREFIX-SELECTED",
+        "action.selected",
+        selected_payload,
+        step=1,
+    )
+    unrelated_confirmation = _event(
+        "E-PREFIX-UNRELATED-CONFIRMATION",
+        "mechanics.change_confirmed",
+        {"candidate_id": "mechanics-change:unrelated"},
+        step=1,
+    )
+    submitted = _event(
+        "E-POST-SUBMITTED",
+        "action.submitted",
+        {
+            "action": action,
+            "decision_id": "decision:prefix",
+            "selected_event_id": selected.event_id,
+        },
+        step=1,
+    )
+    consequence = _event(
+        "E-POST-CONSEQUENCE",
+        "consequence.received",
+        {
+            "action": action,
+            "returned_action": action,
+            "selected_event_id": selected.event_id,
+            "submitted_action": action,
+            "submitted_event_id": submitted.event_id,
+        },
+        step=1,
+    )
+    narrative = _event(
+        "E-POST-NARRATIVE",
+        "goal.supported",
+        {
+            "summary": (
+                "untrusted prose mentions E-PREFIX-UNRELATED-CONFIRMATION but does not cite it"
+            )
+        },
+        step=2,
+    )
+    events = (
+        root_observation,
+        selected,
+        unrelated_confirmation,
+        submitted,
+        consequence,
+        narrative,
+    )
+    closed = _event_source_closure_after(events, 3)
+    assert [event.event_id for event in closed] == [
+        root_observation.event_id,
+        selected.event_id,
+        submitted.event_id,
+        consequence.event_id,
+        narrative.event_id,
+    ]
+    assert unrelated_confirmation.event_id not in {event.event_id for event in closed}
+
+    lifecycle_events = _lifecycle_trace()
+    source_closed_lifecycle = _event_source_closure_after(lifecycle_events, 1)
+    passed, _, failures = _linked_lifecycle_chain(
+        source_closed_lifecycle,
+        predecessor_epoch_id="mechanics-epoch:L0:0000",
+    )
+    assert passed is True, failures
 
 
 def test_candidate_confirmation_rejects_absent_second_causal_tuple() -> None:

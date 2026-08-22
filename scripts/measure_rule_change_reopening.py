@@ -2559,7 +2559,44 @@ def _lifecycle_summary(projection: Mapping[str, object], case: RuleChangeCase) -
 def _event_source_closure_after(
     events: Sequence[TraceEvent], start_index: int
 ) -> tuple[TraceEvent, ...]:
-    return tuple(events[start_index:])
+    """Return the suffix plus only its recursively cited prior source events."""
+
+    if isinstance(start_index, bool) or not 0 <= start_index <= len(events):
+        raise ValueError("event source-closure start index is out of range")
+
+    def explicit_references(value: object) -> frozenset[str]:
+        found: set[str] = set()
+        if isinstance(value, Mapping):
+            for key, item in value.items():
+                if key.endswith("_event_id") or key.endswith("_event_ids"):
+                    found.update(_recursive_event_ids(item))
+                else:
+                    found.update(explicit_references(item))
+        elif isinstance(value, Sequence) and not isinstance(value, (str, bytes)):
+            for item in value:
+                found.update(explicit_references(item))
+        return frozenset(found)
+
+    event_by_id = {event.event_id: event for event in events}
+    event_index = {event.event_id: index for index, event in enumerate(events)}
+    included_ids = {event.event_id for event in events[start_index:]}
+    pending = list(events[start_index:])
+    while pending:
+        event = pending.pop()
+        current_index = event_index[event.event_id]
+        for referenced_id in explicit_references(event.payload):
+            referenced = event_by_id.get(referenced_id)
+            referenced_index = event_index.get(referenced_id)
+            if (
+                referenced is None
+                or referenced_index is None
+                or referenced_index >= current_index
+                or referenced_id in included_ids
+            ):
+                continue
+            included_ids.add(referenced_id)
+            pending.append(referenced)
+    return tuple(event for event in events if event.event_id in included_ids)
 
 
 def _invalidated_plan_ids(payload: Mapping[str, object]) -> frozenset[str]:
@@ -2984,7 +3021,8 @@ def _lifecycle_predicates(
     evaluator_confirmation_step: int | None,
     truth_receipts: Sequence[Mapping[str, object]],
 ) -> dict[str, object]:
-    post_trigger = _event_source_closure_after(events, prefix_event_count)
+    post_trigger = tuple(events[prefix_event_count:])
+    source_closed_post_trigger = _event_source_closure_after(events, prefix_event_count)
     epochs = tuple(_mapping(item) for item in _sequence(final_projection.get("epochs")))
     predecessor_epoch_id = (
         cast(str, epochs[0].get("epoch_id"))
@@ -2992,7 +3030,7 @@ def _lifecycle_predicates(
         else None
     )
     lifecycle_passed, matched, lifecycle_link_failures = _linked_lifecycle_chain(
-        post_trigger,
+        source_closed_post_trigger,
         predecessor_epoch_id=predecessor_epoch_id,
     )
     controller_confirmation_step = next(
@@ -3029,7 +3067,7 @@ def _lifecycle_predicates(
     ]
     trigger_to_completion = None if trigger_step is None else final_action_count - trigger_step
     if case.kind is RuleChangeCaseKind.NOISE:
-        noise_closure = _linked_noise_closure(post_trigger, truth_receipts)
+        noise_closure = _linked_noise_closure(source_closed_post_trigger, truth_receipts)
         resolved_noise = any(
             candidate.get("provisional_status") == "RESOLVED_NOISE" for candidate in candidates
         )
