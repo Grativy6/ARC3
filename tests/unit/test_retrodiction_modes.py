@@ -140,15 +140,23 @@ def test_full_and_none_preserve_exact_legacy_artifacts() -> None:
     history = (_transition(0), _transition(1, after_dx=-1))
 
     full = RetrodictionRuntime(RetrodictionConfig(RetrodictionMode.FULL))
-    full_evaluation = full.execute(full.plan(_request(history, model=model)))
+    full_plan = full.plan(_request(history, model=model))
+    full_evaluation = full.execute(full_plan)
     none = RetrodictionRuntime(RetrodictionConfig(RetrodictionMode.NONE))
-    none_evaluation = none.execute(none.plan(_request(history, model=model)))
+    none_request = _request(history, model=model)
+    none_plan = none.plan(none_request)
+    none_evaluation = none.execute(none_plan)
+    none.commit(none_evaluation, source_receipt_event_id="E-NONE-1")
 
     assert full_evaluation.artifact == retrodict(model, history)
     assert none_evaluation.artifact == retrodict(model, history, enabled=False)
-    assert full_evaluation.plan.reason is RetrodictionReason.FULL
-    assert none_evaluation.plan.selected_transitions == ()
-    assert none_evaluation.plan.complete_scope is False
+    assert full_plan.reason is RetrodictionReason.FULL
+    assert full_plan.full_audit and full_plan.generation == 1
+    assert none_plan.selected_transitions == ()
+    assert none_plan.complete_scope is False
+    assert not none_plan.full_audit and none_plan.generation == 0
+    assert none.plan(none_request).generation == 0
+    assert dict(none.state.trigger_generations) == {none_plan.namespace_key: 0}
 
 
 def test_recent_window_selects_exact_last_eight_and_names_every_omission() -> None:
@@ -156,16 +164,22 @@ def test_recent_window_selects_exact_last_eight_and_names_every_omission() -> No
     inherited = RetrodictionOmission("T-UNCLAIMED", "unclaimed-action")
     runtime = RetrodictionRuntime(RetrodictionConfig(RetrodictionMode.RECENT_WINDOW_8))
 
-    evaluation = runtime.execute(runtime.plan(_request(history, omissions=(inherited,))))
+    request = _request(history, omissions=(inherited,))
+    plan = runtime.plan(request)
+    evaluation = runtime.execute(plan)
+    runtime.commit(evaluation, source_receipt_event_id="E-RECENT-1")
 
     assert evaluation.artifact == retrodict(_model(), history[-8:])
-    assert evaluation.plan.selected_transitions == history[-8:]
-    assert evaluation.plan.complete_scope is False
-    assert evaluation.plan.omitted[0] == inherited
-    assert [item.transition_id for item in evaluation.plan.omitted[1:]] == [
+    assert plan.selected_transitions == history[-8:]
+    assert plan.complete_scope is False
+    assert not plan.full_audit and plan.generation == 0
+    assert runtime.plan(request).generation == 0
+    assert dict(runtime.state.trigger_generations) == {plan.namespace_key: 0}
+    assert plan.omitted[0] == inherited
+    assert [item.transition_id for item in plan.omitted[1:]] == [
         item.transition_id for item in history[:4]
     ]
-    assert {item.reason for item in evaluation.plan.omitted[1:]} == {"recent-window-8"}
+    assert {item.reason for item in plan.omitted[1:]} == {"recent-window-8"}
 
 
 def test_cached_incremental_suffix_and_exact_hit_rematerialize_full_artifact() -> None:
@@ -350,6 +364,26 @@ def test_runtime_state_rejects_rehashed_internal_cache_tamper() -> None:
     entries[0]["history_key"] = "sha256:" + "0" * 64
 
     with pytest.raises(WorldModelError, match="history key"):
+        RetrodictionRuntime.from_dict(raw, expected_config=config)
+
+
+def test_runtime_state_rejects_duplicate_cache_access_ordinals() -> None:
+    config = RetrodictionConfig(RetrodictionMode.CACHED_INCREMENTAL)
+    runtime = RetrodictionRuntime(config)
+    history = (_transition(0),)
+    _evaluate_and_commit(runtime, _request(history), receipt="E-COMPLETE-1")
+    _evaluate_and_commit(
+        runtime,
+        _request((*history, _transition(1))),
+        receipt="E-COMPLETE-2",
+    )
+    raw = runtime.to_dict()
+    entries = raw["cache_entries"]
+    assert isinstance(entries, list) and len(entries) == 2
+    assert isinstance(entries[0], dict) and isinstance(entries[1], dict)
+    entries[1]["access_ordinal"] = entries[0]["access_ordinal"]
+
+    with pytest.raises(WorldModelError, match="access ordinals must be unique"):
         RetrodictionRuntime.from_dict(raw, expected_config=config)
 
 

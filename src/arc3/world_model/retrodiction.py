@@ -543,6 +543,9 @@ class RetrodictionRuntimeState:
         cache_keys = [item.cache_key for item in self.cache_entries]
         if len(set(cache_keys)) != len(cache_keys):
             raise WorldModelError("retrodiction cache keys must be unique")
+        access_ordinals = [item.access_ordinal for item in self.cache_entries]
+        if len(set(access_ordinals)) != len(access_ordinals):
+            raise WorldModelError("retrodiction cache access ordinals must be unique")
         if len(cache_keys) > self.config.capacity:
             raise WorldModelError("retrodiction cache exceeds configured capacity")
         if any(item.access_ordinal > self.access_ordinal for item in self.cache_entries):
@@ -979,6 +982,7 @@ class RetrodictionRuntime:
             selected_witnesses = ()
             suffix_count = 0
             complete_scope = False
+            full_audit = False
             reason = RetrodictionReason.DISABLED
         elif mode is RetrodictionMode.RECENT_WINDOW_8:
             selected = request.transitions[-self.config.window :]
@@ -996,6 +1000,7 @@ class RetrodictionRuntime:
             )
             suffix_count = len(selected)
             complete_scope = False
+            full_audit = False
             reason = RetrodictionReason.RECENT_WINDOW
         elif mode is RetrodictionMode.CACHED_INCREMENTAL:
             if invalidated:

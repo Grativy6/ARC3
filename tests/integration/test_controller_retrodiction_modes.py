@@ -67,6 +67,7 @@ def _expected_change_kind(
     reason: RetrodictionReason,
     *,
     generation: int,
+    completion_ordinal: int,
 ) -> HotPathChangeKind:
     if reason in {RetrodictionReason.DISABLED, RetrodictionReason.EXACT_CACHE_HIT}:
         return HotPathChangeKind.UNCHANGED
@@ -82,7 +83,11 @@ def _expected_change_kind(
     if reason in {RetrodictionReason.FULL, RetrodictionReason.EVENT_FULL_AUDIT}:
         return HotPathChangeKind.INITIAL if generation == 1 else HotPathChangeKind.GLOBAL_CHANGE
     if reason is RetrodictionReason.RECENT_WINDOW:
-        return HotPathChangeKind.INITIAL if generation == 1 else HotPathChangeKind.HISTORY_GROWTH
+        return (
+            HotPathChangeKind.INITIAL
+            if completion_ordinal == 1
+            else HotPathChangeKind.HISTORY_GROWTH
+        )
     raise AssertionError(f"unmapped retrodiction reason: {reason.value}")
 
 
@@ -204,12 +209,14 @@ def test_retrodiction_profiler_uses_only_stable_change_kinds(
         _expected_change_kind(
             RetrodictionReason(cast(str, event.payload["reason"])),
             generation=cast(int, event.payload["generation"]),
+            completion_ordinal=completion_ordinal,
         )
-        for event in completed
+        for completion_ordinal, event in enumerate(completed, start=1)
     )
 
     profile = profiler.summary()
     phases = cast(dict[str, JSONValue], profile["phases"])
     retrodiction = cast(dict[str, JSONValue], phases[HotPathPhase.RETRODICTION.value])
     observed = cast(dict[str, JSONValue], retrodiction["change_kind_counts"])
+    assert retrodiction["calls"] == len(completed) * 3
     assert observed == {kind.value: expected[kind] for kind in HotPathChangeKind}

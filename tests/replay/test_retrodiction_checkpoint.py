@@ -346,3 +346,156 @@ def test_rehashed_event_authorization_order_tamper_is_rejected(tmp_path: Path) -
             checkpoint_path=tampered,
             retrodiction_config=_EVENT_TRIGGERED,
         )
+
+
+@pytest.mark.replay
+@pytest.mark.parametrize(
+    ("field", "replacement"),
+    (
+        ("action", {"coordinate": [63, 63], "name": "FORGED_ACTION"}),
+        ("action_decision_id", "decision:forged"),
+        ("mechanics_epoch_id", "mechanics-epoch:forged"),
+    ),
+)
+def test_rehashed_authorizing_prediction_boundary_tamper_is_rejected(
+    tmp_path: Path,
+    field: str,
+    replacement: object,
+) -> None:
+    controller, context = _drive_event_reuse(
+        tmp_path,
+        label=f"prediction-{field}-tamper",
+    )
+    completion = next(
+        event
+        for event in controller.journal.verify_manifest()
+        if event.event_type == "model.retrodiction_completed"
+        and event.payload.get("reason") == "event-receipt-reuse"
+    )
+    authorization = cast(
+        list[dict[str, object]],
+        completion.payload["authorizing_matched_prediction_evidence"],
+    )
+    prediction_receipt_id = cast(str, authorization[0]["prediction_receipt_id"])
+    checkpoint = controller.checkpoint()
+    controller.journal.close()
+
+    tampered = _rewrite_trace_suffix_and_checkpoint(
+        checkpoint_path=checkpoint.path,
+        trace_path=context.trace_root / "active.jsonl",
+        target=tmp_path / f"tampered-prediction-{field}.json",
+        event_type="simulation.prediction_emitted",
+        predicate=lambda payload: payload.get("receipt_id") == prediction_receipt_id,
+        mutate_payload=lambda payload: payload.__setitem__(field, deepcopy(replacement)),
+    )
+    with pytest.raises(PolicyError, match="prediction action/decision/epoch"):
+        ARC3Controller.restore(
+            context,
+            preset=ControllerPreset.FULL,
+            checkpoint_path=tampered,
+            retrodiction_config=_EVENT_TRIGGERED,
+        )
+
+
+@pytest.mark.replay
+def test_checkpoint_cache_access_ordinal_must_match_receipt_order(tmp_path: Path) -> None:
+    controller, context, _ = _drive_cached(tmp_path, label="cache-access-order-tamper")
+    checkpoint = controller.checkpoint()
+    controller.journal.close()
+
+    def tamper_access_ordinal(raw: dict[str, object]) -> None:
+        state = cast(dict[str, object], raw["state"])
+        derived = cast(dict[str, object], state["derived_controller_state"])
+        world = cast(dict[str, object], derived["world_model_ensemble"])
+        runtime = cast(dict[str, object], world["retrodiction_state"])
+        entries = cast(list[dict[str, object]], runtime["cache_entries"])
+        assert entries
+        if len(entries) > 1:
+            entries[0]["access_ordinal"], entries[1]["access_ordinal"] = (
+                entries[1]["access_ordinal"],
+                entries[0]["access_ordinal"],
+            )
+            return
+        access_ordinal = cast(int, entries[0]["access_ordinal"])
+        runtime_ordinal = cast(int, runtime["access_ordinal"])
+        replacement = 1 if access_ordinal != 1 else runtime_ordinal
+        assert replacement != access_ordinal
+        entries[0]["access_ordinal"] = replacement
+
+    tampered = _rewrite_checkpoint_and_commitment(
+        checkpoint_path=checkpoint.path,
+        trace_path=context.trace_root / "active.jsonl",
+        target=tmp_path / "tampered-cache-access-order.json",
+        mutate=tamper_access_ordinal,
+    )
+    with pytest.raises(PolicyError, match="exact receipt-order authority"):
+        ARC3Controller.restore(
+            context,
+            preset=ControllerPreset.FULL,
+            checkpoint_path=tampered,
+            retrodiction_config=_CACHED,
+        )
+
+
+@pytest.mark.replay
+def test_rehashed_trigger_generation_must_be_derived_from_receipt_order(
+    tmp_path: Path,
+) -> None:
+    controller, context, _ = _drive_cached(tmp_path, label="generation-order-tamper")
+    completion = next(
+        event
+        for event in controller.journal.verify_manifest()
+        if event.event_type == "model.retrodiction_completed"
+    )
+    namespace_key = cast(str, completion.payload["namespace_key"])
+    cache_key = cast(str, completion.payload["cache_key"])
+    original_generation = cast(int, completion.payload["generation"])
+    forged_generation = original_generation + 7
+    checkpoint = controller.checkpoint()
+    controller.journal.close()
+
+    started_tampered = _rewrite_trace_suffix_and_checkpoint(
+        checkpoint_path=checkpoint.path,
+        trace_path=context.trace_root / "active.jsonl",
+        target=tmp_path / "tampered-generation-started.json",
+        event_type="model.retrodiction_started",
+        predicate=lambda payload: (
+            payload.get("cache_key") == cache_key
+            and payload.get("generation") == original_generation
+        ),
+        mutate_payload=lambda payload: payload.__setitem__("generation", forged_generation),
+    )
+    completed_tampered = _rewrite_trace_suffix_and_checkpoint(
+        checkpoint_path=started_tampered,
+        trace_path=context.trace_root / "active.jsonl",
+        target=tmp_path / "tampered-generation-completed.json",
+        event_type="model.retrodiction_completed",
+        predicate=lambda payload: (
+            payload.get("cache_key") == cache_key
+            and payload.get("generation") == original_generation
+        ),
+        mutate_payload=lambda payload: payload.__setitem__("generation", forged_generation),
+    )
+
+    def tamper_checkpoint_generation(raw: dict[str, object]) -> None:
+        state = cast(dict[str, object], raw["state"])
+        derived = cast(dict[str, object], state["derived_controller_state"])
+        world = cast(dict[str, object], derived["world_model_ensemble"])
+        runtime = cast(dict[str, object], world["retrodiction_state"])
+        generations = cast(list[dict[str, object]], runtime["trigger_generations"])
+        target = next(item for item in generations if item["namespace_key"] == namespace_key)
+        target["generation"] = forged_generation
+
+    tampered = _rewrite_checkpoint_and_commitment(
+        checkpoint_path=completed_tampered,
+        trace_path=context.trace_root / "active.jsonl",
+        target=tmp_path / "tampered-generation-state.json",
+        mutate=tamper_checkpoint_generation,
+    )
+    with pytest.raises(PolicyError, match="generation is not receipt-derived"):
+        ARC3Controller.restore(
+            context,
+            preset=ControllerPreset.FULL,
+            checkpoint_path=tampered,
+            retrodiction_config=_CACHED,
+        )
