@@ -9,7 +9,7 @@
   "current_stage": "01",
   "current_task": "Predeclare and reproduce the frozen Build 000 FULL failure on a development-only subset",
   "implementation_branch": "build/001-local-public-recovery",
-  "pull_request": null,
+  "pull_request": "https://github.com/Grativy6/ARC3/pull/5",
   "started_at": "2026-08-21T15:41:02Z",
   "last_checkpoint_at": "2026-08-22T03:15:11Z",
   "last_checkpoint_commit": "ca83b69d8734f76896896dabd99e830d73e783a0",
@@ -34,7 +34,7 @@
   ],
   "stage_status": {
     "00": "PASS",
-    "01": "PENDING",
+    "01": "IN_PROGRESS",
     "02": "PENDING",
     "03": "PENDING",
     "04": "PENDING",
@@ -72,6 +72,14 @@
         "integrity_secret_scan": "PASS:0-findings",
         "git_fsck": "PASS:dangling-objects-only"
       }
+    },
+    "01": {
+      "status": "IN_PROGRESS",
+      "label": "local-public",
+      "predeclaration": "docs/evidence/001-01-reproduction-predeclaration.json",
+      "predeclaration_sha256": "sha256:7c4594d7164a462adad7abfc131c9d4a24c4c6f27fd9a8b1a1bdb575e34bc804",
+      "production_policy_changed": false,
+      "public_holdout_consumed": false
     }
   },
   "artifacts": {
@@ -90,10 +98,14 @@
     "license_decision": {
       "path": "docs/legal/LICENSE-DECISION.md",
       "sha256": "c79c854fe046551fdc21b94b093d15220728f00b93e1b129dd507edba418444f"
+    },
+    "stage_01_predeclaration": {
+      "path": "docs/evidence/001-01-reproduction-predeclaration.json",
+      "sha256": "7c4594d7164a462adad7abfc131c9d4a24c4c6f27fd9a8b1a1bdb575e34bc804"
     }
   },
   "blocked_items": [],
-  "next_action": "Predeclare the frozen-policy Stage 01 development-only reproduction without opening holdout games.",
+  "next_action": "Commit and push the Stage 01 predeclaration checkpoint, then execute the one declared development-only reproduction from that clean frozen commit.",
   "notes": [
     "Build 000 ledgers and reports are immutable historical evidence and are not overwritten by Build 001.",
     "The owner explicitly approved MIT-0 for ARC3 first-party source in the active Build 001 instruction.",

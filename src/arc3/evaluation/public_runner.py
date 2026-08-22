@@ -86,7 +86,7 @@ def _identity(
 ) -> dict[str, object]:
     root = Path(__file__).resolve().parents[3]
     lock = root / "upstream.lock.json"
-    selected = manifest.games(config.partition)
+    selected = config.selected_games(manifest)
     declaration = config.declaration()
     identity: dict[str, object] = {
         "git_commit": config.frozen_commit,
@@ -129,7 +129,7 @@ def _specifications(
     identity: dict[str, object],
 ) -> list[dict[str, object]]:
     specifications: list[dict[str, object]] = []
-    for entry in manifest.games(config.partition):
+    for entry in config.selected_games(manifest):
         for agent in config.agents:
             for seed in config.seeds:
                 specification: dict[str, object] = {
@@ -687,6 +687,8 @@ def _reproduction_argv(config: PublicEvaluationConfig) -> list[str]:
         "--milestone-id",
         config.milestone_id,
     ]
+    if config.game_ids is not None:
+        argv.extend(["--game-ids", ",".join(config.game_ids)])
     if config.evaluation_id is not None:
         argv.extend(["--evaluation-id", config.evaluation_id])
     if config.acquire_missing:
@@ -875,7 +877,7 @@ def _acquire_missing_assets(
     directory: Path,
     assets: dict[str, LocalAssetIdentity],
 ) -> dict[str, LocalAssetIdentity]:
-    selected = manifest.games(config.partition)
+    selected = config.selected_games(manifest)
     missing = [entry for entry in selected if entry.game_id not in assets]
     if not missing:
         return assets
@@ -1014,7 +1016,7 @@ def run_public_evaluation(config: PublicEvaluationConfig) -> EvaluationOutcome:
     )
     directory.mkdir(parents=True, exist_ok=True)
     assets = inventory_local_assets(manifest, config.environments_dir)
-    selected_ids = {entry.game_id for entry in manifest.games(config.partition)}
+    selected_ids = {entry.game_id for entry in config.selected_games(manifest)}
     if config.partition == "public-holdout":
         # Holdout acquisition and evaluation are deliberately inseparable.  A
         # content identity is recorded after each one-shot NORMAL-mode run.

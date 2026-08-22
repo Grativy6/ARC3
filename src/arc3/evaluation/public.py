@@ -312,6 +312,7 @@ class PublicEvaluationConfig:
     agents: tuple[str, ...]
     seeds: tuple[int, ...]
     frozen_commit: str
+    game_ids: tuple[str, ...] | None = None
     max_actions: int = FROZEN_COMPETITION_RUNTIME.max_actions
     max_resets: int = FROZEN_COMPETITION_RUNTIME.max_resets
     # Stage 15 public development is a predeclared 120-second measurement
@@ -359,6 +360,13 @@ class PublicEvaluationConfig:
             raise ValueError("frozen_commit must be a lowercase hexadecimal commit identity")
         if not self.milestone_id.strip():
             raise ValueError("milestone_id must not be empty")
+        if self.game_ids is not None:
+            if not self.game_ids or len(set(self.game_ids)) != len(self.game_ids):
+                raise ValueError("game_ids must be non-empty and unique when supplied")
+            if any(not game_id or game_id != game_id.strip() for game_id in self.game_ids):
+                raise ValueError("game_ids must contain non-empty normalized identifiers")
+            if self.partition == "public-holdout":
+                raise ValueError("public holdout evaluation cannot select a subset of games")
         if self.evaluation_id is not None and (
             not self.evaluation_id
             or any(
@@ -371,6 +379,7 @@ class PublicEvaluationConfig:
     def declaration(self) -> dict[str, object]:
         return {
             "partition": self.partition,
+            "game_ids": list(self.game_ids) if self.game_ids is not None else None,
             "agents": list(self.agents),
             "seeds": list(self.seeds),
             "max_actions": self.max_actions,
@@ -394,6 +403,20 @@ class PublicEvaluationConfig:
                 else None
             ),
         }
+
+    def selected_games(self, manifest: PublicPartitionManifest) -> tuple[PublicGameEntry, ...]:
+        """Resolve a declared development/smoke subset without changing the manifest."""
+
+        partition_games = manifest.games(self.partition)
+        if self.game_ids is None:
+            return partition_games
+        by_id = {entry.game_id: entry for entry in partition_games}
+        missing = [game_id for game_id in self.game_ids if game_id not in by_id]
+        if missing:
+            raise EvaluationError(
+                f"selected games are outside partition {self.partition}: {missing}"
+            )
+        return tuple(by_id[game_id] for game_id in self.game_ids)
 
     @property
     def surface(self) -> str:
@@ -487,7 +510,7 @@ def validate_public_gate(
     """Enforce source freeze and the one-shot public-holdout boundary."""
 
     validate_frozen_source(config.frozen_commit)
-    selected = manifest.games(config.partition)
+    selected = config.selected_games(manifest)
     if not selected:
         raise EvaluationError("selected public partition is empty")
     if config.partition != "public-holdout":

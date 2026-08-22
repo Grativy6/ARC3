@@ -43,3 +43,16 @@ independent authorities.
   open, inspect, or run a holdout game episode.
 - Evidence: manifest hash, 330-event exposure-ledger hash, zero holdout events, and zero local
   holdout asset directories in the Stage 00 receipt.
+
+## D-001-0005 — Reproduce one declared development failure before policy repair
+
+- Recorded: 2026-08-22T03:20:48Z
+- Status: accepted
+- Decision: Add a generic partition-bound evaluation selector and predeclare exactly one Stage 01
+  run: FULL/B4 on development game `ar25-0c556536`, seed 7, 80 actions, 8 resets, and a 120-second
+  worker limit. The selector is evaluation infrastructure; the production controller, policy
+  features, baseline binding, and competition-runtime declaration remain byte-identical to the
+  Build 000 Stage 18 source.
+- Evidence: `docs/evidence/001-01-reproduction-predeclaration.json` and focused selector tests.
+- Boundary: no asset acquisition, no hosted inference, no holdout selection, and no production
+  repair before the reproduction receipt is sealed.

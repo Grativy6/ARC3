@@ -55,6 +55,7 @@ def test_frozen_manifest_recomputes_all_assignments_and_exposures() -> None:
 def test_stage15_default_declaration_is_full_b0_through_b4() -> None:
     args = build_parser().parse_args([])
 
+    assert args.game_ids is None
     assert args.agents == ("random", "cycle", "novelty", "trace", "full")
     assert args.seeds == (7, 11)
     assert args.max_actions == 80
@@ -70,6 +71,40 @@ def test_stage15_default_declaration_is_full_b0_through_b4() -> None:
     assert config.max_resets == FROZEN_COMPETITION_RUNTIME.max_resets == 8
     assert config.timeout_seconds == 120.0
     assert FROZEN_COMPETITION_RUNTIME.per_game_wall_clock_seconds == 240.0
+
+
+def test_public_evaluation_selector_is_partition_bound_and_holdout_closed() -> None:
+    manifest = PublicPartitionManifest.load(MANIFEST)
+    development_ids = tuple(entry.game_id for entry in manifest.games("development")[:2])
+    args = build_parser().parse_args(
+        ["--partition", "development", "--game-ids", ",".join(development_ids)]
+    )
+    config = PublicEvaluationConfig(
+        partition=args.partition,
+        game_ids=args.game_ids,
+        agents=("full",),
+        seeds=(7,),
+        frozen_commit=FROZEN,
+    )
+
+    assert tuple(entry.game_id for entry in config.selected_games(manifest)) == development_ids
+    assert config.declaration()["game_ids"] == list(development_ids)
+    with pytest.raises(EvaluationError, match="outside partition"):
+        PublicEvaluationConfig(
+            partition="development",
+            game_ids=(manifest.games("public-holdout")[0].game_id,),
+            agents=("full",),
+            seeds=(7,),
+            frozen_commit=FROZEN,
+        ).selected_games(manifest)
+    with pytest.raises(ValueError, match="cannot select a subset"):
+        PublicEvaluationConfig(
+            partition="public-holdout",
+            game_ids=(manifest.games("public-holdout")[0].game_id,),
+            agents=("full",),
+            seeds=(7,),
+            frozen_commit=FROZEN,
+        )
 
 
 def test_stage15_context_uses_frozen_controller_bounds_with_surface_wall_override(

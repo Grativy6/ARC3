@@ -56,6 +56,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--partition", choices=("smoke", "development", "public-holdout"), default="smoke"
     )
     parser.add_argument(
+        "--game-ids",
+        type=_csv_strings,
+        help="optional ordered subset of the selected smoke/development partition",
+    )
+    parser.add_argument(
         "--agents",
         type=_csv_strings,
         default=("random", "cycle", "novelty", "trace", "full"),
@@ -132,6 +137,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         outcome = run_public_evaluation(
             PublicEvaluationConfig(
                 partition=args.partition,
+                game_ids=args.game_ids,
                 agents=args.agents,
                 seeds=args.seeds,
                 frozen_commit=frozen_commit,
