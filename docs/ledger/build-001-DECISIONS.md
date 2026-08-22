@@ -334,3 +334,25 @@ independent authorities.
 - Reopening condition: a fold passes with missing, duplicated, noncontiguous, reordered, or
   terminal-invented support; recovery order is normalized lexically; or derived state can advance
   when its immutable support append fails.
+
+## D-001-0021 — Accept the frozen Stage 06 failure and continue to Stage 07
+
+- Recorded: 2026-08-22T15:15:09Z
+- Status: accepted
+- Decision: Close Stage 06 as `FAILED_MECHANISM` under the unchanged predeclared rule and continue
+  immediately to the independent Stage 07 retrodiction predeclaration. Do not rerun Stage 06 or
+  weaken its lifecycle predicates. Retain the 32/32 action-effect rotation result as bounded
+  synthetic progress, but do not promote traversability or stationary-noise terminal `WIN` outcomes
+  over their missing candidate-linked typed receipt closures.
+- Evidence: clean source commit `ec51f7e7d09241f47baa866af897546912d3c611`; Attempt 02 raw
+  artifact file
+  `sha256:198201b86d6bbbefd01188cdea67bde4297f402a41ca1531a4fb05a527627151`;
+  valid self-hash
+  `sha256:4623ec8b03dbeaa6c4901ca70daaea53747f3918b8a8c49b6d73a80c1d70eb0f`.
+  All 112 executions completed and replayed, but traversability passed 0/32, stationary noise passed
+  0/32, and checkpoint/resume passed 4/8.
+- Boundary: this decision is `synthetic` only. It makes no local-public, holdout, hidden-game,
+  Kaggle, semi-private, or official-private claim. The ten-game public holdout remains sealed and
+  Stage 07 must be frozen before its measurements are observed.
+- Reopening condition: an audit shows that the frozen raw artifact was misread, its self-hash or
+  source identity fails validation, or any reported count differs from the immutable case records.

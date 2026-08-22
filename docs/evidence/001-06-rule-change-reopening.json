@@ -1,0 +1,219 @@
+{
+  "schema": "arc3.build-001.stage-06-rule-change-reopening-acceptance.v0.1",
+  "status": "FAILED_MECHANISM",
+  "evidence_label": "synthetic",
+  "recorded_at": "2026-08-22T15:15:09Z",
+  "claim_boundary": "This receipt records a bounded synthetic mechanism failure under the unchanged frozen Stage 06 matrix. Terminal WIN outcomes do not override missing candidate-linked lifecycle receipts. This is not local-public recovery, public-holdout evidence, hidden-game generalization, or an official competition result.",
+  "frozen_source": {
+    "git_commit": "ec51f7e7d09241f47baa866af897546912d3c611",
+    "git_tree": "b138ba66990bae945d03272a1c805194d63b2037",
+    "branch": "build/001-local-public-recovery",
+    "worktree_clean_before_and_after_measurement": true,
+    "first_party_source_file_count": 137,
+    "first_party_source_hash": "sha256:87b357474403e486f7650169e6269c94bc0f012f0fbb83867b4d7a8fd83a5354",
+    "source_identity_hash": "sha256:d6e30b0dd2167651953acdb8ad78622f70161d6373667fbac92603ac5140b1c8",
+    "predeclaration": "docs/evidence/001-06-rule-change-predeclaration.json",
+    "predeclaration_sha256": "sha256:0bca5f32986c79008cf6ee01a83867262cda591f477239a5b8e9bccd90e37434",
+    "source_identity_stable": true
+  },
+  "raw_artifact": {
+    "path": "C:/a/arc3-b001/artifacts/stage06/rule-change-reopening-attempt-02.json",
+    "work_root": "C:/a/arc3-b001/artifacts/stage06/rule-change-reopening-work-attempt-02",
+    "schema": "arc3.build-001.stage-06-rule-change-reopening.v0.1",
+    "byte_length": 15318029,
+    "file_sha256": "sha256:198201b86d6bbbefd01188cdea67bde4297f402a41ca1531a4fb05a527627151",
+    "artifact_core_hash": "sha256:4623ec8b03dbeaa6c4901ca70daaea53747f3918b8a8c49b6d73a80c1d70eb0f",
+    "artifact_core_hash_valid": true,
+    "started_at": "2026-08-22T14:54:02Z",
+    "completed_at": "2026-08-22T15:08:12Z"
+  },
+  "suite_accounting": {
+    "planned_controller_executions": 112,
+    "completed_controller_executions": 112,
+    "intervention_cases": 64,
+    "stationary_noise_cases": 32,
+    "checkpoint_logical_pairs": 8,
+    "checkpoint_controller_executions": 16,
+    "shared_prefix_preparation_failures": 0,
+    "controller_faults": 0,
+    "invalid_requests": 0,
+    "failures": 0,
+    "resets": 0
+  },
+  "intervention_results": {
+    "cases_exercised": 64,
+    "cases_passed": 32,
+    "action_effect_rotation": {
+      "cases": 32,
+      "terminal_wins": 32,
+      "cases_passed": 32,
+      "result": "PASS_ON_FROZEN_CASE_PREDICATES"
+    },
+    "traversability_flip": {
+      "cases": 32,
+      "terminal_wins": 32,
+      "cases_passed": 0,
+      "result": "FAILED_MECHANISM",
+      "failed_predicate": "candidate-linked typed successor hypothesis is absent",
+      "interpretation": "The controller re-explored and reached WIN, but the evaluator confirmation had no matching candidate-linked ordered lifecycle chain. Completion is not promoted over the missing typed receipt closure."
+    },
+    "metamorphic_groups": 16,
+    "metamorphic_groups_passed": 0
+  },
+  "stationary_noise_results": {
+    "cases": 32,
+    "terminal_wins": 32,
+    "raw_resolved_as_noise_count": 32,
+    "false_positive_reopenings": 0,
+    "cases_passed": 0,
+    "result": "FAILED_MECHANISM",
+    "failed_predicate": "candidate-specific noise closure is absent",
+    "interpretation": "The aggregate counter says resolved_as_noise and no confirmed false-positive epoch was opened, but the trace lacks the trigger-sourced candidate and two exact typed causal recovery receipts required to credit candidate-specific closure.",
+    "metamorphic_groups": 8,
+    "metamorphic_groups_passed": 0
+  },
+  "checkpoint_resume_results": {
+    "logical_pairs": 8,
+    "pairs_passed": 4,
+    "action_effect_rotation_pairs": "4/4",
+    "traversability_flip_pairs": "0/4",
+    "traversability_failed_predicate": "validity",
+    "result": "FAILED_MECHANISM"
+  },
+  "trace_and_action_measurements": {
+    "environment_actions": 2084,
+    "truth_receipts": 2084,
+    "truth_receipts_verified_executions": 112,
+    "trace_events": 53980,
+    "trace_files": 1724,
+    "trace_replay_passed": "112/112",
+    "prefix_immutability_passed": "112/112"
+  },
+  "resource_measurement": {
+    "wall_seconds": 849.782134,
+    "wall_limit_seconds": 900.0,
+    "wall_within_limit": true,
+    "cpu_ns": 717343750000,
+    "median_execution_wall_ns": 6575897450.0,
+    "maximum_execution_wall_ns": 13704473600,
+    "maximum_execution_wall_limit_seconds": 60.0,
+    "maximum_execution_wall_within_limit": true,
+    "peak_rss_bytes": 120565760,
+    "peak_rss_limit_bytes": 1073741824,
+    "peak_rss_within_limit": true,
+    "runtime": "Windows 10; CPython 3.12.14; AMD64 Family 23 Model 8 Stepping 2; 12 logical CPUs",
+    "network_enabled": false,
+    "hosted_inference": false
+  },
+  "verification": {
+    "official_embedded_checks": {
+      "status": "PASS:4/4",
+      "ruff_lint": "PASS",
+      "ruff_format": "PASS:261-files",
+      "mypy_strict": "PASS:154-source-files",
+      "focused_unit_integration_replay": "PASS:114"
+    },
+    "competition_integrity": {
+      "status": "PASS",
+      "finding_counts": "0-blocking+0-warnings+0-total",
+      "artifact_sha256": "sha256:4c247a6906f5071e606df8f557e0d2a79921366409b3c310f3eb5cb14a1013eb",
+      "receipt_sha256": "sha256:545076f06baa422022ee99d79a8fc877a9c0ade6b637d999261b440f58f98ecb"
+    },
+    "static_action_semantics": {
+      "status": "PASS:0-findings",
+      "artifact_sha256": "sha256:6308c5d115fead85a3420f9c010f646fd2b8e40b853e3c7ddd785f57da0c3729",
+      "receipt_hash": "sha256:0683cf1e9ebd0c705bb6f3b5d68aeaa9047ff207789cd0569fc34a1df495e937"
+    },
+    "socket_deny_guard": "PASS:0-attempts",
+    "preflight_059": {
+      "status": "PASS",
+      "path": "C:/a/arc3-b001/artifacts/stage06/preflight/s059-ordered-support-ec51f7e/result.json",
+      "file_sha256": "sha256:13d088883014bc61ae3ad5943e2e87b0c8b8f85b0bd0994263048e0ea37642c0",
+      "preflight_core_hash": "sha256:4edb729d70ebcd1b5b3cd92de99b8183a7ff198440e51dce2a9201630da2a711",
+      "case": "PASS:WIN-18-actions-trigger-6-confirmation-7",
+      "checkpoint_pair": "PASS:24/24-predicates",
+      "ordered_support_causal_closure": "PASS",
+      "path_runtime": "PASS:0-path-failures+249-character-projected-temporary-path"
+    },
+    "remote_ci": {
+      "source_commit": "ec51f7e7d09241f47baa866af897546912d3c611",
+      "push_run": 32578675235,
+      "push_ubuntu_job": 97044684125,
+      "push_windows_job": 97044684065,
+      "pull_request_run": 32578677426,
+      "pull_request_ubuntu_job": 97044689987,
+      "pull_request_windows_job": 97044689898,
+      "status": "PASS:push+pull-request;ubuntu+windows",
+      "checks": "locked environment, Ruff lint, Ruff format, strict mypy, full pytest with coverage, runtime doctor"
+    }
+  },
+  "preserved_attempts": [
+    {
+      "name": "official_attempt_01",
+      "status": "FAILED_INFRASTRUCTURE",
+      "receipt": "docs/evidence/001-06-failed-infrastructure-attempt-01.json",
+      "receipt_sha256": "sha256:749bdf1673b44fe5272ac4445bb21299b54f7835634ab87e74e86d6d274c3029",
+      "mechanism_cases_completed": 0,
+      "preserved_partial_manifest_sha256": "sha256:66e31a5df20dbdc5629eae1a063c001cd62e50615519c2c4095422eb77bda080"
+    },
+    {
+      "name": "preflight_058",
+      "status": "FAILED_MECHANISM",
+      "receipt": "docs/evidence/001-06-preflight-058-failed-mechanism.json",
+      "receipt_sha256": "sha256:822c690a02c65e7c6684bcf461f48824fb0f2d61e4b9114a94618a801c77f3e4",
+      "raw_file_sha256": "sha256:b864d5391a45ed12468d8c7a0ec97f6fabe4c5e7cb09ae3b80f140d5e086b91b",
+      "raw_core_hash": "sha256:9534e8b993f6cda329fc07545bf785b6ab92f91df4c320ef1fef1b436573e23c"
+    }
+  ],
+  "acceptance": {
+    "all_intervention_cases_exercised": true,
+    "action_effect_rotation_cases": true,
+    "traversability_flip_cases": false,
+    "stationary_noise_controls": false,
+    "checkpoint_resume_pairs": false,
+    "trace_replay_and_immutability": true,
+    "resource_limits": true,
+    "source_clean_and_stable": true,
+    "verification_and_integrity": true,
+    "holdout_integrity": true,
+    "stage_status": "FAILED_MECHANISM"
+  },
+  "decision_rule_application": {
+    "failed_mechanism_predicates": {
+      "coherent_successor_unconfirmed_for_a_family": true,
+      "repair_has_no_bounded_adaptation_for_a_family": true
+    },
+    "infrastructure_failure_count": 0,
+    "result": "The frozen FAILED_MECHANISM rule controls because one intervention family has no accepted candidate-linked successor chain and the noise family has no candidate-specific typed closure."
+  },
+  "holdout": {
+    "status": "SEALED_UNCONSUMED",
+    "manifest_holdout_count": 10,
+    "public_partition_manifest_sha256": "sha256:682d5891c2aface54803d9bd1173c55ed21e89856e13b8a478fb9276ee963f2f",
+    "build_000_exposure_ledger_sha256": "sha256:cd9af42ed3a5ef9fa0dc201ddb10e32d2bcccee9df729aa0c7d53077c04c9ad4",
+    "stage_03_exposure_ledger_sha256": "sha256:e02a9fa71206170a6fe2aeefb6935ae25141e2759937657475cead4389bb17aa",
+    "public_holdout_gameplay_events": 0,
+    "locally_acquired_holdout_assets": 0
+  },
+  "burden_disposition": {
+    "remain_open": [
+      "B-001-0022",
+      "B-001-0023",
+      "B-001-0024"
+    ],
+    "resolved_with_preserved_history": [
+      "B-001-0025",
+      "B-001-0026"
+    ]
+  },
+  "next_stage": {
+    "stage": "07",
+    "task": "Freeze the paired retrodiction variants, measurements, budgets, and decision rule before execution; do not rerun or weaken Stage 06."
+  },
+  "limitations": [
+    "The result is synthetic and does not establish local-public or hidden-game generalization.",
+    "All traversability and noise episodes reached WIN, but terminal outcome is not accepted lifecycle evidence.",
+    "Only 4/8 checkpoint pairs passed; all four misses are traversability pairs.",
+    "No public game, Kaggle, semi-private, or official-private result is claimed."
+  ]
+}

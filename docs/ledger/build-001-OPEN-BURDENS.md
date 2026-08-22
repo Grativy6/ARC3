@@ -373,6 +373,14 @@ does not erase earlier uncertainty or failed mechanisms.
 - Resolution condition: the official Stage 06 artifact either meets the frozen decision rule or
   records an honest bounded mechanism result, with every earlier failed receipt retained.
 - Resolution receipt: none.
+- Stage 06 closeout: official Attempt 02 completed 112/112 executions and is durably classified
+  `FAILED_MECHANISM`. Action-effect rotation passed 32/32, but traversability passed 0/32 and the
+  stationary-noise control passed 0/32 because candidate-linked typed closure was absent despite
+  terminal `WIN`. The historical smoke failures remain preserved. This burden remains open as the
+  unresolved generic reopening mechanism; Stage 07 proceeds independently rather than rerunning or
+  weakening Stage 06.
+- Current receipt: `docs/evidence/001-06-rule-change-reopening.json`; raw artifact file
+  `sha256:198201b86d6bbbefd01188cdea67bde4297f402a41ca1531a4fb05a527627151`.
 
 ## B-001-0023 — Rehashed Stage 06 checkpoint exposed self-authored restore authority
 
@@ -412,6 +420,10 @@ does not erase earlier uncertainty or failed mechanisms.
   each rehashed authority mutation fails before action selection; the expanded replay suite, Ruff,
   and strict mypy all pass.
 - Resolution receipt: none.
+- Stage 06 closeout: the frozen matrix passed all four action-effect rotation checkpoint pairs but
+  failed all four traversability pairs at the `validity` predicate, for 4/8 overall. All 112 traces
+  replayed and prefix immutability passed, but those aggregate checks cannot replace the missing
+  family-specific restore validity. The burden remains open.
 
 ## B-001-0024 — Same-handle repetition cannot prove the frozen global action rotation
 
@@ -437,10 +449,15 @@ does not erase earlier uncertainty or failed mechanisms.
 - Resolution condition: typed cross-handle confirmation and the adversarial test pass throughout
   identity/transformed smoke cases and the frozen official matrix.
 - Resolution receipt: none.
+- Stage 06 closeout: the official action-effect rotation family passed all 32 identity/transformed
+  cases and all four of its checkpoint pairs, providing bounded support for the cross-handle repair.
+  The broader Stage 06 acceptance still failed its second intervention family and every noise
+  control, so this burden remains open pending a later generic closure review rather than being
+  erased by the successful action-rotation subset.
 
 ## B-001-0025 — First official Stage 06 attempt exceeded the Windows path boundary
 
-- Status: OPEN
+- Status: RESOLVED
 - Stage: 06
 - Opened: 2026-08-22
 - Burden: The first clean-source official harness attempt stopped before its first intervention
@@ -460,11 +477,19 @@ does not erase earlier uncertainty or failed mechanisms.
   paths.
 - Resolution condition: the path mapping tests, repository verification, and superseding frozen
   matrix complete without path failure; Attempt 01 remains preserved and separately labeled.
-- Resolution receipt: none.
+- Resolution: clean preflight 059 exercised a runtime root eight characters longer than Attempt 02,
+  projected a 249-character temporary path, and reported zero path failures. The superseding frozen
+  matrix then completed all 112 executions with zero infrastructure failures. Attempt 01 and its
+  archived partial tree remain preserved and separately labeled.
+- Resolution receipts: `C:/a/arc3-b001/artifacts/stage06/preflight/s059-ordered-support-ec51f7e/result.json`,
+  file SHA-256
+  `13d088883014bc61ae3ad5943e2e87b0c8b8f85b0bd0994263048e0ea37642c0`;
+  `docs/evidence/001-06-rule-change-reopening.json`; Attempt 02 raw artifact file SHA-256
+  `198201b86d6bbbefd01188cdea67bde4297f402a41ca1531a4fb05a527627151`.
 
 ## B-001-0026 — Independent sorting broke causal support-tuple alignment
 
-- Status: OPEN
+- Status: RESOLVED
 - Stage: 06
 - Opened: 2026-08-22
 - Burden: Nonpromotable runtime path preflight 058 proved the Windows path repair but stopped on a
@@ -493,4 +518,13 @@ does not erase earlier uncertainty or failed mechanisms.
 - Resolution condition: the exact failed case and adversarial regressions pass from clean source;
   preflight 058 remains immutable and a new path preflight receipt is created rather than replacing
   it.
-- Resolution receipt: none.
+- Resolution: clean preflight 059 passed the exact transformed action-rotation case with ordered
+  candidate support closure, trigger 6, confirmation 7, `WIN` in 18 actions, and a 24/24-predicate
+  checkpoint pair. The official action-rotation matrix then passed 32/32 while all 112 traces
+  replayed and retained immutable prefixes. Preflight 058 remains unchanged at its original path.
+- Resolution receipts: `C:/a/arc3-b001/artifacts/stage06/preflight/s059-ordered-support-ec51f7e/result.json`,
+  file SHA-256
+  `13d088883014bc61ae3ad5943e2e87b0c8b8f85b0bd0994263048e0ea37642c0`,
+  self-hash
+  `sha256:4edb729d70ebcd1b5b3cd92de99b8183a7ff198440e51dce2a9201630da2a711`;
+  `docs/evidence/001-06-rule-change-reopening.json`.

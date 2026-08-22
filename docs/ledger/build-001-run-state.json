@@ -6,13 +6,13 @@
   "owner": "Christopher D. Pang",
   "build_status": "IN_PROGRESS",
   "status": "IN_PROGRESS",
-  "current_stage": "06",
-  "current_task": "Repair the preserved preflight 058 causal support-order failure, revalidate the bounded path mapping, and run the unchanged 112-execution matrix as Attempt 02",
+  "current_stage": "07",
+  "current_task": "Predeclare the paired retrodiction variants, budgets, measurements, and decision rule before running Stage 07",
   "implementation_branch": "build/001-local-public-recovery",
   "pull_request": "https://github.com/Grativy6/ARC3/pull/5",
   "started_at": "2026-08-21T15:41:02Z",
-  "last_checkpoint_at": "2026-08-22T13:46:20.2219625Z",
-  "last_checkpoint_commit": "7b6133d8a1a2b5e64ba1aca7d2deba13786259c2",
+  "last_checkpoint_at": "2026-08-22T15:15:09Z",
+  "last_checkpoint_commit": "ec51f7e7d09241f47baa866af897546912d3c611",
   "base": {
     "main_commit": "28c7a00732ce48e5c231211b01bc6eba7d0d71b4",
     "main_tree": "4586299448e9b1b585a0878674ed5f9afa60c384",
@@ -35,7 +35,8 @@
     "02",
     "03",
     "04",
-    "05"
+    "05",
+    "06"
   ],
   "stage_status": {
     "00": "PASS",
@@ -44,7 +45,7 @@
     "03": "PASS",
     "04": "PASS",
     "05": "PASS",
-    "06": "IN_PROGRESS",
+    "06": "FAILED_MECHANISM",
     "07": "PENDING",
     "08": "PENDING",
     "09": "PENDING",
@@ -224,7 +225,7 @@
       "public_holdout_consumed": false
     },
     "06": {
-      "status": "IN_PROGRESS",
+      "status": "FAILED_MECHANISM",
       "label": "synthetic",
       "predeclaration": "docs/evidence/001-06-rule-change-predeclaration.json",
       "predeclaration_sha256": "sha256:0bca5f32986c79008cf6ee01a83867262cda591f477239a5b8e9bccd90e37434",
@@ -232,7 +233,9 @@
       "stationary_noise_cases_predeclared": 32,
       "checkpoint_resume_pairs_predeclared": 8,
       "controller_executions_predeclared": 112,
-      "implementation_status": "FAILED_MECHANISM_PREFLIGHT_058_SUPPORT_ORDER_REPAIR_IN_PROGRESS",
+      "frozen_source_commit": "ec51f7e7d09241f47baa866af897546912d3c611",
+      "frozen_source_tree": "b138ba66990bae945d03272a1c805194d63b2037",
+      "implementation_status": "MEASURED_FAILED_MECHANISM_ACCEPTED_WITH_HISTORY_PRESERVED",
       "preimplementation_integrity": "PASS:0-blocking+0-warnings+0-secrets",
       "preimplementation_integrity_receipt_hash": "sha256:993bbce75fb055058711949d873ac5c73e6cc0a6cabe2cf4e93cf04fd12923a3",
       "official_attempt_01": {
@@ -254,6 +257,50 @@
         "raw_file_sha256": "sha256:b864d5391a45ed12468d8c7a0ec97f6fabe4c5e7cb09ae3b80f140d5e086b91b",
         "raw_core_hash": "sha256:9534e8b993f6cda329fc07545bf785b6ab92f91df4c320ef1fef1b436573e23c"
       },
+      "runtime_path_preflight_059": {
+        "status": "PASS",
+        "source_commit": "ec51f7e7d09241f47baa866af897546912d3c611",
+        "path_runtime": "PASS:0-path-failures+249-character-projected-temporary-path",
+        "checkpoint_pair": "PASS:24/24",
+        "intervention_case": "PASS:WIN18-trigger6-confirmation7-ordered-support",
+        "path": "C:/a/arc3-b001/artifacts/stage06/preflight/s059-ordered-support-ec51f7e/result.json",
+        "raw_file_sha256": "sha256:13d088883014bc61ae3ad5943e2e87b0c8b8f85b0bd0994263048e0ea37642c0",
+        "raw_core_hash": "sha256:4edb729d70ebcd1b5b3cd92de99b8183a7ff198440e51dce2a9201630da2a711"
+      },
+      "official_attempt_02": {
+        "status": "FAILED_MECHANISM",
+        "source_commit": "ec51f7e7d09241f47baa866af897546912d3c611",
+        "raw_path": "C:/a/arc3-b001/artifacts/stage06/rule-change-reopening-attempt-02.json",
+        "raw_file_sha256": "sha256:198201b86d6bbbefd01188cdea67bde4297f402a41ca1531a4fb05a527627151",
+        "raw_core_hash": "sha256:4623ec8b03dbeaa6c4901ca70daaea53747f3918b8a8c49b6d73a80c1d70eb0f",
+        "controller_executions": "112/112",
+        "action_effect_rotation": "PASS:32/32",
+        "traversability_flip": "FAILED_MECHANISM:0/32-despite-WIN32/32",
+        "stationary_noise": "FAILED_MECHANISM:0/32-despite-WIN32/32+resolved_as_noise32+false_positive_reopenings0",
+        "checkpoint_resume_pairs": "4/8",
+        "trace_replay_and_prefix_immutability": "PASS:112/112",
+        "environment_actions": 2084,
+        "trace_events": 53980,
+        "controller_faults": 0,
+        "invalid_requests": 0,
+        "wall_seconds": 849.782134,
+        "peak_rss_bytes": 120565760,
+        "verification": "PASS:ruff+format+mypy154+focused114+integrity0+action-semantics0+socket0",
+        "remote_ci": "PASS:push32578675235+pr32578677426;ubuntu+windows"
+      },
+      "acceptance": "docs/evidence/001-06-rule-change-reopening.json",
+      "acceptance_sha256": "sha256:0a7b98fbabd5df8df8cf63351d6629903ee9ae9b85f6b1b1d45776fe815301dd",
+      "report": "docs/reports/001-06-rule-change-reopening.md",
+      "report_sha256": "sha256:a7cd087a98e49862241d7542db4d00a37a52a16f73f6c3cffded6515bd7ee25c",
+      "resolved_burdens": [
+        "B-001-0025",
+        "B-001-0026"
+      ],
+      "open_burdens": [
+        "B-001-0022",
+        "B-001-0023",
+        "B-001-0024"
+      ],
       "public_holdout_consumed": false
     }
   },
@@ -345,10 +392,18 @@
     "stage_06_preflight_058_failed_mechanism": {
       "path": "docs/evidence/001-06-preflight-058-failed-mechanism.json",
       "sha256": "822c690a02c65e7c6684bcf461f48824fb0f2d61e4b9114a94618a801c77f3e4"
+    },
+    "stage_06_acceptance": {
+      "path": "docs/evidence/001-06-rule-change-reopening.json",
+      "sha256": "0a7b98fbabd5df8df8cf63351d6629903ee9ae9b85f6b1b1d45776fe815301dd"
+    },
+    "stage_06_report": {
+      "path": "docs/reports/001-06-rule-change-reopening.md",
+      "sha256": "a7cd087a98e49862241d7542db4d00a37a52a16f73f6c3cffded6515bd7ee25c"
     }
   },
   "blocked_items": [],
-  "next_action": "Commit the frozen preflight 058 failure receipt, implement and adversarially test arrival-ordered mechanics support tuples, rerun a new clean path preflight, then requalify Attempt 02.",
+  "next_action": "Freeze the Stage 07 paired retrodiction variants, measurements, budgets, and decision rule before execution; do not rerun or weaken Stage 06.",
   "notes": [
     "Build 000 ledgers and reports are immutable historical evidence and are not overwritten by Build 001.",
     "The owner explicitly approved MIT-0 for ARC3 first-party source in the active Build 001 instruction.",
