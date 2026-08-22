@@ -12,6 +12,7 @@ import sys
 import time
 import tracemalloc
 import uuid
+from contextlib import nullcontext
 from pathlib import Path
 from typing import Any, cast
 
@@ -144,6 +145,7 @@ def _specifications(
                     "max_actions": config.max_actions,
                     "max_resets": config.max_resets,
                     "timeout_seconds": config.timeout_seconds,
+                    "hot_path_profile": config.hot_path_profile,
                     "surface": config.surface,
                     "network_mode": config.network_mode,
                     "identity_hash": identity["identity_hash"],
@@ -202,6 +204,15 @@ def _failure_result(
         if specification.get("surface") == "online-public"
         else EvaluationSurface.LOCAL_PUBLIC
     )
+    resolved_metrics = metrics or _empty_metrics()
+    if specification.get("hot_path_profile") is True and not isinstance(
+        resolved_metrics.get("hot_path_profile"), dict
+    ):
+        resolved_metrics["hot_path_profile"] = {
+            "enabled": False,
+            "reason": kind,
+            "schema": "arc3.hot-path-profile-unavailable.v0.1",
+        }
     return seal_object(
         {
             "schema": PUBLIC_RUN_SCHEMA,
@@ -219,7 +230,7 @@ def _failure_result(
             "completed_at": _utc_now(),
             "identity_hash": identity["identity_hash"],
             "score": _score_payload(None, expected_surface=expected_surface),
-            "metrics": metrics or _empty_metrics(),
+            "metrics": resolved_metrics,
             "trace": trace,
             "asset_identity_after": asset_identity_after,
             "asset_identity_after_reason": (
@@ -297,30 +308,39 @@ def _worker(spec: dict[str, Any], receipt_path: str) -> None:
     journal: EventJournal | None = None
     trace: dict[str, object] | None = None
     metrics = _empty_metrics()
+    hot_path_profiler = None
     caught: Exception | None = None
     scorecard = None
     score_payload: dict[str, object] | None = None
     asset_identity_after: dict[str, object] | None = None
     tracemalloc.start()
     try:
+        if specification.get("hot_path_profile") is True:
+            from arc3.profiling.hot_path import HotPathProfiler
+
+            hot_path_profiler = HotPathProfiler()
         surface = str(specification["surface"])
         online_one_shot = surface == "online-public"
-        adapter = ArcAGIAdapter(
-            ARC3Config.for_mode(
-                EnvironmentMode.ONLINE if online_one_shot else EnvironmentMode.LOCAL,
+        startup_span = (
+            hot_path_profiler.span("startup") if hot_path_profiler is not None else nullcontext()
+        )
+        with startup_span:
+            adapter = ArcAGIAdapter(
+                ARC3Config.for_mode(
+                    EnvironmentMode.ONLINE if online_one_shot else EnvironmentMode.LOCAL,
+                    seed=_as_int(specification["seed"], field="seed"),
+                    network_enabled=online_one_shot,
+                ),
+                environments_dir=str(spec["environments_dir"]),
+                recordings_dir=str(spec["recordings_dir"]),
+                save_recording=True,
+                include_frame_data=True,
+                environ={},
+            )
+            session = adapter.open(
+                str(specification["game_id"]),
                 seed=_as_int(specification["seed"], field="seed"),
-                network_enabled=online_one_shot,
-            ),
-            environments_dir=str(spec["environments_dir"]),
-            recordings_dir=str(spec["recordings_dir"]),
-            save_recording=True,
-            include_frame_data=True,
-            environ={},
-        )
-        session = adapter.open(
-            str(specification["game_id"]),
-            seed=_as_int(specification["seed"], field="seed"),
-        )
+            )
         if str(session.observation.game_id) != str(specification["game_id"]):
             raise EvaluationError(
                 "official initial observation game identity does not match the run declaration"
@@ -330,6 +350,7 @@ def _worker(spec: dict[str, Any], receipt_path: str) -> None:
             agent,
             seed=_as_int(specification["seed"], field="seed"),
             run_context=cast(Any, _run_context(spec)) if agent == "full" else None,
+            hot_path_profiler=hot_path_profiler,
         )
         sink: BaselineTraceSink | None = None
         if not policy.manages_trace:
@@ -358,34 +379,71 @@ def _worker(spec: dict[str, Any], receipt_path: str) -> None:
             max_actions=_as_int(specification["max_actions"], field="max_actions"),
             max_resets=_as_int(specification["max_resets"], field="max_resets"),
             trace_sink=sink,
+            hot_path_profiler=hot_path_profiler,
         )
     except Exception as error:
         caught = error
     finally:
         if policy is not None:
             try:
-                policy.close()
+                finalize_span = (
+                    hot_path_profiler.span("finalize")
+                    if hot_path_profiler is not None
+                    else nullcontext()
+                )
+                with finalize_span:
+                    policy.close()
             except Exception as error:
                 caught = caught or error
         if session is not None and scorecard is None:
             try:
-                scorecard = session.close()
+                finalize_span = (
+                    hot_path_profiler.span("finalize")
+                    if hot_path_profiler is not None
+                    else nullcontext()
+                )
+                with finalize_span:
+                    scorecard = session.close()
             except Exception as error:
                 caught = caught or error
         if journal is not None:
             try:
-                journal.close()
+                trace_span = (
+                    hot_path_profiler.span("trace_serialization")
+                    if hot_path_profiler is not None
+                    else nullcontext()
+                )
+                with trace_span:
+                    journal.close()
             except Exception as error:
                 caught = caught or error
         try:
             if trace_path.is_dir():
-                trace = _trace_receipt(trace_path, run_id=run_id, relative_path=trace_relative)
+                trace_span = (
+                    hot_path_profiler.span("trace_serialization")
+                    if hot_path_profiler is not None
+                    else nullcontext()
+                )
+                with trace_span:
+                    trace = _trace_receipt(
+                        trace_path,
+                        run_id=run_id,
+                        relative_path=trace_relative,
+                    )
         except (OSError, TraceError, ValueError) as error:
             caught = caught or error
-        _current, peak = tracemalloc.get_traced_memory()
-        tracemalloc.stop()
+        telemetry_span = (
+            hot_path_profiler.span("profiler_telemetry")
+            if hot_path_profiler is not None
+            else nullcontext()
+        )
+        with telemetry_span:
+            _current, peak = tracemalloc.get_traced_memory()
+            tracemalloc.stop()
         metrics["peak_python_allocation_bytes"] = peak
         metrics["total_wall_clock_seconds"] = time.perf_counter() - started
+        if hot_path_profiler is not None:
+            metrics["hot_path_profile"] = hot_path_profiler.summary()
         if trace is not None:
             counts_value = trace.get("event_type_counts")
             counts = counts_value if isinstance(counts_value, dict) else {}
@@ -484,6 +542,12 @@ def _receipt_valid(
     metrics = receipt.get("metrics")
     if not isinstance(score, dict) or not isinstance(metrics, dict):
         return False
+    if not _hot_path_profile_valid(
+        metrics,
+        specification=specification,
+        status=status,
+    ):
+        return False
     if status == "success":
         trace = receipt.get("trace")
         if (
@@ -502,6 +566,100 @@ def _receipt_valid(
         and verify_object_hash(receipt, hash_field="receipt_hash")
         and receipt.get("identity_hash") == identity_hash
         and receipt.get("surface") == specification.get("surface")
+    )
+
+
+def _hot_path_profile_valid(
+    metrics: dict[str, object],
+    *,
+    specification: dict[str, object],
+    status: object,
+) -> bool:
+    """Verify requested derived diagnostics without weakening run evidence."""
+
+    profile = metrics.get("hot_path_profile")
+    requested = specification.get("hot_path_profile") is True
+    if not requested:
+        return profile is None
+    if not isinstance(profile, dict):
+        return False
+    schema = profile.get("schema")
+    if schema == "arc3.hot-path-profile-unavailable.v0.1":
+        return bool(
+            status != "success"
+            and profile.get("enabled") is False
+            and isinstance(profile.get("reason"), str)
+            and profile.get("reason")
+        )
+    if schema != "arc3.hot-path-profile.v0.2" or profile.get("enabled") is not True:
+        return False
+    if profile.get("active_span_count") != 0:
+        return False
+    phases = profile.get("phases")
+    boundaries = profile.get("boundaries")
+    cache_totals = profile.get("cache_totals")
+    required_phases = {
+        "startup",
+        "observation_normalization",
+        "perception",
+        "correspondence",
+        "hypothesis_update",
+        "world_model_compilation",
+        "retrodiction",
+        "goal_inference",
+        "planning",
+        "action_selection",
+        "trace_serialization",
+        "environment_step",
+        "checkpointing",
+        "rendering_debug",
+        "finalize",
+        "controller_orchestration",
+        "profiler_telemetry",
+        "runtime_remainder",
+    }
+    if not isinstance(phases, dict) or set(phases) != required_phases:
+        return False
+    if not isinstance(boundaries, list) or profile.get("boundary_count") != len(boundaries):
+        return False
+    if not isinstance(cache_totals, dict):
+        return False
+    previous_sequence = -1
+    segment_actions: dict[int, int] = {}
+    for boundary in boundaries:
+        if not isinstance(boundary, dict):
+            return False
+        sequence = boundary.get("sequence")
+        segment = boundary.get("segment_index")
+        actions = boundary.get("actions")
+        cumulative = boundary.get("phase_cumulative")
+        if (
+            isinstance(sequence, bool)
+            or not isinstance(sequence, int)
+            or sequence != previous_sequence + 1
+            or isinstance(segment, bool)
+            or not isinstance(segment, int)
+            or segment < 0
+            or isinstance(actions, bool)
+            or not isinstance(actions, int)
+            or actions < segment_actions.get(segment, 0)
+            or not isinstance(cumulative, dict)
+            or set(cumulative) != required_phases
+        ):
+            return False
+        previous_sequence = sequence
+        segment_actions[segment] = actions
+    measured_actions = metrics.get("environment_actions")
+    max_actions = profile.get("max_actions_observed")
+    return bool(
+        isinstance(max_actions, int)
+        and not isinstance(max_actions, bool)
+        and max_actions >= 0
+        and (
+            not isinstance(measured_actions, int)
+            or isinstance(measured_actions, bool)
+            or max_actions <= measured_actions
+        )
     )
 
 
@@ -689,6 +847,8 @@ def _reproduction_argv(config: PublicEvaluationConfig) -> list[str]:
     ]
     if config.game_ids is not None:
         argv.extend(["--game-ids", ",".join(config.game_ids)])
+    if config.hot_path_profile:
+        argv.append("--hot-path-profile")
     if config.evaluation_id is not None:
         argv.extend(["--evaluation-id", config.evaluation_id])
     if config.acquire_missing:

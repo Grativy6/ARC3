@@ -5,10 +5,12 @@ from __future__ import annotations
 import math
 import random
 from collections import Counter
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
+from contextlib import AbstractContextManager
 from dataclasses import dataclass
+from functools import wraps
 from pathlib import Path
-from typing import NoReturn, cast
+from typing import NoReturn, Protocol, TypeVar, cast
 
 from arc3.adapters import GridFrame, Observation, validate_action_request
 from arc3.config import derive_seed
@@ -32,6 +34,7 @@ from arc3.goals import (
     ActionGoalEstimate,
     EvidenceDirection,
     GoalAcquirer,
+    GoalAcquisitionResult,
     GoalCandidate,
     GoalEvidence,
     GoalKind,
@@ -100,6 +103,7 @@ from arc3.world_model import (
     PredictionReceipt,
     PreservedTransition,
     PromotionStatus,
+    RetrodictionArtifact,
     SymbolicEntity,
     SymbolicState,
     WorldModelEnsemble,
@@ -129,6 +133,56 @@ _DIRECTIONAL_PRIORS: tuple[tuple[ActionName, int, int], ...] = (
     (ActionName.ACTION3, -1, 0),
     (ActionName.ACTION4, 1, 0),
 )
+
+
+class _HotPathProfiler(Protocol):
+    """Structural profiling boundary kept independent of policy decisions."""
+
+    @property
+    def enabled(self) -> bool: ...
+
+    def span(self, phase: str) -> AbstractContextManager[None]: ...
+
+    def boundary(self, kind: str, *, actions: int) -> None: ...
+
+    def cache(
+        self,
+        phase: str,
+        hit: bool | None,
+        *,
+        input_key: str | None = None,
+        change_kind: str | None = None,
+    ) -> None: ...
+
+    def summary(self, total_wall_ns: int | None = None) -> dict[str, JSONValue]: ...
+
+
+_ControllerMethod = TypeVar("_ControllerMethod", bound=Callable[..., object])
+
+
+def _profiled(
+    phase: str,
+    boundary_kind: str | None = None,
+) -> Callable[[_ControllerMethod], _ControllerMethod]:
+    """Measure a method only when an external profiler is explicitly enabled."""
+
+    def decorate(method: _ControllerMethod) -> _ControllerMethod:
+        @wraps(method)
+        def measured(self: ARC3Controller, *args: object, **kwargs: object) -> object:
+            profiler = self._hot_path_profiler
+            if profiler is None or not profiler.enabled:
+                return method(self, *args, **kwargs)
+            with profiler.span(phase):
+                result = method(self, *args, **kwargs)
+            # Boundary telemetry intentionally runs after the measured policy
+            # span so profiler/RSS overhead cannot be charged to policy work.
+            if boundary_kind is not None:
+                profiler.boundary(boundary_kind, actions=self._actions_used)
+            return result
+
+        return cast(_ControllerMethod, measured)
+
+    return decorate
 
 
 @dataclass(frozen=True, slots=True)
@@ -230,6 +284,7 @@ class ARC3Controller:
         *,
         local_proposal_provider: LocalProposalProvider | None = None,
         features: PresetFeatures | None = None,
+        hot_path_profiler: _HotPathProfiler | None = None,
     ) -> None:
         self.preset = preset if isinstance(preset, ControllerPreset) else ControllerPreset(preset)
         selected_features = preset_features(self.preset) if features is None else features
@@ -247,6 +302,7 @@ class ARC3Controller:
         if local_proposal_provider is not None and not self.features.allow_local_proposals:
             raise PolicyError("local proposals are disabled by the selected controller preset")
         self._local_proposals = local_proposal_provider
+        self._hot_path_profiler = hot_path_profiler
         self._context: RunContext | None = None
         self._journal: EventJournal | None = None
         self._checkpoint_manager: ControllerCheckpointManager | None = None
@@ -310,6 +366,13 @@ class ARC3Controller:
         return self._context
 
     @property
+    def hot_path_profile(self) -> dict[str, JSONValue] | None:
+        """Return derived profiling data without exposing it to policy selection."""
+
+        profiler = self._hot_path_profiler
+        return profiler.summary() if profiler is not None and profiler.enabled else None
+
+    @property
     def snapshot(self) -> ControllerSnapshot:
         active_hypotheses = tuple(
             record.hypothesis_id for record in self._hypotheses.ranked(include_rejected=False)
@@ -336,6 +399,7 @@ class ARC3Controller:
             fault_count=self._fault_count,
         )
 
+    @_profiled("startup", "reset")
     def reset(self, context: RunContext) -> None:
         """Start one episode with fresh derived state and a durable raw journal."""
 
@@ -353,6 +417,7 @@ class ARC3Controller:
             self.preset,
             local_proposal_provider=self._local_proposals,
             features=self.features,
+            hot_path_profiler=self._hot_path_profiler,
         )
         self._initialize_context(context)
         self._append(
@@ -389,6 +454,7 @@ class ARC3Controller:
         self._checkpoint_manager = ControllerCheckpointManager(context.checkpoint_root)
         self._rng = random.Random(derive_seed(context.config.seed, "arc3-controller"))
 
+    @_profiled("trace_serialization")
     def _append(
         self,
         game_id: str,
@@ -412,6 +478,7 @@ class ARC3Controller:
             code_identity=self._code,
         )
 
+    @_profiled("controller_orchestration", "observe")
     def observe(self, frames: Observation | object) -> ObservationReceipt:
         """Validate one initial/unsolicited observation before selecting an action."""
 
@@ -438,6 +505,7 @@ class ARC3Controller:
             self._last_checkpoint = self.checkpoint()
         return receipt
 
+    @_profiled("observation_normalization")
     def _require_observation(self, value: Observation | object) -> Observation:
         if not isinstance(value, Observation):
             self._reject_observation(value, fault="expected immutable first-party Observation")
@@ -478,15 +546,14 @@ class ARC3Controller:
         )
         raise PolicyError(f"malformed observation preserved as {event.event_id}")
 
+    @_profiled("perception")
     def _record_observation(
         self,
         observation: Observation,
         *,
         previous: Observation | None,
     ) -> tuple[ObservationReceipt, _PerceptionView]:
-        frame_receipts = [
-            self.journal.blobs.put_frame(frame.cells).to_payload() for frame in observation.frames
-        ]
+        frame_receipts = self._store_frames(observation.frames)
         raw = self._append(
             str(observation.game_id),
             "observation.received",
@@ -506,7 +573,7 @@ class ARC3Controller:
         )
         raw_id = raw.event_id
         raw_hash = raw.event_hash
-        self.journal.flush()
+        self._flush_trace()
         frame = observation.frames[-1]
         background = Counter(cell for row in frame.cells for cell in row).most_common(1)[0][0]
         components = extract_components(
@@ -547,13 +614,15 @@ class ARC3Controller:
                 background_colors=frozenset({prior_background, background}),
             )
             if self.features.use_object_tracking:
-                tracking = track_components(
+                tracking = self._track_correspondence(
                     prior_components,
                     components,
-                    frame_extent=(
+                    (
                         max(prior_frame.width, frame.width),
                         max(prior_frame.height, frame.height),
                     ),
+                    input_key=f"{prior_frame.digest}|{frame.digest}",
+                    change_kind=self._frame_change_kind(delta, frame),
                 )
             xs = [change.x for change in delta.cell_changes]
             ys = [change.y for change in delta.cell_changes]
@@ -597,6 +666,14 @@ class ARC3Controller:
                 },
             )
             measurement_ids.append(delta_event.event_id)
+
+        if self._hot_path_profiler is not None:
+            self._hot_path_profiler.cache(
+                "perception",
+                None,
+                input_key=str(frame.digest),
+                change_kind=("initial" if delta is None else self._frame_change_kind(delta, frame)),
+            )
 
         if self.features.use_measurements:
             event = self._append(
@@ -655,6 +732,51 @@ class ARC3Controller:
             components, symbolic, delta, tracking, tuple(measurement_ids)
         )
 
+    @_profiled("trace_serialization")
+    def _store_frames(self, frames: Sequence[GridFrame]) -> list[dict[str, JSONValue]]:
+        payloads: list[dict[str, JSONValue]] = []
+        for frame in frames:
+            receipt = self.journal.blobs.put_frame(frame.cells)
+            if self._hot_path_profiler is not None:
+                self._hot_path_profiler.cache(
+                    "trace_serialization",
+                    not receipt.created,
+                    input_key=receipt.frame_hash,
+                    change_kind="global_change" if receipt.created else "unchanged",
+                )
+            payloads.append(receipt.to_payload())
+        return payloads
+
+    @_profiled("trace_serialization")
+    def _flush_trace(self) -> None:
+        self.journal.flush()
+
+    @_profiled("correspondence")
+    def _track_correspondence(
+        self,
+        before: tuple[Component, ...],
+        after: tuple[Component, ...],
+        frame_extent: tuple[int, int],
+        *,
+        input_key: str,
+        change_kind: str,
+    ) -> TrackingResult:
+        if self._hot_path_profiler is not None:
+            self._hot_path_profiler.cache(
+                "correspondence",
+                None,
+                input_key=input_key,
+                change_kind=change_kind,
+            )
+        return track_components(before, after, frame_extent=frame_extent)
+
+    @staticmethod
+    def _frame_change_kind(delta: FrameDelta, frame: GridFrame) -> str:
+        if delta.changed_cell_count == 0:
+            return "unchanged"
+        area = max(1, frame.width * frame.height)
+        return "local_change" if delta.changed_cell_count * 4 <= area else "global_change"
+
     def _phase_from_observation(self, observation: Observation) -> None:
         if observation.state is GameStateName.WIN:
             self._phase = ControllerPhase.COMPLETE
@@ -663,6 +785,7 @@ class ARC3Controller:
         else:
             self._phase = ControllerPhase.OBSERVED
 
+    @_profiled("hypothesis_update")
     def _seed_directional_hypotheses(
         self, receipt: ObservationReceipt, view: _PerceptionView
     ) -> dict[ActionName, str]:
@@ -724,6 +847,7 @@ class ARC3Controller:
             seeded[action] = hypothesis_id
         return seeded
 
+    @_profiled("goal_inference")
     def _seed_contact_goal(
         self,
         observation: Observation,
@@ -794,6 +918,7 @@ class ARC3Controller:
         self._active_goal_id = goal_id
         self._flush_goal_events(observation)
 
+    @_profiled("goal_inference")
     def _flush_goal_events(self, observation: Observation) -> None:
         events = self._goals.events
         for event in events[self._traced_goal_events :]:
@@ -849,6 +974,7 @@ class ARC3Controller:
                 },
             )
 
+    @_profiled("world_model_compilation")
     def _update_world_models(self, observation: Observation) -> None:
         if not self.features.use_world_model or not self._hypotheses.all():
             self._ensemble = None
@@ -884,11 +1010,7 @@ class ARC3Controller:
                     "transition_ids": [item.transition_id for item in level_transitions],
                 },
             )
-            artifact = retrodict(
-                candidate,
-                level_transitions,
-                enabled=self.features.use_retrodiction_gate,
-            )
+            artifact = self._retrodict_candidate(candidate, level_transitions)
             artifacts.append(artifact)
             self._append(
                 str(observation.game_id),
@@ -936,6 +1058,29 @@ class ARC3Controller:
                 )
         else:
             self._ensemble = None
+
+    @_profiled("retrodiction")
+    def _retrodict_candidate(
+        self,
+        candidate: ModelCandidate,
+        transitions: tuple[PreservedTransition, ...],
+    ) -> RetrodictionArtifact:
+        if self._hot_path_profiler is not None:
+            self._hot_path_profiler.cache(
+                "retrodiction",
+                None,
+                input_key=(
+                    candidate.model_id
+                    + "|"
+                    + ",".join(transition.transition_id for transition in transitions)
+                ),
+                change_kind="history_growth",
+            )
+        return retrodict(
+            candidate,
+            transitions,
+            enabled=self.features.use_retrodiction_gate,
+        )
 
     def _legal_actions(
         self, observation: Observation, view: _PerceptionView
@@ -1111,6 +1256,7 @@ class ARC3Controller:
             )
         return tuple(alternatives)
 
+    @_profiled("planning")
     def _plan_action(
         self, observation: Observation, view: _PerceptionView
     ) -> tuple[ActionRequest, str, str] | None:
@@ -1291,6 +1437,7 @@ class ARC3Controller:
         coordinate = Coordinate(32, 32) if name is ActionName.ACTION6 else None
         return ActionRequest(name, coordinate)
 
+    @_profiled("action_selection", "choose_action")
     def choose_action(self) -> ActionDecision:
         """Select, validate, predict, and deliver exactly one action to the adapter."""
 
@@ -1482,7 +1629,7 @@ class ARC3Controller:
         # The action receipt must be durable before the adapter is allowed to
         # execute it.  This also flushes the derived selection receipts that
         # explain the action without fsyncing each one independently.
-        self.journal.flush()
+        self._flush_trace()
         submitted_id = submitted.event_id
         self._pending_action = PendingAction(
             selected_event_id=selected_id,
@@ -1523,6 +1670,7 @@ class ARC3Controller:
             self._last_checkpoint = self.checkpoint()
         return decision
 
+    @_profiled("controller_orchestration", "apply_consequence")
     def apply_consequence(self, frames: Observation | object) -> ConsequenceReceipt:
         """Apply exactly one returned consequence and reopen derived state on mismatch."""
 
@@ -1540,9 +1688,7 @@ class ARC3Controller:
         )
         previous_level = self._level_index
 
-        returned_frames = [
-            self.journal.blobs.put_frame(frame.cells).to_payload() for frame in after.frames
-        ]
+        returned_frames = self._store_frames(after.frames)
         consequence = self._append(
             str(after.game_id),
             "consequence.received",
@@ -1566,7 +1712,7 @@ class ARC3Controller:
         consequence_hash = consequence.event_hash
         # Preserve the returned environment receipt before any revisable
         # interpretation or model update runs.
-        self.journal.flush()
+        self._flush_trace()
         # The consequence closes the submitted step; its returned observation is
         # the evidence boundary for the next decision step.
         self._step_index += 1
@@ -1691,7 +1837,7 @@ class ARC3Controller:
 
         progress_ids: tuple[str, ...] = ()
         if self.features.use_goals:
-            acquisition = self._goal_acquirer.observe_transition(
+            acquisition = self._acquire_goal_transition(
                 GoalTransition(
                     before=before,
                     after=after,
@@ -1766,6 +1912,24 @@ class ARC3Controller:
             progress_signal_ids=progress_ids,
             phase=self._phase,
         )
+
+    @_profiled("goal_inference")
+    def _acquire_goal_transition(self, transition: GoalTransition) -> GoalAcquisitionResult:
+        if self._hot_path_profiler is not None:
+            self._hot_path_profiler.cache(
+                "goal_inference",
+                None,
+                input_key=(
+                    f"{transition.before.frames[-1].digest}|"
+                    f"{transition.after.frames[-1].digest}|{transition.level_scope_ref}"
+                ),
+                change_kind=(
+                    "unchanged"
+                    if transition.before.frames[-1].digest == transition.after.frames[-1].digest
+                    else "local_change"
+                ),
+            )
+        return self._goal_acquirer.observe_transition(transition)
 
     def _rotate_level_scope(
         self,
@@ -1848,6 +2012,7 @@ class ARC3Controller:
         if self.features.use_goals:
             self._seed_contact_goal(observation, receipt, view)
 
+    @_profiled("hypothesis_update")
     def _update_action_hypothesis(
         self,
         observation: Observation,
@@ -1902,6 +2067,7 @@ class ARC3Controller:
                 },
             )
 
+    @_profiled("checkpointing")
     def checkpoint(self) -> ControllerCheckpoint:
         """Write a hash-bound snapshot at the current immutable trace tail."""
 
@@ -2040,10 +2206,15 @@ class ARC3Controller:
         preset: ControllerPreset | str = ControllerPreset.FULL,
         checkpoint_path: str | Path | None = None,
         features: PresetFeatures | None = None,
+        hot_path_profiler: _HotPathProfiler | None = None,
     ) -> ARC3Controller:
         """Restore a compatible checkpoint without emitting a pending action again."""
 
-        controller = cls(preset, features=features)
+        controller = cls(
+            preset,
+            features=features,
+            hot_path_profiler=hot_path_profiler,
+        )
         controller._initialize_context(context)
         if controller._checkpoint_manager is None or controller._code is None:
             raise PolicyError("checkpoint manager did not initialize")
@@ -2106,6 +2277,8 @@ class ARC3Controller:
             restored.envelope,
             controller._phase,
         )
+        if hot_path_profiler is not None:
+            hot_path_profiler.boundary("restore", actions=controller._actions_used)
         return controller
 
     def _restore_action_counts(self, value: Mapping[str, JSONValue]) -> None:
@@ -2883,6 +3056,7 @@ class ARC3Controller:
             source_event_ids=tuple(cast(list[str], sources)),
         )
 
+    @_profiled("finalize")
     def close(self) -> None:
         """Flush the trace without inventing a completion result."""
 

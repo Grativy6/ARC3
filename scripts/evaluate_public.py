@@ -69,6 +69,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--max-actions", type=int, default=80)
     parser.add_argument("--max-resets", type=int, default=8)
     parser.add_argument("--timeout-seconds", type=float, default=120.0)
+    parser.add_argument("--hot-path-profile", action="store_true")
     parser.add_argument("--frozen-commit")
     parser.add_argument(
         "--manifest", type=Path, default=Path("docs/evaluation/public-game-partitions.v0.1.json")
@@ -138,6 +139,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             PublicEvaluationConfig(
                 partition=args.partition,
                 game_ids=args.game_ids,
+                hot_path_profile=args.hot_path_profile,
                 agents=args.agents,
                 seeds=args.seeds,
                 frozen_commit=frozen_commit,

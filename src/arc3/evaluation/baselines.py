@@ -10,10 +10,11 @@ from arc3.adapters import Observation
 from arc3.errors import PolicyError
 from arc3.perception.delta import measure_delta
 from arc3.policy.baselines import RandomValidPolicy
-from arc3.types import ActionName, ActionRequest, Coordinate, GameStateName
+from arc3.types import ActionName, ActionRequest, Coordinate, GameStateName, JSONValue
 
 if TYPE_CHECKING:
     from arc3.policy import RunContext
+    from arc3.profiling.hot_path import HotPathProfiler
 
 
 class EvaluationPolicy(Protocol):
@@ -195,10 +196,18 @@ class FullARC3EvaluationPolicy:
 
     manages_trace = True
 
-    def __init__(self, context: RunContext) -> None:
+    def __init__(
+        self,
+        context: RunContext,
+        *,
+        hot_path_profiler: HotPathProfiler | None = None,
+    ) -> None:
         from arc3.policy import ARC3Controller, ControllerPreset
 
-        self._controller = ARC3Controller(ControllerPreset.FULL)
+        self._controller = ARC3Controller(
+            ControllerPreset.FULL,
+            hot_path_profiler=hot_path_profiler,
+        )
         self._context = context
         self._started = False
 
@@ -216,6 +225,10 @@ class FullARC3EvaluationPolicy:
 
     def close(self) -> None:
         self._controller.close()
+
+    @property
+    def hot_path_profile(self) -> dict[str, JSONValue] | None:
+        return self._controller.hot_path_profile
 
 
 BASELINES: tuple[BaselineDescriptor, ...] = (
@@ -277,6 +290,7 @@ def make_evaluation_policy(
     *,
     seed: int,
     run_context: RunContext | None = None,
+    hot_path_profiler: HotPathProfiler | None = None,
 ) -> EvaluationPolicy:
     """Construct a supported policy without silently substituting another baseline."""
 
@@ -294,7 +308,10 @@ def make_evaluation_policy(
     if descriptor.baseline_id == "B4":
         if run_context is None:
             raise PolicyError("B4 evaluation requires an explicit offline RunContext")
-        return FullARC3EvaluationPolicy(run_context)
+        return FullARC3EvaluationPolicy(
+            run_context,
+            hot_path_profiler=hot_path_profiler,
+        )
     if descriptor.baseline_id == "TEST-CRASH":
         return _ManagedBaselinePolicy(_CrashTestPolicy())
     raise PolicyError(f"no policy factory exists for {descriptor.baseline_id}")

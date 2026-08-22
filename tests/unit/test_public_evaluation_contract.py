@@ -31,8 +31,13 @@ from arc3.evaluation.public import (
     validate_frozen_source,
     validate_public_gate,
 )
-from arc3.evaluation.public_runner import _aggregate, verify_public_evaluation
+from arc3.evaluation.public_runner import (
+    _aggregate,
+    _hot_path_profile_valid,
+    verify_public_evaluation,
+)
 from arc3.policy import RunContext
+from arc3.profiling.hot_path import HotPathProfiler
 from arc3.types import GameId
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -56,6 +61,7 @@ def test_stage15_default_declaration_is_full_b0_through_b4() -> None:
     args = build_parser().parse_args([])
 
     assert args.game_ids is None
+    assert args.hot_path_profile is False
     assert args.agents == ("random", "cycle", "novelty", "trace", "full")
     assert args.seeds == (7, 11)
     assert args.max_actions == 80
@@ -105,6 +111,59 @@ def test_public_evaluation_selector_is_partition_bound_and_holdout_closed() -> N
             seeds=(7,),
             frozen_commit=FROZEN,
         )
+    with pytest.raises(ValueError, match="cannot enable diagnostic profiling"):
+        PublicEvaluationConfig(
+            partition="public-holdout",
+            hot_path_profile=True,
+            agents=("full",),
+            seeds=(7,),
+            frozen_commit=FROZEN,
+        )
+    with pytest.raises(ValueError, match="requires the FULL policy only"):
+        PublicEvaluationConfig(
+            partition="development",
+            hot_path_profile=True,
+            agents=("cycle", "full"),
+            seeds=(7,),
+            frozen_commit=FROZEN,
+        )
+
+
+def test_requested_hot_path_profile_is_structurally_verified() -> None:
+    profiler = HotPathProfiler(
+        rss_sampler=lambda: {
+            "current_rss_bytes": 1,
+            "measurement_source": "test",
+            "peak_rss_bytes": 2,
+            "reason": None,
+        }
+    )
+    profiler.boundary("reset", actions=0)
+    metrics: dict[str, object] = {
+        "environment_actions": 0,
+        "hot_path_profile": profiler.summary(),
+    }
+    specification: dict[str, object] = {"hot_path_profile": True}
+
+    assert _hot_path_profile_valid(metrics, specification=specification, status="success")
+    unavailable: dict[str, object] = {
+        "hot_path_profile": {
+            "enabled": False,
+            "reason": "wall_clock_timeout",
+            "schema": "arc3.hot-path-profile-unavailable.v0.1",
+        }
+    }
+    assert _hot_path_profile_valid(
+        unavailable,
+        specification=specification,
+        status="timeout",
+    )
+    assert not _hot_path_profile_valid(
+        unavailable,
+        specification=specification,
+        status="success",
+    )
+    assert not _hot_path_profile_valid({}, specification=specification, status="success")
 
 
 def test_stage15_context_uses_frozen_controller_bounds_with_surface_wall_override(
@@ -384,7 +443,8 @@ def test_public_artifact_verifier_detects_mutation(tmp_path: Path) -> None:
     atomic_write_bytes(evaluation / "results.jsonl", b"{}\n")
     verification = verify_public_evaluation(evaluation)
     assert verification["verified"] is False
-    assert any("results.jsonl" in error for error in verification["errors"])
+    errors = cast(list[str], verification["errors"])
+    assert any("results.jsonl" in error for error in errors)
 
 
 def test_zero_progress_never_becomes_an_efficiency_improvement() -> None:

@@ -21,7 +21,10 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Protocol, cast
+from typing import TYPE_CHECKING, Any, Protocol, cast
+
+if TYPE_CHECKING:
+    from arc3.profiling.hot_path import HotPathProfiler
 
 from arc3.adapters import (
     EnvironmentDescriptor,
@@ -313,6 +316,7 @@ class PublicEvaluationConfig:
     seeds: tuple[int, ...]
     frozen_commit: str
     game_ids: tuple[str, ...] | None = None
+    hot_path_profile: bool = False
     max_actions: int = FROZEN_COMPETITION_RUNTIME.max_actions
     max_resets: int = FROZEN_COMPETITION_RUNTIME.max_resets
     # Stage 15 public development is a predeclared 120-second measurement
@@ -367,6 +371,12 @@ class PublicEvaluationConfig:
                 raise ValueError("game_ids must contain non-empty normalized identifiers")
             if self.partition == "public-holdout":
                 raise ValueError("public holdout evaluation cannot select a subset of games")
+        if not isinstance(self.hot_path_profile, bool):
+            raise ValueError("hot_path_profile must be boolean")
+        if self.partition == "public-holdout" and self.hot_path_profile:
+            raise ValueError("public holdout evaluation cannot enable diagnostic profiling")
+        if self.hot_path_profile and self.agents != ("full",):
+            raise ValueError("diagnostic profiling requires the FULL policy only")
         if self.evaluation_id is not None and (
             not self.evaluation_id
             or any(
@@ -380,6 +390,7 @@ class PublicEvaluationConfig:
         return {
             "partition": self.partition,
             "game_ids": list(self.game_ids) if self.game_ids is not None else None,
+            "hot_path_profile": self.hot_path_profile,
             "agents": list(self.agents),
             "seeds": list(self.seeds),
             "max_actions": self.max_actions,
@@ -866,6 +877,7 @@ def run_public_episode(
     max_actions: int,
     max_resets: int,
     trace_sink: BaselineTraceSink | None = None,
+    hot_path_profiler: HotPathProfiler | None = None,
 ) -> tuple[ScoreSummary | None, dict[str, object]]:
     """Execute one normalized official session with no game-specific behavior."""
 
@@ -901,13 +913,23 @@ def run_public_episode(
         if trace_sink is not None:
             trace_sink.record_submitted(before, action)
         try:
-            observation = session.step(
-                action,
-                reasoning={
-                    "category": "stage15-local-public",
-                    "summary": "generic typed policy selection; no game-specific rule",
-                },
-            )
+            if hot_path_profiler is not None and hot_path_profiler.enabled:
+                with hot_path_profiler.span("environment_step"):
+                    observation = session.step(
+                        action,
+                        reasoning={
+                            "category": "stage15-local-public",
+                            "summary": "generic typed policy selection; no game-specific rule",
+                        },
+                    )
+            else:
+                observation = session.step(
+                    action,
+                    reasoning={
+                        "category": "stage15-local-public",
+                        "summary": "generic typed policy selection; no game-specific rule",
+                    },
+                )
         except Exception:
             invalid_actions += 1
             raise
@@ -936,7 +958,13 @@ def run_public_episode(
             first_progress = time.perf_counter() - started
             actions_to_first_level = actions
         state_visits.append(f"{observation.state.value}:{after_hash}")
-    scorecard = session.close()
+        if hot_path_profiler is not None:
+            hot_path_profiler.boundary("episode_action", actions=actions)
+    if hot_path_profiler is not None and hot_path_profiler.enabled:
+        with hot_path_profiler.span("finalize"):
+            scorecard = session.close()
+    else:
+        scorecard = session.close()
     unique_states = len(set(state_visits))
     metrics: dict[str, object] = {
         "environment_actions": actions,
