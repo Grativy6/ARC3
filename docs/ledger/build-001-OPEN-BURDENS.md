@@ -36,6 +36,10 @@ does not erase earlier uncertainty or failed mechanisms.
 - Carried from: Build 000 burden B-20260821-040
 - Burden: two palette permutations and two action remaps changed a base score of 1.0 to 0.0.
 - Next evidence: Stages 04–05 paired metamorphic tests.
+- Stage 04 update (2026-08-22): **palette half resolved; action half remains open**. The clean
+  Stage 04 source repaired both historical palette cases and passed 256/256 paired procedural
+  bijections, 16/16 checkpoint/resume pairs, and all 64 joint plus 64 one-sided color controls.
+  Stage 05 must still repair the two action-remap failures and remove fixed action-ID semantics.
 
 ## B-001-0003 — Rule-change exposure is incomplete
 
@@ -162,6 +166,10 @@ does not erase earlier uncertainty or failed mechanisms.
   `C:\a`; subsequent Stage 03 checks retain an isolated temp root. This is the same infrastructure
   condition preserved in B-001-0009, not a controller failure.
 - Resolution receipt: the Stage 03 acceptance artifact will retain both exact commands and results.
+- Stage 04 recurrence (2026-08-22): the first harness-focused invocation again received Windows
+  `PermissionError [WinError 5]` at the default user pytest temp root. A unique explicit
+  `C:\a\arc3-b001\tmp\pytest-stage04-harness-*` root passed the identical tests. All final Stage 04
+  test commands used explicit short-path temp roots.
 
 ## B-001-0014 — Redundant prediction and state hashing lack an end-to-end repair receipt
 
@@ -192,3 +200,36 @@ does not erase earlier uncertainty or failed mechanisms.
   additional palette failures or collapse action identity into palette identity.
 - Resolution receipt: `docs/evidence/016-competition-profile-acceptance.json` and the Stage 04/05
   predeclarations once committed.
+
+## B-001-0016 — Naive palette-role identity repairs broke controller regressions
+
+- Status: RESOLVED
+- Stage: 04
+- Opened: 2026-08-22
+- Failed approaches: The first structural-role patch ordered opaque role hashes when choosing the
+  provisional mover, breaking the seed-23 checkpointed planning regression. The next patch let
+  structurally tied colors share spatial-ordinal entity IDs; those IDs could swap after movement,
+  reducing the 16-seed integrated completion contract to 15/16 at seed 5.
+- Resolution: Use a raw-free structural provisional key, revise controllability from sole tracked
+  translation evidence, and separate a shared ambiguous role from a stable anonymous identity token
+  derived by first-observation encounter order. The corrected broad subset passed 68/68 and the
+  integrated contract returned to 16/16 before the implementation commit.
+- Resolution receipt: implementation commit `86134755f3f26a268585b14264946571592cd4a5` and
+  `docs/evidence/001-04-palette-equivariance.json`.
+
+## B-001-0017 — Stage 04 seed-11 base efficiency changed
+
+- Status: OPEN
+- Stage: 04–10
+- Opened: 2026-08-22
+- Burden: The frozen Build 000 base seed-11 synthetic case completed in one action. The generic
+  palette-equivariant controller now completes both base and paired palette variants in three
+  identical actions. This meets the predeclared Stage 04 parity/completion gate but is an observed
+  action-efficiency regression, not evidence that the extra actions are free.
+- Current evidence: official clean Stage 04 artifact
+  `sha256:c76ad6ecf0c956b51579b27d6543734e7368ca48fb0cadfce3134735be895676`.
+- Next discriminating action: include the unchanged Build 000 benchmark and action counts in Stage
+  10 regression evaluation; do not optimize against this one seed before Stage 05 action semantics
+  and Stage 08 controller cadence are measured.
+- Resolution condition: matched robustness evidence shows no material aggregate efficiency loss, or
+  a generic repair restores the action without weakening palette/action equivariance.

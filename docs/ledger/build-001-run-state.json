@@ -6,13 +6,13 @@
   "owner": "Christopher D. Pang",
   "build_status": "IN_PROGRESS",
   "status": "IN_PROGRESS",
-  "current_stage": "04",
-  "current_task": "Implement the frozen Stage 04 palette-role registry, controller projection, checkpoint binding, and paired synthetic harness",
+  "current_stage": "05",
+  "current_task": "Predeclare Stage 05 opaque-action calibration, implement evidence-derived action effects, and run the paired action-equivariance suites",
   "implementation_branch": "build/001-local-public-recovery",
   "pull_request": "https://github.com/Grativy6/ARC3/pull/5",
   "started_at": "2026-08-21T15:41:02Z",
-  "last_checkpoint_at": "2026-08-22T04:33:07Z",
-  "last_checkpoint_commit": "515177c2b640efbdbfd92eca117aff1e42637e98",
+  "last_checkpoint_at": "2026-08-22T05:15:22Z",
+  "last_checkpoint_commit": "86134755f3f26a268585b14264946571592cd4a5",
   "base": {
     "main_commit": "28c7a00732ce48e5c231211b01bc6eba7d0d71b4",
     "main_tree": "4586299448e9b1b585a0878674ed5f9afa60c384",
@@ -33,15 +33,16 @@
     "00",
     "01",
     "02",
-    "03"
+    "03",
+    "04"
   ],
   "stage_status": {
     "00": "PASS",
     "01": "PASS",
     "02": "PASS",
     "03": "PASS",
-    "04": "IN_PROGRESS",
-    "05": "PENDING",
+    "04": "PASS",
+    "05": "IN_PROGRESS",
     "06": "PENDING",
     "07": "PENDING",
     "08": "PENDING",
@@ -136,14 +137,34 @@
       "public_holdout_consumed": false
     },
     "04": {
-      "status": "PREDECLARED",
+      "status": "PASS",
       "label": "synthetic",
       "predeclaration": "docs/evidence/001-04-palette-equivariance-predeclaration.json",
       "predeclaration_sha256": "sha256:9df1df67641a642234cde2494b1ac53a55524778284f8af2c0aa0a9d727c6d32",
+      "acceptance": "docs/evidence/001-04-palette-equivariance.json",
+      "acceptance_sha256": "sha256:eb45275fc82870fde999d7d914534d064568a1605276a52132ed6d0335f94a73",
+      "report": "docs/reports/001-04-palette-equivariance.md",
+      "report_sha256": "sha256:ab0cd441d0daa1701267256130a7ff99af1e02a006690c2958a84ebf7e6a4c29",
+      "frozen_commit": "86134755f3f26a268585b14264946571592cd4a5",
+      "frozen_tree": "df3204136e44d66b30bff455815a10c5ba9efa84",
       "historical_palette_cases": 2,
+      "historical_palette_cases_passed": 2,
       "procedural_pairs": 256,
+      "procedural_pairs_passed": 256,
       "checkpoint_resume_pairs": 16,
+      "checkpoint_resume_pairs_passed": 16,
       "color_causal_controls": 64,
+      "joint_color_controls_passed": 64,
+      "one_sided_color_controls_passed": 64,
+      "raw_artifact_sha256": "sha256:cad09761d4f361e2b072a54a3525a90b0c8f10961dc8fd041da8b08abc6b3108",
+      "raw_artifact_core_hash": "sha256:c76ad6ecf0c956b51579b27d6543734e7368ca48fb0cadfce3134735be895676",
+      "measured_episodes": 324,
+      "trace_events": 48598,
+      "controller_faults": 0,
+      "wall_seconds": 225.4006992,
+      "maximum_process_peak_rss_bytes": 54927360,
+      "seed_11_base_action_change": "1-to-3-open-burden",
+      "verification": "PASS:68-broad+11-offline-integrity+ruff+format+mypy-148+replay",
       "public_holdout_consumed": false
     }
   },
@@ -203,10 +224,18 @@
     "stage_04_predeclaration": {
       "path": "docs/evidence/001-04-palette-equivariance-predeclaration.json",
       "sha256": "9df1df67641a642234cde2494b1ac53a55524778284f8af2c0aa0a9d727c6d32"
+    },
+    "stage_04_acceptance": {
+      "path": "docs/evidence/001-04-palette-equivariance.json",
+      "sha256": "eb45275fc82870fde999d7d914534d064568a1605276a52132ed6d0335f94a73"
+    },
+    "stage_04_report": {
+      "path": "docs/reports/001-04-palette-equivariance.md",
+      "sha256": "ab0cd441d0daa1701267256130a7ff99af1e02a006690c2958a84ebf7e6a4c29"
     }
   },
   "blocked_items": [],
-  "next_action": "Freeze the Stage 04 palette-equivariance contract, repair raw-color tie-break leakage generically, and run paired procedural plus historical synthetic regressions.",
+  "next_action": "Freeze the Stage 05 calibration-symmetry contract, remove fixed action-ID semantics from production policy, and run historical plus paired procedural action-remap evidence.",
   "notes": [
     "Build 000 ledgers and reports are immutable historical evidence and are not overwritten by Build 001.",
     "The owner explicitly approved MIT-0 for ARC3 first-party source in the active Build 001 instruction.",

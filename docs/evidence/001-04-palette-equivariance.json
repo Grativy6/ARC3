@@ -1,0 +1,253 @@
+{
+  "schema": "arc3.build-001.stage-04-palette-equivariance-acceptance.v0.1",
+  "status": "PASS",
+  "evidence_label": "synthetic",
+  "completed_at": "2026-08-22T05:12:52Z",
+  "claim_boundary": "This receipt establishes exact palette-equivariant behavior on the frozen synthetic Stage 04 suites only. It is not local-public recovery, public-holdout evidence, hidden-game generalization, or an official competition result.",
+  "frozen_source": {
+    "git_commit": "86134755f3f26a268585b14264946571592cd4a5",
+    "git_tree": "df3204136e44d66b30bff455815a10c5ba9efa84",
+    "branch": "build/001-local-public-recovery",
+    "worktree_clean_before_measurement": true,
+    "first_party_source_file_count": 133,
+    "first_party_source_hash": "sha256:86d67d1de5ae94394aa193dc649485e6a65d2fafc68fd969c3c6af6747055865",
+    "source_identity_hash": "sha256:210508d0bd9195fb5505cbeb89d2431b415024ce261516aecf0b18f12854c563",
+    "predeclaration": "docs/evidence/001-04-palette-equivariance-predeclaration.json",
+    "predeclaration_sha256": "sha256:9df1df67641a642234cde2494b1ac53a55524778284f8af2c0aa0a9d727c6d32"
+  },
+  "raw_artifact": {
+    "path": "C:/a/arc3-b001/artifacts/stage04/palette-equivariance.json",
+    "schema": "arc3.build-001.stage-04-palette-equivariance.v0.1",
+    "file_sha256": "sha256:cad09761d4f361e2b072a54a3525a90b0c8f10961dc8fd041da8b08abc6b3108",
+    "artifact_core_hash": "sha256:c76ad6ecf0c956b51579b27d6543734e7368ca48fb0cadfce3134735be895676",
+    "artifact_core_hash_valid": true,
+    "byte_length": 1870108,
+    "work_root": "C:/a/arc3-b001/artifacts/stage04/palette-equivariance-work"
+  },
+  "verification": {
+    "focused_tests": "PASS:13",
+    "broad_regression_tests": "PASS:68",
+    "offline_integrity_tests": "PASS:11",
+    "focused_test_files": [
+      "tests/unit/test_measure_palette_equivariance.py",
+      "tests/unit/test_palette_roles.py"
+    ],
+    "pytest_basetemp": "fresh explicit short path under C:/a/arc3-b001/tmp",
+    "ruff_check": "PASS",
+    "ruff_format_check": "PASS:6-files",
+    "mypy_strict": "PASS:148-source-files",
+    "diff_check": "PASS",
+    "raw_artifact_self_hash": "PASS"
+  },
+  "historical_regression": {
+    "actual_palette_cases": 2,
+    "passed_cases": 2,
+    "workflow_wording_reconciliation": "Build 000's four robustness failures comprise two palette cases owned here and two action-remap cases owned by Stage 05.",
+    "cases": [
+      {
+        "seed": 7,
+        "build_000_base": {
+          "completed": true,
+          "score": 1.0,
+          "actions": 7
+        },
+        "build_000_palette": {
+          "completed": false,
+          "score": 0.0,
+          "actions": 16
+        },
+        "build_001_base": {
+          "completed": true,
+          "score": 1.0,
+          "actions": 7,
+          "wall_ns": 667592800
+        },
+        "build_001_palette": {
+          "completed": true,
+          "score": 1.0,
+          "actions": 7,
+          "wall_ns": 658257100
+        },
+        "exact_paired_action_sequence": true
+      },
+      {
+        "seed": 11,
+        "build_000_base": {
+          "completed": true,
+          "score": 1.0,
+          "actions": 1
+        },
+        "build_000_palette": {
+          "completed": false,
+          "score": 0.0,
+          "actions": 16
+        },
+        "build_001_base": {
+          "completed": true,
+          "score": 1.0,
+          "actions": 3,
+          "wall_ns": 295187000
+        },
+        "build_001_palette": {
+          "completed": true,
+          "score": 1.0,
+          "actions": 3,
+          "wall_ns": 256291800
+        },
+        "exact_paired_action_sequence": true
+      }
+    ],
+    "base_efficiency_change": {
+      "seed_7_actions": "7 to 7",
+      "seed_11_actions": "1 to 3",
+      "two_case_total_actions": "8 to 10",
+      "interpretation": "The palette failure is repaired, but the unpermuted seed-11 case now uses two additional actions. This bounded synthetic efficiency regression is preserved and is not relabeled as an improvement."
+    }
+  },
+  "procedural_paired_suite": {
+    "environment_seeds": 32,
+    "permutations_per_seed": 8,
+    "base_episodes": 32,
+    "paired_cases": 256,
+    "passed_pairs": 256,
+    "base_completions": 32,
+    "base_actions": 192,
+    "permuted_completions": 256,
+    "permuted_actions": 1536,
+    "predicate_pass_counts": {
+      "exact_action_request_sequence": 256,
+      "terminal_phase": 256,
+      "score": 256,
+      "completion": 256,
+      "canonical_palette_role_projection": 256,
+      "nonidentity_raw_initial_frame_hash_difference": 256,
+      "trace_chain_and_replay": 256
+    }
+  },
+  "checkpoint_resume_suite": {
+    "paired_cases": 16,
+    "passed_cases": 16,
+    "uninterrupted_completions": 16,
+    "resumed_completions": 16,
+    "uninterrupted_actions": 96,
+    "resumed_actions": 96,
+    "registry_serialization_and_projection_restore": "PASS:16",
+    "next_action_and_terminal_parity": "PASS:16",
+    "no_resubmission": "PASS:16",
+    "trace_verification": "PASS:16"
+  },
+  "color_causal_controls": {
+    "cases": 64,
+    "joint_bijective_relabeling_equivalent": 64,
+    "one_sided_recolor_distinguishable": 64,
+    "one_sided_recolor_count_range": [
+      33,
+      34
+    ]
+  },
+  "representation_and_provenance": {
+    "configured_registry_bound": 16,
+    "maximum_observed_registry_entries": 3,
+    "measured_episode_count": 324,
+    "measured_trace_event_count": 48598,
+    "measured_trace_file_count": 2521,
+    "controller_fault_count": 0,
+    "raw_grid_receipts_preserved": true,
+    "raw_frame_hashes_preserved": true,
+    "raw_palette_receipts_preserved": true,
+    "derived_canonical_projection_is_raw_color_free": true,
+    "new_colors_extend_without_rewriting_prior_raw_history": true,
+    "one_sided_raw_recolor_evidence_preserved": true,
+    "trace_replay_verified": true
+  },
+  "resource_measurement": {
+    "wall_ns": 225400699200,
+    "wall_seconds": 225.4006992,
+    "cpu_ns": 189125000000,
+    "median_bulk_episode_wall_ns": 359995700.0,
+    "maximum_process_peak_rss_bytes": 54927360,
+    "predeclared_wall_limit_seconds": 600.0,
+    "within_limit": true,
+    "runtime": {
+      "platform": "Windows-10-10.0.19045-SP0",
+      "processor": "AMD64 Family 23 Model 8 Stepping 2, AuthenticAMD",
+      "logical_cpu_count": 12,
+      "python": "3.12.14",
+      "python_implementation": "CPython",
+      "arc3": "0.1.0",
+      "numpy": "2.5.2",
+      "pydantic": "2.13.4",
+      "memory_measurement_source": "windows-GetProcessMemoryInfo-working-set"
+    }
+  },
+  "acceptance": {
+    "historical_regressions": true,
+    "procedural_pairs": true,
+    "checkpoint_resume": true,
+    "color_causal_controls": true,
+    "raw_provenance": true,
+    "registry_bound": true,
+    "source_clean": true,
+    "resource_limit": true,
+    "stage_status": "PASS"
+  },
+  "holdout": {
+    "status": "SEALED_UNCONSUMED",
+    "public_partition_manifest_sha256": "sha256:682d5891c2aface54803d9bd1173c55ed21e89856e13b8a478fb9276ee963f2f",
+    "build_000_exposure_ledger_sha256": "sha256:cd9af42ed3a5ef9fa0dc201ddb10e32d2bcccee9df729aa0c7d53077c04c9ad4",
+    "stage_03_exposure_ledger_sha256": "sha256:e02a9fa71206170a6fe2aeefb6935ae25141e2759937657475cead4389bb17aa",
+    "stage_04_public_gameplay_events": 0,
+    "public_holdout_gameplay_events": 0,
+    "locally_acquired_holdout_assets": 0,
+    "note": "The Stage 04 measurement harness was synthetic-only and accessed no public-game asset, adapter, source, or episode. Post-measurement integrity verification read only the already-sealed partition manifest and exposure-ledger metadata."
+  },
+  "limitations": [
+    "Synthetic palette equivariance does not establish local-public recovery or hidden-game generalization.",
+    "The 32 verified base episodes are reused across eight paired bijections per seed.",
+    "Whole-process peak RSS may include earlier cases in the same measurement process.",
+    "The seed-11 unpermuted historical case regressed from one to three actions even though paired palette behavior is exact.",
+    "Color causality remains represented by raw transition evidence; no semantic meaning is assigned to a numeric palette value.",
+    "Action-ID equivariance remains a separate Stage 05 obligation."
+  ],
+  "command_receipts": [
+    {
+      "status": "PASS",
+      "exit_code": 0,
+      "command": "C:/a/arc3-b001-28c7a00/Scripts/python.exe scripts/measure_palette_equivariance.py --output C:/a/arc3-b001/artifacts/stage04/palette-equivariance.json --work-root C:/a/arc3-b001/artifacts/stage04/palette-equivariance-work"
+    },
+    {
+      "status": "PASS",
+      "exit_code": 0,
+      "command": "C:/a/arc3-b001-28c7a00/Scripts/python.exe -m pytest -q --no-cov --basetemp <fresh-C:/a/arc3-b001/tmp/path> tests/unit/test_measure_palette_equivariance.py tests/unit/test_palette_roles.py",
+      "result": "13 passed in 3.17s"
+    },
+    {
+      "status": "PASS",
+      "exit_code": 0,
+      "command": "C:/a/arc3-b001-28c7a00/Scripts/python.exe -m pytest -q --no-cov --basetemp C:/a/pytest-root-stage04-final tests/unit/test_palette_roles.py tests/unit/test_measure_palette_equivariance.py tests/property/test_perception_invariance.py tests/unit/test_controller_contract.py tests/replay/test_controller_checkpoint.py tests/integration/test_controller_end_to_end.py tests/integration/test_memory_cross_level.py tests/integration/test_hypothesis_lifecycle.py tests/integration/test_hot_path_profile.py tests/integration/test_stage16_runtime_profile.py tests/unit/test_stage16_profiling.py",
+      "result": "68 passed in 55.54s"
+    },
+    {
+      "status": "PASS",
+      "exit_code": 0,
+      "command": "C:/a/arc3-b001-28c7a00/Scripts/python.exe -m pytest -q --no-cov --basetemp C:/a/pytest-root-stage04-integrity2 tests/competition/test_controller_offline_integrity.py tests/competition/test_offline_config.py",
+      "result": "11 passed in 3.64s"
+    },
+    {
+      "status": "PASS",
+      "exit_code": 0,
+      "command": "C:/a/arc3-b001-28c7a00/Scripts/python.exe -m ruff check --no-cache <six Stage 04 source/test files>"
+    },
+    {
+      "status": "PASS",
+      "exit_code": 0,
+      "command": "C:/a/arc3-b001-28c7a00/Scripts/python.exe -m ruff format --check --no-cache <six Stage 04 source/test files>"
+    },
+    {
+      "status": "PASS",
+      "exit_code": 0,
+      "command": "C:/a/arc3-b001-28c7a00/Scripts/python.exe -m mypy --strict src agent scripts",
+      "result": "Success: no issues found in 148 source files"
+    }
+  ]
+}

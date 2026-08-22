@@ -153,3 +153,23 @@ independent authorities.
   ambiguous rather than being ordered by their raw numeric labels.
 - Reopening condition: any raw receipt changes, registry cardinality exceeds 16, checkpoint restore
   rewrites a class, or a color-causal control becomes indistinguishable.
+
+## D-001-0012 — Separate shared palette role from anonymous persistent identity
+
+- Recorded: 2026-08-22T05:15:22Z
+- Status: accepted
+- Decision: Keep structurally indistinguishable colors in one explicitly ambiguous semantic role,
+  while assigning each observed color a stable anonymous identity token from its shared structural
+  role and first-observation encounter ordinal. Use that token for derived entity continuity, never
+  the raw numeric color or a semantic priority. Revise the provisional controllable entity only
+  after a sole tracked component supplies nonzero translation evidence.
+- Evidence: implementation commit `86134755f3f26a268585b14264946571592cd4a5`; official clean
+  Stage 04 artifact `sha256:c76ad6ecf0c956b51579b27d6543734e7368ca48fb0cadfce3134735be895676`;
+  256/256 procedural pairs, 16/16 checkpoint/resume pairs, 64/64 joint relabeling controls,
+  64/64 one-sided recolor controls, and both historical cases passed.
+- Boundary: the anonymous token is a revisable derived identity handle, not a color meaning. Raw
+  cells, component colors, frame hashes, deltas, and recolor evidence remain exact and immutable.
+  One-sided recoloring remains distinguishable.
+- Reopening condition: a paired palette mapping changes a derived action, identity tokens depend on
+  numeric color order, an ambiguous role is falsely promoted to a unique semantic role, or a
+  checkpoint changes the token-to-raw-color association.
