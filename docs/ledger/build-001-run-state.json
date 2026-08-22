@@ -6,13 +6,13 @@
   "owner": "Christopher D. Pang",
   "build_status": "IN_PROGRESS",
   "status": "IN_PROGRESS",
-  "current_stage": "03",
-  "current_task": "Execute the frozen Stage 03 synthetic and local-public 2x2 causal interventions",
+  "current_stage": "04",
+  "current_task": "Predeclare and implement generic palette-equivariant structural interpretation with raw provenance preserved",
   "implementation_branch": "build/001-local-public-recovery",
   "pull_request": "https://github.com/Grativy6/ARC3/pull/5",
   "started_at": "2026-08-21T15:41:02Z",
-  "last_checkpoint_at": "2026-08-22T04:03:00Z",
-  "last_checkpoint_commit": "8168168ea224add5b8e296ee892866d75f1ca0b7",
+  "last_checkpoint_at": "2026-08-22T04:33:07Z",
+  "last_checkpoint_commit": "515177c2b640efbdbfd92eca117aff1e42637e98",
   "base": {
     "main_commit": "28c7a00732ce48e5c231211b01bc6eba7d0d71b4",
     "main_tree": "4586299448e9b1b585a0878674ed5f9afa60c384",
@@ -32,14 +32,15 @@
   "completed_stages": [
     "00",
     "01",
-    "02"
+    "02",
+    "03"
   ],
   "stage_status": {
     "00": "PASS",
     "01": "PASS",
     "02": "PASS",
-    "03": "IN_PROGRESS",
-    "04": "PENDING",
+    "03": "PASS",
+    "04": "IN_PROGRESS",
     "05": "PENDING",
     "06": "PENDING",
     "07": "PENDING",
@@ -114,13 +115,24 @@
       "public_holdout_consumed": false
     },
     "03": {
-      "status": "PREDECLARED",
+      "status": "PASS",
       "labels": [
         "synthetic",
         "local-public"
       ],
       "predeclaration": "docs/evidence/001-03-causal-predeclaration.json",
       "predeclaration_sha256": "sha256:b9f81e93fbd76944dcb2ef9382e4d7da756bfd91e68075a4d7f4930d060f96d1",
+      "acceptance": "docs/evidence/001-03-causal-bottlenecks.json",
+      "acceptance_sha256": "sha256:42e5bdca00ab87d910fa9c2ddd5219c4b15d4a43ebfd85fd6369f1bf6a5a592a",
+      "report": "docs/reports/001-03-causal-throughput-diagnosis.md",
+      "report_sha256": "sha256:254e12bc0a7fa24db8f9e3b03ebff694ac1d26e3c52b899a014a809ff19ca645",
+      "frozen_commit": "515177c2b640efbdbfd92eca117aff1e42637e98",
+      "material_causes_supported": 2,
+      "local_public_control_wall_seconds": 46.070333300042,
+      "local_public_allocator_off_wall_seconds": 8.84490280004684,
+      "local_public_checkpoint_off_wall_seconds": 37.9903721000301,
+      "exact_action_and_outcome_match": true,
+      "artifact_verification": "PASS:82-artifacts+4-runs+0-errors",
       "public_holdout_consumed": false
     }
   },
@@ -168,10 +180,18 @@
     "stage_03_predeclaration": {
       "path": "docs/evidence/001-03-causal-predeclaration.json",
       "sha256": "b9f81e93fbd76944dcb2ef9382e4d7da756bfd91e68075a4d7f4930d060f96d1"
+    },
+    "stage_03_acceptance": {
+      "path": "docs/evidence/001-03-causal-bottlenecks.json",
+      "sha256": "42e5bdca00ab87d910fa9c2ddd5219c4b15d4a43ebfd85fd6369f1bf6a5a592a"
+    },
+    "stage_03_report": {
+      "path": "docs/reports/001-03-causal-throughput-diagnosis.md",
+      "sha256": "254e12bc0a7fa24db8f9e3b03ebff694ac1d26e3c52b899a014a809ff19ca645"
     }
   },
   "blocked_items": [],
-  "next_action": "Freeze the diagnostic controls, then run the predeclared Stage 03 factorial and same-source development interventions without changing production policy semantics.",
+  "next_action": "Freeze the Stage 04 palette-equivariance contract, repair raw-color tie-break leakage generically, and run paired procedural plus historical synthetic regressions.",
   "notes": [
     "Build 000 ledgers and reports are immutable historical evidence and are not overwritten by Build 001.",
     "The owner explicitly approved MIT-0 for ARC3 first-party source in the active Build 001 instruction.",

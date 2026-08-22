@@ -118,3 +118,21 @@ independent authorities.
   promote a production optimization by itself.
 - Reopening condition: intervention receipts change exact decisions/outcomes, fail source binding,
   access the holdout, or disagree materially across synthetic and local-public evidence.
+
+## D-001-0010 — Accept two causal throughput costs without deleting their functions
+
+- Recorded: 2026-08-22T04:33:07Z
+- Status: accepted
+- Decision: Accept global Python allocation tracing and every-boundary whole-state checkpointing as
+  the two Stage 03 material throughput causes. The same-source development interventions saved
+  80.80% and 17.54% of control wall time, respectively, with exact normalized decisions and
+  observation outcomes. Preserve checkpoint/trace semantics and carry their implementation repair
+  into Stage 08; do not treat a diagnostic bypass as the repair.
+- Evidence: `docs/evidence/001-03-causal-bottlenecks.json` and four verified local-public bundles.
+  The balanced synthetic factorial agrees on both factor directions. The action-selection
+  microbenchmark additionally identifies redundant prediction and state-ID work, but only as a
+  production optimization candidate until an end-to-end parity intervention exists.
+- Boundary: all four development cells still completed zero levels and scored 0.0. This decision is
+  throughput diagnosis only and makes no recovery, holdout, benchmark, or generalization claim.
+- Reopening condition: later clean evaluation reverses the measured direction, or crash/replay tests
+  show that a proposed optimization weakens immutable receipts, action durability, or restartability.

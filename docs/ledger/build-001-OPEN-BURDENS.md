@@ -24,6 +24,11 @@ does not erase earlier uncertainty or failed mechanisms.
   overhead. One bounded `local-public` profile attributed 99.98% of 38.303 seconds and ranked
   action selection (48.06%) and checkpointing (16.97%) first. These are correlations under active
   allocator tracing; Stage 03 intervention evidence is still required.
+- Stage 03 update (2026-08-22): **causal diagnosis PASS; gameplay failure remains open**. Exact
+  behavior-matched interventions established allocation tracing and whole-state checkpoint
+  frequency as material costs, reducing the 46.0703-second control to 8.8449 and 37.9904 seconds,
+  respectively. Every cell still completed zero levels and scored 0.0, so throughput diagnosis is
+  not recovery. Stages 04–10 must still improve generic behavior and validate it on development.
 
 ## B-001-0002 — Palette and action equivariance failures
 
@@ -96,7 +101,7 @@ does not erase earlier uncertainty or failed mechanisms.
 
 ## B-001-0010 — Stage 02 profile scope and allocator-tracing distortion
 
-- Status: OPEN
+- Status: RESOLVED
 - Stage: 02–03
 - Opened: 2026-08-22
 - Burden: The phase ranking comes from one eight-action development episode while Python allocator
@@ -110,7 +115,11 @@ does not erase earlier uncertainty or failed mechanisms.
   interventions with exact action-signature comparison.
 - Resolution condition: paired intervention receipts quantify marginal cost and behavior for at
   least the top two material causes.
-- Resolution receipt: none.
+- Resolution update (2026-08-22): The same-source four-cell development factorial preserved exact
+  normalized action decisions and observation outcomes. Disabling tracing with checkpoints retained
+  saved 37.2254 seconds (80.80%), while disabling checkpoints with tracing retained saved 8.0800
+  seconds (17.54%). The balanced synthetic factorial agreed on both directions.
+- Resolution receipt: `docs/evidence/001-03-causal-bottlenecks.json`.
 
 ## B-001-0011 — Resolved Stage 02 verification preconditions remain provenance
 
@@ -153,3 +162,33 @@ does not erase earlier uncertainty or failed mechanisms.
   `C:\a`; subsequent Stage 03 checks retain an isolated temp root. This is the same infrastructure
   condition preserved in B-001-0009, not a controller failure.
 - Resolution receipt: the Stage 03 acceptance artifact will retain both exact commands and results.
+
+## B-001-0014 — Redundant prediction and state hashing lack an end-to-end repair receipt
+
+- Status: OPEN
+- Stage: 03–08
+- Opened: 2026-08-22
+- Burden: The read-only active-ensemble microbenchmark found repeated model prediction and canonical
+  state-ID computation, but no production cache/reuse change has yet proved exact decision,
+  prediction-receipt, replay, checkpoint, and recovery parity.
+- Current evidence: a representative 32-call pass made 256 model-candidate predictions, 128
+  ensemble predictions, and 1,664 `SymbolicState.state_id` calls. Tracing-off/on median call time was
+  4.5105/20.9416 milliseconds with identical outputs and policy state.
+- Next discriminating action: add collision-safe immutable identity caching and per-state/action/model
+  prediction reuse during Stage 08, then rerun paired controller and development evaluations.
+- Resolution condition: exact functional parity plus measured end-to-end savings under default
+  production diagnostics.
+- Resolution receipt: none.
+
+## B-001-0015 — Workflow Stage 04 palette-failure count conflicts with frozen evidence
+
+- Status: RESOLVED
+- Stage: 04–05
+- Opened: 2026-08-22
+- Burden: Workflow 001 says Stage 04 must repair “the four Build 000 palette failures,” while frozen
+  Build 000 acceptance evidence records two palette failures and two action-remap failures.
+- Resolution: Preserve the frozen evidence taxonomy: Stage 04 owns the two palette cases at seeds 7
+  and 11, and Stage 05 owns the two action-remap cases at the same seeds. Do not manufacture two
+  additional palette failures or collapse action identity into palette identity.
+- Resolution receipt: `docs/evidence/016-competition-profile-acceptance.json` and the Stage 04/05
+  predeclarations once committed.
