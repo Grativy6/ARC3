@@ -442,3 +442,48 @@ independent authorities.
 - Reopening condition: a reuse passes without the exact suffix receipts, unrelated evidence is
   accepted, trace references are not independently folded, or the authorization vector can be
   changed and rehashed without rejection.
+
+## D-001-0026 — Make the one official Stage 07 attempt fail closed
+
+- Recorded: 2026-08-22T17:26:50.7566939Z
+- Status: accepted
+- Decision: Bind the official result, work, exposure, development-asset, and recording paths;
+  require a clean Build 001 branch descending from the frozen baseline; measure every complete
+  cell including terminal restore; suppress every replacement decision unless the exact 280-cell
+  matrix, 60 microbenchmarks, verification suite, resource gates, trace replay, checkpoint restore,
+  source stability, network denial, and sealed-holdout checks all pass. Use one terminal
+  content-addressed checkpoint for reused Stage 06 cells rather than enabling policy memory or
+  per-action checkpointing merely to satisfy an evaluator predicate.
+- Evidence: source checkpoint `1cf1945c42bb7da42e63b423c4a986d72fd24ead`;
+  `docs/evidence/001-07-premeasurement-audit.json`; synthetic verification passed 69 harness tests,
+  139 expanded Stage 07 tests, Ruff, format, and strict mypy. The official output, work, exposure,
+  and recording targets were absent at the checkpoint.
+- Boundary: this prepares but does not execute the one official Stage 07 attempt. The terminal
+  checkpoint changes evidence persistence only and preserves the frozen `use_memory=False` policy
+  semantics for Group C. A `PARTIAL` artifact must keep `FULL` and exit nonzero.
+- Reopening condition: any alternate path can evade the frozen attempt, a source or asset mutation
+  survives, a resource/verification failure can retain a candidate decision, or a terminal
+  checkpoint does not restore exactly from its immutable commitment.
+
+## D-001-0027 — Reconstruct typed artifacts and bind the opaque development bytes
+
+- Recorded: 2026-08-22T17:26:50.7566939Z
+- Status: accepted
+- Decision: Every new controller retrodiction completion carries its full normalized typed artifact
+  projection. Restore recomputes every completion from preserved typed transitions, including
+  FULL, NONE, RECENT, and evicted cache/event receipts, and hard integrity requires that semantic
+  reconstruction. Separately, bind the permitted `ar25-0c556536` development asset to its already
+  measured aggregate and two-file byte identity before open, after open, and after each episode;
+  require all ten D cells to carry the same three receipts.
+- Evidence: source checkpoint `1cf1945c42bb7da42e63b423c4a986d72fd24ead`; current opaque
+  aggregate SHA-256
+  `e796e615d2e10c93b849f9bf150308fbf84d624725deaf995d7ec2d1c2f86b22` matches the Stage 01–03
+  frozen identity. Focused synthetic/no-game tests passed 87/87, the all-mode adapter suite passed
+  48/48, and independent read-only re-audits closed both P1 findings.
+- Boundary: the asset check hashes bytes only and does not inspect game semantics or open a holdout.
+  It supports paired source identity, not hidden-game generalization. Legacy receipts without the
+  new projection remain readable outside this official harness, but cannot satisfy Stage 07 hard
+  integrity.
+- Reopening condition: a completion can pass without an exact typed projection and restore, any D
+  cell can omit or alter one of the three byte snapshots, or current asset bytes differ from the
+  frozen prior identity.

@@ -7,12 +7,12 @@
   "build_status": "IN_PROGRESS",
   "status": "IN_PROGRESS",
   "current_stage": "07",
-  "current_task": "Integrate and adversarially verify the typed Stage 07 retrodiction runtime, controller receipts, and exact case harness before measurement",
+  "current_task": "Run the one frozen Stage 07 retrodiction decision attempt from the clean sealed source checkpoint",
   "implementation_branch": "build/001-local-public-recovery",
   "pull_request": "https://github.com/Grativy6/ARC3/pull/5",
   "started_at": "2026-08-21T15:41:02Z",
-  "last_checkpoint_at": "2026-08-22T16:09:50.7346730Z",
-  "last_checkpoint_commit": "44fc3666522db4787f4349c4a5cb5ee085f787d9",
+  "last_checkpoint_at": "2026-08-22T17:29:57.7116351Z",
+  "last_checkpoint_commit": "1cf1945c42bb7da42e63b423c4a986d72fd24ead",
   "base": {
     "main_commit": "28c7a00732ce48e5c231211b01bc6eba7d0d71b4",
     "main_tree": "4586299448e9b1b585a0878674ed5f9afa60c384",
@@ -323,10 +323,14 @@
       "rule_change_and_noise_cases": 32,
       "local_public_development_cases": 2,
       "micro_history_sizes": 6,
-      "implementation_status": "COMPOSITE_PROTOCOL_PREDECLARED_BEFORE_IMPLEMENTATION_MEASUREMENT",
+      "implementation_status": "OFFICIAL_HARNESS_SEALED_PENDING_ONE_MEASUREMENT",
       "runtime_checkpoint_commit": "586e8ba2c9c414b4bf2cc426ad5c1bbd357d5258",
       "runtime_authority_checkpoint_commit": "44fc3666522db4787f4349c4a5cb5ee085f787d9",
-      "runtime_verification": "PASS:35-focused+ruff+format+mypy-strict+residual-and-event-authority-tamper-rejection",
+      "runtime_final_audit_checkpoint_commit": "2a78ba0f873a6f2c0e2b214a953f4b303057139e",
+      "official_harness_checkpoint_commit": "1cf1945c42bb7da42e63b423c4a986d72fd24ead",
+      "premeasurement_audit": "docs/evidence/001-07-premeasurement-audit.json",
+      "premeasurement_audit_sha256": "sha256:c0520173e58dbc1b994169e858e09a36d0f03003eb5953e2f0583d8c93a4478c",
+      "runtime_verification": "PASS:139-expanded+48-all-mode-adapter+87-artifact-asset-repair+ruff+format+mypy-strict",
       "production_default": "FULL_UNCHANGED_PENDING_MEASURED_DECISION",
       "public_holdout_consumed": false
     }
@@ -435,10 +439,14 @@
     "stage_07_predeclaration_amendment_01": {
       "path": "docs/evidence/001-07-retrodiction-predeclaration-amendment-01.json",
       "sha256": "5c8ff0c91602d86ecaadd61197dfb80681f618ad4e6c810c26933ca337fdcc3b"
+    },
+    "stage_07_premeasurement_audit": {
+      "path": "docs/evidence/001-07-premeasurement-audit.json",
+      "sha256": "c0520173e58dbc1b994169e858e09a36d0f03003eb5953e2f0583d8c93a4478c"
     }
   },
   "blocked_items": [],
-  "next_action": "Implement the frozen typed retrodiction modes, materialize and seal the eight false-rule histories, then run focused adversarial verification before the one official Stage 07 attempt.",
+  "next_action": "Commit the premeasurement ledger checkpoint, verify a clean source and absent official targets, then execute the one frozen Stage 07 attempt without reopening its contract.",
   "notes": [
     "Build 000 ledgers and reports are immutable historical evidence and are not overwritten by Build 001.",
     "The owner explicitly approved MIT-0 for ARC3 first-party source in the active Build 001 instruction.",

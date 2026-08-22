@@ -602,3 +602,154 @@ does not erase earlier uncertainty or failed mechanisms.
   focused runtime suite and strict
   lint, format, and type checks passed. Controller-level immutable-trace fold validation remains a
   required premeasurement integration check rather than being inferred from this pure-runtime fix.
+
+## B-001-0031 — Prediction restore initially omitted three action-authority fields
+
+- Status: RESOLVED
+- Stage: 07
+- Opened: 2026-08-22
+- Burden: checkpoint restore validated a pending prediction receipt without binding its action,
+  action-decision identity, and mechanics epoch. A rehashed trace/checkpoint mutation could retain
+  prediction-shaped data outside the exact pre-action authority boundary.
+- Resolution: restore now reconstructs and compares the action, decision, mechanics epoch, model,
+  state, and dependency boundary; adversarial rehashed mutations fail before action selection.
+- Resolution receipt: source checkpoint `2a78ba0f873a6f2c0e2b214a953f4b303057139e`; focused 42/42
+  and broad 112/112 synthetic/replay tests passed with Ruff and strict mypy.
+
+## B-001-0032 — Cache order and trigger generation were initially checkpoint-trusted
+
+- Status: RESOLVED
+- Stage: 07
+- Opened: 2026-08-22
+- Burden: cache access ordinals and event-trigger generations could be changed with surrounding
+  hashes because restore did not derive them exactly from immutable completion order.
+- Resolution: access ordinals and generations are now folded from receipt order, with rehashed
+  swap and generation mutations rejected.
+- Resolution receipt: source checkpoint `2a78ba0f873a6f2c0e2b214a953f4b303057139e` and
+  `tests/replay/test_retrodiction_checkpoint.py`.
+
+## B-001-0033 — Initial profiling and NONE/RECENT audit receipts omitted real work
+
+- Status: RESOLVED
+- Stage: 07
+- Opened: 2026-08-22
+- Burden: the first integration profiled only part of retrodiction rather than plan, execute, and
+  commit, while NONE and RECENT could inherit a misleading full-audit generation receipt.
+- Resolution: the complete typed runtime path is profiled under the retrodiction phase; NONE and
+  RECENT are explicitly non-full generation-zero modes.
+- Resolution receipt: source checkpoint `2a78ba0f873a6f2c0e2b214a953f4b303057139e`; phase-scoped
+  cache-hit and mode-receipt tests pass.
+
+## B-001-0034 — Integrity scanner initially ignored the active Build 001 holdout binding
+
+- Status: RESOLVED
+- Stage: 07
+- Opened: 2026-08-22
+- Burden: the competition-integrity scanner recognized the Build 000 run-state shape but not the
+  active Build 001 `holdout.manifest` and `holdout.manifest_sha256` fields, producing a false
+  manifest-binding failure for the controlling ledger.
+- Resolution: the scanner accepts both typed shapes and still requires the exact current manifest
+  hash; seven focused tests and a live Build 001 scan returned zero findings.
+- Resolution receipt: source checkpoint `7f03b7a`; `tests/integrity/test_receipt.py`.
+
+## B-001-0035 — First Stage 07 checkpoint strategy changed policy cost and still failed restore
+
+- Status: RESOLVED
+- Stage: 07
+- Opened: 2026-08-22
+- Burden: an exploratory Group C adapter enabled PRE_TRIGGER checkpointing with production memory
+  solely to satisfy evaluator persistence. It produced 39 checkpoint files totaling 3,448,862
+  bytes in the preserved run and still returned `checkpoint_valid=false`; it was not an official
+  measurement and opened no public game.
+- Preserved limitation: the exploratory worker did not retain its exact original stdout/command
+  receipt, so its approximate 50.26-second narrative is not promoted into benchmark evidence.
+- Resolution: a harness-only controller emits one truthful terminal content-addressed checkpoint
+  while retaining the frozen `use_memory=False` policy semantics, then restores the exact closed
+  state and validates its trace commitment.
+- Resolution receipt: `docs/evidence/001-07-premeasurement-audit.json`; preserved directory
+  `C:/a/arc3-b001/pytest-stage07-audit-20260822c`, 57 files, 5,074,716 bytes, recursive inventory
+  hash `sha256:7166ea6c9d0be44530bd50d15aea28cddbaf3f68b4ca1aec001331bbf6054631`;
+  source checkpoint `1cf1945c42bb7da42e63b423c4a986d72fd24ead`.
+
+## B-001-0036 — Initial decision harness contained multiple fail-open eligibility paths
+
+- Status: RESOLVED
+- Stage: 07
+- Opened: 2026-08-22
+- Burden: the initial harness made Group C rows ineligible through its checkpoint implementation,
+  attributed global rather than phase cache hits, compared cached B artifacts only to themselves,
+  allowed caller-selected official paths, incompletely bound source ancestry, excluded terminal
+  validation from cell time, treated a non-null prefix receipt as replay truth, and could retain a
+  replacement decision after partial verification or resource failure.
+- Resolution: official paths/source/asset identities are fixed; FULL pairing is exact; all cell
+  work is measured; replay predicates must be true; memory is fail-closed; every resource,
+  verification, source, trace, checkpoint, network, holdout, and matrix condition is an explicit
+  final gate; `PARTIAL` forces `KEEP_FULL` and exit 1.
+- Resolution receipt: source checkpoint `1cf1945c42bb7da42e63b423c4a986d72fd24ead`;
+  `docs/evidence/001-07-premeasurement-audit.json`; 69/69 focused harness and 139/139 expanded
+  Stage 07 tests passed.
+
+## B-001-0037 — Artifact validity was initially asserted for non-retained completions
+
+- Status: RESOLVED
+- Stage: 07
+- Opened: 2026-08-22
+- Burden: the harness wrote `artifact_receipts_verified=true` after structural trace validation,
+  while restore reconstructed only retained cache entries. FULL, NONE, RECENT, and evicted
+  cache/event completions could therefore carry a hash-linked but semantically wrong artifact
+  receipt and still satisfy that field.
+- Resolution: every new completion contains a full normalized typed projection. Restore iterates
+  every completion, replays its candidate against preserved typed transitions and mechanics epoch,
+  and exact-compares the nested projection plus artifact ID, coverage vectors, completion, score,
+  status, and weight. Stage 07 hard integrity now requires the independently restored receipt flag.
+- Resolution receipt: source checkpoint `1cf1945c42bb7da42e63b423c4a986d72fd24ead`; all five
+  controller modes restore in the focused adapter suite, and rehashed summary/nested-projection
+  mutations fail.
+
+## B-001-0038 — D-cell environment bytes were recorded but not enforced
+
+- Status: RESOLVED
+- Stage: 07
+- Opened: 2026-08-22
+- Burden: a local-public cell recorded its asset identity but did not compare it to a frozen
+  expected digest or require paired cells to share identical bytes. Mutation at the fixed path
+  could therefore survive source-integrity gating.
+- Resolution: the harness binds the already measured `ar25-0c556536` aggregate and exact two-file
+  tuple before open, after open, and after each episode; all ten D cells and both holdout boundary
+  checks require exact equality. Stubbed no-game mutation tests cover after-open, after-episode,
+  missing-cell, file-name, size, file-hash, and aggregate drift.
+- Resolution receipt: source checkpoint `1cf1945c42bb7da42e63b423c4a986d72fd24ead`;
+  aggregate SHA-256 `e796e615d2e10c93b849f9bf150308fbf84d624725deaf995d7ec2d1c2f86b22`.
+
+## B-001-0039 — In-process non-return can outlive post-hoc wall gates
+
+- Status: OPEN
+- Stage: 07
+- Opened: 2026-08-22
+- Burden: per-cell and overall wall limits are checked between synchronous calls and fail a
+  returned overrun, but an in-process third-party adapter or dependency that never returns cannot
+  be preempted by the harness. It cannot create a false PASS, yet it can prevent the attempt from
+  producing its defined partial artifact and exit code.
+- Next discriminating action: add a process-supervised cell worker with receipt-preserving timeout
+  termination, or demonstrate that every pinned call path supplies an independently enforced
+  timeout without changing paired source identity.
+- Resolution condition: a deliberately non-returning worker is terminated at the frozen boundary,
+  a sealed failure receipt is written, and independent cells remain recoverable.
+- Resolution receipt: none.
+
+## B-001-0040 — Historical candidate rank lacks a prefix-derived authority fold
+
+- Status: OPEN
+- Stage: 07
+- Opened: 2026-08-22
+- Burden: restore recompiles a no-longer-current historical candidate's rules, hypothesis IDs, and
+  compile residuals, but accepts its historical rank from the completion receipt. A coherent
+  adversary able to rewrite and rehash trace plus checkpoint could forge rank-dependent score,
+  semantic-fingerprint, namespace, and related identities consistently. Outcomes, residuals,
+  coverage, status, rules, and honest official evidence are still recomputed.
+- Next discriminating action: fold the hypothesis registry at each retrodiction start from only
+  prefix-valid hypothesis events, derive historical rank from that state, and recompute the full
+  plan/runtime namespace before accepting the receipt.
+- Resolution condition: a coherent rehashed historical-rank mutation fails for retained and
+  evicted completions while clean legacy/current checkpoints still restore.
+- Resolution receipt: none.
