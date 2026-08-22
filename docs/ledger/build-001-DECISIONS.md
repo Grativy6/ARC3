@@ -356,3 +356,24 @@ independent authorities.
   Stage 07 must be frozen before its measurements are observed.
 - Reopening condition: an audit shows that the frozen raw artifact was misread, its self-hash or
   source identity fails validation, or any reported count differs from the immutable case records.
+
+## D-001-0022 — Freeze paired retrodiction replacement gates before implementation
+
+- Recorded: 2026-08-22T15:21:32.8066144Z
+- Status: accepted
+- Decision: Compare `FULL`, `NONE`, `RECENT_WINDOW_8`, `EVENT_TRIGGERED`, and
+  `CACHED_INCREMENTAL` on an exact 280-cell paired matrix: 14 frozen Stage 14 cases, eight
+  evaluator-sealed old-contradiction histories, a balanced 32-case Stage 06 intervention/noise
+  subset, and two permitted development seeds. Keep `FULL` as the production and competition
+  default until a measured candidate passes every truth, completion, mechanics, action, runtime,
+  replay, checkpoint, and integrity gate.
+- Evidence: `docs/evidence/001-07-retrodiction-predeclaration.json`, SHA-256
+  `d4eb82f2e0c04e1c94be4d6fbaa8862aa808cc07932042a02d0c5fbcc02dc608`; clean baseline
+  `8e3400cebda87f75b8bb3fd0c8d592d2125a6869`.
+- Boundary: `NONE` is an experimental negative control, recent-window artifacts may not claim full
+  coverage, event reuse requires an immutable matched prediction receipt, and cached reuse must
+  materialize exact FULL semantics. The ten-game public holdout remains sealed. No result may be
+  selected on Stage 06 outcomes or promoted from synthetic evidence into hidden generalization.
+- Reopening condition: an identity/count audit finds the matrix was not frozen as declared, a
+  mode can reuse authority without its required receipts, cache/checkpoint tamper survives restore,
+  or an official measurement begins from a source that does not contain this unchanged declaration.

@@ -7,12 +7,12 @@
   "build_status": "IN_PROGRESS",
   "status": "IN_PROGRESS",
   "current_stage": "07",
-  "current_task": "Predeclare the paired retrodiction variants, budgets, measurements, and decision rule before running Stage 07",
+  "current_task": "Implement and adversarially verify the five frozen Stage 07 retrodiction modes and exact case manifest before measurement",
   "implementation_branch": "build/001-local-public-recovery",
   "pull_request": "https://github.com/Grativy6/ARC3/pull/5",
   "started_at": "2026-08-21T15:41:02Z",
-  "last_checkpoint_at": "2026-08-22T15:15:09Z",
-  "last_checkpoint_commit": "ec51f7e7d09241f47baa866af897546912d3c611",
+  "last_checkpoint_at": "2026-08-22T15:21:32.8066144Z",
+  "last_checkpoint_commit": "8e3400cebda87f75b8bb3fd0c8d592d2125a6869",
   "base": {
     "main_commit": "28c7a00732ce48e5c231211b01bc6eba7d0d71b4",
     "main_tree": "4586299448e9b1b585a0878674ed5f9afa60c384",
@@ -46,7 +46,7 @@
     "04": "PASS",
     "05": "PASS",
     "06": "FAILED_MECHANISM",
-    "07": "PENDING",
+    "07": "IN_PROGRESS",
     "08": "PENDING",
     "09": "PENDING",
     "10": "PENDING",
@@ -302,6 +302,27 @@
         "B-001-0024"
       ],
       "public_holdout_consumed": false
+    },
+    "07": {
+      "status": "IN_PROGRESS",
+      "labels": [
+        "synthetic",
+        "local-public"
+      ],
+      "predeclaration": "docs/evidence/001-07-retrodiction-predeclaration.json",
+      "predeclaration_sha256": "sha256:d4eb82f2e0c04e1c94be4d6fbaa8862aa808cc07932042a02d0c5fbcc02dc608",
+      "source_baseline_commit": "8e3400cebda87f75b8bb3fd0c8d592d2125a6869",
+      "source_baseline_tree": "69fd3a35c110e411e89e368e93d6f7110bc4673c",
+      "modes_predeclared": 5,
+      "evaluation_cells_predeclared": 280,
+      "stage_14_cases": 14,
+      "false_rule_histories": 8,
+      "rule_change_and_noise_cases": 32,
+      "local_public_development_cases": 2,
+      "micro_history_sizes": 6,
+      "implementation_status": "PREDECLARED_BEFORE_IMPLEMENTATION_AND_MEASUREMENT",
+      "production_default": "FULL_UNCHANGED_PENDING_MEASURED_DECISION",
+      "public_holdout_consumed": false
     }
   },
   "artifacts": {
@@ -400,10 +421,14 @@
     "stage_06_report": {
       "path": "docs/reports/001-06-rule-change-reopening.md",
       "sha256": "a7cd087a98e49862241d7542db4d00a37a52a16f73f6c3cffded6515bd7ee25c"
+    },
+    "stage_07_predeclaration": {
+      "path": "docs/evidence/001-07-retrodiction-predeclaration.json",
+      "sha256": "d4eb82f2e0c04e1c94be4d6fbaa8862aa808cc07932042a02d0c5fbcc02dc608"
     }
   },
   "blocked_items": [],
-  "next_action": "Freeze the Stage 07 paired retrodiction variants, measurements, budgets, and decision rule before execution; do not rerun or weaken Stage 06.",
+  "next_action": "Implement the frozen typed retrodiction modes, materialize and seal the eight false-rule histories, then run focused adversarial verification before the one official Stage 07 attempt.",
   "notes": [
     "Build 000 ledgers and reports are immutable historical evidence and are not overwritten by Build 001.",
     "The owner explicitly approved MIT-0 for ARC3 first-party source in the active Build 001 instruction.",

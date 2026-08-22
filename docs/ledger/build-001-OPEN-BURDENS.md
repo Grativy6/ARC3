@@ -55,6 +55,14 @@ does not erase earlier uncertainty or failed mechanisms.
 - Burden: a supplied-plan symbolic test favored retrodiction, while the integrated matrix preserved
   completion and used nine fewer actions without it; causal runtime value is unmeasured.
 - Next evidence: Stage 07 paired hot-path interventions.
+- Frozen experiment: `docs/evidence/001-07-retrodiction-predeclaration.json`, SHA-256
+  `d4eb82f2e0c04e1c94be4d6fbaa8862aa808cc07932042a02d0c5fbcc02dc608`, commits five modes and
+  280 paired evaluation cells before implementation or measurement. It includes eight sealed
+  false-rule histories whose decisive contradiction lies outside an eight-transition window,
+  balanced change/noise controls, and two permitted development seeds.
+- Resolution condition: one replacement mode must meet every predeclared truth, completion,
+  mechanics, action, cost, replay, checkpoint, offline-integrity, and holdout-isolation gate; if
+  none does, retain `FULL` and resolve the decision as `KEEP_FULL` without erasing failed modes.
 
 ## B-001-0005 — Holdout and hidden generalization remain unmeasured
 
