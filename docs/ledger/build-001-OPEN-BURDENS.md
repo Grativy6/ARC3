@@ -567,3 +567,20 @@ does not erase earlier uncertainty or failed mechanisms.
   through 8 respectively and requires the sealed case manifest to repeat and validate them.
 - Resolution receipt: `docs/evidence/001-07-retrodiction-predeclaration-amendment-01.json`, SHA-256
   `5c8ff0c91602d86ecaadd61197dfb80681f618ad4e6c810c26933ca337fdcc3b`.
+
+## B-001-0029 — Initial cache restore validation trusted stored residual contents
+
+- Status: RESOLVED
+- Stage: 07
+- Opened: 2026-08-22
+- Burden: the first typed `RetrodictionCacheEntry.validate_against` implementation reconstructed
+  the artifact from checkpoint-stored outcomes. Because the legacy artifact identity summarizes
+  match/contradiction counts rather than every residual field, an attacker could alter residual
+  content, recompute surrounding checkpoint hashes, and potentially pass that local validation.
+  No official Stage 07 measurement or public-development attempt had begun.
+- Resolution: restore validation now recomputes every transition outcome and residual from the
+  reconstructed model plus immutable transition evidence, requires exact tuple equality with the
+  stored fold, and materializes the compared artifact from the recomputed outcomes.
+- Resolution receipt: source checkpoint `586e8ba2c9c414b4bf2cc426ad5c1bbd357d5258`;
+  `tests/unit/test_retrodiction_modes.py` includes residual-content tamper coverage; the combined
+  retrodiction suite passed 33/33 with strict lint, format, and type checks.

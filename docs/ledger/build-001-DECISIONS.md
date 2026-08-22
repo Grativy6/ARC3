@@ -402,3 +402,25 @@ independent authorities.
 - Reopening condition: B07 cannot execute exactly under the amended adjacent-contact composition,
   its before/after truth differs from the amendment, or any official artifact fails to bind both
   the base and amendment hashes.
+
+## D-001-0024 — Bind retrodiction reuse to reconstructible typed evidence
+
+- Recorded: 2026-08-22T16:02:36.5432466Z
+- Status: accepted
+- Decision: Implement all five frozen Stage 07 modes in a pure typed runtime whose cache namespace
+  includes the complete configuration hash, model semantic fingerprint, mechanics epoch,
+  projection, and ordered exclusion identity. Checkpoints retain complete canonical transition
+  witnesses and typed outcome folds. Restore must reconstruct model outcomes from immutable
+  transitions and compare the exact result before accepting any cached artifact or completion
+  receipt; hashes alone do not grant authority.
+- Evidence: source checkpoint `586e8ba2c9c414b4bf2cc426ad5c1bbd357d5258`; 33 focused unit,
+  property, and legacy-parity tests passed with Ruff, format, and strict mypy. The tests include
+  rehashed configuration, identity, exclusion, witness, artifact, and residual-content tamper
+  attempts.
+- Boundary: cached and event-triggered modes may reduce computation only. They do not change FULL
+  semantics, make a recent-window artifact complete, authorize `NONE` for competition, or promote
+  derived checkpoint state over trace receipts. Production remains `FULL` until the frozen decision
+  artifact is complete and independently verified.
+- Reopening condition: any altered typed outcome, residual, identity, omission, prefix, receipt, or
+  configuration survives reconstruction; eviction changes policy behavior; or legacy FULL/NONE
+  artifacts drift.
