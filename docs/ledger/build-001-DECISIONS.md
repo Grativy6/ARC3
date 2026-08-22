@@ -579,3 +579,23 @@ independent authorities.
 - Reopening condition: a failed receipt can enter a successful aggregate or improvement rank, a
   recovered verified score disappears from failure evidence, or a sealed v0.1 artifact no longer
   verifies exactly.
+
+## D-001-0032 — Make the Stage 08 paired gate executable before the harness
+
+- Recorded: 2026-08-22T20:07:00.1068965Z
+- Status: accepted
+- Decision: Encode the frozen A/B/C/D identity, balanced 20-cell schedule, canonical plan hashes,
+  typed per-boundary work and score receipts, and paired materiality gates in a pure module before
+  writing the environment worker. Build 000 work telemetry is unavailable and must remain null;
+  a zero placeholder is rejected. Only normally returned contiguous action/consequence boundaries
+  enter paired timing medians, while any missing, censored, failed, networked, integrity-invalid,
+  or holdout-contacting cell blocks a Stage 08 PASS.
+- Evidence: commit `bd9b8a06ad1acde3d13815ef6921da72ecb15058`; 22 focused tests in the
+  pinned Python 3.12 environment; Ruff, format, and strict mypy pass; frozen measurement matrix
+  hash `sha256:ca507ee6e539e0544647aac792417b276806a848e656f2b7b4f1a368ba6b63a1`.
+- Boundary: the contract parses only the exact already exposed development identity and performs
+  no asset discovery or environment interaction. Recovered failed scores remain separate evidence,
+  Build 000 unavailable counters are not inferred, and timing cannot override semantic divergence.
+- Reopening condition: the harness can omit a declared cell or counter without failing closed,
+  unavailable Build 000 work is coerced to zero, a failed score enters successful metrics, or the
+  executable matrix differs from the frozen predeclaration.
