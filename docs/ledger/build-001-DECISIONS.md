@@ -68,3 +68,20 @@ independent authorities.
   `docs/evidence/001-01-reproduction-acceptance.json`.
 - Boundary: this classification says only that failure reproduction succeeded; local-public
   controller recovery remains open.
+
+## D-001-0007 — Keep hot-path instrumentation outside policy semantics
+
+- Recorded: 2026-08-22T03:59:41Z
+- Status: accepted
+- Decision: Add opt-in derived profiling around the declared runtime phases, keep telemetry outside
+  policy-selection spans, reject diagnostic mode on the holdout, validate requested profiles inside
+  sealed evaluation receipts, and measure enabled/disabled overhead on alternating fixed synthetic
+  episodes before using one bounded development-game profile for ranking.
+- Evidence: implementation commit `84854c4ada25684f5248fe7bd8725d3b6301c2d5`, 45 focused
+  tests, clean-source Stage 16 regression tests, and
+  `docs/evidence/001-02-hot-path-predeclaration.json`.
+- Boundary: profiler state is revisable derived evidence, never an observation, hypothesis, plan,
+  action input, score, or hidden reasoning record. A parent-killed worker records diagnostic
+  unavailability rather than manufacturing a partial timing profile.
+- Reopening condition: paired identity tests fail, measured overhead exceeds the declaration, or
+  the receipt cannot attribute at least 90 percent of the measured profiler lifetime.

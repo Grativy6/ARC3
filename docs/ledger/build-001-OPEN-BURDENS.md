@@ -14,6 +14,11 @@ does not erase earlier uncertainty or failed mechanisms.
   policy timed out after 120.11965939996298 seconds and 21 actions with zero completed levels on the
   one predeclared development run; the 56-artifact bundle and trace replay verify. Stage 02 must now
   measure the hot path, and Stage 03 must establish causal interventions before repair.
+- Stage 02 instrumentation update (2026-08-22): **measurement pending**. Opt-in phase, CPU/wall,
+  RSS, cache/repeated-input, and per-boundary accounting is implemented and behavior-preserving in
+  focused synthetic tests. The measurement thresholds are frozen in
+  `docs/evidence/001-02-hot-path-predeclaration.json`; no throughput cause is accepted until those
+  clean-source measurements exist.
 
 ## B-001-0002 — Palette and action equivariance failures
 
