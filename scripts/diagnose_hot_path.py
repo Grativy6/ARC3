@@ -734,7 +734,9 @@ def _run_action_selection_micro_trial(
     # keys during its first estimate.  Keep that one setup call outside both
     # the measured region and the invariant boundary.  Every timed/profiled
     # call below then runs on the same already-materialized policy state.
-    reference = _candidate_signature(controller._candidate_actions(observation, view))
+    reference = _candidate_signature(
+        controller._candidate_actions(observation, view, allow_model_simulation=True)
+    )
     state_before = _controller_read_only_signature(controller)
     started_tracer = False
     try:
@@ -744,7 +746,9 @@ def _run_action_selection_micro_trial(
         wall_started_ns = time.perf_counter_ns()
         cpu_started_ns = time.process_time_ns()
         timed_outputs = [
-            _candidate_signature(controller._candidate_actions(observation, view))
+            _candidate_signature(
+                controller._candidate_actions(observation, view, allow_model_simulation=True)
+            )
             for _ in range(iterations)
         ]
         timing_cpu_ns = max(0, time.process_time_ns() - cpu_started_ns)
@@ -753,7 +757,9 @@ def _run_action_selection_micro_trial(
         profiler = cProfile.Profile()
         profiler.enable()
         profiled_outputs = [
-            _candidate_signature(controller._candidate_actions(observation, view))
+            _candidate_signature(
+                controller._candidate_actions(observation, view, allow_model_simulation=True)
+            )
             for _ in range(iterations)
         ]
         profiler.disable()
