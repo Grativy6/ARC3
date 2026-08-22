@@ -731,6 +731,10 @@ class ActionEffectRegistry:
         """Order handles by learned semantics, then raw identity only for true ties."""
 
         def key(action: ActionName) -> tuple[int, tuple[str, int, int, str, str, str], int]:
+            condition_candidates = self.candidates_for(
+                action,
+                condition_signature=condition_signature,
+            )
             effect = self.best_effect(action, condition_signature=condition_signature)
             if effect is not None:
                 return 0, effect.semantic_key, _WIRE_RANK[action]
@@ -738,6 +742,14 @@ class ActionEffectRegistry:
                 action,
                 condition_signature=condition_signature,
             )
+            if translation is None and condition_signature is not None and not condition_candidates:
+                # A changed structural condition can be unseen because a mover
+                # or target is temporarily occluded.  Preserve the condition-
+                # scoped receipts, but retain equivariant ordering when every
+                # live observation of this handle supports one displacement.
+                # Any evidence in the current condition, including ambiguity,
+                # prevents this cross-condition fallback.
+                translation = self.accepted_translation(action)
             if translation is not None:
                 dx, dy = translation
                 return (
@@ -752,9 +764,7 @@ class ActionEffectRegistry:
                     ),
                     _WIRE_RANK[action],
                 )
-            has_evidence = bool(
-                self.candidates_for(action, condition_signature=condition_signature)
-            )
+            has_evidence = bool(condition_candidates)
             rank = 1 if has_evidence else 2
             unknown_key = (
                 CanonicalEffectKind.UNKNOWN.value,

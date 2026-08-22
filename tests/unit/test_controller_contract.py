@@ -510,6 +510,76 @@ def _singleton_rows(
     return rows
 
 
+def test_contact_goal_binding_defers_while_established_mover_is_occluded(
+    tmp_path: Path,
+) -> None:
+    controller = ARC3Controller(ControllerPreset.FULL)
+    controller.reset(_context(tmp_path))
+    positions = {1: (1, 1), 2: (5, 3), 3: (3, 4)}
+    controller.observe(_moving_component_observation(_singleton_rows(positions)))
+    mover_id = cast(str, controller._provisional_mover_id)
+    assert controller._latest_view is not None
+    mover = controller._latest_view.symbolic_state.entity(mover_id)
+    assert mover is not None and mover.color is not None
+
+    # Let generic transition-based goal acquisition establish its ordinary
+    # candidates before the occlusion boundary, so any later creation would be
+    # attributable to the stale-mover reseeding path under test.
+    prelude = controller.choose_action()
+    controller.apply_consequence(
+        _moving_component_observation(
+            _singleton_rows(positions),
+            returned_action=prelude.action,
+        )
+    )
+    initial_bindings = tuple(
+        event
+        for event in controller.journal.verify_manifest()
+        if event.event_type == "goal.target_bound"
+    )
+    initial_candidates = tuple(
+        event
+        for event in controller.journal.verify_manifest()
+        if event.event_type == "goal.candidate_created"
+    )
+
+    decision = controller.choose_action()
+    visible_positions = {
+        color: position for color, position in positions.items() if color != mover.color
+    }
+    controller.apply_consequence(
+        _moving_component_observation(
+            _singleton_rows(visible_positions),
+            returned_action=decision.action,
+        )
+    )
+
+    assert controller.phase is ControllerPhase.OBSERVED
+    assert controller._latest_view is not None
+    assert len(controller._latest_view.symbolic_state.entities) == 2
+    assert controller._provisional_mover_id == mover_id
+    assert controller._latest_view.symbolic_state.entity(mover_id) is None
+    assert (
+        controller._select_contact_target(controller._latest_view.symbolic_state, mover_id) is None
+    )
+    assert (
+        tuple(
+            event
+            for event in controller.journal.verify_manifest()
+            if event.event_type == "goal.target_bound"
+        )
+        == initial_bindings
+    )
+    assert (
+        tuple(
+            event
+            for event in controller.journal.verify_manifest()
+            if event.event_type == "goal.candidate_created"
+        )
+        == initial_candidates
+    )
+
+
 def test_mover_authority_waits_for_two_diverse_continuous_receipts(tmp_path: Path) -> None:
     controller = ARC3Controller(ControllerPreset.FULL)
     controller.reset(_context(tmp_path))

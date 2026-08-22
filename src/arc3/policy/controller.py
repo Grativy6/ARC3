@@ -1857,6 +1857,11 @@ class ARC3Controller:
     def _select_contact_target(state: SymbolicState, mover_id: str) -> SymbolicEntity | None:
         """Select a compact observed role before a fragmented surface component."""
 
+        if state.entity(mover_id) is None:
+            # A temporarily occluded mover cannot ground a new contact binding.
+            # Keep the prior goal history revisable and retry on a later
+            # observation instead of substituting another visible entity.
+            return None
         candidates = tuple(item for item in state.entities if item.entity_id != mover_id)
         if not candidates:
             return None

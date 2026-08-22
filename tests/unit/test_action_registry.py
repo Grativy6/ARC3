@@ -348,6 +348,109 @@ def test_canonical_order_uses_translation_facet_before_raw_wire_identity() -> No
         (1, 0),
     )
 
+    unseen_condition = action_condition_signature(_observation([[2, 0, 0], [0, 1, 0], [0, 0, 0]]))
+    assert all(
+        not base.candidates_for(handle, condition_signature=unseen_condition)
+        for handle in (ActionName.ACTION1, ActionName.ACTION2)
+    )
+    base_unseen_order = base.canonical_order(
+        (ActionName.ACTION1, ActionName.ACTION2),
+        condition_signature=unseen_condition,
+    )
+    remapped_unseen_order = remapped.canonical_order(
+        (ActionName.ACTION7, ActionName.ACTION1),
+        condition_signature=unseen_condition,
+    )
+    assert tuple(base.accepted_translation(handle) for handle in base_unseen_order) == (
+        (-1, 0),
+        (1, 0),
+    )
+    assert tuple(remapped.accepted_translation(handle) for handle in remapped_unseen_order) == (
+        (-1, 0),
+        (1, 0),
+    )
+
+
+def test_current_condition_ambiguity_blocks_cross_condition_translation_fallback(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    registry = ActionEffectRegistry()
+    registry.observe_transition(
+        _CENTER,
+        ActionRequest(ActionName.ACTION1),
+        _LEFT,
+        source_event_id="prior-action1-left",
+    )
+    registry.observe_transition(
+        _CENTER,
+        ActionRequest(ActionName.ACTION2),
+        _RIGHT,
+        source_event_id="prior-action2-right",
+    )
+    current_before = _observation(
+        [
+            [0, 0, 0, 0, 0],
+            [0, 0, 1, 0, 0],
+            [0, 0, 0, 2, 2],
+            [0, 0, 0, 0, 0],
+            [0, 0, 0, 0, 0],
+        ]
+    )
+    current_after = _observation(
+        [
+            [0, 0, 0, 0, 0],
+            [0, 1, 0, 0, 0],
+            [0, 0, 0, 0, 0],
+            [0, 0, 0, 2, 2],
+            [0, 0, 0, 0, 0],
+        ]
+    )
+    ambiguous = registry.observe_transition(
+        current_before,
+        ActionRequest(ActionName.ACTION1),
+        current_after,
+        source_event_id="current-action1-ambiguous",
+        prior_frame_hashes=(current_after.frames[-1].digest,),
+    )
+    current_condition = action_condition_signature(current_before)
+    current_candidates = registry.candidates_for(
+        ActionName.ACTION1,
+        condition_signature=current_condition,
+    )
+    assert ambiguous.ambiguous is True
+    assert current_candidates
+    assert {candidate.status for candidate in current_candidates} == {ActionEffectStatus.AMBIGUOUS}
+    assert not registry.candidates_for(
+        ActionName.ACTION2,
+        condition_signature=current_condition,
+    )
+
+    original = ActionEffectRegistry.accepted_translation
+    calls: list[tuple[ActionName, str | None]] = []
+
+    def tracked_translation(
+        self: ActionEffectRegistry,
+        raw_handle: ActionName,
+        *,
+        condition_signature: str | None = None,
+    ) -> tuple[int, int] | None:
+        calls.append((raw_handle, condition_signature))
+        return original(
+            self,
+            raw_handle,
+            condition_signature=condition_signature,
+        )
+
+    monkeypatch.setattr(ActionEffectRegistry, "accepted_translation", tracked_translation)
+    ordered = registry.canonical_order(
+        (ActionName.ACTION1, ActionName.ACTION2),
+        condition_signature=current_condition,
+    )
+
+    assert (ActionName.ACTION1, None) not in calls
+    assert (ActionName.ACTION2, None) in calls
+    assert ordered[0] is ActionName.ACTION2
+
 
 def test_restore_with_multiple_displacements_preserves_ambiguity() -> None:
     prior = _observation(
