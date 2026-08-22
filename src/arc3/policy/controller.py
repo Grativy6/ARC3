@@ -1310,7 +1310,7 @@ class ARC3Controller:
                     coordinates = (
                         calibration_coordinate,
                         *(item for item in coordinates if item != calibration_coordinate),
-                    )
+                    )[:limit]
                 actions.extend(ActionRequest(name, coordinate) for coordinate in coordinates)
             else:
                 actions.append(ActionRequest(name))
