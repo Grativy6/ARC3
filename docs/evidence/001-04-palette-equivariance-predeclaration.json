@@ -1,0 +1,183 @@
+{
+  "schema": "arc3.build-001.stage-04-palette-equivariance-predeclaration.v0.1",
+  "status": "PREDECLARED",
+  "created_at": "2026-08-22T04:40:21.0702747Z",
+  "workflow": "docs/workflows/001-local-public-failure-recovery.md",
+  "objective": "Remove arbitrary numeric palette identity from structural interpretation and policy tie-breaking while preserving exact raw colors and color-causal evidence.",
+  "source_baseline": {
+    "git_commit": "6f4559994b051bd07dd234f9c1aea2f9fd9063d1",
+    "git_tree": "8ed364c5a09da507e898ee0934a8dd6404aa0cfe",
+    "resolution": "IMPLEMENTATION_COMMIT_DESCENDING_FROM_THIS_PREDECLARATION",
+    "resolution_rule": "Run acceptance only from the clean implementation commit containing the repair and this declaration; bind its commit, tree, first-party source hash, seed schedule, and raw artifact hash.",
+    "public_assets_allowed": false
+  },
+  "frozen_failure": {
+    "evidence_label": "synthetic",
+    "source": "docs/evidence/016-competition-profile-acceptance.json",
+    "actual_palette_cases": 2,
+    "workflow_wording": "the four Build 000 palette failures",
+    "reconciliation": "Frozen evidence contains two palette failures and two action-remap failures. Stage 04 owns only the two palette cases; Stage 05 owns the two remaps.",
+    "cases": [
+      {
+        "seed": 7,
+        "base_score": 1.0,
+        "base_actions": 7,
+        "palette_score": 0.0,
+        "palette_actions": 16
+      },
+      {
+        "seed": 11,
+        "base_score": 1.0,
+        "base_actions": 1,
+        "palette_score": 0.0,
+        "palette_actions": 16
+      }
+    ],
+    "diagnosed_leak": "Raw numeric color enters symbolic entity kind/group/ID; lexicographic entity-ID tie-breaking selects the mover and target differently after an otherwise bijective palette relabeling."
+  },
+  "representation_contract": {
+    "raw_receipts": "GridFrame cells, palettes, frame/blob hashes, deltas, component raw colors, and transformation evidence remain exact and immutable.",
+    "derived_roles": "A level-scoped registry assigns at most 16 canonical palette classes from first-observed background/geometry/occupancy evidence without using numeric color as a rank or identifier.",
+    "ambiguity": "Structurally indistinguishable colors may share an explicit ambiguous class; the implementation must not manufacture a unique semantic role from the numeric label.",
+    "stability": "Once assigned within a level, raw-color to canonical-class identity is stable across movement and checkpoint/resume; newly observed colors are added without rewriting raw history.",
+    "color_causality": "Raw color remains available to tracking and executable recolor/color-sensitive rules. Palette equivariance applies to joint bijective relabeling, not one-sided changes that alter observed mechanics."
+  },
+  "historical_regression": {
+    "evidence_label": "synthetic",
+    "seeds": [
+      7,
+      11
+    ],
+    "variants": [
+      "base",
+      "palette"
+    ],
+    "preset": "FULL",
+    "max_actions": 16,
+    "max_resets": 2,
+    "wall_clock_seconds": 60.0,
+    "acceptance": {
+      "cases_required": 2,
+      "terminal_phase_parity": 1.0,
+      "score_parity": 1.0,
+      "exact_action_request_sequence_parity": 1.0,
+      "base_and_permutation_completion_required": true
+    }
+  },
+  "procedural_paired_suite": {
+    "evidence_label": "synthetic",
+    "environment_seeds": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12,
+      13,
+      14,
+      15,
+      16,
+      17,
+      18,
+      19,
+      20,
+      21,
+      22,
+      23,
+      24,
+      25,
+      26,
+      27,
+      28,
+      29,
+      30,
+      31
+    ],
+    "permutations_per_seed": 8,
+    "total_pairs": 256,
+    "palette_domain": "all 16 ARC colors, including mappings where the measured background is not zero",
+    "permutation_derivation": "For each environment seed and permutation index 0..7, shuffle range(16) with random.Random(derive_seed(seed, 'build-001-stage04-palette-<index>')); deterministically rotate once if identity.",
+    "preset": "FULL decision features with automatic checkpoint persistence omitted only in the bulk timing harness; separate checkpoint/resume cases exercise default persistence",
+    "grid_size": 8,
+    "max_actions": 16,
+    "max_resets": 2,
+    "network_enabled": false,
+    "acceptance": {
+      "exact_action_request_sequence_parity": 1.0,
+      "terminal_phase_parity": 1.0,
+      "score_parity": 1.0,
+      "completion_parity": 1.0,
+      "canonical_palette_role_projection_parity": 1.0,
+      "nonidentity_raw_initial_frame_hash_difference": 1.0,
+      "valid_trace_chain_and_replay": 1.0,
+      "threshold_policy": "Any miss makes the stage PARTIAL or FAILED_MECHANISM; do not weaken the 100 percent threshold after seeing results."
+    }
+  },
+  "checkpoint_resume_suite": {
+    "evidence_label": "synthetic",
+    "paired_cases": 16,
+    "seeds": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12,
+      13,
+      14,
+      15
+    ],
+    "checkpoint_boundary": "after one complete action/consequence boundary when the episode remains nonterminal",
+    "acceptance": "Registry serialization, restored symbolic projection, next action, final terminal result, trace verification, and no-resubmission invariant all match the uninterrupted counterpart."
+  },
+  "color_causal_controls": {
+    "evidence_label": "synthetic",
+    "minimum_cases": 64,
+    "joint_relabeling": "Applying the same bijection to before and after observations preserves the canonical transition/effect projection.",
+    "one_sided_recolor": "Changing only one side remains distinguishable and retains RECOLOR or color-sensitive rule evidence.",
+    "acceptance": "100 percent of jointly relabeled controls are equivalent and 100 percent of one-sided recolors remain distinguishable."
+  },
+  "resource_and_integrity_limits": {
+    "palette_registry_max_entries": 16,
+    "hosted_inference_allowed": false,
+    "public_game_ids_allowed": false,
+    "game_specific_rules_allowed": false,
+    "public_holdout_allowed": false,
+    "raw_observation_mutation_allowed": false,
+    "maximum_wall_seconds_for_full_measurement": 600.0,
+    "commands_and_runtime_identity_required": true
+  },
+  "artifacts": {
+    "raw": "C:/a/arc3-b001/artifacts/stage04/palette-equivariance.json",
+    "raw_work_root": "C:/a/arc3-b001/artifacts/stage04/palette-equivariance-work",
+    "acceptance": "docs/evidence/001-04-palette-equivariance.json",
+    "report": "docs/reports/001-04-palette-equivariance.md"
+  },
+  "decision_rule": {
+    "pass": "Both historical failures complete with exact paired behavior; all 256 procedural pairs, 16 restart pairs, and all color-causal controls meet their frozen 100 percent predicates; raw provenance and the 16-entry bound hold.",
+    "partial": "The generic representation repairs the historical cases and materially improves the procedural matrix but at least one frozen predicate misses; preserve every failing seed/permutation.",
+    "failed_mechanism": "Historical palette behavior remains broken, raw provenance is erased, one-sided color causality becomes indistinguishable, or the registry uses numeric color/game identity as semantic truth.",
+    "failed_infrastructure": "The clean-source or deterministic harness cannot execute within the declared local resource envelope; preserve exact failure and do not substitute public-game evidence."
+  },
+  "integrity": {
+    "public_partition_manifest_sha256": "sha256:682d5891c2aface54803d9bd1173c55ed21e89856e13b8a478fb9276ee963f2f",
+    "build_000_exposure_ledger_sha256": "sha256:cd9af42ed3a5ef9fa0dc201ddb10e32d2bcccee9df729aa0c7d53077c04c9ad4",
+    "stage_03_exposure_ledger_sha256": "sha256:e02a9fa71206170a6fe2aeefb6935ae25141e2759937657475cead4389bb17aa",
+    "public_holdout_gameplay_events": 0,
+    "locally_acquired_holdout_assets": 0
+  }
+}

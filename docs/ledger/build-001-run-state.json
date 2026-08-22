@@ -7,7 +7,7 @@
   "build_status": "IN_PROGRESS",
   "status": "IN_PROGRESS",
   "current_stage": "04",
-  "current_task": "Predeclare and implement generic palette-equivariant structural interpretation with raw provenance preserved",
+  "current_task": "Implement the frozen Stage 04 palette-role registry, controller projection, checkpoint binding, and paired synthetic harness",
   "implementation_branch": "build/001-local-public-recovery",
   "pull_request": "https://github.com/Grativy6/ARC3/pull/5",
   "started_at": "2026-08-21T15:41:02Z",
@@ -134,6 +134,17 @@
       "exact_action_and_outcome_match": true,
       "artifact_verification": "PASS:82-artifacts+4-runs+0-errors",
       "public_holdout_consumed": false
+    },
+    "04": {
+      "status": "PREDECLARED",
+      "label": "synthetic",
+      "predeclaration": "docs/evidence/001-04-palette-equivariance-predeclaration.json",
+      "predeclaration_sha256": "sha256:9df1df67641a642234cde2494b1ac53a55524778284f8af2c0aa0a9d727c6d32",
+      "historical_palette_cases": 2,
+      "procedural_pairs": 256,
+      "checkpoint_resume_pairs": 16,
+      "color_causal_controls": 64,
+      "public_holdout_consumed": false
     }
   },
   "artifacts": {
@@ -188,6 +199,10 @@
     "stage_03_report": {
       "path": "docs/reports/001-03-causal-throughput-diagnosis.md",
       "sha256": "254e12bc0a7fa24db8f9e3b03ebff694ac1d26e3c52b899a014a809ff19ca645"
+    },
+    "stage_04_predeclaration": {
+      "path": "docs/evidence/001-04-palette-equivariance-predeclaration.json",
+      "sha256": "9df1df67641a642234cde2494b1ac53a55524778284f8af2c0aa0a9d727c6d32"
     }
   },
   "blocked_items": [],

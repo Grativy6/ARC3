@@ -136,3 +136,20 @@ independent authorities.
   throughput diagnosis only and makes no recovery, holdout, benchmark, or generalization claim.
 - Reopening condition: later clean evaluation reverses the measured direction, or crash/replay tests
   show that a proposed optimization weakens immutable receipts, action durability, or restartability.
+
+## D-001-0011 — Canonicalize palette classes only in derived interpretation
+
+- Recorded: 2026-08-22T04:40:21Z
+- Status: accepted
+- Decision: Repair palette equivariance with a bounded, level-scoped derived registry whose stable
+  class identities come from first-observed structural/background evidence, never numeric color.
+  Preserve raw frame cells, raw component colors, hashes, deltas, recolor evidence, and executable
+  color-sensitive mechanics. Freeze 256 procedural pairs, 16 checkpoint/resume pairs, 64 causal
+  color controls, and the two actual Build 000 palette regressions before implementation.
+- Evidence: `docs/evidence/001-04-palette-equivariance-predeclaration.json` and the frozen Build 000
+  Stage 16 acceptance artifact.
+- Boundary: a joint bijective relabeling should preserve policy behavior; a one-sided recolor may be
+  causally meaningful and must remain distinguishable. Structurally tied colors remain explicitly
+  ambiguous rather than being ordered by their raw numeric labels.
+- Reopening condition: any raw receipt changes, registry cardinality exceeds 16, checkpoint restore
+  rewrites a class, or a color-causal control becomes indistinguishable.
