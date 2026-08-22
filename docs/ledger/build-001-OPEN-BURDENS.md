@@ -317,3 +317,86 @@ does not erase earlier uncertainty or failed mechanisms.
   file SHA-256 `4209570fe577904844577ad5ead0a0d2d984673316b82dd0f1f9f0fd35089b0a`,
   receipt hash `sha256:993bbce75fb055058711949d873ac5c73e6cc0a6cabe2cf4e93cf04fd12923a3`;
   exit 0, zero blocking findings, zero warnings, zero secret findings.
+
+## B-001-0022 — Stage 06 reopening required several failed generic mechanisms
+
+- Status: OPEN
+- Stage: 06
+- Opened: 2026-08-22
+- Burden: Pre-official Stage 06 smoke runs exposed distinct generic failures before the frozen
+  112-execution matrix was permitted to run. Early controllers did not reach the predeclared
+  readiness/trigger boundary; later controllers reopened correctly but failed to retarget and
+  complete; early harness folds did not independently reconstruct the lifecycle from trace.
+- Preserved failure evidence:
+  - trigger/readiness failures:
+    `smoke-001-action-rotation` (`sha256:46b9ce2c0f670d8bff693d1419b0995b06d88d32b21af41e1afcba1f70678cb5`),
+    `smoke-002-action-rotation-no-markers` (`sha256:38c5f135466954df2826c4d3e8a61b70014e4e93d785b7e792aa6fbc46d38702`),
+    `smoke-008-harness-traversability-transformed` (`sha256:cc122a843b97a89524910f4c9f024019a83823ba1987ee57fae73a9b87ff001d`),
+    `smoke-009-harness-noise-transformed` (`sha256:23dba247004c841364318ae3280ade030be5c2c7c08140171d21429c5bec2cc4`),
+    and `smoke-012-noise-diagonal-stale-goal` (`sha256:a718773f5f4b7e0d9d92f14f130a93cc1986348511b5c7632ae0ec5695876d14`);
+  - lifecycle API failure: `smoke-004-noise-static-lane`
+    (`sha256:05cb2ef0cd4535a514b01f7a94218d4048c78a2c82155019df6dbc49f082f4df`);
+  - post-reopening completion failures:
+    `smoke-003-action-rotation-static-goal` (`sha256:4ca86b6e6485244cfdbb81ee92c89e0de6f9a38a7f8b45aafbabf4075d7c947d`),
+    `smoke-017-action-transformed-latest-core` (`sha256:b028f7b231f56e529eabc4ae437af8ed59822fde1d5317fe8f65d22e4553d763`),
+    and `smoke-019-traversability-transformed-latest-core`
+    (`sha256:d9b7692dfbc212df5fdb6373ca2fc6b6e6225e7cbe3fc69c345dd6a5d67f1abb`);
+  - trace/lifecycle-fold failures:
+    `smoke-005-harness-action` (`sha256:6fc61a058f2855ef88a59ab1615bbc1f9b24ec45f57281f8354433e3c70b154f`),
+    `smoke-006-harness-action` (`sha256:bea3030a60639bf46ced337c669f60cd851845382c376e2447f9adbd9c4552e6`),
+    `smoke-020-action-identity-audit` (`sha256:4ba0ef11c4968bac4fc87e19671f6cadf13c2f5c2e061565e9b30246312dc767`),
+    `smoke-024-noise-domain-readiness` (`sha256:81000471da76dbb2d25c6114b3b89ef664410ce6bb27d4ae8bc4a791b5fb11aa`),
+    and `smoke-025-noise-lifecycle-fold` (`sha256:22db0a9e2488d35d31b739f82827e02ea2306da6883f1f74ce7c29efe997f4fd`).
+  All paths are beneath
+  `C:/a/arc3-b001/artifacts/stage06/failed-mechanisms/` and remain outside the official result path.
+- Current evidence: the later identity action smoke passed in 18 actions with trigger 6 and terminal
+  `WIN` at `smoke-021-action-identity-audit/result.json`
+  (`sha256:bb9563cebddb939982b9562b1cfba1d11f6aae64b5d020c2b92b04f82d837d0f`),
+  but one passing smoke does not resolve the frozen matrix or transformed/checkpoint obligations.
+- Next discriminating action: finish cross-transform and checkpoint preflight, freeze a clean source
+  commit, then execute the unchanged official 112-execution harness once all P0 gates pass.
+- Resolution condition: the official Stage 06 artifact either meets the frozen decision rule or
+  records an honest bounded mechanism result, with every earlier failed receipt retained.
+- Resolution receipt: none.
+
+## B-001-0023 — Rehashed Stage 06 checkpoint exposed self-authored restore authority
+
+- Status: OPEN
+- Stage: 06
+- Opened: 2026-08-22
+- Burden: The first expanded restore suite rejected a valid historical observation because restore
+  rebuilt earlier symbolic states with the final palette registry. A subsequent read-only audit
+  found additional derived action, mechanics, hypothesis, plan, counter, and pending-action fields
+  that were structurally checked but not yet reconstructed or exactly bound to immutable trace
+  receipts. A checkpoint whose outer hash is recomputed must not manufacture policy authority.
+- Failure evidence: `C:/a/arc3-b001/artifacts/stage06/failed-mechanisms/restore-final-palette-registry/junit.xml`,
+  3,823 bytes, SHA-256
+  `b241e7b472d56c7e821e3cebf91c2f96a244cbe9b8855ef1b44c00ffb476631d`;
+  the expanded run reported 43 passed and one failed before repair.
+- Next discriminating action: reconstruct palette/symbolic observations chronologically; bind every
+  preserved transition to its immediate selected/submitted/consequence/returned-observation
+  quartet; validate lifecycle terminal payloads and epoch lineage from trace; and add rehashed
+  tamper tests for pending actions and every action-authoritative restored field.
+- Resolution condition: valid historical and successor-epoch checkpoints restore exactly, while
+  each rehashed authority mutation fails before action selection; the expanded replay suite, Ruff,
+  and strict mypy all pass.
+- Resolution receipt: none.
+
+## B-001-0024 — Same-handle repetition cannot prove the frozen global action rotation
+
+- Status: OPEN
+- Stage: 06
+- Opened: 2026-08-22
+- Burden: The first fixture/controller implementation could confirm the action-effect intervention
+  from two consequences of one opaque handle. The frozen predeclaration instead changes every
+  latent translation and requires the second qualifying consequence to support the same global
+  clockwise successor mapping. Repetition establishes persistence for one handle, not the declared
+  cross-handle relation.
+- Current evidence: source review against
+  `docs/evidence/001-06-rule-change-predeclaration.json`; no official Stage 06 matrix has run.
+- Next discriminating action: require two distinct affected handles/effects with one coherent typed
+  global transformation, and add an adversarial regression proving repeated same-handle evidence
+  cannot confirm the global change.
+- Resolution condition: typed cross-handle confirmation and the adversarial test pass throughout
+  identity/transformed smoke cases and the frozen official matrix.
+- Resolution receipt: none.
