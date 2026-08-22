@@ -100,3 +100,21 @@ independent authorities.
   deletion. No mechanism is disabled in production solely because it is expensive.
 - Reopening condition: Stage 03 intervention evidence contradicts the ranking or shows that an
   apparently expensive phase supplies behaviorally necessary value at the same budget.
+
+## D-001-0009 — Isolate allocator tracing and checkpoint persistence as diagnostic factors
+
+- Recorded: 2026-08-22T04:22:27Z
+- Status: accepted
+- Decision: Add two default-on, receipt-bound diagnostic controls to the development evaluator:
+  Python allocation tracing and FULL automatic checkpoint persistence. Any disabled control
+  requires FULL plus hot-path profiling and is rejected on the public holdout. Pair a balanced
+  synthetic 2x2 factorial with the same four cells on the one already-exposed Stage 01 development
+  game before changing production behavior.
+- Evidence: `docs/evidence/001-03-causal-predeclaration.json`, focused evaluator-contract tests,
+  and the synthetic causal-diagnosis harness.
+- Boundary: disabling `use_memory` is a causal intervention only, not a persistence repair; the
+  default evaluation and competition policy remain unchanged. A read-only private-method
+  microbenchmark may diagnose candidate-generation cost but cannot bypass action receipts or
+  promote a production optimization by itself.
+- Reopening condition: intervention receipts change exact decisions/outcomes, fail source binding,
+  access the holdout, or disagree materially across synthetic and local-public evidence.

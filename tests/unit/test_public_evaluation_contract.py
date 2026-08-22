@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from pathlib import Path
 from typing import Any, cast
 
@@ -20,6 +21,7 @@ from arc3.evaluation.artifacts import (
     seal_object,
     sha256_file,
 )
+from arc3.evaluation.baselines import make_evaluation_policy
 from arc3.evaluation.public import (
     PUBLIC_EVALUATION_SCHEMA,
     PUBLIC_RUN_SCHEMA,
@@ -34,9 +36,11 @@ from arc3.evaluation.public import (
 from arc3.evaluation.public_runner import (
     _aggregate,
     _hot_path_profile_valid,
+    _receipt_valid,
+    _reproduction_argv,
     verify_public_evaluation,
 )
-from arc3.policy import RunContext
+from arc3.policy import ControllerPreset, RunContext, preset_features
 from arc3.profiling.hot_path import HotPathProfiler
 from arc3.types import GameId
 
@@ -62,6 +66,8 @@ def test_stage15_default_declaration_is_full_b0_through_b4() -> None:
 
     assert args.game_ids is None
     assert args.hot_path_profile is False
+    assert args.python_allocation_tracing is True
+    assert args.automatic_checkpointing is True
     assert args.agents == ("random", "cycle", "novelty", "trace", "full")
     assert args.seeds == (7, 11)
     assert args.max_actions == 80
@@ -76,7 +82,97 @@ def test_stage15_default_declaration_is_full_b0_through_b4() -> None:
     assert config.max_actions == FROZEN_COMPETITION_RUNTIME.max_actions == 80
     assert config.max_resets == FROZEN_COMPETITION_RUNTIME.max_resets == 8
     assert config.timeout_seconds == 120.0
+    assert config.declaration()["python_allocation_tracing"] is True
+    assert config.declaration()["automatic_checkpointing"] is True
     assert FROZEN_COMPETITION_RUNTIME.per_game_wall_clock_seconds == 240.0
+
+
+def test_stage03_diagnostic_switches_are_explicit_and_tightly_guarded() -> None:
+    args = build_parser().parse_args(
+        ["--no-python-allocation-tracing", "--no-automatic-checkpointing"]
+    )
+    assert args.python_allocation_tracing is False
+    assert args.automatic_checkpointing is False
+
+    with pytest.raises(ValueError, match="require hot-path profiling"):
+        PublicEvaluationConfig(
+            partition="development",
+            python_allocation_tracing=False,
+            agents=("full",),
+            seeds=(7,),
+            frozen_commit=FROZEN,
+        )
+    with pytest.raises(ValueError, match="FULL policy only"):
+        PublicEvaluationConfig(
+            partition="development",
+            hot_path_profile=True,
+            automatic_checkpointing=False,
+            agents=("cycle", "full"),
+            seeds=(7,),
+            frozen_commit=FROZEN,
+        )
+    with pytest.raises(ValueError, match="cannot enable diagnostic interventions"):
+        PublicEvaluationConfig(
+            partition="public-holdout",
+            automatic_checkpointing=False,
+            agents=("full",),
+            seeds=(7,),
+            frozen_commit=FROZEN,
+        )
+
+    diagnostic = PublicEvaluationConfig(
+        partition="development",
+        hot_path_profile=True,
+        python_allocation_tracing=False,
+        automatic_checkpointing=False,
+        agents=("full",),
+        seeds=(7,),
+        frozen_commit=FROZEN,
+    )
+    argv = _reproduction_argv(diagnostic)
+    assert "--hot-path-profile" in argv
+    assert "--no-python-allocation-tracing" in argv
+    assert "--no-automatic-checkpointing" in argv
+    assert diagnostic.declaration()["python_allocation_tracing"] is False
+    assert diagnostic.declaration()["automatic_checkpointing"] is False
+
+
+def test_automatic_checkpoint_diagnostic_changes_only_full_use_memory(tmp_path: Path) -> None:
+    context = cast(
+        RunContext,
+        _run_context(
+            {
+                "checkpoint_path": str(tmp_path / "checkpoint"),
+                "game_id": "opaque-stage03-fixture",
+                "git_commit": FROZEN,
+                "max_actions": 80,
+                "max_resets": 8,
+                "run_id": "stage03-checkpoint-diagnostic",
+                "seed": 7,
+                "timeout_seconds": 120.0,
+                "trace_path": str(tmp_path / "trace"),
+            }
+        ),
+    )
+    policy = make_evaluation_policy(
+        "full",
+        seed=7,
+        run_context=context,
+        automatic_checkpointing=False,
+    )
+    expected = replace(preset_features(ControllerPreset.FULL), use_memory=False)
+
+    assert cast(Any, policy)._controller.preset is ControllerPreset.FULL
+    assert cast(Any, policy)._controller.features == expected
+    assert {
+        key: value
+        for key, value in cast(Any, policy)._controller.features.to_dict().items()
+        if key != "use_memory"
+    } == {
+        key: value
+        for key, value in preset_features(ControllerPreset.FULL).to_dict().items()
+        if key != "use_memory"
+    }
 
 
 def test_public_evaluation_selector_is_partition_bound_and_holdout_closed() -> None:
@@ -346,6 +442,19 @@ def test_holdout_gate_is_closed_and_then_one_shot(
 
 
 def _minimal_run(specification: dict[str, object], identity_hash: str) -> dict[str, Any]:
+    metrics: dict[str, object] = {
+        "environment_actions": 1,
+        "resets": 0,
+        "fault_count": 0,
+    }
+    diagnostics: dict[str, object] = {}
+    for field, metric_field in (
+        ("python_allocation_tracing", "python_allocation_tracing_enabled"),
+        ("automatic_checkpointing", "automatic_checkpointing_enabled"),
+    ):
+        if field in specification:
+            diagnostics[field] = specification[field]
+            metrics[metric_field] = specification[field]
     return seal_object(
         {
             "schema": PUBLIC_RUN_SCHEMA,
@@ -358,6 +467,7 @@ def _minimal_run(specification: dict[str, object], identity_hash: str) -> dict[s
             "seed": 7,
             "surface": specification["surface"],
             "partition": "smoke",
+            **diagnostics,
             "status": "success",
             "identity_hash": identity_hash,
             "score": {
@@ -367,11 +477,7 @@ def _minimal_run(specification: dict[str, object], identity_hash: str) -> dict[s
                 "levels_completed": 0,
                 "completed": False,
             },
-            "metrics": {
-                "environment_actions": 1,
-                "resets": 0,
-                "fault_count": 0,
-            },
+            "metrics": metrics,
             "trace": {"replay_verified": True},
             "asset_identity_after": None,
             "environment_transport": specification["network_mode"],
@@ -379,6 +485,50 @@ def _minimal_run(specification: dict[str, object], identity_hash: str) -> dict[s
         },
         hash_field="receipt_hash",
     )
+
+
+@pytest.mark.parametrize(
+    ("field", "metric_field"),
+    (
+        ("python_allocation_tracing", "python_allocation_tracing_enabled"),
+        ("automatic_checkpointing", "automatic_checkpointing_enabled"),
+    ),
+)
+def test_stage03_diagnostic_switches_are_bound_into_receipts(
+    field: str,
+    metric_field: str,
+) -> None:
+    identity_hash = "sha256:" + "1" * 64
+    specification: dict[str, object] = {
+        "evaluation_id": "stage03-diagnostic-fixture",
+        "run_id": "fixture-B1-cycle-seed-7",
+        "game_id": "fixture-v1",
+        "partition": "smoke",
+        "surface": "local-public",
+        "network_mode": "offline-evaluation",
+        "baseline_id": "B1",
+        "agent": "cycle",
+        "seed": 7,
+        "identity_hash": identity_hash,
+        "hot_path_profile": False,
+        "python_allocation_tracing": True,
+        "automatic_checkpointing": True,
+    }
+    specification["run_spec_hash"] = seal_object(specification, hash_field="run_spec_hash")[
+        "run_spec_hash"
+    ]
+    receipt = _minimal_run(specification, identity_hash)
+
+    assert _receipt_valid(receipt, specification, identity_hash)
+
+    mismatched = dict(receipt)
+    mismatched.pop("receipt_hash")
+    mismatched[field] = False
+    mismatched_metrics = dict(cast(dict[str, object], mismatched["metrics"]))
+    mismatched_metrics[metric_field] = False
+    mismatched["metrics"] = mismatched_metrics
+    resealed = seal_object(mismatched, hash_field="receipt_hash")
+    assert not _receipt_valid(resealed, specification, identity_hash)
 
 
 def test_public_artifact_verifier_detects_mutation(tmp_path: Path) -> None:

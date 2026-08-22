@@ -317,6 +317,8 @@ class PublicEvaluationConfig:
     frozen_commit: str
     game_ids: tuple[str, ...] | None = None
     hot_path_profile: bool = False
+    python_allocation_tracing: bool = True
+    automatic_checkpointing: bool = True
     max_actions: int = FROZEN_COMPETITION_RUNTIME.max_actions
     max_resets: int = FROZEN_COMPETITION_RUNTIME.max_resets
     # Stage 15 public development is a predeclared 120-second measurement
@@ -373,10 +375,23 @@ class PublicEvaluationConfig:
                 raise ValueError("public holdout evaluation cannot select a subset of games")
         if not isinstance(self.hot_path_profile, bool):
             raise ValueError("hot_path_profile must be boolean")
+        if not isinstance(self.python_allocation_tracing, bool):
+            raise ValueError("python_allocation_tracing must be boolean")
+        if not isinstance(self.automatic_checkpointing, bool):
+            raise ValueError("automatic_checkpointing must be boolean")
         if self.partition == "public-holdout" and self.hot_path_profile:
             raise ValueError("public holdout evaluation cannot enable diagnostic profiling")
         if self.hot_path_profile and self.agents != ("full",):
             raise ValueError("diagnostic profiling requires the FULL policy only")
+        diagnostic_intervention = (
+            not self.python_allocation_tracing or not self.automatic_checkpointing
+        )
+        if diagnostic_intervention and self.partition == "public-holdout":
+            raise ValueError("public holdout evaluation cannot enable diagnostic interventions")
+        if diagnostic_intervention and self.agents != ("full",):
+            raise ValueError("diagnostic interventions require the FULL policy only")
+        if diagnostic_intervention and not self.hot_path_profile:
+            raise ValueError("diagnostic interventions require hot-path profiling")
         if self.evaluation_id is not None and (
             not self.evaluation_id
             or any(
@@ -391,6 +406,8 @@ class PublicEvaluationConfig:
             "partition": self.partition,
             "game_ids": list(self.game_ids) if self.game_ids is not None else None,
             "hot_path_profile": self.hot_path_profile,
+            "python_allocation_tracing": self.python_allocation_tracing,
+            "automatic_checkpointing": self.automatic_checkpointing,
             "agents": list(self.agents),
             "seeds": list(self.seeds),
             "max_actions": self.max_actions,

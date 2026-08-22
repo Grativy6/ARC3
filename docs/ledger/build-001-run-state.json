@@ -7,7 +7,7 @@
   "build_status": "IN_PROGRESS",
   "status": "IN_PROGRESS",
   "current_stage": "03",
-  "current_task": "Run one-at-a-time interventions for allocator tracing, checkpointing, and the broad action-selection envelope",
+  "current_task": "Execute the frozen Stage 03 synthetic and local-public 2x2 causal interventions",
   "implementation_branch": "build/001-local-public-recovery",
   "pull_request": "https://github.com/Grativy6/ARC3/pull/5",
   "started_at": "2026-08-21T15:41:02Z",
@@ -112,6 +112,16 @@
       "local_public_levels_completed": 0,
       "artifact_verification": "PASS:30-artifacts+1-run+0-errors",
       "public_holdout_consumed": false
+    },
+    "03": {
+      "status": "PREDECLARED",
+      "labels": [
+        "synthetic",
+        "local-public"
+      ],
+      "predeclaration": "docs/evidence/001-03-causal-predeclaration.json",
+      "predeclaration_sha256": "sha256:b9f81e93fbd76944dcb2ef9382e4d7da756bfd91e68075a4d7f4930d060f96d1",
+      "public_holdout_consumed": false
     }
   },
   "artifacts": {
@@ -154,10 +164,14 @@
     "stage_02_report": {
       "path": "docs/reports/001-02-hot-path-observability.md",
       "sha256": "936385f057d9154e9539e952fbe2258bcf841547042c84541f263ea03e15bf82"
+    },
+    "stage_03_predeclaration": {
+      "path": "docs/evidence/001-03-causal-predeclaration.json",
+      "sha256": "b9f81e93fbd76944dcb2ef9382e4d7da756bfd91e68075a4d7f4930d060f96d1"
     }
   },
   "blocked_items": [],
-  "next_action": "Predeclare and run one-at-a-time Stage 03 interventions for allocator tracing and checkpoint persistence, then split the remaining action-selection envelope without deleting functionality.",
+  "next_action": "Freeze the diagnostic controls, then run the predeclared Stage 03 factorial and same-source development interventions without changing production policy semantics.",
   "notes": [
     "Build 000 ledgers and reports are immutable historical evidence and are not overwritten by Build 001.",
     "The owner explicitly approved MIT-0 for ARC3 first-party source in the active Build 001 instruction.",

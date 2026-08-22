@@ -146,6 +146,8 @@ def _specifications(
                     "max_resets": config.max_resets,
                     "timeout_seconds": config.timeout_seconds,
                     "hot_path_profile": config.hot_path_profile,
+                    "python_allocation_tracing": config.python_allocation_tracing,
+                    "automatic_checkpointing": config.automatic_checkpointing,
                     "surface": config.surface,
                     "network_mode": config.network_mode,
                     "identity_hash": identity["identity_hash"],
@@ -205,6 +207,14 @@ def _failure_result(
         else EvaluationSurface.LOCAL_PUBLIC
     )
     resolved_metrics = metrics or _empty_metrics()
+    if "python_allocation_tracing" in specification:
+        resolved_metrics["python_allocation_tracing_enabled"] = specification[
+            "python_allocation_tracing"
+        ]
+    if "automatic_checkpointing" in specification:
+        resolved_metrics["automatic_checkpointing_enabled"] = specification[
+            "automatic_checkpointing"
+        ]
     if specification.get("hot_path_profile") is True and not isinstance(
         resolved_metrics.get("hot_path_profile"), dict
     ):
@@ -225,6 +235,15 @@ def _failure_result(
             "seed": specification["seed"],
             "surface": specification["surface"],
             "partition": specification["partition"],
+            **(
+                {
+                    "python_allocation_tracing": specification["python_allocation_tracing"],
+                    "automatic_checkpointing": specification["automatic_checkpointing"],
+                }
+                if "python_allocation_tracing" in specification
+                and "automatic_checkpointing" in specification
+                else {}
+            ),
             "status": status,
             "started_at": started_at,
             "completed_at": _utc_now(),
@@ -309,11 +328,14 @@ def _worker(spec: dict[str, Any], receipt_path: str) -> None:
     trace: dict[str, object] | None = None
     metrics = _empty_metrics()
     hot_path_profiler = None
+    python_allocation_tracing = specification.get("python_allocation_tracing", True) is True
+    automatic_checkpointing = specification.get("automatic_checkpointing", True) is True
     caught: Exception | None = None
     scorecard = None
     score_payload: dict[str, object] | None = None
     asset_identity_after: dict[str, object] | None = None
-    tracemalloc.start()
+    if python_allocation_tracing:
+        tracemalloc.start()
     try:
         if specification.get("hot_path_profile") is True:
             from arc3.profiling.hot_path import HotPathProfiler
@@ -351,6 +373,7 @@ def _worker(spec: dict[str, Any], receipt_path: str) -> None:
             seed=_as_int(specification["seed"], field="seed"),
             run_context=cast(Any, _run_context(spec)) if agent == "full" else None,
             hot_path_profiler=hot_path_profiler,
+            automatic_checkpointing=automatic_checkpointing,
         )
         sink: BaselineTraceSink | None = None
         if not policy.manages_trace:
@@ -437,10 +460,16 @@ def _worker(spec: dict[str, Any], receipt_path: str) -> None:
             if hot_path_profiler is not None
             else nullcontext()
         )
+        peak: int | None
         with telemetry_span:
-            _current, peak = tracemalloc.get_traced_memory()
-            tracemalloc.stop()
+            if python_allocation_tracing:
+                _current, peak = tracemalloc.get_traced_memory()
+                tracemalloc.stop()
+            else:
+                peak = None
         metrics["peak_python_allocation_bytes"] = peak
+        metrics["python_allocation_tracing_enabled"] = python_allocation_tracing
+        metrics["automatic_checkpointing_enabled"] = automatic_checkpointing
         metrics["total_wall_clock_seconds"] = time.perf_counter() - started
         if hot_path_profiler is not None:
             metrics["hot_path_profile"] = hot_path_profiler.summary()
@@ -495,6 +524,8 @@ def _worker(spec: dict[str, Any], receipt_path: str) -> None:
                 "seed": specification["seed"],
                 "surface": specification["surface"],
                 "partition": specification["partition"],
+                "python_allocation_tracing": python_allocation_tracing,
+                "automatic_checkpointing": automatic_checkpointing,
                 "status": "success",
                 "started_at": started_at,
                 "completed_at": _utc_now(),
@@ -542,6 +573,15 @@ def _receipt_valid(
     metrics = receipt.get("metrics")
     if not isinstance(score, dict) or not isinstance(metrics, dict):
         return False
+    for field, metric_field in (
+        ("python_allocation_tracing", "python_allocation_tracing_enabled"),
+        ("automatic_checkpointing", "automatic_checkpointing_enabled"),
+    ):
+        if field in specification and (
+            receipt.get(field) != specification[field]
+            or metrics.get(metric_field) != specification[field]
+        ):
+            return False
     if not _hot_path_profile_valid(
         metrics,
         specification=specification,
@@ -849,6 +889,16 @@ def _reproduction_argv(config: PublicEvaluationConfig) -> list[str]:
         argv.extend(["--game-ids", ",".join(config.game_ids)])
     if config.hot_path_profile:
         argv.append("--hot-path-profile")
+    argv.append(
+        "--python-allocation-tracing"
+        if config.python_allocation_tracing
+        else "--no-python-allocation-tracing"
+    )
+    argv.append(
+        "--automatic-checkpointing"
+        if config.automatic_checkpointing
+        else "--no-automatic-checkpointing"
+    )
     if config.evaluation_id is not None:
         argv.extend(["--evaluation-id", config.evaluation_id])
     if config.acquire_missing:

@@ -124,3 +124,32 @@ does not erase earlier uncertainty or failed mechanisms.
   passed from clean commit `84854c4`, and the v0.2 integration assertion passed. No mechanism was
   weakened to satisfy these preconditions.
 - Resolution receipt: `docs/evidence/001-02-hot-path-observability.json`.
+
+## B-001-0012 — Stage 03 diagnostic interventions are not production repairs
+
+- Status: OPEN
+- Stage: 03–08
+- Opened: 2026-08-22
+- Burden: Turning off Python allocation tracing may remove evaluator-only distortion, while turning
+  off every automatic checkpoint would violate restartability and durable action-boundary
+  requirements. Neither measured speedup, if present, proves functional value is dispensable.
+- Current evidence: the controls and thresholds are frozen in
+  `docs/evidence/001-03-causal-predeclaration.json`; production defaults remain enabled.
+- Next discriminating action: quantify the two factors in Stage 03, then use Stage 08 to retain
+  crash-safe durability with a measured cadence and incremental representation rather than global
+  checkpoint deletion.
+- Resolution condition: an optimized production path preserves action decisions, immutable trace
+  receipts, replay, crash recovery without resubmission, and the declared runtime budget.
+- Resolution receipt: none.
+
+## B-001-0013 — Default Windows pytest temp-root denial recurred during Stage 03
+
+- Status: RESOLVED
+- Stage: 03
+- Opened: 2026-08-22
+- Burden: A direct 16-test evaluator-contract invocation produced seven setup errors because pytest
+  again attempted to enumerate the ACL-inaccessible default user temp root. No test body failed.
+- Resolution: The identical 16-test file passed with an explicit new short-path `--basetemp` under
+  `C:\a`; subsequent Stage 03 checks retain an isolated temp root. This is the same infrastructure
+  condition preserved in B-001-0009, not a controller failure.
+- Resolution receipt: the Stage 03 acceptance artifact will retain both exact commands and results.
