@@ -19,6 +19,11 @@ does not erase earlier uncertainty or failed mechanisms.
   focused synthetic tests. The measurement thresholds are frozen in
   `docs/evidence/001-02-hot-path-predeclaration.json`; no throughput cause is accepted until those
   clean-source measurements exist.
+- Stage 02 measurement update (2026-08-22): **observability PASS; causal burden remains open**.
+  Seven alternating synthetic pairs preserved exact decisions/outcomes with 4.62% median wall
+  overhead. One bounded `local-public` profile attributed 99.98% of 38.303 seconds and ranked
+  action selection (48.06%) and checkpointing (16.97%) first. These are correlations under active
+  allocator tracing; Stage 03 intervention evidence is still required.
 
 ## B-001-0002 — Palette and action equivariance failures
 
@@ -88,3 +93,34 @@ does not erase earlier uncertainty or failed mechanisms.
 - Resolution: `uv sync --link-mode copy` passed in `C:\a\arc3-b001-28c7a00`, and the exact focused
   suite passed 35/35 with an explicit isolated `--basetemp` under `C:\a`. These were infrastructure
   failures, not controller or license-mechanism failures.
+
+## B-001-0010 — Stage 02 profile scope and allocator-tracing distortion
+
+- Status: OPEN
+- Stage: 02–03
+- Opened: 2026-08-22
+- Burden: The phase ranking comes from one eight-action development episode while Python allocator
+  tracing is active. Build 000 already measured substantial traced/untraced distortion on a
+  synthetic stress path, so absolute phase costs and ordering may change without it.
+- Why it matters: Optimizing a tracer-amplified phase could misallocate engineering effort or remove
+  a functionally useful mechanism.
+- Current evidence: `docs/evidence/001-02-hot-path-observability.json`; 38.3345 seconds wall, eight
+  actions, zero levels, and 99.978% attribution. This is `local-public` diagnostic evidence only.
+- Next discriminating action: Stage 03 predeclared one-at-a-time allocator-tracing and checkpoint
+  interventions with exact action-signature comparison.
+- Resolution condition: paired intervention receipts quantify marginal cost and behavior for at
+  least the top two material causes.
+- Resolution receipt: none.
+
+## B-001-0011 — Resolved Stage 02 verification preconditions remain provenance
+
+- Status: RESOLVED
+- Stage: 02
+- Opened: 2026-08-22
+- Burden: A mistyped focused test path collected zero tests; a dirty-worktree broad run passed 304
+  tests but failed two clean-source Stage 16 subprocess assertions; one integration assertion still
+  expected profile schema v0.1 after hardening to v0.2.
+- Resolution: The corrected focused suite passed 45 tests, the two exact Stage 16 subprocess tests
+  passed from clean commit `84854c4`, and the v0.2 integration assertion passed. No mechanism was
+  weakened to satisfy these preconditions.
+- Resolution receipt: `docs/evidence/001-02-hot-path-observability.json`.

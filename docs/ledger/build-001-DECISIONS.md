@@ -85,3 +85,18 @@ independent authorities.
   unavailability rather than manufacturing a partial timing profile.
 - Reopening condition: paired identity tests fail, measured overhead exceeds the declaration, or
   the receipt cannot attribute at least 90 percent of the measured profiler lifetime.
+
+## D-001-0008 — Diagnose action selection and persistence before optimization
+
+- Recorded: 2026-08-22T04:03:00Z
+- Status: accepted
+- Decision: Treat the Stage 02 exclusive-time ranking as an intervention order, not yet a causal
+  conclusion. Stage 03 will first split allocator-tracing effects and checkpoint persistence, then
+  test the broad action-selection envelope and growing retrodiction/goal work one factor at a time.
+- Evidence: `docs/evidence/001-02-hot-path-observability.json`; the development profile attributes
+  48.06% to action selection and 16.97% to checkpointing, while checkpoint time grows from 0.3469
+  seconds at action 2 to 1.2397 seconds at action 8. Planning is only 1.10% on this run.
+- Boundary: one traced development game cannot establish transfer, functional value, or safe
+  deletion. No mechanism is disabled in production solely because it is expensive.
+- Reopening condition: Stage 03 intervention evidence contradicts the ranking or shows that an
+  apparently expensive phase supplies behaviorally necessary value at the same budget.

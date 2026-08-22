@@ -6,13 +6,13 @@
   "owner": "Christopher D. Pang",
   "build_status": "IN_PROGRESS",
   "status": "IN_PROGRESS",
-  "current_stage": "02",
-  "current_task": "Instrument the controller hot path and attribute more than 90 percent of measured wall time",
+  "current_stage": "03",
+  "current_task": "Run one-at-a-time interventions for allocator tracing, checkpointing, and the broad action-selection envelope",
   "implementation_branch": "build/001-local-public-recovery",
   "pull_request": "https://github.com/Grativy6/ARC3/pull/5",
   "started_at": "2026-08-21T15:41:02Z",
-  "last_checkpoint_at": "2026-08-22T03:22:50Z",
-  "last_checkpoint_commit": "75482a994c00123ddb3942663a2c521b710116c4",
+  "last_checkpoint_at": "2026-08-22T04:03:00Z",
+  "last_checkpoint_commit": "8168168ea224add5b8e296ee892866d75f1ca0b7",
   "base": {
     "main_commit": "28c7a00732ce48e5c231211b01bc6eba7d0d71b4",
     "main_tree": "4586299448e9b1b585a0878674ed5f9afa60c384",
@@ -31,13 +31,14 @@
   },
   "completed_stages": [
     "00",
-    "01"
+    "01",
+    "02"
   ],
   "stage_status": {
     "00": "PASS",
     "01": "PASS",
-    "02": "IN_PROGRESS",
-    "03": "PENDING",
+    "02": "PASS",
+    "03": "IN_PROGRESS",
     "04": "PENDING",
     "05": "PENDING",
     "06": "PENDING",
@@ -90,6 +91,27 @@
       "artifact_verification": "PASS:56-artifacts+1-run+0-errors",
       "production_policy_changed": false,
       "public_holdout_consumed": false
+    },
+    "02": {
+      "status": "PASS",
+      "labels": [
+        "synthetic",
+        "local-public"
+      ],
+      "predeclaration": "docs/evidence/001-02-hot-path-predeclaration.json",
+      "predeclaration_sha256": "sha256:c573de083314be601a0bd9e877adf533e1880a61cc1825d91b509d61e15248fb",
+      "acceptance": "docs/evidence/001-02-hot-path-observability.json",
+      "acceptance_sha256": "sha256:2c5ba3d11b64395703ae2540fe19fc3839c5e32b53244637ca302c003a6b9421",
+      "report": "docs/reports/001-02-hot-path-observability.md",
+      "report_sha256": "sha256:936385f057d9154e9539e952fbe2258bcf841547042c84541f263ea03e15bf82",
+      "frozen_commit": "8168168ea224add5b8e296ee892866d75f1ca0b7",
+      "synthetic_overhead_ratio": 1.046157943796,
+      "synthetic_decisions_identical": true,
+      "local_public_attribution_coverage": 0.999783265303,
+      "local_public_environment_actions": 8,
+      "local_public_levels_completed": 0,
+      "artifact_verification": "PASS:30-artifacts+1-run+0-errors",
+      "public_holdout_consumed": false
     }
   },
   "artifacts": {
@@ -120,10 +142,22 @@
     "stage_01_report": {
       "path": "docs/reports/001-01-failure-reproduction.md",
       "sha256": "4d0595b8f19b291371eb157978fae6d49b5a9114bbda9a3d1efd376c389f6840"
+    },
+    "stage_02_predeclaration": {
+      "path": "docs/evidence/001-02-hot-path-predeclaration.json",
+      "sha256": "c573de083314be601a0bd9e877adf533e1880a61cc1825d91b509d61e15248fb"
+    },
+    "stage_02_acceptance": {
+      "path": "docs/evidence/001-02-hot-path-observability.json",
+      "sha256": "2c5ba3d11b64395703ae2540fe19fc3839c5e32b53244637ca302c003a6b9421"
+    },
+    "stage_02_report": {
+      "path": "docs/reports/001-02-hot-path-observability.md",
+      "sha256": "936385f057d9154e9539e952fbe2258bcf841547042c84541f263ea03e15bf82"
     }
   },
   "blocked_items": [],
-  "next_action": "Add bounded phase instrumentation, measure disabled-mode equivalence and overhead on fixed synthetic episodes, then profile the declared development path without changing policy semantics.",
+  "next_action": "Predeclare and run one-at-a-time Stage 03 interventions for allocator tracing and checkpoint persistence, then split the remaining action-selection envelope without deleting functionality.",
   "notes": [
     "Build 000 ledgers and reports are immutable historical evidence and are not overwritten by Build 001.",
     "The owner explicitly approved MIT-0 for ARC3 first-party source in the active Build 001 instruction.",
