@@ -1261,3 +1261,27 @@ independent authorities.
   predeclaration/amendment hash, logical launcher, actual interpreter, worker PID, launch token, or
   process-creation token drifts; reconstruction mutates evidence; or a partial terminal is promoted
   beyond evidence-integrity scope.
+
+## D-001-0063 — Preserve the unique Stage 10 integrity-plan abort and never rerun it
+
+- Recorded: 2026-08-23T10:22:41.5188234Z
+- Status: accepted after the sole decisive launch.
+- Decision: classify Stage 10 as `FAILED_INFRASTRUCTURE`, consume its one-attempt allowance, and
+  never resume or rerun any of the nine suites in Build 001. Accept the first-suite terminal only as
+  infrastructure and evidence-integrity evidence. Continue to the mechanically denied Stage 11
+  gate, sealed Stage 12 nonconsumption, package work, and final reporting without treating unstarted
+  suites or Build 000 history as Build 001 measurements.
+- Evidence: `docs/evidence/001-10-robustness-regression.json`; raw result file SHA-256
+  `sha256:e6e668c57b88f9c7a5d9efe74050e24cf4746a6875e3f74b10c7929183ed982f`, artifact-core hash
+  `sha256:2ecfd9bd24c2cd1e446384e66b3378c8dc6fb0c0b19ecabc133abf2eb8bd2d3d`, and nine-file graph
+  manifest `sha256:f79b2567fa2acc6e7d813a5dfd2b3831673032de9f9b118dcccdf443b8b79143`.
+  The child returned 2 with exact stderr `--package-only requires --expected-commit`; launch,
+  authorization, containment, cleanup, source/runtime, ledger, and zero-network predicates
+  authenticated. The frozen plan omitted that required argument.
+- Boundary: no integrity scan result, regression suite, ablation, resource profile, public
+  environment, or holdout evaluation was produced. The bounded reconstruction's narrow allowance
+  for two absent declared artifacts cannot authorize missing artifacts for `PASS` or
+  `FAILED_MECHANISM`. Future plan/resume repairs are regression prevention only.
+- Reopening condition: none for this attempt. A future harness may add the missing exact-commit
+  argument and authenticate failed-infrastructure receipts, but cannot alter, resume, or supersede
+  this Stage 10 terminal.

@@ -6,13 +6,13 @@
   "owner": "Christopher D. Pang",
   "build_status": "IN_PROGRESS",
   "status": "IN_PROGRESS",
-  "current_stage": "10",
-  "current_task": "Execute the exact nine-suite Stage 10 plan once from detached commit 8872003, preserve its terminal without rerun, and then evaluate the Stage 11 holdout gate mechanically",
+  "current_stage": "11",
+  "current_task": "Mechanically produce and verify HOLDOUT_NOT_EARNED plus the Stage 12 nonconsumption receipt from the authenticated Stage 09 and Stage 10 infrastructure terminals without opening the holdout",
   "implementation_branch": "build/001-local-public-recovery",
   "pull_request": "https://github.com/Grativy6/ARC3/pull/5",
   "started_at": "2026-08-21T15:41:02Z",
-  "last_checkpoint_at": "2026-08-23T10:14:23.2751633Z",
-  "last_checkpoint_commit": "d4c447bbe09e8ecbc5944bcc842145b397804041",
+  "last_checkpoint_at": "2026-08-23T10:22:41.5188234Z",
+  "last_checkpoint_commit": "daabc75a47157940b773c5b42f289b9b6b5f6cac",
   "base": {
     "main_commit": "28c7a00732ce48e5c231211b01bc6eba7d0d71b4",
     "main_tree": "4586299448e9b1b585a0878674ed5f9afa60c384",
@@ -39,7 +39,8 @@
     "06",
     "07",
     "08",
-    "09"
+    "09",
+    "10"
   ],
   "stage_status": {
     "00": "PASS",
@@ -52,7 +53,7 @@
     "07": "FAILED_INFRASTRUCTURE",
     "08": "FAILED_INFRASTRUCTURE",
     "09": "FAILED_INFRASTRUCTURE",
-    "10": "PENDING",
+    "10": "FAILED_INFRASTRUCTURE",
     "11": "PENDING",
     "12": "PENDING",
     "13": "PENDING",
@@ -537,7 +538,7 @@
       "public_holdout_consumed": false
     },
     "10": {
-      "status": "PENDING",
+      "status": "FAILED_INFRASTRUCTURE",
       "label": "synthetic",
       "claim": "NO_GENERALIZATION_CLAIM",
       "predeclaration": "docs/evidence/001-10-robustness-regression-predeclaration-v0.2.json",
@@ -549,8 +550,11 @@
       "supervisor_integration_tree": "038f197226c3faa9e375b220444912ba3576addb",
       "authority_repair_commit": "d4c447bbe09e8ecbc5944bcc842145b397804041",
       "authority_repair_tree": "07a3235eed2f242a9c848617a40a2aa24e09190d",
-      "implementation_status": "FROZEN_EXACT_PREFLIGHT_INDEPENDENTLY_AUDITED;READY_FOR_ONE_DECISIVE_EXECUTION",
-      "decisive_execution_started": false,
+      "implementation_status": "UNIQUE_ATTEMPT_FAILED_INFRASTRUCTURE;NO_RERUN;FUTURE_PLAN_AND_RESUME_REPAIR_PENDING",
+      "decisive_execution_started": true,
+      "attempt_execution_count": 1,
+      "attempt_execution_complete": false,
+      "attempt_rerun_allowed": false,
       "integrated_verification": "PASS:55-tests+1-posix-only-skip+ruff+format+mypy-strict-4-source-files+diff-check",
       "stage09_live_authority_smoke": "PASS:EVIDENCE_INTEGRITY_ONLY+FAILED_INFRASTRUCTURE+execution-incomplete+stage09-pass-false+16-files+671876-bytes+inventory-unchanged",
       "stage09_partial_manifest_sha256": "sha256:3f709f3a376511025078aa6c89c3be9c6df0e6bb6fb5fab366759f2e89c7f39d",
@@ -587,6 +591,24 @@
         "independent_audit": "PASS:canonical+self-hash+source+runtime+106-module-hashes+23-callable-origins+stage09-evidence-only-authority+zero-attempt-paths",
         "holdout_manifest_or_assets_opened": false
       },
+      "attempt_terminal": "C:/a/arc3-b001/artifacts/stage10/robustness-regression-attempt-01.json",
+      "attempt_terminal_file_bytes": 50168,
+      "attempt_terminal_file_sha256": "sha256:e6e668c57b88f9c7a5d9efe74050e24cf4746a6875e3f74b10c7929183ed982f",
+      "attempt_terminal_artifact_core_hash": "sha256:2ecfd9bd24c2cd1e446384e66b3378c8dc6fb0c0b19ecabc133abf2eb8bd2d3d",
+      "attempt_infrastructure_failure": "suite-failed-infrastructure:competition-integrity",
+      "attempt_result": "1-of-9-suites-completed+8-unstarted+child-exit-2+missing-required-expected-commit+0-network-attempts",
+      "attempt_invocation_ledger_sha256": "sha256:9bb13fdddc8c31a2bc81b56102dddb57207ec546fe1c525e7b5947c046a68f07",
+      "attempt_graph_manifest_sha256": "sha256:f79b2567fa2acc6e7d813a5dfd2b3831673032de9f9b118dcccdf443b8b79143",
+      "attempt_graph_file_count": 9,
+      "attempt_graph_total_bytes": 90692,
+      "acceptance": "docs/evidence/001-10-robustness-regression.json",
+      "acceptance_sha256": "sha256:297aa155f6df2d6b392a2090e489e97e46e8119db04250e1baff4723acc3b208",
+      "acceptance_evidence_hash": "sha256:027501916c038014a5558f9ccadb24c8d2d5b9d77a75899f16e4c32a412a72b8",
+      "report": "docs/reports/001-10-robustness-regression.md",
+      "report_sha256": "sha256:45e592b43db3f8d0c0295172e83144f27f229fd783f314f2ad540486d1f4172b",
+      "robustness_regression_result": "UNAVAILABLE",
+      "baseline_ablation_comparison": "UNAVAILABLE",
+      "resource_profile": "UNAVAILABLE",
       "public_environment_opened": false,
       "public_holdout_consumed": false
     },
@@ -781,15 +803,24 @@
     "stage_10_predeclaration_amendment": {
       "path": "docs/evidence/001-10-robustness-regression-predeclaration-amendment-v0.1.json",
       "sha256": "6eb1a9f5fba2ce02fbe601ffa123d5f9fb8a9ecc44c0a7db5c91fefdaf5bf2a6"
+    },
+    "stage_10_acceptance": {
+      "path": "docs/evidence/001-10-robustness-regression.json",
+      "sha256": "297aa155f6df2d6b392a2090e489e97e46e8119db04250e1baff4723acc3b208"
+    },
+    "stage_10_report": {
+      "path": "docs/reports/001-10-robustness-regression.md",
+      "sha256": "45e592b43db3f8d0c0295172e83144f27f229fd783f314f2ad540486d1f4172b"
     }
   },
   "blocked_items": [
-    "B-001-0052: exact partial-predecessor authority is integrated; final frozen Stage 10 preflight, one-shot execution, and Stage 11 decision remain required",
-    "B-001-0054: exact-snapshot nested-package repair passed locally; literal-head Linux/Windows package workflows remain required",
+    "B-001-0052: Stage 09 and Stage 10 are authenticated terminal infrastructure failures; the mechanically denied Stage 11 gate and Stage 12 nonconsumption receipt remain required",
+    "B-001-0054: exact-snapshot package evidence passed on hosted Linux and Windows; final-source hosted workflows and exact private-platform surfaces remain required",
     "B-001-0055: package evidence is Python-audit scoped and lacks OS process-tree containment",
-    "B-001-0064: hosted Linux and Windows package evidence exposed two repaired local mechanisms; exact-head revalidation is pending"
+    "B-001-0065: the frozen Stage 10 plan omitted --expected-commit, its strict verifier rejects missing declared artifacts in an authenticated infrastructure terminal, and Stage 11 lacks an exact failed-terminal denial path",
+    "B-001-0066: ordinary hosted CI has cross-platform Stage 06 expectation regressions and two POSIX boundary-test exit-code regressions"
   ],
-  "next_action": "Launch the predeclared Stage 10 supervisor exactly once with --execute from clean detached commit 8872003; poll without interruption, preserve any authenticated terminal, and never rerun an incomplete suite.",
+  "next_action": "Finish and verify the read-only Stage 10 terminal authenticator and Stage 11 failed-terminal denial path, then produce Stage 11 HOLDOUT_NOT_EARNED and Stage 12 nonconsumption without rerunning Stage 10 or opening the holdout.",
   "notes": [
     "Build 000 ledgers and reports are immutable historical evidence and are not overwritten by Build 001.",
     "The owner explicitly approved MIT-0 for ARC3 first-party source in the active Build 001 instruction.",

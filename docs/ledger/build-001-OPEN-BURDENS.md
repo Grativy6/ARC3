@@ -1724,3 +1724,71 @@ does not erase earlier uncertainty or failed mechanisms.
   rerun, then produce the mechanical Stage 11/12 denial receipts. The known Stage 09 predicate
   remains false regardless of the Stage 10 outcome.
 - Resolution receipt: pending Stage 10 terminal and Stage 11 gate receipts.
+
+### B-001-0052 — Stage 10 is terminal; only the mechanical holdout denial remains
+
+- Status update: NARROWED, not resolved.
+- Last updated: 2026-08-23T10:22:41.5188234Z
+- Current evidence: the one Stage 10 launch ended `FAILED_INFRASTRUCTURE` after one completed
+  integrity child and eight unstarted suites. Its exact result, ledger, launch, authorization,
+  cleanup, network, log, source, runtime, and recomputed failed-infrastructure validation graph is
+  authenticated at result SHA-256
+  `sha256:e6e668c57b88f9c7a5d9efe74050e24cf4746a6875e3f74b10c7929183ed982f`.
+  Stage 10 cannot be rerun and cannot satisfy its Stage 11 `PASS` predicate.
+- Remaining burden: mechanically create and verify `HOLDOUT_NOT_EARNED` plus the Stage 12
+  nonconsumption receipt without requiring the composite artifact that the first failed suite never
+  created. Earning the gate must continue to require the original complete composite authority.
+- Resolution receipt: pending Stage 11/12 receipts.
+
+## B-001-0065 — Stage 10 omitted the scanner commit argument and could not resume missing-artifact evidence
+
+- Status: OPEN; future-only repair in progress.
+- Stage: 10, 11.
+- Opened: 2026-08-23T10:22:41.5188234Z
+- Owner: Codex.
+- Burden: the frozen competition-integrity suite invoked package-only scanning without the required
+  `--expected-commit`, so the scanner returned 2 before writing its artifact. The read-only terminal
+  verifier then rejected the authentic failed-infrastructure receipt because it required a file
+  receipt for the artifact whose absence caused the failure.
+- Why it matters: preflight did not validate the child CLI contract, and failure evidence must be
+  reconstructable without weakening success evidence. Stage 11's existing implementation also
+  requires the absent composite even though both Stage 09 and Stage 10 already force denial.
+- Current evidence: `docs/evidence/001-10-robustness-regression.json`; exact child stderr SHA-256
+  `sha256:a4301824140d4ad07368a71bdee9166987be9374998e4342b0ac6d2b23aae024`;
+  original resume refusal `parent receipt competition-integrity failed closed validation`.
+- Resolution condition: add the exact frozen commit to future plan construction; prove the plan
+  matches the scanner contract; reconstruct an absent artifact/composite only for an exact
+  `FAILED_INFRASTRUCTURE` terminal; and let Stage 11 deny without a composite while preserving the
+  composite as mandatory for any earned gate. The Build 001 attempt remains immutable.
+
+### B-001-0064 — Exact-head hosted package evidence now reaches the declared external boundary
+
+- Status update: RESOLVED for the two evidence-producer defects; final-source packaging remains
+  under the broader Stage 13 burdens.
+- Resolved: 2026-08-23T10:22:41.5188234Z
+- Resolving evidence: push run `32631901134` and draft-PR run `32631902781` both succeeded on
+  Ubuntu and Windows at exact source `4606fd0fee5974dc60f38c01e2d86c083a653d9d`. All four
+  independently authenticated receipts ran 701 guarded tests with zero process attempts, sealed 46
+  files, and stopped only at the exact `private-kaggle-surfaces` `BLOCKED_EXTERNAL` boundary. Eight
+  A/B inner packages were byte-identical at SHA-256
+  `sha256:2b767b44526ef85e7977051379d9c59a2cd2b00c97c1f00e4bc6428eb3c90f0d`.
+- Residual: this is not a private-platform PASS and is not the final Build 001 source package. The
+  exact private surfaces remain unavailable; final-source rebuild and clean-clone verification
+  remain required.
+
+## B-001-0066 — Ordinary CI exposed rule-change and POSIX guard contract regressions
+
+- Status: OPEN.
+- Stage: 10, 13, 14.
+- Opened: 2026-08-23T10:22:41.5188234Z
+- Owner: Codex.
+- Burden: ordinary PR CI run `32631902798` failed on both platforms. Ubuntu recorded four failures
+  with 1,291 passes and eight skips; Windows recorded two failures with 1,285 passes and 16 skips.
+  Both platforms expected historical `PARTIAL` classifications where current rule-change evidence
+  now returns `FAILED_MECHANISM`. Ubuntu additionally expected fork/forkpty guard probes to exit 3,
+  but they returned 2 while still producing `FAILED_BOUNDARY` receipts. Push run `32631901145`
+  preserved the same Ubuntu failures and was later cancelled while Windows was in progress.
+- Why it matters: lint, formatting, and strict typing passed, but the full test suite is not clean.
+  Neither stale tests nor current behavior may be silently relabeled.
+- Resolution condition: determine which side of each contract is authoritative, update mechanism or
+  tests with regression evidence, and obtain clean exact-head ordinary CI on Ubuntu and Windows.
