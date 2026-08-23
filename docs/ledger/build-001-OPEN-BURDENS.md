@@ -1706,3 +1706,21 @@ does not erase earlier uncertainty or failed mechanisms.
 - Residual: Stage 09 already consumed its sole attempt and remains `FAILED_INFRASTRUCTURE`; this
   repair cannot rerun, rewrite, or promote that evidence. OS/native containment remains narrower
   than the typed Python process binding and is tracked separately.
+
+### B-001-0052 — Final non-playing Stage 10 preflight is independently accepted
+
+- Status update: NARROWED to the sole decisive execution and Stage 11 decision.
+- Last updated: 2026-08-23T10:14:23.2751633Z
+- Current evidence: clean detached commit `88720037361822e1202a6b007678726d4e114b72`, tree
+  `22ae823cfde9f0f471fde0a16b5b642d569fdd3b`, produced the v0.3 preflight at file SHA-256
+  `sha256:38117007fdea79d0ae27024c0f6822c9c4e0fbfaece2e12f1f1ff8a388411ea4`
+  and self-hash
+  `sha256:3a2553a2f0a0d67abbf905d3168a01f9b0fb7e4ed318a1a018a83fca0157f0c9`.
+  All ten predicates and the exact nine-suite order passed. Independent audit recomputed the
+  source, runtime, 106 module hashes, 23 callable origins, frozen declaration/amendment, opaque
+  integrity inputs, and Stage 09 evidence-only boundary. The Stage 10 parent, attempt root, and
+  output remained absent; no manifest or game asset was opened.
+- Remaining burden: consume the single Stage 10 launch allowance, validate its terminal without a
+  rerun, then produce the mechanical Stage 11/12 denial receipts. The known Stage 09 predicate
+  remains false regardless of the Stage 10 outcome.
+- Resolution receipt: pending Stage 10 terminal and Stage 11 gate receipts.
