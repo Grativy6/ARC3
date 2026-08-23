@@ -253,6 +253,29 @@ def test_started_without_completed_is_not_rerun(
     assert result["infrastructure_failure"] == "interrupted-suite-not-rerun:stage13-evaluate"
     assert result["suite_validations"] == []
 
+    def recovery_forbidden(*_args: object, **_kwargs: object) -> object:
+        raise AssertionError("read-only reconstruction must not recover or mutate a process")
+
+    monkeypatch.setattr(harness, "_recover_interrupted_suite", recovery_forbidden)
+    with pytest.raises(ValueError, match=r"read-only.*STARTED"):
+        harness._resume_terminal_result(
+            output,
+            preflight={
+                "plan_hash": plan_hash,
+                "runtime_identity": _runtime(),
+                "source_identity": _identity(),
+                "status": "PASS",
+                "supervisor_import_identity": _supervisor(),
+            },
+            plan=(suite,),
+            source_root=ROOT,
+            attempt_root=attempt,
+            frozen_commit=COMMIT,
+            integrity_inputs_path=integrity_inputs,
+            read_only=True,
+        )
+    monkeypatch.setattr(harness, "_recover_interrupted_suite", lambda *_args, **_kwargs: {})
+
     result["infrastructure_failure"] = "self-rehashed-edited-reason"
     atomic_write_json(output, seal_object(result, hash_field="artifact_core_hash"))
     with pytest.raises(ValueError, match="differ from reconstructed evidence"):
@@ -374,6 +397,171 @@ def test_parent_receipt_revalidation_detects_artifact_drift(
         raise AssertionError("artifact drift was accepted")
 
 
+@pytest.mark.parametrize(
+    ("artifact_present", "disposition", "errors", "predicates", "accepted"),
+    [
+        (
+            False,
+            SuiteDisposition.FAILED_INFRASTRUCTURE,
+            (
+                "child-artifact-missing",
+                "composite-integrity-invalid:ValueError:package-only suite is structurally invalid",
+            ),
+            {"composite_integrity_authority": False},
+            True,
+        ),
+        (
+            False,
+            SuiteDisposition.FAILED_INFRASTRUCTURE,
+            ("composite-integrity-invalid:ValueError:package-only suite is structurally invalid",),
+            {"composite_integrity_authority": False},
+            False,
+        ),
+        (
+            True,
+            SuiteDisposition.FAILED_INFRASTRUCTURE,
+            ("composite-integrity-invalid:ValueError:composite output is missing",),
+            {"composite_integrity_authority": False},
+            True,
+        ),
+        (
+            True,
+            SuiteDisposition.FAILED_INFRASTRUCTURE,
+            (),
+            {"composite_integrity_authority": False},
+            False,
+        ),
+        (
+            False,
+            SuiteDisposition.PASS,
+            (
+                "child-artifact-missing",
+                "composite-integrity-invalid:ValueError:composite output is missing",
+            ),
+            {"composite_integrity_authority": False},
+            False,
+        ),
+        (
+            False,
+            SuiteDisposition.FAILED_MECHANISM,
+            (
+                "child-artifact-missing",
+                "composite-integrity-invalid:ValueError:composite output is missing",
+            ),
+            {"composite_integrity_authority": False},
+            False,
+        ),
+    ],
+)
+def test_parent_receipt_accepts_missing_outputs_only_as_exact_infrastructure_evidence(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    artifact_present: bool,
+    disposition: SuiteDisposition,
+    errors: tuple[str, ...],
+    predicates: dict[str, bool],
+    accepted: bool,
+) -> None:
+    attempt = tmp_path / "attempt"
+    logs = attempt / "logs"
+    logs.mkdir(parents=True)
+    artifact = attempt / "integrity.json"
+    composite = attempt / "integrity-composite.json"
+    if artifact_present:
+        atomic_write_json(artifact, {"status": "FAILED_INFRASTRUCTURE"})
+    stdout = logs / "competition-integrity.stdout"
+    stderr = logs / "competition-integrity.stderr"
+    stdout.write_bytes(b"")
+    stderr.write_bytes(b"missing expected argument")
+    integrity_inputs = _integrity_inputs(tmp_path)
+    launch_path = attempt / "launch.json"
+    authorization_path = attempt / "authorization.json"
+    cleanup_path = attempt / "cleanup.json"
+    atomic_write_json(launch_path, {"synthetic": True})
+    authorization = seal_object(
+        {
+            "containment": {"kind": "synthetic"},
+            "schema": "arc3.build-001.stage-10-launch-authorization.v0.1",
+        },
+        hash_field="authorization_hash",
+    )
+    atomic_write_json(authorization_path, authorization)
+    atomic_write_json(cleanup_path, {"synthetic": True})
+    suite = SuiteSpec(
+        suite_id="competition-integrity",
+        command=(sys.executable, "worker.py"),
+        timeout_seconds=1.0,
+        allowed_returncodes=(0, 1),
+        artifact_path=artifact,
+        integrity_composite_path=composite,
+        launch_path=launch_path,
+        authorization_path=authorization_path,
+        cleanup_path=cleanup_path,
+    )
+    validation = SuiteValidation(
+        suite_id="competition-integrity",
+        disposition=disposition,
+        predicates=predicates,
+        measurements={},
+        errors=errors,
+    )
+    receipt = harness._parent_receipt(
+        suite=suite,
+        plan_hash="sha256:" + "b" * 64,
+        source_identity=_identity(),
+        runtime_identity=_runtime(),
+        supervisor_import_identity=_supervisor(),
+        returncode=2,
+        timed_out=False,
+        launch_error=None,
+        wall_ns=1,
+        stdout_path=stdout,
+        stderr_path=stderr,
+        validation=validation,
+        integrity_inputs_path=integrity_inputs,
+    )
+    receipt_path = attempt / "receipt.json"
+    atomic_write_json(receipt_path, receipt)
+    monkeypatch.setattr(harness, "_validate_suite", lambda *_args, **_kwargs: validation)
+    monkeypatch.setattr(harness, "_validate_launch_receipt", lambda *_args, **_kwargs: {})
+    monkeypatch.setattr(harness, "_authorization_payload", lambda *_args, **_kwargs: authorization)
+    monkeypatch.setattr(
+        harness,
+        "_validate_authorization_receipt",
+        lambda *_args, **_kwargs: authorization,
+    )
+    monkeypatch.setattr(harness, "_validate_cleanup_receipt", lambda *_args, **_kwargs: {})
+
+    if accepted:
+        assert (
+            harness._resume_receipt(
+                receipt_path,
+                suite=suite,
+                attempt_root=attempt,
+                source_root=ROOT,
+                plan_hash="sha256:" + "b" * 64,
+                source_identity=_identity(),
+                runtime_identity=_runtime(),
+                supervisor_import_identity=_supervisor(),
+                integrity_inputs_path=integrity_inputs,
+            )
+            == validation
+        )
+    else:
+        with pytest.raises(ValueError, match="failed closed validation"):
+            harness._resume_receipt(
+                receipt_path,
+                suite=suite,
+                attempt_root=attempt,
+                source_root=ROOT,
+                plan_hash="sha256:" + "b" * 64,
+                source_identity=_identity(),
+                runtime_identity=_runtime(),
+                supervisor_import_identity=_supervisor(),
+                integrity_inputs_path=integrity_inputs,
+            )
+
+
 def test_terminal_verifier_uses_the_interpreter_bound_by_the_first_receipt(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -382,17 +570,7 @@ def test_terminal_verifier_uses_the_interpreter_bound_by_the_first_receipt(
     output = tmp_path / "result.json"
     recorded_python = tmp_path / "recorded-runtime" / "python.exe"
     integrity_inputs = _integrity_inputs(tmp_path)
-    atomic_write_json(
-        attempt / "receipts" / "competition-integrity.json",
-        {
-            "command": [str(recorded_python)],
-            "integrity_authority_inputs": {
-                "byte_length": integrity_inputs.stat().st_size,
-                "path": integrity_inputs.resolve().as_posix(),
-                "sha256": sha256_file(integrity_inputs),
-            },
-        },
-    )
+    attempt.mkdir()
     atomic_write_json(output, {})
     suite = SuiteSpec(
         suite_id="competition-integrity",
@@ -403,11 +581,25 @@ def test_terminal_verifier_uses_the_interpreter_bound_by_the_first_receipt(
     )
     observed: dict[str, object] = {}
 
-    def preflight(**arguments: object) -> tuple[dict[str, object], tuple[SuiteSpec, ...]]:
-        observed.update(arguments)
-        return {"status": "PASS"}, (suite,)
+    supervisor = _supervisor()
 
-    monkeypatch.setattr(harness, "build_preflight", preflight)
+    def replay(**arguments: object) -> tuple[dict[str, object], tuple[SuiteSpec, ...]]:
+        observed.update(arguments)
+        return {"status": "PASS", "supervisor_import_identity": supervisor}, (suite,)
+
+    monkeypatch.setattr(
+        harness,
+        "_terminal_bootstrap",
+        lambda **_kwargs: (
+            {
+                "supervisor_import_identity_end": supervisor,
+                "supervisor_import_identity_start": supervisor,
+            },
+            recorded_python,
+            integrity_inputs,
+        ),
+    )
+    monkeypatch.setattr(harness, "_replay_frozen_preflight", replay)
     monkeypatch.setattr(harness, "_require_supervisor_import_origin", lambda *_args: _supervisor())
     monkeypatch.setattr(
         harness,
@@ -420,8 +612,70 @@ def test_terminal_verifier_uses_the_interpreter_bound_by_the_first_receipt(
         output=output,
         frozen_commit=COMMIT,
     )
-    assert observed["python"] == recorded_python
-    assert observed["integrity_inputs_path"] == integrity_inputs.resolve()
+    assert observed["recorded_python"] == recorded_python
+    assert observed["integrity_inputs_path"] == integrity_inputs
+
+
+def test_read_only_terminal_api_preserves_authenticated_infrastructure_status(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    attempt = tmp_path / "attempt"
+    attempt.mkdir()
+    output = tmp_path / "result.json"
+    atomic_write_json(output, {})
+    integrity_inputs = _integrity_inputs(tmp_path)
+    supervisor = _supervisor()
+    suite = SuiteSpec(
+        suite_id="competition-integrity",
+        command=(sys.executable,),
+        timeout_seconds=1.0,
+        allowed_returncodes=(0,),
+        artifact_path=None,
+    )
+    monkeypatch.setattr(harness, "_require_supervisor_import_origin", lambda *_args: supervisor)
+    monkeypatch.setattr(
+        harness,
+        "_terminal_bootstrap",
+        lambda **_kwargs: (
+            {
+                "supervisor_import_identity_end": supervisor,
+                "supervisor_import_identity_start": supervisor,
+            },
+            Path(sys.executable),
+            integrity_inputs,
+        ),
+    )
+    monkeypatch.setattr(
+        harness,
+        "_replay_frozen_preflight",
+        lambda **_kwargs: (
+            {"status": "PASS", "supervisor_import_identity": supervisor},
+            (suite,),
+        ),
+    )
+    monkeypatch.setattr(
+        harness,
+        "_resume_terminal_result",
+        lambda *_args, **_kwargs: Stage10Status.FAILED_INFRASTRUCTURE,
+    )
+
+    assert (
+        harness.reconstruct_terminal_status(
+            verifier_source_root=ROOT,
+            execution_source_root=tmp_path / "archived-source",
+            attempt_root=attempt,
+            output=output,
+            frozen_commit=COMMIT,
+        )
+        is Stage10Status.FAILED_INFRASTRUCTURE
+    )
+    assert not harness.verify_terminal_evidence(
+        source_root=ROOT,
+        attempt_root=attempt,
+        output=output,
+        frozen_commit=COMMIT,
+    )
 
 
 def test_supervisor_loaded_from_tree_a_cannot_validate_tree_b(tmp_path: Path) -> None:

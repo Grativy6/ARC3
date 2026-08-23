@@ -77,6 +77,60 @@ _RUNTIME_IDENTITY_SCHEMA = "arc3.build-001.stage-10-runtime-identity.v0.2"
 _WINDOWS_PROCESS_LAUNCH_STRATEGY = "direct-base-with-pyvenv-launcher"
 _POSIX_PROCESS_LAUNCH_STRATEGY = "lexical-launcher"
 _WINDOWS_CREATE_NEW_PROCESS_GROUP = int(getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0))
+_STAGE10_RESULT_FIELDS = frozenset(
+    {
+        "artifact_core_hash",
+        "claim",
+        "evidence_label",
+        "infrastructure_failure",
+        "integrity_authority_inputs",
+        "invocation_ledger",
+        "plan_hash",
+        "predeclaration_amendment_sha256",
+        "predeclaration_sha256",
+        "preauthorization_failure",
+        "process_cleanup_receipts",
+        "runtime_identity_end",
+        "runtime_identity_start",
+        "schema",
+        "source_identity_end",
+        "source_identity_start",
+        "status",
+        "supervisor_import_identity_end",
+        "supervisor_import_identity_start",
+        "suite_validations",
+    }
+)
+_SUITE_PLAN_FIELDS = frozenset(
+    {
+        "abort_path",
+        "allowed_returncodes",
+        "artifact_path",
+        "authorization_path",
+        "authority_path",
+        "cleanup_path",
+        "command",
+        "integrity_composite_path",
+        "integrity_inputs_hash",
+        "launch_path",
+        "launch_token",
+        "network_guard_path",
+        "prior_integrity_path",
+        "suite_id",
+        "timeout_seconds",
+    }
+)
+_STAGE10_SUITE_IDS = (
+    "competition-integrity",
+    "stage13-evaluate",
+    "stage13-verify",
+    "stage14-ablations",
+    "palette-equivariance",
+    "action-equivariance",
+    "rule-change",
+    "checkpoint-replay",
+    "resource-profile",
+)
 _SENSITIVE_ENV_MARKERS = (
     "API_KEY",
     "AUTH",
@@ -2694,6 +2748,32 @@ def _verify_file_receipt(raw: object, expected: Path) -> bool:
     )
 
 
+def _verify_declared_output_receipt(
+    raw: object,
+    expected: Path | None,
+    *,
+    validation: SuiteValidation,
+    output_kind: str,
+) -> bool:
+    """Authenticate a retained output, narrowly preserving terminal absence evidence."""
+
+    if expected is None:
+        return raw is None
+    if expected.is_file():
+        return _verify_file_receipt(raw, expected)
+    if raw is not None or validation.disposition is not SuiteDisposition.FAILED_INFRASTRUCTURE:
+        return False
+    if output_kind == "artifact":
+        return "child-artifact-missing" in validation.errors
+    if output_kind == "integrity-composite":
+        return (
+            validation.suite_id == "competition-integrity"
+            and validation.predicates.get("composite_integrity_authority") is False
+            and any(error.startswith("composite-integrity-invalid:") for error in validation.errors)
+        )
+    raise ValueError(f"unknown declared output kind: {output_kind}")
+
+
 def _preauthorization_failure(
     suite: SuiteSpec,
     *,
@@ -2909,21 +2989,6 @@ def _resume_receipt(
             and not _verify_file_receipt(receipt.get("network_guard"), suite.network_guard_path)
         )
         or (suite.network_guard_path is None and receipt.get("network_guard") is not None)
-        or (
-            suite.artifact_path is not None
-            and not _verify_file_receipt(receipt.get("artifact"), suite.artifact_path)
-        )
-        or (suite.artifact_path is None and receipt.get("artifact") is not None)
-        or (
-            suite.integrity_composite_path is not None
-            and not _verify_file_receipt(
-                receipt.get("integrity_composite"), suite.integrity_composite_path
-            )
-        )
-        or (
-            suite.integrity_composite_path is None
-            and receipt.get("integrity_composite") is not None
-        )
     ):
         raise ValueError(f"parent receipt {suite.suite_id} failed closed validation")
     returncode = receipt.get("returncode")
@@ -2978,7 +3043,274 @@ def _resume_receipt(
     )
     if receipt.get("validation") != validation.to_dict():
         raise ValueError(f"parent receipt {suite.suite_id} validation drifted")
+    if not _verify_declared_output_receipt(
+        receipt.get("artifact"),
+        suite.artifact_path,
+        validation=validation,
+        output_kind="artifact",
+    ) or not _verify_declared_output_receipt(
+        receipt.get("integrity_composite"),
+        suite.integrity_composite_path,
+        validation=validation,
+        output_kind="integrity-composite",
+    ):
+        raise ValueError(
+            f"parent receipt {suite.suite_id} failed closed validation: retained output"
+        )
     return validation
+
+
+def _tree_fingerprint(path: Path) -> str:
+    """Hash a local tree without following links or changing any bytes."""
+
+    root = path.resolve()
+    entries: list[dict[str, JSONValue]] = []
+    if root.exists():
+        for candidate in sorted(root.rglob("*"), key=lambda item: item.as_posix()):
+            relative = candidate.relative_to(root).as_posix()
+            if candidate.is_symlink():
+                entries.append(
+                    {
+                        "kind": "symlink",
+                        "path": relative,
+                        "target": os.readlink(candidate),
+                    }
+                )
+            elif candidate.is_file():
+                entries.append(
+                    {
+                        "byte_length": candidate.stat().st_size,
+                        "kind": "file",
+                        "path": relative,
+                        "sha256": sha256_file(candidate),
+                    }
+                )
+            elif candidate.is_dir():
+                entries.append({"kind": "directory", "path": relative})
+            else:
+                entries.append({"kind": "other", "path": relative})
+    payload: dict[str, object] = {
+        "entries": entries,
+        "exists": root.exists(),
+        "root": root.as_posix(),
+    }
+    return "sha256:" + hashlib.sha256(canonical_json_bytes(payload)).hexdigest()
+
+
+def _optional_path(value: object, *, label: str) -> Path | None:
+    if value is None:
+        return None
+    if not isinstance(value, str) or not Path(value).is_absolute():
+        raise ValueError(f"frozen Stage 10 plan {label} is not an absolute path")
+    return Path(value)
+
+
+def _suite_from_frozen_plan(value: object) -> SuiteSpec:
+    if not isinstance(value, Mapping) or set(value) != _SUITE_PLAN_FIELDS:
+        raise ValueError("frozen Stage 10 suite declaration fields changed")
+    command = value.get("command")
+    returncodes = value.get("allowed_returncodes")
+    timeout_seconds = value.get("timeout_seconds")
+    suite_id = value.get("suite_id")
+    launch_token = value.get("launch_token")
+    integrity_inputs_hash = value.get("integrity_inputs_hash")
+    if (
+        not isinstance(command, list)
+        or not command
+        or not all(isinstance(item, str) for item in command)
+        or not isinstance(returncodes, list)
+        or not returncodes
+        or not all(isinstance(item, int) and not isinstance(item, bool) for item in returncodes)
+        or not isinstance(timeout_seconds, float)
+        or timeout_seconds <= 0
+        or not isinstance(suite_id, str)
+        or (launch_token is not None and not isinstance(launch_token, str))
+        or (integrity_inputs_hash is not None and not isinstance(integrity_inputs_hash, str))
+    ):
+        raise ValueError("frozen Stage 10 suite declaration is malformed")
+    suite = SuiteSpec(
+        suite_id=suite_id,
+        command=tuple(cast(list[str], command)),
+        timeout_seconds=timeout_seconds,
+        allowed_returncodes=tuple(cast(list[int], returncodes)),
+        artifact_path=_optional_path(value.get("artifact_path"), label="artifact_path"),
+        network_guard_path=_optional_path(
+            value.get("network_guard_path"), label="network_guard_path"
+        ),
+        authority_path=_optional_path(value.get("authority_path"), label="authority_path"),
+        prior_integrity_path=_optional_path(
+            value.get("prior_integrity_path"), label="prior_integrity_path"
+        ),
+        integrity_composite_path=_optional_path(
+            value.get("integrity_composite_path"), label="integrity_composite_path"
+        ),
+        launch_path=_optional_path(value.get("launch_path"), label="launch_path"),
+        authorization_path=_optional_path(
+            value.get("authorization_path"), label="authorization_path"
+        ),
+        abort_path=_optional_path(value.get("abort_path"), label="abort_path"),
+        cleanup_path=_optional_path(value.get("cleanup_path"), label="cleanup_path"),
+        launch_token=launch_token,
+        integrity_inputs_hash=integrity_inputs_hash,
+    )
+    if suite.to_dict() != dict(value):
+        raise ValueError("frozen Stage 10 suite declaration is not canonical")
+    return suite
+
+
+def _terminal_bootstrap(
+    *,
+    attempt_root: Path,
+    output: Path,
+) -> tuple[dict[str, object], Path, Path]:
+    """Authenticate enough terminal bytes to replay only the frozen preflight."""
+
+    result_raw = output.resolve().read_bytes()
+    result_value: object = json.loads(result_raw)
+    if (
+        not isinstance(result_value, dict)
+        or set(result_value) != _STAGE10_RESULT_FIELDS
+        or canonical_json_bytes(result_value) != result_raw
+        or result_value.get("schema") != STAGE10_RESULT_SCHEMA
+        or not verify_object_hash(result_value, hash_field="artifact_core_hash")
+    ):
+        raise ValueError("Stage 10 terminal bootstrap result is not authentic")
+    result = cast(dict[str, object], result_value)
+    try:
+        Stage10Status(cast(str, result.get("status")))
+    except (TypeError, ValueError) as error:
+        raise ValueError("Stage 10 terminal bootstrap status is invalid") from error
+
+    first_receipt_path = attempt_root.resolve() / "receipts" / "competition-integrity.json"
+    first_raw = first_receipt_path.read_bytes()
+    first_value: object = json.loads(first_raw)
+    if (
+        not isinstance(first_value, dict)
+        or canonical_json_bytes(first_value) != first_raw
+        or first_value.get("schema") != STAGE10_PARENT_RECEIPT_SCHEMA
+        or first_value.get("suite_id") != "competition-integrity"
+        or not verify_object_hash(first_value, hash_field="receipt_sha256")
+        or not isinstance(first_value.get("command"), list)
+        or not first_value["command"]
+        or not isinstance(first_value["command"][0], str)
+        or not isinstance(first_value.get("integrity_authority_inputs"), Mapping)
+    ):
+        raise ValueError("Stage 10 first parent receipt cannot bootstrap reconstruction")
+    first = cast(dict[str, object], first_value)
+    recorded_python = Path(os.path.abspath(cast(list[str], first["command"])[0]))
+    runtime_start = result.get("runtime_identity_start")
+    if (
+        not recorded_python.is_file()
+        or not isinstance(runtime_start, Mapping)
+        or runtime_start.get("verified") is not True
+        or runtime_start.get("launcher_path") != str(recorded_python)
+        or runtime_start.get("launcher_sha256") != sha256_file(recorded_python)
+        or not verify_object_hash(
+            dict(runtime_start),
+            hash_field="runtime_identity_sha256",
+        )
+    ):
+        raise ValueError("Stage 10 recorded Python launcher is not authenticated")
+    integrity_receipt = cast(Mapping[str, object], first["integrity_authority_inputs"])
+    integrity_path_value = integrity_receipt.get("path")
+    if not isinstance(integrity_path_value, str):
+        raise ValueError("Stage 10 integrity-authority input path is absent")
+    integrity_inputs_path = Path(integrity_path_value)
+    if (
+        not integrity_inputs_path.is_absolute()
+        or not _verify_file_receipt(integrity_receipt, integrity_inputs_path)
+        or result.get("integrity_authority_inputs") != dict(integrity_receipt)
+    ):
+        raise ValueError("Stage 10 integrity-authority input bytes changed")
+    return result, recorded_python, integrity_inputs_path
+
+
+def _replay_frozen_preflight(
+    *,
+    execution_source_root: Path,
+    recorded_python: Path,
+    attempt_root: Path,
+    output: Path,
+    frozen_commit: str,
+    integrity_inputs_path: Path,
+) -> tuple[dict[str, object], tuple[SuiteSpec, ...]]:
+    """Regenerate the archived non-playing plan from its exact clean source tree."""
+
+    root = execution_source_root.resolve()
+    source_before = _source_identity(root, frozen_commit)
+    if source_before.get("verified") is not True:
+        raise ValueError("archived Stage 10 execution source is not exact and clean")
+    attempt_before = _tree_fingerprint(attempt_root)
+    output_before = _file_receipt(output) if output.is_file() else None
+    integrity_before = _file_receipt(integrity_inputs_path)
+    environment = _safe_environment(root)
+    environment.update(
+        {
+            "PYTHONDONTWRITEBYTECODE": "1",
+            "PYTHONPATH": os.pathsep.join((str(root), str((root / "src").resolve()))),
+        }
+    )
+    completed = subprocess.run(
+        (
+            sys.executable,
+            "-B",
+            "-m",
+            "scripts.measure_stage10_regression",
+            "--source-root",
+            str(root),
+            "--python",
+            str(recorded_python),
+            "--attempt-root",
+            str(attempt_root.resolve()),
+            "--output",
+            str(output.resolve()),
+            "--frozen-commit",
+            frozen_commit,
+            "--integrity-authority-inputs",
+            str(integrity_inputs_path.resolve()),
+        ),
+        cwd=root,
+        env=environment,
+        check=False,
+        capture_output=True,
+        timeout=180,
+    )
+    if (
+        completed.returncode != 0
+        or completed.stderr != b""
+        or _source_identity(root, frozen_commit) != source_before
+        or _tree_fingerprint(attempt_root) != attempt_before
+        or (_file_receipt(output) if output.is_file() else None) != output_before
+        or _file_receipt(integrity_inputs_path) != integrity_before
+    ):
+        raise ValueError("archived Stage 10 non-playing preflight was not read-only and exact")
+    preflight_value: object = json.loads(completed.stdout)
+    if (
+        not isinstance(preflight_value, dict)
+        or canonical_json_bytes(preflight_value) != completed.stdout
+        or preflight_value.get("schema") != STAGE10_PREFLIGHT_SCHEMA
+        or preflight_value.get("status") != "PASS"
+        or preflight_value.get("source_identity") != source_before
+        or not verify_object_hash(preflight_value, hash_field="preflight_hash")
+        or not isinstance(preflight_value.get("plan"), list)
+    ):
+        raise ValueError("archived Stage 10 preflight replay failed authentication")
+    preflight = cast(dict[str, object], preflight_value)
+    plan = tuple(_suite_from_frozen_plan(item) for item in cast(list[object], preflight["plan"]))
+    supervisor = preflight.get("supervisor_import_identity")
+    if (
+        tuple(suite.suite_id for suite in plan) != _STAGE10_SUITE_IDS
+        or preflight.get("plan_hash") != suite_plan_hash(plan)
+        or not isinstance(supervisor, Mapping)
+        or supervisor.get("verified") is not True
+        or supervisor.get("source_root") != root.as_posix()
+        or not verify_object_hash(
+            dict(supervisor),
+            hash_field="supervisor_import_identity_sha256",
+        )
+    ):
+        raise ValueError("archived Stage 10 plan/import identity changed")
+    return preflight, plan
 
 
 def _resume_terminal_result(
@@ -2990,10 +3322,24 @@ def _resume_terminal_result(
     attempt_root: Path,
     frozen_commit: str,
     integrity_inputs_path: Path,
+    execution_supervisor_import_identity: Mapping[str, object] | None = None,
+    read_only: bool = False,
 ) -> Stage10Status:
     """Validate an existing terminal graph without ever launching another child."""
 
-    supervisor_now = _require_supervisor_import_origin(source_root)
+    if execution_supervisor_import_identity is None:
+        supervisor_now = _require_supervisor_import_origin(source_root)
+    else:
+        supervisor_now = dict(execution_supervisor_import_identity)
+        if (
+            supervisor_now.get("verified") is not True
+            or supervisor_now.get("source_root") != source_root.resolve().as_posix()
+            or not verify_object_hash(
+                supervisor_now,
+                hash_field="supervisor_import_identity_sha256",
+            )
+        ):
+            raise ValueError("Stage 10 archived supervisor import identity is invalid")
     if preflight.get("supervisor_import_identity") != supervisor_now:
         raise ValueError("Stage 10 supervisor import identity disagrees with preflight")
     raw = output.read_bytes()
@@ -3001,30 +3347,8 @@ def _resume_terminal_result(
     if not isinstance(value, dict):
         raise ValueError("existing Stage 10 result is not an object")
     result = cast(dict[str, object], value)
-    expected_fields = {
-        "artifact_core_hash",
-        "claim",
-        "evidence_label",
-        "infrastructure_failure",
-        "integrity_authority_inputs",
-        "invocation_ledger",
-        "plan_hash",
-        "predeclaration_amendment_sha256",
-        "predeclaration_sha256",
-        "preauthorization_failure",
-        "process_cleanup_receipts",
-        "runtime_identity_end",
-        "runtime_identity_start",
-        "schema",
-        "source_identity_end",
-        "source_identity_start",
-        "status",
-        "supervisor_import_identity_end",
-        "supervisor_import_identity_start",
-        "suite_validations",
-    }
     if (
-        set(result) != expected_fields
+        set(result) != _STAGE10_RESULT_FIELDS
         or canonical_json_bytes(result) != raw
         or result.get("schema") != STAGE10_RESULT_SCHEMA
         or result.get("claim") != "NO_GENERALIZATION_CLAIM"
@@ -3082,6 +3406,10 @@ def _resume_terminal_result(
             break
         consumed_states += 1
         if state[0] == "STARTED":
+            if read_only:
+                raise ValueError(
+                    f"read-only Stage 10 reconstruction refuses STARTED state: {suite.suite_id}"
+                )
             _recover_interrupted_suite(
                 suite,
                 started_record=state[2],
@@ -3461,6 +3789,72 @@ def _execute(
     return status
 
 
+def reconstruct_terminal_status(
+    *,
+    verifier_source_root: Path,
+    execution_source_root: Path,
+    attempt_root: Path,
+    output: Path,
+    frozen_commit: str,
+) -> Stage10Status | None:
+    """Authenticate a terminal status without launching or mutating a Stage 10 suite."""
+
+    try:
+        if len(frozen_commit) != 40 or any(
+            character not in "0123456789abcdef" for character in frozen_commit
+        ):
+            return None
+        _require_supervisor_import_origin(verifier_source_root.resolve())
+        result, recorded_python, integrity_inputs_path = _terminal_bootstrap(
+            attempt_root=attempt_root,
+            output=output,
+        )
+        attempt_before = _tree_fingerprint(attempt_root)
+        output_before = _file_receipt(output)
+        integrity_before = _file_receipt(integrity_inputs_path)
+        preflight, plan = _replay_frozen_preflight(
+            execution_source_root=execution_source_root,
+            recorded_python=recorded_python,
+            attempt_root=attempt_root,
+            output=output,
+            frozen_commit=frozen_commit,
+            integrity_inputs_path=integrity_inputs_path,
+        )
+        execution_supervisor = preflight.get("supervisor_import_identity")
+        if (
+            not isinstance(execution_supervisor, Mapping)
+            or result.get("supervisor_import_identity_start") != dict(execution_supervisor)
+            or result.get("supervisor_import_identity_end") != dict(execution_supervisor)
+        ):
+            return None
+        status = _resume_terminal_result(
+            output.resolve(),
+            preflight=preflight,
+            plan=plan,
+            source_root=execution_source_root.resolve(),
+            attempt_root=attempt_root.resolve(),
+            frozen_commit=frozen_commit,
+            integrity_inputs_path=integrity_inputs_path,
+            execution_supervisor_import_identity=execution_supervisor,
+            read_only=True,
+        )
+        if (
+            _tree_fingerprint(attempt_root) != attempt_before
+            or _file_receipt(output) != output_before
+            or _file_receipt(integrity_inputs_path) != integrity_before
+        ):
+            return None
+        return status
+    except (
+        OSError,
+        RuntimeError,
+        ValueError,
+        EvaluationError,
+        subprocess.TimeoutExpired,
+    ):
+        return None
+
+
 def verify_terminal_evidence(
     *,
     source_root: Path,
@@ -3468,61 +3862,15 @@ def verify_terminal_evidence(
     output: Path,
     frozen_commit: str,
 ) -> bool:
-    """Reconstruct a terminal Stage 10 graph without launching any child."""
+    """Compatibility verifier: return true only for an authenticated PASS."""
 
-    try:
-        _require_supervisor_import_origin(source_root)
-    except ValueError:
-        return False
-    if not output.resolve().is_file():
-        return False
-    first_receipt = attempt_root.resolve() / "receipts" / "competition-integrity.json"
-    try:
-        first_raw = first_receipt.read_bytes()
-        first_value: object = json.loads(first_raw)
-    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
-        return False
-    if (
-        not isinstance(first_value, dict)
-        or canonical_json_bytes(first_value) != first_raw
-        or not isinstance(first_value.get("command"), list)
-        or not first_value["command"]
-        or not isinstance(first_value["command"][0], str)
-        or not isinstance(first_value.get("integrity_authority_inputs"), Mapping)
-        or not isinstance(
-            cast(Mapping[str, object], first_value["integrity_authority_inputs"]).get("path"),
-            str,
-        )
-    ):
-        return False
-    recorded_python = Path(os.path.abspath(first_value["command"][0]))
-    integrity_inputs_path = Path(
-        cast(
-            str,
-            cast(Mapping[str, object], first_value["integrity_authority_inputs"])["path"],
-        )
-    )
-    if not _verify_file_receipt(first_value["integrity_authority_inputs"], integrity_inputs_path):
-        return False
-    preflight, plan = build_preflight(
-        source_root=source_root.resolve(),
-        python=recorded_python,
-        attempt_root=attempt_root.resolve(),
-        output=output.resolve(),
-        frozen_commit=frozen_commit,
-        integrity_inputs_path=integrity_inputs_path,
-    )
-    if preflight.get("status") != "PASS":
-        return False
     return (
-        _resume_terminal_result(
-            output.resolve(),
-            preflight=preflight,
-            plan=plan,
-            source_root=source_root.resolve(),
-            attempt_root=attempt_root.resolve(),
+        reconstruct_terminal_status(
+            verifier_source_root=source_root,
+            execution_source_root=source_root,
+            attempt_root=attempt_root,
+            output=output,
             frozen_commit=frozen_commit,
-            integrity_inputs_path=integrity_inputs_path,
         )
         is Stage10Status.PASS
     )

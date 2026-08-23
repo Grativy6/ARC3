@@ -135,6 +135,8 @@ def test_predeclaration_bytes_and_non_playing_plan_are_frozen(tmp_path: Path) ->
     assert all(suite.network_guard_path is not None for suite in plan)
     integrity = plan[0]
     assert "--package-only" in integrity.command
+    assert integrity.command.count("--expected-commit") == 1
+    assert integrity.command[integrity.command.index("--expected-commit") + 1] == COMMIT
     assert "--manifest" not in integrity.command
     assert "--run-state" not in integrity.command
     assert "--expected-manifest-sha256" not in integrity.command

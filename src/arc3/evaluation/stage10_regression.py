@@ -425,6 +425,8 @@ def build_suite_plan(
                 "--root",
                 str(root),
                 "--package-only",
+                "--expected-commit",
+                frozen_commit,
                 "--output",
                 str(attempt / "integrity.json"),
             ),
