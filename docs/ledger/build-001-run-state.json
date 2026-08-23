@@ -506,7 +506,7 @@
       "package_archive_checkpoint_commit": "129b76b720cefc42f8dca2710b54e90e34eb4a1b",
       "package_archive_checkpoint_tree": "bc3f4d48251328a4058a72b749c449c70a2fda8c",
       "integrated_verification": "PASS:58-focused+1-windows-privilege-skip;PASS:15-integrity+1-windows-privilege-skip;ruff;strict-mypy-windows-and-linux-175-files",
-      "exact_source_ci": "FAILED_INFRASTRUCTURE:run-32616456163-linux-interpreter-origin;FAILED_MECHANISM:run-32616456163-windows-receipt-not-uploaded",
+      "exact_source_ci": "FAILED_INFRASTRUCTURE:run-32616456163-linux-interpreter-origin;FAILED_MECHANISM:run-32616456163-windows-receipt-not-uploaded;FAILED_TESTS:windows-10-failed+1074-passed-linux-pass",
       "os_containment": "ABSENT",
       "python_boundary_scope": "Python audit hooks plus guarded selected in-process tests; not OS filesystem/network/process-tree containment",
       "public_environment_opened": false,

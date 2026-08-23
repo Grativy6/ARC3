@@ -1263,8 +1263,11 @@ does not erase earlier uncertainty or failed mechanisms.
   Linux rejected an isolated interpreter-origin mismatch immediately; Windows ran for about 1,149
   seconds and returned `FAILED_MECHANISM` instead of the expected private-surface
   `BLOCKED_EXTERNAL`. The failure path skipped artifact upload, so the Windows internal check
-  receipt is unavailable. Exact-source repair verification, failure-artifact preservation, and the
-  remaining descendant-process audit remain pending.
+  receipt is unavailable. The companion full CI Windows jobs later reported the exact platform
+  regression: 10 `test_package_only_path_guard.py` assertions failed after bootstrap filesystem
+  events were redacted as `protected-external-path`, while 1,074 tests passed; Linux passed the full
+  suite. Exact-source repair verification, cross-platform guard-harness isolation, failure-artifact
+  preservation, and the remaining descendant-process audit remain pending.
 - Resolution condition: exact-source CI passes the guarded package subset and startup checks on
   both Windows and Linux; every audit exploit has a failing regression under the vulnerable code
   and a passing denial under the repair; package receipts preserve the scoped claim below; and
