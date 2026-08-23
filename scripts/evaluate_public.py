@@ -103,6 +103,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--acquire-missing", action="store_true")
     parser.add_argument("--allow-public-holdout", action="store_true")
     parser.add_argument("--sealed-development-manifest", type=Path)
+    parser.add_argument("--holdout-gate-receipt", type=Path)
+    parser.add_argument("--holdout-gate-file-sha256")
+    parser.add_argument("--holdout-gate-core-hash")
+    parser.add_argument("--stage09-result", type=Path)
+    parser.add_argument("--stage10-result", type=Path)
+    parser.add_argument("--competition-integrity-receipt", type=Path)
     parser.add_argument("--inventory-only", action="store_true")
     parser.add_argument("--revalidate-online-metadata", action="store_true")
     parser.add_argument("--verify", type=Path)
@@ -169,6 +175,12 @@ def main(argv: Sequence[str] | None = None) -> int:
                 acquire_missing=args.acquire_missing,
                 allow_public_holdout=args.allow_public_holdout,
                 sealed_development_manifest=args.sealed_development_manifest,
+                holdout_gate_receipt=args.holdout_gate_receipt,
+                holdout_gate_file_sha256=args.holdout_gate_file_sha256,
+                holdout_gate_core_hash=args.holdout_gate_core_hash,
+                stage09_result=args.stage09_result,
+                stage10_result=args.stage10_result,
+                competition_integrity_receipt=args.competition_integrity_receipt,
                 milestone_id=args.milestone_id,
             )
         )

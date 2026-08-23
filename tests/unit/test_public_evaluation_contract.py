@@ -8,6 +8,7 @@ from collections.abc import Mapping
 from copy import deepcopy
 from dataclasses import replace
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any, cast
 
 import pytest
@@ -409,32 +410,13 @@ def test_holdout_gate_is_closed_and_then_one_shot(
     with pytest.raises(EvaluationError, match="holdout is closed"):
         validate_public_gate(closed, manifest, ledger)
 
-    development = tmp_path / "development-manifest.json"
-    declaration = {
-        "agents": ["full"],
-        "seeds": [7],
-        "max_actions": 80,
-        "max_resets": 8,
-        "timeout_seconds": 120.0,
-    }
-    atomic_write_json(
-        development,
-        seal_object(
-            {
-                "schema": PUBLIC_EVALUATION_SCHEMA,
-                "partition": "development",
-                "status": "PASS",
-                "surface": "local-public",
-                "git_commit": FROZEN,
-                "public_partition_manifest_hash": manifest.digest,
-                "agent_config": declaration,
-            },
-            hash_field="manifest_hash",
-        ),
+    authorization = SimpleNamespace(
+        manifest_sha256=manifest.digest,
+        opaque_count=len(manifest.games("public-holdout")),
     )
     monkeypatch.setattr(
-        "arc3.evaluation.public_runner.verify_public_evaluation",
-        lambda _directory: {"verified": True},
+        "arc3.evaluation.public.validate_holdout_authorization",
+        lambda _config: authorization,
     )
     opened = PublicEvaluationConfig(
         partition="public-holdout",
@@ -445,7 +427,6 @@ def test_holdout_gate_is_closed_and_then_one_shot(
         output_root=output_root,
         exposure_ledger=ledger_path,
         allow_public_holdout=True,
-        sealed_development_manifest=development,
     )
     validate_public_gate(opened, manifest, ledger)
     ledger.append(

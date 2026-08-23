@@ -57,6 +57,7 @@ from .public import (
     local_asset_identity,
     run_public_episode,
     validate_frozen_source,
+    validate_holdout_authorization,
     validate_public_gate,
 )
 
@@ -1406,6 +1407,23 @@ def _reproduction_argv(config: PublicEvaluationConfig) -> list[str]:
         argv.extend(
             ["--sealed-development-manifest", str(config.sealed_development_manifest.resolve())]
         )
+    if config.holdout_gate_receipt is not None:
+        argv.extend(["--holdout-gate-receipt", str(config.holdout_gate_receipt.resolve())])
+    if config.holdout_gate_file_sha256 is not None:
+        argv.extend(["--holdout-gate-file-sha256", config.holdout_gate_file_sha256])
+    if config.holdout_gate_core_hash is not None:
+        argv.extend(["--holdout-gate-core-hash", config.holdout_gate_core_hash])
+    if config.stage09_result is not None:
+        argv.extend(["--stage09-result", str(config.stage09_result.resolve())])
+    if config.stage10_result is not None:
+        argv.extend(["--stage10-result", str(config.stage10_result.resolve())])
+    if config.competition_integrity_receipt is not None:
+        argv.extend(
+            [
+                "--competition-integrity-receipt",
+                str(config.competition_integrity_receipt.resolve()),
+            ]
+        )
     return argv
 
 
@@ -1697,6 +1715,9 @@ def _acquire_missing_assets(
 def run_public_evaluation(config: PublicEvaluationConfig) -> EvaluationOutcome:
     """Run or validate a frozen, process-isolated official public comparison."""
 
+    # This must precede manifest parsing, asset inventory, and every environment
+    # operation.  A bare allow_public_holdout flag has no authority.
+    validate_holdout_authorization(config)
     manifest = PublicPartitionManifest.load(config.manifest_path)
     ledger = PublicExposureLedger(config.exposure_ledger)
     started_at = _utc_now()

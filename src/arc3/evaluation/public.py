@@ -56,6 +56,7 @@ from .artifacts import (
     verify_object_hash,
 )
 from .baselines import EvaluationPolicy, baseline_descriptor
+from .holdout_gate import ValidatedHoldoutGate, revalidate_earned_holdout_gate
 
 PUBLIC_MANIFEST_SCHEMA = "arc3.public-game-partitions.v0.1"
 PUBLIC_EVALUATION_SCHEMA = "arc3.public-evaluation.manifest.v0.1"
@@ -334,6 +335,12 @@ class PublicEvaluationConfig:
     acquire_missing: bool = False
     allow_public_holdout: bool = False
     sealed_development_manifest: Path | None = None
+    holdout_gate_receipt: Path | None = None
+    holdout_gate_file_sha256: str | None = None
+    holdout_gate_core_hash: str | None = None
+    stage09_result: Path | None = None
+    stage10_result: Path | None = None
+    competition_integrity_receipt: Path | None = None
     milestone_id: str = "build-000-stage15-v0.1"
 
     def __post_init__(self) -> None:
@@ -428,6 +435,28 @@ class PublicEvaluationConfig:
             "sealed_development_manifest": (
                 self.sealed_development_manifest.resolve().as_posix()
                 if self.sealed_development_manifest is not None
+                else None
+            ),
+            "holdout_gate_receipt": (
+                self.holdout_gate_receipt.resolve().as_posix()
+                if self.holdout_gate_receipt is not None
+                else None
+            ),
+            "holdout_gate_file_sha256": self.holdout_gate_file_sha256,
+            "holdout_gate_core_hash": self.holdout_gate_core_hash,
+            "stage09_result": (
+                self.stage09_result.resolve().as_posix()
+                if self.stage09_result is not None
+                else None
+            ),
+            "stage10_result": (
+                self.stage10_result.resolve().as_posix()
+                if self.stage10_result is not None
+                else None
+            ),
+            "competition_integrity_receipt": (
+                self.competition_integrity_receipt.resolve().as_posix()
+                if self.competition_integrity_receipt is not None
                 else None
             ),
         }
@@ -528,6 +557,66 @@ def validate_frozen_source(frozen_commit: str) -> dict[str, object]:
     return {"git_commit": head, "dirty_worktree": False}
 
 
+def validate_holdout_authorization(
+    config: PublicEvaluationConfig,
+) -> ValidatedHoldoutGate | None:
+    """Fail closed before parsing the public manifest unless Stage 11 earned it."""
+
+    if config.partition != "public-holdout":
+        return None
+    validate_frozen_source(config.frozen_commit)
+    if not config.allow_public_holdout:
+        raise EvaluationError(
+            "public holdout is closed; explicit intent and an earned Stage 11 receipt are required"
+        )
+    required_paths = {
+        "Stage 11 gate": config.holdout_gate_receipt,
+        "Stage 09 result": config.stage09_result,
+        "Stage 10 result": config.stage10_result,
+        "competition-integrity receipt": config.competition_integrity_receipt,
+    }
+    missing_paths = [name for name, path in required_paths.items() if path is None]
+    if missing_paths:
+        raise EvaluationError(
+            "public holdout authorization is incomplete: " + ", ".join(missing_paths)
+        )
+    if config.holdout_gate_file_sha256 is None or config.holdout_gate_core_hash is None:
+        raise EvaluationError(
+            "public holdout requires external Stage 11 file and core hash anchors"
+        )
+    gate = revalidate_earned_holdout_gate(
+        gate_path=cast(Path, config.holdout_gate_receipt),
+        gate_file_sha256=config.holdout_gate_file_sha256,
+        gate_core_hash=config.holdout_gate_core_hash,
+        stage09_path=cast(Path, config.stage09_result),
+        stage10_path=cast(Path, config.stage10_result),
+        integrity_path=cast(Path, config.competition_integrity_receipt),
+        manifest_path=config.manifest_path,
+        source_root=_repository_root(),
+    )
+    expected = gate.evaluation
+    actual = config.declaration()
+    bindings: dict[str, object] = {
+        "agents": list(expected.agents),
+        "automatic_checkpointing": True,
+        "evaluation_id": expected.evaluation_id,
+        "game_ids": None,
+        "hot_path_profile": False,
+        "max_actions": expected.max_actions,
+        "max_resets": expected.max_resets,
+        "milestone_id": expected.milestone_id,
+        "partition": "public-holdout",
+        "python_allocation_tracing": True,
+        "seeds": list(expected.seeds),
+        "timeout_seconds": expected.timeout_seconds,
+    }
+    if any(actual.get(name) != value for name, value in bindings.items()):
+        raise EvaluationError("public holdout declaration differs from the earned Stage 11 receipt")
+    if gate.execution_source.commit != config.frozen_commit:
+        raise EvaluationError("public holdout frozen commit differs from Stage 11 authority")
+    return gate
+
+
 def validate_public_gate(
     config: PublicEvaluationConfig,
     manifest: PublicPartitionManifest,
@@ -543,12 +632,19 @@ def validate_public_gate(
         raise EvaluationError("selected public partition is empty")
     if config.partition != "public-holdout":
         return
-    if not config.allow_public_holdout:
-        raise EvaluationError(
-            "public holdout is closed; explicit milestone authorization is required"
-        )
+    # Revalidate here even though the runner performs the same authorization
+    # before manifest parsing. A caller-supplied object must never substitute
+    # for the exact Stage 11 receipt and its bound evidence.
+    authorization = validate_holdout_authorization(config)
+    if authorization is None:
+        raise EvaluationError("public holdout has no earned Stage 11 authorization")
     if config.evaluation_id is None:
         raise EvaluationError("public holdout requires an explicit resumable evaluation ID")
+    if (
+        manifest.digest != authorization.manifest_sha256
+        or len(selected) != authorization.opaque_count
+    ):
+        raise EvaluationError("parsed holdout partition differs from the sealed Stage 11 identity")
     canonical_output = (_repository_root() / "artifacts" / "stage15" / "evaluations").resolve()
     canonical_ledger = (
         _repository_root() / "artifacts" / "stage15" / "public-exposure.jsonl"
@@ -575,35 +671,6 @@ def validate_public_gate(
         raise EvaluationError(
             "public holdout acquisition is inseparable from its one-shot online evaluation"
         )
-    development = config.sealed_development_manifest
-    if development is None or not development.is_file():
-        raise EvaluationError("public holdout requires a sealed development manifest")
-    sealed = load_json(development)
-    if sealed.get("schema") != PUBLIC_EVALUATION_SCHEMA or not verify_object_hash(
-        sealed, hash_field="manifest_hash"
-    ):
-        raise EvaluationError("sealed development manifest failed its self-hash")
-    if sealed.get("partition") != "development" or sealed.get("status") != "PASS":
-        raise EvaluationError("sealed development evidence is not a passing development run")
-    if (
-        sealed.get("git_commit") != config.frozen_commit
-        or sealed.get("public_partition_manifest_hash") != manifest.digest
-        or sealed.get("surface") != "local-public"
-    ):
-        raise EvaluationError("sealed development evidence has a different frozen identity")
-    from .public_runner import verify_public_evaluation
-
-    verification = verify_public_evaluation(development.parent)
-    if verification.get("verified") is not True:
-        raise EvaluationError("sealed development artifacts failed verification")
-    development_config = sealed.get("agent_config")
-    if not isinstance(development_config, dict):
-        raise EvaluationError("sealed development evidence has no agent declaration")
-    for field in ("agents", "seeds", "max_actions", "max_resets", "timeout_seconds"):
-        if development_config.get(field) != config.declaration().get(field):
-            raise EvaluationError(
-                f"holdout {field} does not match the sealed development declaration"
-            )
     holdout_ids = {entry.game_id for entry in selected}
     for event in ledger.events():
         payload = event.get("payload")
