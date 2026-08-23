@@ -147,10 +147,15 @@ def _sha256_file(path: Path) -> str:
 
 
 def _git(root: Path, argument: str) -> str:
+    environment = {
+        key: value for key, value in os.environ.items() if not key.upper().startswith("GIT_")
+    }
+    environment["GIT_NO_REPLACE_OBJECTS"] = "1"
     result = subprocess.run(
         ["git", "-C", str(root), "rev-parse", argument],
         check=True,
         capture_output=True,
+        env=environment,
         text=True,
         timeout=10.0,
     )
@@ -158,10 +163,15 @@ def _git(root: Path, argument: str) -> str:
 
 
 def _status(root: Path) -> str:
+    environment = {
+        key: value for key, value in os.environ.items() if not key.upper().startswith("GIT_")
+    }
+    environment["GIT_NO_REPLACE_OBJECTS"] = "1"
     result = subprocess.run(
         ["git", "-C", str(root), "status", "--porcelain=v1", "--untracked-files=all"],
         check=True,
         capture_output=True,
+        env=environment,
         text=True,
         timeout=10.0,
     )
@@ -188,6 +198,14 @@ def _harness_observation(root: Path, expected: Mapping[str, object]) -> dict[str
         ["git", "-C", str(resolved), "branch", "--show-current"],
         check=True,
         capture_output=True,
+        env={
+            **{
+                key: value
+                for key, value in os.environ.items()
+                if not key.upper().startswith("GIT_")
+            },
+            "GIT_NO_REPLACE_OBJECTS": "1",
+        },
         text=True,
         timeout=10.0,
     ).stdout.strip()

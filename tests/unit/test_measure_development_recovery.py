@@ -865,6 +865,95 @@ def test_parent_supervisor_hashes_raw_streams_without_shell(tmp_path: Path) -> N
     assert Path(stderr_path).read_bytes() == b""
 
 
+def test_parent_supervisor_removes_git_redirection_from_worker_environment(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("GIT_DIR", str(tmp_path / "redirected.git"))
+    monkeypatch.setenv("git_work_tree", str(tmp_path / "redirected-worktree"))
+    result = harness._supervise(
+        [
+            sys.executable,
+            "-I",
+            "-c",
+            (
+                "import os,sys;"
+                "sys.exit(19 if any(key.upper().startswith('GIT_') for key in os.environ) else 0)"
+            ),
+        ],
+        cwd=tmp_path,
+        streams=tmp_path / "streams",
+        timeout_seconds=5.0,
+    )
+
+    assert result["launch_error"] is None
+    assert result["returncode"] == 0
+
+
+def test_stage09_git_helpers_strip_redirection_and_disable_replace_objects(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("GIT_DIR", "redirected.git")
+    monkeypatch.setenv("git_index_file", "redirected.index")
+    captured: list[dict[str, str]] = []
+
+    def fake_run(*_args: object, **kwargs: object) -> subprocess.CompletedProcess[str]:
+        environment = cast(dict[str, str], kwargs["env"])
+        captured.append(environment)
+        return subprocess.CompletedProcess([], 0, stdout="", stderr="")
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    assert bootstrap._git("status", "--porcelain=v1") == ""
+    assert harness._git(Path.cwd(), "status", "--porcelain=v1") == ""
+    assert worker._git(Path.cwd(), "HEAD") == ""
+    assert worker._status(Path.cwd()) == ""
+    assert len(captured) == 4
+    for environment in captured:
+        assert environment["GIT_NO_REPLACE_OBJECTS"] == "1"
+        assert "GIT_DIR" not in environment
+        assert "git_index_file" not in environment
+
+
+def test_stage09_package_candidates_come_from_commit_tree_not_mutable_index(
+    tmp_path: Path,
+) -> None:
+    repository = tmp_path / "repository"
+    tracked = repository / "agent" / "tracked.py"
+    tracked.parent.mkdir(parents=True)
+    tracked.write_text("VALUE = 'tree'\n", encoding="utf-8")
+    subprocess.run(("git", "init", "-q", str(repository)), check=True, timeout=30)
+    subprocess.run(("git", "-C", str(repository), "add", "agent/tracked.py"), check=True)
+    subprocess.run(
+        (
+            "git",
+            "-C",
+            str(repository),
+            "-c",
+            "user.name=ARC3 Test",
+            "-c",
+            "user.email=arc3@example.invalid",
+            "commit",
+            "-q",
+            "-m",
+            "fixture",
+        ),
+        check=True,
+        timeout=30,
+    )
+    index_only = repository / "agent" / "index-only.py"
+    index_only.write_text("VALUE = 'index'\n", encoding="utf-8")
+    subprocess.run(
+        ("git", "-C", str(repository), "add", "agent/index-only.py"),
+        check=True,
+        timeout=30,
+    )
+
+    candidates = harness._package_only_candidate_files(repository)
+
+    assert candidates == (tracked.resolve(),)
+
+
 def test_normal_root_exit_drains_and_verifies_long_lived_descendant(tmp_path: Path) -> None:
     child_code = (
         "import subprocess,sys;"

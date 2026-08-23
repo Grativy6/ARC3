@@ -542,10 +542,15 @@ def _is_mapping(value: object) -> TypeGuard[Mapping[str, object]]:
 
 
 def _git(root: Path, *arguments: str) -> str:
+    environment = {
+        key: value for key, value in os.environ.items() if not key.upper().startswith("GIT_")
+    }
+    environment["GIT_NO_REPLACE_OBJECTS"] = "1"
     result = subprocess.run(
         ["git", "-C", str(root.resolve()), *arguments],
         check=False,
         capture_output=True,
+        env=environment,
         text=True,
         encoding="utf-8",
         errors="replace",
@@ -1057,15 +1062,19 @@ def _package_only_candidate_files(root: Path) -> tuple[Path, ...]:
     """Recompute the protected-surface-free tracked candidate set."""
 
     resolved = root.resolve()
+    environment = {
+        key: value for key, value in os.environ.items() if not key.upper().startswith("GIT_")
+    }
+    environment["GIT_NO_REPLACE_OBJECTS"] = "1"
     completed = subprocess.run(
-        ("git", "ls-files", "-z"),
-        cwd=resolved,
+        ("git", "-C", str(resolved), "ls-tree", "-r", "--name-only", "-z", "HEAD"),
         check=False,
         capture_output=True,
+        env=environment,
         timeout=30.0,
     )
     if completed.returncode != 0:
-        raise EvaluationError("Stage 09 package integrity cannot read the Git index")
+        raise EvaluationError("Stage 09 package integrity cannot read the exact Git tree")
     try:
         names = tuple(name.decode("utf-8") for name in completed.stdout.split(b"\0") if name)
     except UnicodeDecodeError as error:
@@ -3552,7 +3561,11 @@ def _supervise(
     try:
         options: dict[str, object] = {
             "cwd": cwd,
-            "env": {key: value for key, value in os.environ.items() if key.upper() != "PYTHONPATH"},
+            "env": {
+                key: value
+                for key, value in os.environ.items()
+                if key.upper() != "PYTHONPATH" and not key.upper().startswith("GIT_")
+            },
             "stdin": subprocess.DEVNULL,
             "stdout": subprocess.PIPE,
             "stderr": subprocess.PIPE,

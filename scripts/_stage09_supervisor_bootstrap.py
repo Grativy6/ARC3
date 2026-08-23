@@ -59,10 +59,15 @@ def _load_canonical(path: Path) -> dict[str, Any]:
 
 
 def _git(*arguments: str) -> str:
+    environment = {
+        key: value for key, value in os.environ.items() if not key.upper().startswith("GIT_")
+    }
+    environment["GIT_NO_REPLACE_OBJECTS"] = "1"
     result = subprocess.run(
         ["git", "-C", str(ROOT), *arguments],
         check=False,
         capture_output=True,
+        env=environment,
         text=True,
         encoding="utf-8",
         errors="replace",
@@ -136,7 +141,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         result = subprocess.run(
             command,
             cwd=ROOT,
-            env={key: value for key, value in os.environ.items() if key.upper() != "PYTHONPATH"},
+            env={
+                key: value
+                for key, value in os.environ.items()
+                if key.upper() != "PYTHONPATH" and not key.upper().startswith("GIT_")
+            },
             stdin=subprocess.DEVNULL,
             capture_output=True,
             timeout=180.0,
