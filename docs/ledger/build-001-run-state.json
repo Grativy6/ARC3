@@ -7,12 +7,12 @@
   "build_status": "IN_PROGRESS",
   "status": "IN_PROGRESS",
   "current_stage": "10",
-  "current_task": "Validate Stage 10's exact terminal authority against the authenticated Stage 09 infrastructure terminal, then execute every permitted frozen robustness and regression suite once",
+  "current_task": "Freeze a clean detached Stage 10 harness containing the exact predecessor and Windows process-authority repair, then pass the final non-playing preflight before the one decisive launch",
   "implementation_branch": "build/001-local-public-recovery",
   "pull_request": "https://github.com/Grativy6/ARC3/pull/5",
   "started_at": "2026-08-21T15:41:02Z",
-  "last_checkpoint_at": "2026-08-23T09:44:26.4091652Z",
-  "last_checkpoint_commit": "54322de9262096f0c71bc691773d9403e7ed3fe1",
+  "last_checkpoint_at": "2026-08-23T10:02:36.8860658Z",
+  "last_checkpoint_commit": "d4c447bbe09e8ecbc5944bcc842145b397804041",
   "base": {
     "main_commit": "28c7a00732ce48e5c231211b01bc6eba7d0d71b4",
     "main_tree": "4586299448e9b1b585a0878674ed5f9afa60c384",
@@ -540,16 +540,22 @@
       "status": "PENDING",
       "label": "synthetic",
       "claim": "NO_GENERALIZATION_CLAIM",
-      "predeclaration": "docs/evidence/001-10-robustness-regression-predeclaration.json",
-      "predeclaration_sha256": "sha256:02ad73f25cd6c21459cf425a29de0b830fa27bd660c58777b272ac57116d26e3",
+      "predeclaration": "docs/evidence/001-10-robustness-regression-predeclaration-v0.2.json",
+      "predeclaration_sha256": "sha256:e056eea0d4a6664996ae9078e15b4cdddb5f6c40d5b770540b8e9068cc224613",
+      "predeclaration_amendment": "docs/evidence/001-10-robustness-regression-predeclaration-amendment-v0.1.json",
+      "predeclaration_amendment_sha256": "sha256:6eb1a9f5fba2ce02fbe601ffa123d5f9fb8a9ecc44c0a7db5c91fefdaf5bf2a6",
       "source_floor_commit": "2e78c258cfbee8be62462f61ed08ad04c00a8934",
       "supervisor_integration_commit": "670e57b7077a94b9c5087b4a9827a00681f26d4b",
       "supervisor_integration_tree": "038f197226c3faa9e375b220444912ba3576addb",
-      "implementation_status": "FROZEN_PREMEASUREMENT_SUPERVISOR_READY",
+      "authority_repair_commit": "d4c447bbe09e8ecbc5944bcc842145b397804041",
+      "authority_repair_tree": "07a3235eed2f242a9c848617a40a2aa24e09190d",
+      "implementation_status": "EXACT_PARTIAL_PREDECESSOR_AND_WINDOWS_PROCESS_AUTHORITY_REPAIRED;FINAL_FROZEN_PREFLIGHT_PENDING",
       "decisive_execution_started": false,
-      "integrated_verification": "PASS:47-tests-in-24.09s+ruff+format+mypy-strict-6-files",
-      "non_playing_preflight": {
-        "status": "PASS",
+      "integrated_verification": "PASS:55-tests+1-posix-only-skip+ruff+format+mypy-strict-4-source-files+diff-check",
+      "stage09_live_authority_smoke": "PASS:EVIDENCE_INTEGRITY_ONLY+FAILED_INFRASTRUCTURE+execution-incomplete+stage09-pass-false+16-files+671876-bytes+inventory-unchanged",
+      "stage09_partial_manifest_sha256": "sha256:3f709f3a376511025078aa6c89c3be9c6df0e6bb6fb5fab366759f2e89c7f39d",
+      "superseded_non_playing_preflight": {
+        "status": "SUPERSEDED_BY_AUTHORITY_REPAIR",
         "source_commit": "670e57b7077a94b9c5087b4a9827a00681f26d4b",
         "plan_hash": "sha256:3e4a4bff3cc7b4d36c516e1666deacb93a487c07f3753d786d92cf5ba913b12a",
         "preflight_hash": "sha256:0dc3f97dc7dafb6bd124d6bee9044cfb6f15e107b985dd6dd7985e2d99a99af2",
@@ -745,18 +751,21 @@
       "sha256": "7b8abb0f122a9e95737e6f502a693aa6e73b2fcfb26824b44d93d6cc7de99c2e"
     },
     "stage_10_predeclaration": {
-      "path": "docs/evidence/001-10-robustness-regression-predeclaration.json",
-      "sha256": "02ad73f25cd6c21459cf425a29de0b830fa27bd660c58777b272ac57116d26e3"
+      "path": "docs/evidence/001-10-robustness-regression-predeclaration-v0.2.json",
+      "sha256": "e056eea0d4a6664996ae9078e15b4cdddb5f6c40d5b770540b8e9068cc224613"
+    },
+    "stage_10_predeclaration_amendment": {
+      "path": "docs/evidence/001-10-robustness-regression-predeclaration-amendment-v0.1.json",
+      "sha256": "6eb1a9f5fba2ce02fbe601ffa123d5f9fb8a9ecc44c0a7db5c91fefdaf5bf2a6"
     }
   },
   "blocked_items": [
-    "B-001-0052: Stage 09 infrastructure terminal is authenticated; exact Stage 10 execution and Stage 11 mechanical gate decision remain required",
+    "B-001-0052: exact partial-predecessor authority is integrated; final frozen Stage 10 preflight, one-shot execution, and Stage 11 decision remain required",
     "B-001-0054: exact-snapshot nested-package repair passed locally; literal-head Linux/Windows package workflows remain required",
     "B-001-0055: package evidence is Python-audit scoped and lacks OS process-tree containment",
-    "B-001-0063: Windows virtual-environment launcher PID differs from the worker interpreter PID; Stage 09 failed closed and cannot be rerun",
     "B-001-0064: hosted Linux and Windows package evidence exposed two repaired local mechanisms; exact-head revalidation is pending"
   ],
-  "next_action": "Validate the frozen Stage 10 protocol against the authenticated Stage 09 FAILED_INFRASTRUCTURE terminal; execute only the independent suites the authority admits, preserve any fail-closed terminal, and do not access the sealed holdout.",
+  "next_action": "Commit the Stage 10 ledger checkpoint, create a clean detached exact-source harness, generate fresh external authority inputs, and run the non-playing preflight without creating attempt/result paths; execute once only after independent PASS review.",
   "notes": [
     "Build 000 ledgers and reports are immutable historical evidence and are not overwritten by Build 001.",
     "The owner explicitly approved MIT-0 for ARC3 first-party source in the active Build 001 instruction.",

@@ -1677,3 +1677,32 @@ does not erase earlier uncertainty or failed mechanisms.
 - Resolution condition: both hosted platforms reach the exact expected authenticated package
   terminal from the same literal candidate commit; local evidence alone does not resolve this.
 - Resolution receipt: pending hosted runs.
+
+### B-001-0052 — Exact partial-predecessor authority is integrated; decisive Stage 10 remains
+
+- Status update: NARROWED, not resolved.
+- Last updated: 2026-08-23T10:02:36.8860658Z
+- Current evidence: commit `d4c447bbe09e8ecbc5944bcc842145b397804041` binds the frozen Stage 10
+  v0.2 plan and v0.1 amendment at every parent/child receipt boundary, authenticates the exact
+  16-file Stage 09 partial receipt graph with an isolated read-only H reconstruction, and launches
+  the hash-bound actual Windows interpreter while preserving the virtual-environment identity. The
+  combined suite passed 55 tests with one POSIX-only skip; Ruff and strict mypy passed. The exact
+  live predecessor smoke reconstructed the same 16 files and 671,876 bytes before and after.
+- Remaining burden: freeze a clean detached descendant containing this ledger checkpoint, generate
+  fresh external authority inputs, pass the non-playing preflight without creating result/attempt
+  paths, independently audit it, then consume the one Stage 10 execution allowance. Stage 11 must
+  still deny the holdout because Stage 09 is not `PASS`.
+- Resolution receipt: pending Stage 10 terminal and Stage 11 gate receipts.
+
+### B-001-0063 — Generic Windows launcher repair is verified; Stage 09 remains immutable
+
+- Status update: RESOLVED for future launches; the Build 001 Stage 09 terminal is unchanged.
+- Resolved: 2026-08-23T10:02:36.8860658Z
+- Resolving evidence: commit `d4c447bbe09e8ecbc5944bcc842145b397804041` reproduces the Windows
+  launcher/interpreter split and directly creates the exact hash-bound base interpreter while
+  retaining the virtual-environment executable and prefix. The regression proves
+  `Popen.pid == worker os.getpid()` and preserves source/runtime/launch-token authority; hash drift
+  of either executable fails closed.
+- Residual: Stage 09 already consumed its sole attempt and remains `FAILED_INFRASTRUCTURE`; this
+  repair cannot rerun, rewrite, or promote that evidence. OS/native containment remains narrower
+  than the typed Python process binding and is tracked separately.

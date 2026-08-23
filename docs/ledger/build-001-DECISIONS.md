@@ -1232,3 +1232,32 @@ independent authorities.
 - Reopening condition: a guarded test can spawn a process without a recorded denial, a completed
   collection again reports zero tests, the offline doctor invokes a command-backed identity
   helper, or either hosted platform fails for the same mechanism after `54322de`.
+
+## D-001-0062 — Authenticate the exact partial predecessor and launch the bound interpreter directly
+
+- Recorded: 2026-08-23T10:02:36.8860658Z
+- Status: accepted before decisive Stage 10 execution.
+- Decision: supplement the frozen Stage 10 v0.2 predeclaration with the immutable v0.1 amendment
+  at file SHA-256
+  `sha256:6eb1a9f5fba2ce02fbe601ffa123d5f9fb8a9ecc44c0a7db5c91fefdaf5bf2a6`.
+  Admit the unique incomplete Stage 09 predecessor only as evidence-integrity authority after the
+  exact frozen acceptance, all 16 live receipt-graph files, nine named key artifacts, exposure
+  bytes, 19 authorization predicates, runtime and harness bytes, and detached H/P/Build 000 Git
+  identities are authenticated and the exact H recovery loader reconstructs the same terminal
+  without mutation. On Windows, create future worker processes with the hash-bound base
+  interpreter while preserving the exact virtual-environment identity through
+  `__PYVENV_LAUNCHER__`; bind both executable paths and byte hashes.
+- Evidence: commit `d4c447bbe09e8ecbc5944bcc842145b397804041`; 55 combined tests passed
+  with one POSIX-only skip, Ruff and strict mypy passed. The live read-only predecessor smoke
+  returned `FAILED_INFRASTRUCTURE`, `execution_complete=false`, `EVIDENCE_INTEGRITY_ONLY`, and
+  `stage09_pass=false`; its before/after inventory remained exactly 16 files and 671,876 bytes at
+  manifest hash
+  `sha256:3f709f3a376511025078aa6c89c3be9c6df0e6bb6fb5fab366759f2e89c7f39d`.
+- Boundary: this repairs evidence authority and a future Windows launch mechanism only. It does not
+  change Stage 09, create local-public performance evidence, satisfy the Stage 11 Stage-09-PASS
+  predicate, modify any frozen regression floor, or authorize holdout access. The sole decisive
+  Stage 10 launch remains unconsumed.
+- Reopening condition: any predecessor graph byte, acceptance hash, H/P/Build 000 identity,
+  predeclaration/amendment hash, logical launcher, actual interpreter, worker PID, launch token, or
+  process-creation token drifts; reconstruction mutates evidence; or a partial terminal is promoted
+  beyond evidence-integrity scope.
