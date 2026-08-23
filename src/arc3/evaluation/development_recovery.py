@@ -17,7 +17,8 @@ from arc3.errors import EvaluationError
 from arc3.evaluation.artifacts import canonical_json_bytes, sha256_bytes, verify_object_hash
 
 PREDECLARATION_SCHEMA = "arc3.build-001.stage-09-predeclaration.v0.2"
-PREFLIGHT_SCHEMA = "arc3.build-001.stage-09-preflight.v0.4"
+PREDECLARATION_AMENDMENT_SCHEMA = "arc3.build-001.stage-09-predeclaration-amendment.v0.1"
+PREFLIGHT_SCHEMA = "arc3.build-001.stage-09-preflight.v0.5"
 WORKER_SPEC_SCHEMA = "arc3.build-001.stage-09-worker-spec.v0.4"
 CELL_RECEIPT_SCHEMA = "arc3.build-001.stage-09-cell-receipt.v0.4"
 CELL_FINALIZATION_SCHEMA = "arc3.build-001.stage-09-cell-finalization.v0.1"
@@ -29,7 +30,7 @@ RUNTIME_ENVIRONMENT_SCHEMA = "arc3.build-001.stage-09-runtime-environment.v0.2"
 RUNTIME_ENVIRONMENT_OBSERVATION_SCHEMA = (
     "arc3.build-001.stage-09-runtime-environment-observation.v0.2"
 )
-PRIOR_AUTHORITY_SCHEMA = "arc3.build-001.stage-09-prior-authority.v0.1"
+PRIOR_AUTHORITY_SCHEMA = "arc3.build-001.stage-09-prior-authority.v0.2"
 ENVIRONMENT_CACHE_SCHEMA = "arc3.build-001.stage-09-environment-cache.v0.1"
 HARNESS_SOURCE_PATHS = (
     "scripts/_stage09_supervisor_bootstrap.py",
@@ -41,11 +42,29 @@ PREDECLARATION_CORE_HASH = "sha256:b32f91fa228a7f1f2c2bbfee23e8fafc3a9affc18f9b0
 PREDECLARATION_FILE_SHA256 = (
     "sha256:dce14e30d47aff7ac99551ad462c9202113dcd44c591dacd410b86363ddad348"
 )
+ORIGINAL_MATRIX_HASH = "sha256:5c4c1d4a1d23bd68822c91a5c82dcbbabad7d0ca9ea0ab298a2df37e149b868b"
 
-FROZEN_BUILD_001_COMMIT = "2e78c258cfbee8be62462f61ed08ad04c00a8934"
-FROZEN_BUILD_001_TREE = "4145356c116944bbd7c0c412771de9179ba22efe"
-FROZEN_BUILD_001_SOURCE_SHA256 = (
+ORIGINAL_BUILD_001_COMMIT = "2e78c258cfbee8be62462f61ed08ad04c00a8934"
+ORIGINAL_BUILD_001_TREE = "4145356c116944bbd7c0c412771de9179ba22efe"
+ORIGINAL_BUILD_001_SOURCE_SHA256 = (
     "sha256:4dc8b7d7802be6b97427e12fe550bd4a6832ef30f6acdc4b509294a5a1add7f1"
+)
+FROZEN_BUILD_001_COMMIT = "d6d4bac1e33c9837856c08abcee61bcb14afd34e"
+FROZEN_BUILD_001_TREE = "dd8e82e4b34337a208110929e3f5f8079d1e0a18"
+FROZEN_BUILD_001_SOURCE_SHA256 = (
+    "sha256:8f0de1a9c2c88761951ba2bcd69f2612bedfa0cc4226f44f1ed272b54b9023a8"
+)
+BUILD_001_PACKAGE_INTEGRITY_FILE_SHA256 = (
+    "sha256:173c0a6c3aee154df67920227e3b5303c59682186a2254a220e24dd5589269fe"
+)
+BUILD_001_PACKAGE_INTEGRITY_RECEIPT_SHA256 = (
+    "sha256:3e29edd69d7999760c53a80de474d701f9124faed73ccc1b9047adbf9a766702"
+)
+PREDECLARATION_AMENDMENT_CORE_HASH = (
+    "sha256:36104da8f7ea6532ab1ea7cf6f8df16760d1236f8f551d7bef2239f7d1ab93a4"
+)
+PREDECLARATION_AMENDMENT_FILE_SHA256 = (
+    "sha256:137532b196ffcbd6bbeb07c8ca5ef716c0987f04467663efb6ce1da8508d3084"
 )
 FROZEN_BUILD_000_COMMIT = "90ecf7267d5bb23d751d6f7ce3e8aa75f2f1a130"
 FROZEN_BUILD_000_TREE = "0cf6e00b2fcc399e7a99a62c20e91bb84d485f13"
@@ -61,12 +80,6 @@ STAGE08_RESULT_FILE_SHA256 = (
 )
 STAGE08_RESULT_CORE_HASH = "sha256:e3e078092318882f2c32887c6a223c0396938abba0ca7b30fdcde0eb5b15383f"
 STAGE08_EXPOSURE_SHA256 = "sha256:be73b837805a66ed172b20573aa31c41fe6ba16ced4d471929b6018e22a5d52e"
-BUILD_001_INTEGRITY_FILE_SHA256 = (
-    "sha256:9fd255b3a32549fd09c12247863319e8662805ed43f874b46e52eb3cb675834f"
-)
-BUILD_001_INTEGRITY_RECEIPT_SHA256 = (
-    "sha256:6926149cafda4248a2dc92b042ab6f087888133daf60d7de0b1f1070f6203e9b"
-)
 BUILD_000_INTEGRITY_FILE_SHA256 = (
     "sha256:b63ea29913a042930b01ace640c283dd0febce3597b637c3d8433fc981579349"
 )
@@ -471,11 +484,13 @@ def runtime_environment_stable(
 
 
 def validate_prior_authority_observation(value: Mapping[str, object]) -> dict[str, object]:
-    """Validate the exact prior integrity and sealed-holdout authority projection."""
+    """Validate package-only Build 001 plus development-only static authority."""
 
     observation = dict(value)
     if set(observation) != {
+        "assurance_scope",
         "authority_hash",
+        "full_public_integrity_status",
         "holdout",
         "integrity",
         "passed",
@@ -489,8 +504,11 @@ def validate_prior_authority_observation(value: Mapping[str, object]) -> dict[st
         raise EvaluationError("Stage 09 prior-authority hash/schema is invalid")
     predicates = observation.get("predicates")
     if not isinstance(predicates, dict) or set(predicates) != {
-        "build_000_integrity",
-        "build_001_integrity",
+        "build_000_development_scan",
+        "build_000_full_integrity",
+        "build_001_development_scan",
+        "build_001_package_integrity",
+        "development_identity",
         "holdout_file_hash",
         "holdout_manifest_hash",
         "holdout_nonconsumption",
@@ -498,27 +516,118 @@ def validate_prior_authority_observation(value: Mapping[str, object]) -> dict[st
         raise EvaluationError("Stage 09 prior-authority predicates changed")
     if observation.get("passed") is not all(item is True for item in predicates.values()):
         raise EvaluationError("Stage 09 prior-authority predicate summary changed")
+    assurance = observation.get("assurance_scope")
+    if assurance != {
+        "build_000": "historic-full-public-integrity-receipt",
+        "build_001": "package-only-plus-frozen-development-identifiers",
+        "limitations": (
+            "Static-only composite; runtime dynamic-import and native-extension "
+            "containment are not proven."
+        ),
+    } or observation.get("full_public_integrity_status") != (
+        "NOT_EVALUATED_BUILD_001_PUBLIC_IDENTIFIERS"
+    ):
+        raise EvaluationError("Stage 09 prior-authority assurance scope changed")
     integrity = observation.get("integrity")
-    if not isinstance(integrity, dict) or set(integrity) != {"build_000", "build_001"}:
+    if not isinstance(integrity, dict) or set(integrity) != {
+        "build_000_full",
+        "build_001_package_only",
+        "development_scans",
+    }:
         raise EvaluationError("Stage 09 prior integrity receipt set changed")
-    for receipt in integrity.values():
+    build_000 = integrity.get("build_000_full")
+    if (
+        not isinstance(build_000, dict)
+        or set(build_000) != {"file_sha256", "git_commit", "path", "receipt_sha256"}
+        or not _is_sha256(build_000.get("file_sha256"))
+        or not _is_sha256(build_000.get("receipt_sha256"))
+        or not _is_git_oid(build_000.get("git_commit"))
+        or not isinstance(build_000.get("path"), str)
+    ):
+        raise EvaluationError("Stage 09 Build 000 integrity identity is malformed")
+    build_001 = integrity.get("build_001_package_only")
+    package_fields = {
+        "assurance_limitation",
+        "candidate_file_count",
+        "candidate_set_recomputed",
+        "entry_point_count",
+        "entry_points_reached",
+        "file_sha256",
+        "full_competition_integrity_status",
+        "git_commit",
+        "integrity_scope",
+        "license_inventory_passed",
+        "live_source_hashes_match",
+        "package_only_passed",
+        "path",
+        "policy_scan_covers_reachable_paths",
+        "public_identifier_mode",
+        "public_identifier_scan",
+        "reachable_file_count",
+        "reachable_paths_hashed",
+        "reachable_paths_recomputed",
+        "reachable_source_hashes_sha256",
+        "receipt_sha256",
+        "status",
+    }
+    if (
+        not isinstance(build_001, dict)
+        or set(build_001) != package_fields
+        or not _is_sha256(build_001.get("file_sha256"))
+        or not _is_sha256(build_001.get("receipt_sha256"))
+        or not _is_sha256(build_001.get("reachable_source_hashes_sha256"))
+        or not _is_git_oid(build_001.get("git_commit"))
+        or not isinstance(build_001.get("path"), str)
+        or isinstance(build_001.get("candidate_file_count"), bool)
+        or not isinstance(build_001.get("candidate_file_count"), int)
+        or cast(int, build_001.get("candidate_file_count")) <= 0
+        or isinstance(build_001.get("reachable_file_count"), bool)
+        or not isinstance(build_001.get("reachable_file_count"), int)
+        or cast(int, build_001.get("reachable_file_count")) <= 0
+        or build_001.get("entry_point_count") != build_001.get("entry_points_reached")
+        or isinstance(build_001.get("entry_point_count"), bool)
+        or not isinstance(build_001.get("entry_point_count"), int)
+        or cast(int, build_001.get("entry_point_count")) <= 0
+    ):
+        raise EvaluationError("Stage 09 Build 001 package identity is malformed")
+    scans = integrity.get("development_scans")
+    if not isinstance(scans, dict) or set(scans) != {
+        "build_000",
+        "build_001",
+        "development_identity_count",
+        "identifier_list_hash",
+        "identifier_string_count",
+        "identity_values_disclosed",
+        "limitations",
+        "scope",
+    }:
+        raise EvaluationError("Stage 09 development integrity projection changed")
+    for name in ("build_000", "build_001"):
+        scan = scans.get(name)
         if (
-            not isinstance(receipt, dict)
-            or set(receipt) != {"file_sha256", "git_commit", "path", "receipt_sha256"}
-            or (
-                receipt.get("file_sha256") is not None
-                and not _is_sha256(receipt.get("file_sha256"))
-            )
-            or (
-                receipt.get("receipt_sha256") is not None
-                and not _is_sha256(receipt.get("receipt_sha256"))
-            )
-            or (
-                receipt.get("git_commit") is not None and not _is_git_oid(receipt.get("git_commit"))
-            )
-            or not isinstance(receipt.get("path"), str)
+            not isinstance(scan, dict)
+            or set(scan) != {"finding_count", "findings", "passed", "policy_file_count"}
+            or isinstance(scan.get("finding_count"), bool)
+            or not isinstance(scan.get("finding_count"), int)
+            or cast(int, scan.get("finding_count")) < 0
+            or not isinstance(scan.get("findings"), list)
+            or len(cast(list[object], scan.get("findings"))) != scan.get("finding_count")
+            or scan.get("passed") is not (scan.get("finding_count") == 0)
+            or isinstance(scan.get("policy_file_count"), bool)
+            or not isinstance(scan.get("policy_file_count"), int)
+            or cast(int, scan.get("policy_file_count")) <= 0
         ):
-            raise EvaluationError("Stage 09 prior integrity receipt identity is malformed")
+            raise EvaluationError("Stage 09 development integrity scan is malformed")
+    if (
+        scans.get("development_identity_count") != len(DEVELOPMENT_GAMES)
+        or scans.get("identifier_string_count") != len(DEVELOPMENT_GAMES) * 2
+        or scans.get("identifier_list_hash") != development_identifier_list_hash()
+        or scans.get("identity_values_disclosed") is not False
+        or scans.get("scope") != "frozen-exposed-development-game-id-and-stable-name-pairs"
+        or scans.get("limitations")
+        != "Direct static scan only; dynamic-import and native-extension behavior is not proven."
+    ):
+        raise EvaluationError("Stage 09 development identifier authority changed")
     holdout = observation.get("holdout")
     if (
         not isinstance(holdout, dict)
@@ -528,37 +637,54 @@ def validate_prior_authority_observation(value: Mapping[str, object]) -> dict[st
             "identities_loaded",
             "manifest_loaded_as_metadata",
             "path",
+            "pinned_manifest_sha256",
+            "public_holdout_gameplay_events",
+            "receipt_confirms_manifest_sha256",
             "status",
         }
-        or (holdout.get("file_sha256") is not None and not _is_sha256(holdout.get("file_sha256")))
+        or not _is_sha256(holdout.get("file_sha256"))
         or holdout.get("identities_loaded") != 0
         or holdout.get("manifest_loaded_as_metadata") is not False
+        or holdout.get("public_holdout_gameplay_events") != 0
+        or holdout.get("pinned_manifest_sha256") != PUBLIC_PARTITION_MANIFEST_SHA256
+        or holdout.get("receipt_confirms_manifest_sha256") != PUBLIC_PARTITION_MANIFEST_SHA256
         or not isinstance(holdout.get("path"), str)
         or holdout.get("status") not in {"SEALED_UNCONSUMED", "UNVERIFIED"}
     ):
         raise EvaluationError("Stage 09 sealed-holdout authority is malformed")
     if observation.get("passed") is True:
-        expected_integrity = {
-            "build_000": {
-                "file_sha256": BUILD_000_INTEGRITY_FILE_SHA256,
-                "git_commit": FROZEN_BUILD_000_COMMIT,
-                "receipt_sha256": BUILD_000_INTEGRITY_RECEIPT_SHA256,
-            },
-            "build_001": {
-                "file_sha256": BUILD_001_INTEGRITY_FILE_SHA256,
-                "git_commit": FROZEN_BUILD_001_COMMIT,
-                "receipt_sha256": BUILD_001_INTEGRITY_RECEIPT_SHA256,
-            },
-        }
-        for name, expected in expected_integrity.items():
-            receipt = cast(dict[str, object], integrity[name])
-            if any(receipt[field] != item for field, item in expected.items()):
-                raise EvaluationError("Stage 09 passing prior integrity receipt identity changed")
         if (
-            holdout.get("file_sha256") != HOLDOUT_NONCONSUMPTION_FILE_SHA256
+            build_000.get("file_sha256") != BUILD_000_INTEGRITY_FILE_SHA256
+            or build_000.get("git_commit") != FROZEN_BUILD_000_COMMIT
+            or build_000.get("receipt_sha256") != BUILD_000_INTEGRITY_RECEIPT_SHA256
+            or build_001.get("git_commit") != FROZEN_BUILD_001_COMMIT
+            or build_001.get("file_sha256") != BUILD_001_PACKAGE_INTEGRITY_FILE_SHA256
+            or build_001.get("receipt_sha256") != BUILD_001_PACKAGE_INTEGRITY_RECEIPT_SHA256
+            or build_001.get("package_only_passed") is not True
+            or build_001.get("status") != "PASS"
+            or build_001.get("integrity_scope") != "package-only-no-public-identifiers"
+            or build_001.get("full_competition_integrity_status")
+            != "NOT_EVALUATED_PUBLIC_IDENTIFIERS"
+            or build_001.get("public_identifier_mode") != "disabled-package-only"
+            or build_001.get("public_identifier_scan")
+            != "NOT_EVALUATED_PACKAGE_ONLY_NO_SEMANTIC_MANIFEST_ACCESS"
+            or build_001.get("policy_scan_covers_reachable_paths") is not True
+            or build_001.get("candidate_set_recomputed") is not True
+            or build_001.get("license_inventory_passed") is not True
+            or build_001.get("live_source_hashes_match") is not True
+            or build_001.get("reachable_paths_hashed") is not True
+            or build_001.get("reachable_paths_recomputed") is not True
+            or build_001.get("assurance_limitation")
+            != (
+                "Static first-party import reachability does not prove runtime dynamic-import "
+                "or native-extension containment."
+            )
+            or cast(dict[str, object], scans["build_000"]).get("passed") is not True
+            or cast(dict[str, object], scans["build_001"]).get("passed") is not True
+            or holdout.get("file_sha256") != HOLDOUT_NONCONSUMPTION_FILE_SHA256
             or holdout.get("status") != "SEALED_UNCONSUMED"
         ):
-            raise EvaluationError("Stage 09 passing holdout authority identity changed")
+            raise EvaluationError("Stage 09 prior integrity receipt identity changed")
     return observation
 
 
@@ -851,6 +977,19 @@ def development_partition_hash() -> str:
     return sha256_bytes(canonical_json_bytes([game.to_dict() for game in DEVELOPMENT_GAMES]))
 
 
+def development_identifier_list_hash() -> str:
+    """Bind the 12 exposed development identities without projecting their values."""
+
+    return sha256_bytes(
+        canonical_json_bytes(
+            [
+                {"game_id": game.game_id, "stable_name": game.stable_name}
+                for game in DEVELOPMENT_GAMES
+            ]
+        )
+    )
+
+
 def validate_predeclaration_bytes(
     raw: bytes, *, expected_file_sha256: str | None = None
 ) -> dict[str, Any]:
@@ -870,9 +1009,9 @@ def validate_predeclaration_bytes(
     if document.get("predeclaration_core_hash") != PREDECLARATION_CORE_HASH:
         raise EvaluationError("Stage 09 predeclaration frozen core identity changed")
     expected = {
-        "build_001_commit": FROZEN_BUILD_001_COMMIT,
-        "build_001_tree": FROZEN_BUILD_001_TREE,
-        "build_001_first_party_source_sha256": FROZEN_BUILD_001_SOURCE_SHA256,
+        "build_001_commit": ORIGINAL_BUILD_001_COMMIT,
+        "build_001_tree": ORIGINAL_BUILD_001_TREE,
+        "build_001_first_party_source_sha256": ORIGINAL_BUILD_001_SOURCE_SHA256,
         "build_000_commit": FROZEN_BUILD_000_COMMIT,
         "build_000_tree": FROZEN_BUILD_000_TREE,
         "build_000_first_party_source_sha256": FROZEN_BUILD_000_SOURCE_SHA256,
@@ -883,7 +1022,7 @@ def validate_predeclaration_bytes(
         "stage08_exposure_sha256": STAGE08_EXPOSURE_SHA256,
         "stage08_status": "FAILED_INFRASTRUCTURE",
         "development_partition_hash": development_partition_hash(),
-        "matrix_hash": matrix_hash(),
+        "matrix_hash": ORIGINAL_MATRIX_HASH,
         "cell_count": EXPECTED_CELL_COUNT,
         "seeds": list(SEEDS),
         "max_actions": MAX_ACTIONS,
@@ -896,6 +1035,12 @@ def validate_predeclaration_bytes(
         raise EvaluationError("Stage 09 predeclaration bindings changed")
     if document.get("development_games") != [game.to_dict() for game in DEVELOPMENT_GAMES]:
         raise EvaluationError("Stage 09 development partition changed")
+    original_variant_sources = {
+        Variant.BUILD_000_RANDOM: (FROZEN_BUILD_000_COMMIT, FROZEN_BUILD_000_TREE),
+        Variant.BUILD_000_CYCLE: (FROZEN_BUILD_000_COMMIT, FROZEN_BUILD_000_TREE),
+        Variant.BUILD_000_FULL: (FROZEN_BUILD_000_COMMIT, FROZEN_BUILD_000_TREE),
+        Variant.BUILD_001_FULL: (ORIGINAL_BUILD_001_COMMIT, ORIGINAL_BUILD_001_TREE),
+    }
     expected_matrix = {
         "expansion_order": ["development_games", "seeds", "variants"],
         "variant_order": [variant.value for variant in VARIANTS],
@@ -903,8 +1048,8 @@ def validate_predeclaration_bytes(
             {
                 "agent": variant.agent,
                 "baseline_id": variant.baseline_id,
-                "source_commit": variant.source_commit,
-                "source_tree": variant.source_tree,
+                "source_commit": original_variant_sources[variant][0],
+                "source_tree": original_variant_sources[variant][1],
                 "variant": variant.value,
             }
             for variant in VARIANTS
@@ -932,6 +1077,112 @@ def validate_predeclaration_bytes(
     ):
         raise EvaluationError("Stage 09 decision thresholds changed")
     return document
+
+
+def validate_predeclaration_amendment_bytes(
+    raw: bytes,
+    *,
+    original: Mapping[str, object],
+    expected_file_sha256: str | None = None,
+) -> dict[str, Any]:
+    """Validate the sole before-results source/integrity amendment.
+
+    The original predeclaration remains byte-for-byte authoritative for the
+    partition, order, seeds, budgets, wall limits, decision gate, and holdout
+    boundary.  This amendment changes only the Build 001 policy snapshot and
+    its package-only integrity receipt.
+    """
+
+    if expected_file_sha256 is not None and sha256_bytes(raw) != expected_file_sha256:
+        raise EvaluationError("Stage 09 predeclaration amendment file hash changed")
+    try:
+        value = json.loads(raw)
+    except (UnicodeDecodeError, json.JSONDecodeError) as error:
+        raise EvaluationError("Stage 09 predeclaration amendment is not valid JSON") from error
+    if not isinstance(value, dict):
+        raise EvaluationError("Stage 09 predeclaration amendment must be an object")
+    amendment = cast(dict[str, Any], value)
+    if amendment.get("schema") != PREDECLARATION_AMENDMENT_SCHEMA or not verify_object_hash(
+        amendment, hash_field="amendment_core_hash"
+    ):
+        raise EvaluationError("Stage 09 predeclaration amendment schema/self-hash changed")
+    if amendment.get("amendment_core_hash") != PREDECLARATION_AMENDMENT_CORE_HASH:
+        raise EvaluationError("Stage 09 predeclaration amendment core identity changed")
+    original_gate = original.get("decision_gate")
+    if not isinstance(original_gate, dict):
+        raise EvaluationError("Stage 09 original decision gate is absent")
+    original_bindings = original.get("bindings")
+    if not isinstance(original_bindings, dict):
+        raise EvaluationError("Stage 09 original bindings are absent")
+    expected = {
+        "schema": PREDECLARATION_AMENDMENT_SCHEMA,
+        "recorded_at": "2026-08-23T04:50:00Z",
+        "result_state": "READY_NOT_EXECUTED",
+        "reason": (
+            "Before results, complete reachability invalidated the original Build 001 "
+            "package-integrity premise; the premeasurement repair froze a generic "
+            "pure-normalization policy."
+        ),
+        "claim_boundary": (
+            "Source-identity and package-integrity repair only; no development result, "
+            "public-holdout access, or hidden-game claim."
+        ),
+        "original_predeclaration": {
+            "path": "docs/evidence/001-09-development-recovery-predeclaration.json",
+            "file_sha256": PREDECLARATION_FILE_SHA256,
+            "predeclaration_core_hash": PREDECLARATION_CORE_HASH,
+            "preserved_unchanged": True,
+        },
+        "override_scope": [
+            "build_001_policy_source",
+            "build_001_package_integrity_receipt",
+        ],
+        "build_001_policy_source": {
+            "prior_commit": ORIGINAL_BUILD_001_COMMIT,
+            "prior_tree": ORIGINAL_BUILD_001_TREE,
+            "prior_first_party_source_sha256": ORIGINAL_BUILD_001_SOURCE_SHA256,
+            "commit": FROZEN_BUILD_001_COMMIT,
+            "tree": FROZEN_BUILD_001_TREE,
+            "first_party_source_sha256": FROZEN_BUILD_001_SOURCE_SHA256,
+            "policy_characterization": "generic-pure-normalization-no-game-identity-table",
+        },
+        "build_001_package_integrity_receipt": {
+            "schema": "arc3.integrity.receipt.v0.2",
+            "integrity_scope": "package-only-no-public-identifiers",
+            "full_competition_integrity_status": "NOT_EVALUATED_PUBLIC_IDENTIFIERS",
+            "git_commit": FROZEN_BUILD_001_COMMIT,
+            "file_sha256": BUILD_001_PACKAGE_INTEGRITY_FILE_SHA256,
+            "receipt_sha256": BUILD_001_PACKAGE_INTEGRITY_RECEIPT_SHA256,
+        },
+        "unchanged_protocol": {
+            "development_partition_hash": development_partition_hash(),
+            "development_identity_count": len(DEVELOPMENT_GAMES),
+            "development_identifier_list_hash": development_identifier_list_hash(),
+            "expansion_order": ["development_games", "seeds", "variants"],
+            "variant_order": [variant.value for variant in VARIANTS],
+            "cell_count": EXPECTED_CELL_COUNT,
+            "seeds": list(SEEDS),
+            "max_actions": MAX_ACTIONS,
+            "max_resets": MAX_RESETS,
+            "worker_wall_seconds": WORKER_WALL_SECONDS,
+            "overall_active_wall_seconds": OVERALL_ACTIVE_WALL_SECONDS,
+            "decision_gate_hash": sha256_bytes(canonical_json_bytes(original_gate)),
+            "holdout_status": "SEALED_UNCONSUMED",
+            "original_matrix_hash": original_bindings.get("matrix_hash"),
+            "effective_matrix_hash": matrix_hash(),
+        },
+        "prior_execution_state": {
+            "attempt_output_existed": False,
+            "work_root_existed": False,
+            "exposure_ledger_existed": False,
+            "stage09_cells_exposed": 0,
+            "stage09_gameplay_events": 0,
+        },
+    }
+    unsigned = {key: item for key, item in amendment.items() if key != "amendment_core_hash"}
+    if unsigned != expected:
+        raise EvaluationError("Stage 09 predeclaration amendment fields changed")
+    return amendment
 
 
 def _nonnegative_int(value: object, *, field: str) -> int:
@@ -1064,13 +1315,13 @@ class Outcome:
         if not isinstance(before_authority, dict) or not isinstance(after_authority, dict):
             raise EvaluationError("Stage 09 cell prior-authority receipt is malformed")
         for item in (before_authority, after_authority):
-            if (
-                item.get("schema") != "arc3.build-001.stage-09-prior-authority.v0.1"
-                or not verify_object_hash(item, hash_field="authority_hash")
-                or not isinstance(item.get("predicates"), dict)
-                or item.get("passed")
-                is not all(value is True for value in item["predicates"].values())
-            ):
+            try:
+                validate_prior_authority_observation(item)
+            except EvaluationError as error:
+                raise EvaluationError(
+                    "Stage 09 cell prior-authority observation is invalid"
+                ) from error
+            if status is not CellStatus.INFRASTRUCTURE_FAILURE and item.get("passed") is not True:
                 raise EvaluationError("Stage 09 cell prior-authority observation is invalid")
         stable_authority = bool(
             before_authority.get("passed") is True
@@ -1187,18 +1438,22 @@ def _summary(outcomes: Sequence[Outcome], variant: Variant) -> dict[str, object]
     selected = [outcome for outcome in outcomes if outcome.cell.variant is variant]
     if len(selected) != 24:
         raise EvaluationError(f"Stage 09 {variant.value} does not contain 24 cells")
+    controller_wall_timeouts = sum(
+        outcome.status is CellStatus.CONTROLLER_WALL_TIMEOUT for outcome in selected
+    )
+    successful_environment_actions = sum(
+        outcome.environment_actions for outcome in selected if outcome.status is CellStatus.SUCCESS
+    )
     return {
         "completed_runs": sum(
             outcome.completed for outcome in selected if outcome.status is CellStatus.SUCCESS
         ),
-        "controller_wall_timeouts": sum(
-            outcome.status is CellStatus.CONTROLLER_WALL_TIMEOUT for outcome in selected
+        "controller_wall_timeouts": controller_wall_timeouts,
+        "controller_wall_timeout_action_charge_per_run": MAX_ACTIONS,
+        "effective_environment_actions_for_efficiency": (
+            successful_environment_actions + controller_wall_timeouts * MAX_ACTIONS
         ),
-        "environment_actions": sum(
-            outcome.environment_actions
-            for outcome in selected
-            if outcome.status is CellStatus.SUCCESS
-        ),
+        "environment_actions": successful_environment_actions,
         "infrastructure_failures": sum(
             outcome.status is CellStatus.INFRASTRUCTURE_FAILURE for outcome in selected
         ),
@@ -1260,8 +1515,8 @@ def aggregate(
     random = summaries[Variant.BUILD_000_RANDOM]
     current_levels = cast(int, current["levels_completed"])
     random_levels = cast(int, random["levels_completed"])
-    current_actions = cast(int, current["environment_actions"])
-    random_actions = cast(int, random["environment_actions"])
+    current_actions = cast(int, current["effective_environment_actions_for_efficiency"])
+    random_actions = cast(int, random["effective_environment_actions_for_efficiency"])
     completion_count_win = current_levels > random_levels
     efficiency_win = bool(
         current_levels > 0
@@ -1303,8 +1558,9 @@ def aggregate(
         "comparison": {
             "b0_completion_count_win": completion_count_win,
             "b0_completion_normalized_action_efficiency_win": efficiency_win,
+            "controller_wall_timeout_action_charge_per_run": MAX_ACTIONS,
             "equal_per_run_action_budget": True,
-            "metric_scope": "cell_status_success_only",
+            "metric_scope": "verified-success-actions-plus-frozen-controller-timeout-charge",
         },
         "gate": gate,
     }
@@ -1314,8 +1570,8 @@ __all__ = [
     "AGGREGATE_SCHEMA",
     "BUILD_000_INTEGRITY_FILE_SHA256",
     "BUILD_000_INTEGRITY_RECEIPT_SHA256",
-    "BUILD_001_INTEGRITY_FILE_SHA256",
-    "BUILD_001_INTEGRITY_RECEIPT_SHA256",
+    "BUILD_001_PACKAGE_INTEGRITY_FILE_SHA256",
+    "BUILD_001_PACKAGE_INTEGRITY_RECEIPT_SHA256",
     "CELL_ADMISSION_CHARGE_NS",
     "CELL_FINALIZATION_SCHEMA",
     "CELL_RECEIPT_SCHEMA",
@@ -1337,6 +1593,9 @@ __all__ = [
     "MECHANISM_PROVENANCE_SCHEMA",
     "NORMAL_TERMINATION_DEFINITION",
     "OVERALL_ACTIVE_WALL_SECONDS",
+    "PREDECLARATION_AMENDMENT_CORE_HASH",
+    "PREDECLARATION_AMENDMENT_FILE_SHA256",
+    "PREDECLARATION_AMENDMENT_SCHEMA",
     "PREDECLARATION_CORE_HASH",
     "PREDECLARATION_FILE_SHA256",
     "PREFLIGHT_SCHEMA",
@@ -1358,6 +1617,7 @@ __all__ = [
     "Variant",
     "aggregate",
     "build_matrix",
+    "development_identifier_list_hash",
     "development_partition_hash",
     "environment_cache_stable",
     "harness_source_stable",
@@ -1367,6 +1627,7 @@ __all__ = [
     "validate_environment_cache_observation",
     "validate_harness_source_binding",
     "validate_harness_source_observation",
+    "validate_predeclaration_amendment_bytes",
     "validate_predeclaration_bytes",
     "validate_prior_authority_observation",
     "validate_runtime_environment_binding",

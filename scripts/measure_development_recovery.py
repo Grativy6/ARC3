@@ -94,6 +94,9 @@ from arc3.evaluation.development_recovery import (  # noqa: E402
     MAX_RESETS,
     NORMAL_TERMINATION_DEFINITION,
     OVERALL_ACTIVE_WALL_SECONDS,
+    PREDECLARATION_AMENDMENT_CORE_HASH,
+    PREDECLARATION_AMENDMENT_FILE_SHA256,
+    PREDECLARATION_CORE_HASH,
     PREDECLARATION_FILE_SHA256,
     PREFLIGHT_SCHEMA,
     PRIOR_AUTHORITY_SCHEMA,
@@ -111,6 +114,7 @@ from arc3.evaluation.development_recovery import (  # noqa: E402
     Variant,
     aggregate,
     build_matrix,
+    development_identifier_list_hash,
     environment_cache_stable,
     harness_source_stable,
     matrix_hash,
@@ -119,6 +123,7 @@ from arc3.evaluation.development_recovery import (  # noqa: E402
     validate_environment_cache_observation,
     validate_harness_source_binding,
     validate_harness_source_observation,
+    validate_predeclaration_amendment_bytes,
     validate_predeclaration_bytes,
     validate_prior_authority_observation,
     validate_runtime_environment_binding,
@@ -130,33 +135,42 @@ from arc3.evaluation.public import (  # noqa: E402
     _trace_receipt,
 )
 from arc3.evaluation.public_runner import _receipt_valid  # noqa: E402
-from arc3.integrity import IntegrityReceipt, discover_policy_files, scan_policy_files  # noqa: E402
+from arc3.integrity import (  # noqa: E402
+    IntegrityReceipt,
+    discover_policy_files,
+    discover_reachable_policy_files,
+    scan_policy_files,
+)
 
 PREDECLARATION = ROOT / "docs/evidence/001-09-development-recovery-predeclaration.json"
+PREDECLARATION_AMENDMENT = (
+    ROOT / "docs/evidence/001-09-development-recovery-predeclaration-amendment-v0.1.json"
+)
 DEFAULT_OUTPUT = Path("C:/a/arc3-b001/artifacts/stage09/development-recovery-attempt-01.json")
 DEFAULT_WORK_ROOT = Path("C:/a/arc3-b001/artifacts/stage09/development-recovery-work-attempt-01")
 DEFAULT_EXPOSURE = Path("C:/a/arc3-b001/artifacts/stage09/public-exposure.jsonl")
 DEFAULT_RECORDINGS = Path("C:/a/arc3-b001/recordings/stage09")
 DEFAULT_ENVIRONMENTS = Path("C:/a/arc3-s15-6a0f6e5/artifacts/stage15/public-environments")
 DEFAULT_BUILD_000_ROOT = Path("C:/a/arc3-stage08-build000-90ecf72")
-DEFAULT_BUILD_001_ROOT = Path("C:/a/arc3-stage08-build001-2e78c25")
+DEFAULT_BUILD_001_ROOT = Path("C:/a/arc3-stage09-build001-d6d4bac")
 DEFAULT_STAGE08_RESULT = Path(
     "C:/a/arc3-b001/artifacts/stage08/two-speed-controller-attempt-01.json"
 )
 DEFAULT_STAGE08_EXPOSURE = Path("C:/a/arc3-b001/artifacts/stage08/public-exposure.jsonl")
 DEFAULT_PRIOR_INTEGRITY_RECEIPT = Path(
-    "C:/a/arc3-b001/artifacts/stage09/policy-integrity-2e78c258-full.json"
+    "C:/a/arc3-b001/artifacts/stage09/policy-integrity-d6d4bac-package-only.json"
 )
 DEFAULT_BUILD_000_INTEGRITY_RECEIPT = Path(
     "C:/a/arc3-b001/artifacts/stage09/policy-integrity-build000-90ecf726-full.json"
 )
 HOLDOUT_NONCONSUMPTION_RECEIPT = ROOT / "docs/evidence/001-08-two-speed-controller.json"
-PRIOR_INTEGRITY_RECEIPT_SHA256 = (
-    "sha256:9fd255b3a32549fd09c12247863319e8662805ed43f874b46e52eb3cb675834f"
+BUILD_001_PACKAGE_INTEGRITY_RECEIPT_SHA256: str | None = (
+    "sha256:173c0a6c3aee154df67920227e3b5303c59682186a2254a220e24dd5589269fe"
 )
-PRIOR_INTEGRITY_SELF_HASH = (
-    "sha256:6926149cafda4248a2dc92b042ab6f087888133daf60d7de0b1f1070f6203e9b"
+BUILD_001_PACKAGE_INTEGRITY_SELF_HASH: str | None = (
+    "sha256:3e29edd69d7999760c53a80de474d701f9124faed73ccc1b9047adbf9a766702"
 )
+BUILD_001_PACKAGE_INTEGRITY_COMMIT: str | None = "d6d4bac1e33c9837856c08abcee61bcb14afd34e"
 BUILD_000_INTEGRITY_RECEIPT_SHA256 = (
     "sha256:b63ea29913a042930b01ace640c283dd0febce3597b637c3d8433fc981579349"
 )
@@ -166,7 +180,6 @@ BUILD_000_INTEGRITY_SELF_HASH = (
 HOLDOUT_NONCONSUMPTION_RECEIPT_SHA256 = (
     "sha256:0134c9e5b7acea716f790088cb59109eded7857ce83fda004ea1b88be2eb92ac"
 )
-PUBLIC_MANIFEST_RELATIVE = Path("docs/evaluation/public-game-partitions.v0.1.json")
 WORKER = ROOT / "scripts/_stage09_development_worker.py"
 CLAIM_BOUNDARY = "development recovery only; no public-holdout or hidden-game generalization claim"
 SEALED_HOLDOUT = {
@@ -443,17 +456,75 @@ INHERITED_EXPOSURES = (
     ),
 )
 WINDOWS_NEW_GROUP = int(getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0))
+WINDOWS_CREATE_SUSPENDED = 0x00000004
+WINDOWS_JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE = 0x00002000
 LAUNCH_RECEIPT_SCHEMA = "arc3.build-001.stage-09-process-launch.v0.1"
 LAUNCH_AUTHORIZATION_SCHEMA = "arc3.build-001.stage-09-launch-authorization.v0.1"
 WORKER_ABORT_SCHEMA = "arc3.build-001.stage-09-worker-abort.v0.1"
 SUPERVISION_RECEIPT_SCHEMA = "arc3.build-001.stage-09-supervision.v0.1"
 TIMEOUT_TRACE_SCHEMA = "arc3.build-001.stage-09-timeout-trace.v0.1"
-ORPHAN_RECEIPT_SCHEMA = "arc3.build-001.stage-09-orphan-termination.v0.2"
+SPAWN_INTENT_SCHEMA = "arc3.build-001.stage-09-spawn-intent.v0.1"
+CELL_SEGMENT_SCHEMA = "arc3.build-001.stage-09-active-cell-segment.v0.1"
+ORPHAN_RECEIPT_SCHEMA = "arc3.build-001.stage-09-orphan-termination.v0.3"
 PARENT_EVIDENCE_SCHEMA = "arc3.build-001.stage-09-parent-evidence.v0.2"
-RUN_CLOCK_SCHEMA = "arc3.build-001.stage-09-run-clock.v0.1"
-TERMINAL_FINALIZATION_SCHEMA = "arc3.build-001.stage-09-terminal-finalization.v0.1"
+RUN_CLOCK_SCHEMA = "arc3.build-001.stage-09-run-clock.v0.2"
+TERMINAL_FINALIZATION_SCHEMA = "arc3.build-001.stage-09-terminal-finalization.v0.3"
+TERMINAL_VERIFICATION_SCHEMA = "arc3.build-001.stage-09-terminal-verification.v0.2"
+RECOVERED_CELL_FINALIZATION_SCHEMA = "arc3.build-001.stage-09-recovered-cell-finalization.v0.1"
 TERMINAL_WRITE_RESERVE_NS = 1_000_000_000
 _SDK_IMPORT_PROBE_CACHE: bool | None = None
+
+
+class _WindowsIoCounters(ctypes.Structure):
+    _fields_ = [
+        (name, ctypes.c_ulonglong)
+        for name in (
+            "read_operations",
+            "write_operations",
+            "other_operations",
+            "read_bytes",
+            "write_bytes",
+            "other_bytes",
+        )
+    ]
+
+
+class _WindowsJobBasicLimits(ctypes.Structure):
+    _fields_ = [
+        ("per_process_user_time", ctypes.c_longlong),
+        ("per_job_user_time", ctypes.c_longlong),
+        ("limit_flags", ctypes.c_uint32),
+        ("minimum_working_set", ctypes.c_size_t),
+        ("maximum_working_set", ctypes.c_size_t),
+        ("active_process_limit", ctypes.c_uint32),
+        ("affinity", ctypes.c_size_t),
+        ("priority_class", ctypes.c_uint32),
+        ("scheduling_class", ctypes.c_uint32),
+    ]
+
+
+class _WindowsJobExtendedLimits(ctypes.Structure):
+    _fields_ = [
+        ("basic", _WindowsJobBasicLimits),
+        ("io", _WindowsIoCounters),
+        ("process_memory_limit", ctypes.c_size_t),
+        ("job_memory_limit", ctypes.c_size_t),
+        ("peak_process_memory", ctypes.c_size_t),
+        ("peak_job_memory", ctypes.c_size_t),
+    ]
+
+
+class _WindowsJobAccounting(ctypes.Structure):
+    _fields_ = [
+        ("total_user_time", ctypes.c_longlong),
+        ("total_kernel_time", ctypes.c_longlong),
+        ("period_user_time", ctypes.c_longlong),
+        ("period_kernel_time", ctypes.c_longlong),
+        ("total_page_faults", ctypes.c_uint32),
+        ("total_processes", ctypes.c_uint32),
+        ("active_processes", ctypes.c_uint32),
+        ("terminated_processes", ctypes.c_uint32),
+    ]
 
 
 def _is_mapping(value: object) -> TypeGuard[Mapping[str, object]]:
@@ -860,7 +931,7 @@ def _runtime_environment_identity(
     if static_pass and _SDK_IMPORT_PROBE_CACHE is None:
         probe = subprocess.run(
             [
-                str(Path(sys.executable).resolve()),
+                _lexical_python_launcher(),
                 "-I",
                 "-c",
                 (
@@ -954,16 +1025,313 @@ def _integrity_authority(
     return projection, predicates
 
 
+_PACKAGE_ONLY_PREFIXES = (".github/", "agent/", "scripts/", "src/", "tests/")
+_PACKAGE_ONLY_ROOT_FILES = frozenset(
+    {
+        ".env.example",
+        ".gitattributes",
+        ".gitignore",
+        "AGENTS.md",
+        "LICENSE",
+        "README.md",
+        "THIRD_PARTY_NOTICES.md",
+        "pyproject.toml",
+        "upstream.lock.json",
+        "uv.lock",
+    }
+)
+_PRODUCTION_POLICY_ENTRY_POINTS = ("agent/my_agent.py",)
+
+
+def _package_only_candidate_files(root: Path) -> tuple[Path, ...]:
+    """Recompute the protected-surface-free tracked candidate set."""
+
+    resolved = root.resolve()
+    completed = subprocess.run(
+        ("git", "ls-files", "-z"),
+        cwd=resolved,
+        check=False,
+        capture_output=True,
+        timeout=30.0,
+    )
+    if completed.returncode != 0:
+        raise EvaluationError("Stage 09 package integrity cannot read the Git index")
+    try:
+        names = tuple(name.decode("utf-8") for name in completed.stdout.split(b"\0") if name)
+    except UnicodeDecodeError as error:
+        raise EvaluationError("Stage 09 package integrity found a non-UTF-8 path") from error
+    selected: list[Path] = []
+    for name in names:
+        normalized = Path(name).as_posix()
+        if normalized in _PACKAGE_ONLY_ROOT_FILES or normalized.startswith(_PACKAGE_ONLY_PREFIXES):
+            lexical = resolved / normalized
+            if lexical.is_symlink():
+                raise EvaluationError("Stage 09 package candidate is a symlink")
+            candidate = lexical.resolve()
+            try:
+                candidate.relative_to(resolved)
+            except ValueError as error:
+                raise EvaluationError(
+                    "Stage 09 package candidate escaped its source root"
+                ) from error
+            if not candidate.is_file() or candidate.is_symlink():
+                raise EvaluationError("Stage 09 package candidate is not a regular file")
+            selected.append(candidate)
+    if not selected:
+        raise EvaluationError("Stage 09 package integrity found no candidate files")
+    return tuple(selected)
+
+
+def _package_integrity_authority(
+    path: Path,
+    *,
+    source_root: Path,
+    expected_file_hash: str | None,
+    expected_self_hash: str | None,
+    expected_commit: str | None,
+) -> tuple[dict[str, object], dict[str, bool]]:
+    """Validate a package-only receipt without loading public identifiers."""
+
+    file_hash = sha256_file(path) if path.is_file() else None
+    receipt = load_json(path) if path.is_file() else {}
+    canonical_self_hash = False
+    if path.is_file() and expected_self_hash is not None:
+        try:
+            canonical_self_hash = (
+                IntegrityReceipt.from_bytes(path.read_bytes()).receipt_sha256 == expected_self_hash
+            )
+        except (TypeError, UnicodeDecodeError, ValueError):
+            canonical_self_hash = False
+    checks = receipt.get("checks")
+    finding_counts = receipt.get("finding_counts")
+    inputs = receipt.get("inputs")
+    assurance = receipt.get("assurance_scope")
+    license_summary = receipt.get("license_summary")
+    coverage = receipt.get("production_policy_static_coverage")
+    reachable_hashes = receipt.get("reachable_policy_source_hashes")
+    source_hashes = receipt.get("source_hashes")
+    checks_pass = bool(
+        isinstance(checks, dict)
+        and all(
+            isinstance(checks.get(name), dict)
+            and cast(dict[str, object], checks[name]).get("passed") is True
+            for name in (
+                "archive_static",
+                "policy_static",
+                "secret_scan",
+                "source_identity",
+                "supply_chain",
+            )
+        )
+    )
+    declared_coverage_pass = bool(
+        isinstance(coverage, dict)
+        and coverage.get("algorithm") == "static-first-party-import-closure-v0.1"
+        and isinstance(coverage.get("entry_points"), list)
+        and coverage.get("entry_points") == coverage.get("entry_points_reached")
+        and len(cast(list[object], coverage["entry_points"])) > 0
+        and coverage.get("limitations")
+        == (
+            "Static first-party import reachability does not prove runtime dynamic-import "
+            "or native-extension containment."
+        )
+        and coverage.get("policy_scan_covers_reachable_paths") is True
+        and isinstance(coverage.get("reachable_file_count"), int)
+        and not isinstance(coverage.get("reachable_file_count"), bool)
+        and cast(int, coverage["reachable_file_count"]) > 0
+        and coverage.get("reachable_paths_hashed") is True
+        and coverage.get("status") == "PASS"
+        and isinstance(reachable_hashes, dict)
+        and len(reachable_hashes) == coverage.get("reachable_file_count")
+        and all(
+            isinstance(name, str)
+            and isinstance(digest, str)
+            and re.fullmatch(r"sha256:[0-9a-f]{64}", digest) is not None
+            for name, digest in reachable_hashes.items()
+        )
+    )
+    candidate_set_passed = False
+    reachable_recomputed = False
+    live_source_hashes_match = False
+    candidate_count: int | None = None
+    if isinstance(inputs, dict):
+        declared_candidates = inputs.get("candidate_paths")
+        declared_reachable = inputs.get("reachable_policy_paths")
+        try:
+            candidates = _package_only_candidate_files(source_root)
+            candidate_labels = [
+                candidate.relative_to(source_root.resolve()).as_posix() for candidate in candidates
+            ]
+            candidate_count = len(candidate_labels)
+            candidate_set_passed = declared_candidates == candidate_labels
+            reachable_files = discover_reachable_policy_files(
+                source_root.resolve(),
+                candidate_files=candidates,
+                entry_points=_PRODUCTION_POLICY_ENTRY_POINTS,
+            )
+            reachable_labels = [
+                item.relative_to(source_root.resolve()).as_posix() for item in reachable_files
+            ]
+            reachable_recomputed = declared_reachable == reachable_labels
+            recomputed_hashes: dict[str, str] = {}
+            for relative in reachable_labels:
+                lexical = source_root.resolve() / relative
+                if lexical.is_symlink():
+                    raise EvaluationError("Stage 09 reachable policy source is a symlink")
+                resolved = lexical.resolve()
+                resolved.relative_to(source_root.resolve())
+                if not resolved.is_file() or resolved.is_symlink():
+                    raise EvaluationError("Stage 09 reachable policy source is not a regular file")
+                recomputed_hashes[relative] = sha256_file(resolved)
+            policy_files = discover_policy_files(
+                source_root.resolve(),
+                candidate_files=candidates,
+                entry_points=_PRODUCTION_POLICY_ENTRY_POINTS,
+            )
+            policy_labels = {
+                item.relative_to(source_root.resolve()).as_posix() for item in policy_files
+            }
+            live_source_hashes_match = bool(
+                reachable_labels
+                and isinstance(reachable_hashes, dict)
+                and recomputed_hashes == reachable_hashes
+                and isinstance(source_hashes, dict)
+                and all(source_hashes.get(key) == value for key, value in recomputed_hashes.items())
+                and all(label in policy_labels for label in reachable_labels)
+            )
+        except (EvaluationError, OSError, ValueError):
+            candidate_set_passed = False
+            reachable_recomputed = False
+            live_source_hashes_match = False
+    coverage_pass = bool(
+        declared_coverage_pass
+        and isinstance(inputs, dict)
+        and inputs.get("entry_points") == list(_PRODUCTION_POLICY_ENTRY_POINTS)
+        and candidate_set_passed
+        and reachable_recomputed
+        and live_source_hashes_match
+    )
+    license_pass = bool(
+        isinstance(license_summary, dict)
+        and license_summary.get("first_party_license_status") == "MIT-0"
+        and license_summary.get("status") == "PASS"
+        and license_summary.get("unknown_or_missing_metadata_count") == 0
+        and license_summary.get("installed_version_mismatch_count") == 0
+        and license_summary.get("not_evaluated_count") == 0
+    )
+    package_scope_pass = bool(
+        receipt.get("integrity_scope") == "package-only-no-public-identifiers"
+        and receipt.get("full_competition_integrity_status") == "NOT_EVALUATED_PUBLIC_IDENTIFIERS"
+        and receipt.get("package_only_passed") is True
+        and receipt.get("passed") is False
+        and isinstance(inputs, dict)
+        and inputs.get("manifest") is None
+        and inputs.get("manifest_sha256") is None
+        and inputs.get("run_state") is None
+        and inputs.get("public_identifier_count") == 0
+        and inputs.get("public_identifier_mode") == "disabled-package-only"
+        and isinstance(assurance, dict)
+        and assurance.get("public_identifier_scan")
+        == "NOT_EVALUATED_PACKAGE_ONLY_NO_SEMANTIC_MANIFEST_ACCESS"
+    )
+    git = receipt.get("git")
+    predicates = {
+        "canonical_self_hash": canonical_self_hash,
+        "checks": checks_pass,
+        "clean_source": isinstance(git, dict)
+        and git.get("commit") == expected_commit
+        and git.get("dirty_worktree") is False,
+        "complete_reachable_coverage": coverage_pass,
+        "candidate_set": candidate_set_passed,
+        "expected_commit_pinned": isinstance(expected_commit, str)
+        and re.fullmatch(r"[0-9a-f]{40}", expected_commit) is not None,
+        "file_hash": expected_file_hash is not None and file_hash == expected_file_hash,
+        "findings": isinstance(finding_counts, dict)
+        and finding_counts.get("blocking") == 0
+        and finding_counts.get("warnings") == 0
+        and finding_counts.get("total") == 0,
+        "license_inventory": license_pass,
+        "package_scope": package_scope_pass,
+        "receipt_schema": receipt.get("schema") == "arc3.integrity.receipt.v0.2",
+        "self_hash": expected_self_hash is not None
+        and receipt.get("receipt_sha256") == expected_self_hash,
+    }
+    reachable_hash = (
+        sha256_bytes(canonical_json_bytes(reachable_hashes))
+        if isinstance(reachable_hashes, dict)
+        else None
+    )
+    entry_points = coverage.get("entry_points") if isinstance(coverage, dict) else None
+    reached = coverage.get("entry_points_reached") if isinstance(coverage, dict) else None
+    projection = {
+        "assurance_limitation": coverage.get("limitations") if isinstance(coverage, dict) else None,
+        "candidate_file_count": candidate_count,
+        "candidate_set_recomputed": candidate_set_passed,
+        "entry_point_count": len(entry_points) if isinstance(entry_points, list) else None,
+        "entry_points_reached": len(reached) if isinstance(reached, list) else None,
+        "file_sha256": file_hash,
+        "full_competition_integrity_status": receipt.get("full_competition_integrity_status"),
+        "git_commit": git.get("commit") if isinstance(git, dict) else None,
+        "integrity_scope": receipt.get("integrity_scope"),
+        "license_inventory_passed": license_pass,
+        "live_source_hashes_match": live_source_hashes_match,
+        "package_only_passed": receipt.get("package_only_passed") is True,
+        "path": path.resolve().as_posix(),
+        "policy_scan_covers_reachable_paths": coverage.get("policy_scan_covers_reachable_paths")
+        if isinstance(coverage, dict)
+        else None,
+        "public_identifier_mode": inputs.get("public_identifier_mode")
+        if isinstance(inputs, dict)
+        else None,
+        "public_identifier_scan": assurance.get("public_identifier_scan")
+        if isinstance(assurance, dict)
+        else None,
+        "reachable_file_count": coverage.get("reachable_file_count")
+        if isinstance(coverage, dict)
+        else None,
+        "reachable_paths_hashed": coverage.get("reachable_paths_hashed")
+        if isinstance(coverage, dict)
+        else None,
+        "reachable_paths_recomputed": reachable_recomputed,
+        "reachable_source_hashes_sha256": reachable_hash,
+        "receipt_sha256": receipt.get("receipt_sha256"),
+        "status": "PASS" if all(predicates.values()) else "FAIL",
+    }
+    return projection, predicates
+
+
 def _prior_authority(
     integrity_receipt: Path = DEFAULT_PRIOR_INTEGRITY_RECEIPT,
     build_000_integrity_receipt: Path = DEFAULT_BUILD_000_INTEGRITY_RECEIPT,
     holdout_receipt: Path = HOLDOUT_NONCONSUMPTION_RECEIPT,
+    *,
+    build_000_root: Path = DEFAULT_BUILD_000_ROOT,
+    build_001_root: Path = DEFAULT_BUILD_001_ROOT,
+    expected_build_001_file_hash: str | None = None,
+    expected_build_001_self_hash: str | None = None,
+    expected_build_001_commit: str | None = None,
 ) -> dict[str, object]:
-    integrity_001, integrity_001_predicates = _integrity_authority(
+    expected_build_001_file_hash = (
+        BUILD_001_PACKAGE_INTEGRITY_RECEIPT_SHA256
+        if expected_build_001_file_hash is None
+        else expected_build_001_file_hash
+    )
+    expected_build_001_self_hash = (
+        BUILD_001_PACKAGE_INTEGRITY_SELF_HASH
+        if expected_build_001_self_hash is None
+        else expected_build_001_self_hash
+    )
+    expected_build_001_commit = (
+        BUILD_001_PACKAGE_INTEGRITY_COMMIT
+        if expected_build_001_commit is None
+        else expected_build_001_commit
+    )
+    integrity_001, integrity_001_predicates = _package_integrity_authority(
         integrity_receipt,
-        expected_file_hash=PRIOR_INTEGRITY_RECEIPT_SHA256,
-        expected_self_hash=PRIOR_INTEGRITY_SELF_HASH,
-        expected_commit=FROZEN_BUILD_001_COMMIT,
+        source_root=build_001_root,
+        expected_file_hash=expected_build_001_file_hash,
+        expected_self_hash=expected_build_001_self_hash,
+        expected_commit=expected_build_001_commit,
     )
     integrity_000, integrity_000_predicates = _integrity_authority(
         build_000_integrity_receipt,
@@ -971,12 +1339,31 @@ def _prior_authority(
         expected_self_hash=BUILD_000_INTEGRITY_SELF_HASH,
         expected_commit=FROZEN_BUILD_000_COMMIT,
     )
+    development_000 = _development_integrity(build_000_root)
+    development_001 = _development_integrity(build_001_root)
+    development_identity = {
+        "build_000": development_000,
+        "build_001": development_001,
+        "development_identity_count": len(DEVELOPMENT_GAMES),
+        "identifier_list_hash": development_identifier_list_hash(),
+        "identifier_string_count": len(DEVELOPMENT_GAMES) * 2,
+        "identity_values_disclosed": False,
+        "limitations": (
+            "Direct static scan only; dynamic-import and native-extension behavior is not proven."
+        ),
+        "scope": "frozen-exposed-development-game-id-and-stable-name-pairs",
+    }
     holdout_hash = sha256_file(holdout_receipt) if holdout_receipt.is_file() else None
     holdout = load_json(holdout_receipt) if holdout_receipt.is_file() else {}
     holdout_projection = holdout.get("integrity")
     predicates = {
-        "build_000_integrity": all(integrity_000_predicates.values()),
-        "build_001_integrity": all(integrity_001_predicates.values()),
+        "build_000_development_scan": development_000["passed"] is True,
+        "build_000_full_integrity": all(integrity_000_predicates.values()),
+        "build_001_development_scan": development_001["passed"] is True,
+        "build_001_package_integrity": all(integrity_001_predicates.values()),
+        "development_identity": development_identity["development_identity_count"]
+        == len(DEVELOPMENT_GAMES)
+        and development_identity["identifier_list_hash"] == development_identifier_list_hash(),
         "holdout_file_hash": holdout_hash == HOLDOUT_NONCONSUMPTION_RECEIPT_SHA256,
         "holdout_manifest_hash": isinstance(holdout_projection, dict)
         and holdout_projection.get("holdout_manifest_sha256") == PUBLIC_PARTITION_MANIFEST_SHA256,
@@ -991,18 +1378,35 @@ def _prior_authority(
         seal_object(
             {
                 "schema": PRIOR_AUTHORITY_SCHEMA,
+                "assurance_scope": {
+                    "build_000": "historic-full-public-integrity-receipt",
+                    "build_001": "package-only-plus-frozen-development-identifiers",
+                    "limitations": (
+                        "Static-only composite; runtime dynamic-import and native-extension "
+                        "containment are not proven."
+                    ),
+                },
+                "full_public_integrity_status": ("NOT_EVALUATED_BUILD_001_PUBLIC_IDENTIFIERS"),
                 "holdout": {
                     "file_sha256": holdout_hash,
                     "identities_loaded": 0,
                     "manifest_loaded_as_metadata": False,
                     "path": holdout_receipt.resolve().as_posix(),
+                    "pinned_manifest_sha256": PUBLIC_PARTITION_MANIFEST_SHA256,
+                    "public_holdout_gameplay_events": 0,
+                    "receipt_confirms_manifest_sha256": (
+                        holdout_projection.get("holdout_manifest_sha256")
+                        if isinstance(holdout_projection, dict)
+                        else None
+                    ),
                     "status": "SEALED_UNCONSUMED"
                     if predicates["holdout_nonconsumption"]
                     else "UNVERIFIED",
                 },
                 "integrity": {
-                    "build_000": integrity_000,
-                    "build_001": integrity_001,
+                    "build_000_full": integrity_000,
+                    "build_001_package_only": integrity_001,
+                    "development_scans": development_identity,
                 },
                 "passed": all(predicates.values()),
                 "predicates": predicates,
@@ -1082,6 +1486,8 @@ def _observe_execution_boundaries(
     *,
     harness_source_expected: Mapping[str, object],
     environments: Path,
+    build_000_root: Path,
+    build_001_root: Path,
     prior_integrity_receipt: Path,
     build_000_integrity_receipt: Path,
     short_circuit_on_harness_failure: bool = True,
@@ -1099,6 +1505,8 @@ def _observe_execution_boundaries(
         prior_integrity_receipt,
         build_000_integrity_receipt,
         HOLDOUT_NONCONSUMPTION_RECEIPT,
+        build_000_root=build_000_root,
+        build_001_root=build_001_root,
     )
     cache = _environment_cache_identity(environments)
     return harness, runtime, authority, cache
@@ -1193,7 +1601,7 @@ def _source_identity(
     status = _git(resolved, "status", "--porcelain=v1", "--untracked-files=all")
     probe = subprocess.run(
         [
-            str(Path(sys.executable).resolve()),
+            _lexical_python_launcher(),
             "-I",
             "-c",
             (
@@ -1309,11 +1717,9 @@ def _development_integrity(root: Path) -> dict[str, object]:
     findings = scan_policy_files(root=root.resolve(), files=files, public_identifiers=identifiers)
     rows = [finding.to_dict() for finding in findings]
     return {
-        "development_identifier_count": len(identifiers),
         "finding_count": len(rows),
         "findings": rows,
-        "holdout_identifiers_loaded": False,
-        "passed": not rows,
+        "passed": bool(files) and not rows,
         "policy_file_count": len(files),
     }
 
@@ -1451,6 +1857,47 @@ def _official_paths(
                 raise EvaluationError("Stage 09 mutable and protected roots overlap")
 
 
+def _predeclaration_authority(*, live_validated: bool = True) -> dict[str, object]:
+    if live_validated:
+        declaration = validate_predeclaration_bytes(
+            PREDECLARATION.read_bytes(), expected_file_sha256=PREDECLARATION_FILE_SHA256
+        )
+        amendment = validate_predeclaration_amendment_bytes(
+            PREDECLARATION_AMENDMENT.read_bytes(),
+            original=declaration,
+            expected_file_sha256=PREDECLARATION_AMENDMENT_FILE_SHA256,
+        )
+        original_hash = sha256_file(PREDECLARATION)
+        amendment_hash = sha256_file(PREDECLARATION_AMENDMENT)
+    else:
+        declaration = {"predeclaration_core_hash": PREDECLARATION_CORE_HASH}
+        amendment = {
+            "amendment_core_hash": PREDECLARATION_AMENDMENT_CORE_HASH,
+            "result_state": "READY_NOT_EXECUTED",
+        }
+        original_hash = PREDECLARATION_FILE_SHA256
+        amendment_hash = PREDECLARATION_AMENDMENT_FILE_SHA256
+    return {
+        "original": {
+            "path": PREDECLARATION.resolve().as_posix(),
+            "file_sha256": original_hash,
+            "core_hash": declaration["predeclaration_core_hash"],
+            "preserved_unchanged": True,
+        },
+        "amendment": {
+            "path": PREDECLARATION_AMENDMENT.resolve().as_posix(),
+            "file_sha256": amendment_hash,
+            "core_hash": amendment["amendment_core_hash"],
+            "result_state": amendment["result_state"],
+        },
+        "effective_build_001_commit": FROZEN_BUILD_001_COMMIT,
+        "effective_build_001_tree": FROZEN_BUILD_001_TREE,
+        "effective_build_001_source_sha256": FROZEN_BUILD_001_SOURCE_SHA256,
+        "effective_matrix_hash": matrix_hash(),
+        "live_validated": live_validated,
+    }
+
+
 def preflight(
     *,
     harness_source_expected: Mapping[str, object],
@@ -1511,16 +1958,28 @@ def preflight(
                     "prior_authority": None,
                     "environment_cache": None,
                     "runtime_identity": _runtime_identity(),
+                    "predeclaration_authority": _predeclaration_authority(live_validated=False),
                     "predicates": {"harness_source": False},
                 },
                 hash_field="preflight_hash",
             ),
         )
+    declaration = validate_predeclaration_bytes(
+        PREDECLARATION.read_bytes(), expected_file_sha256=PREDECLARATION_FILE_SHA256
+    )
+    amendment = validate_predeclaration_amendment_bytes(
+        PREDECLARATION_AMENDMENT.read_bytes(),
+        original=declaration,
+        expected_file_sha256=PREDECLARATION_AMENDMENT_FILE_SHA256,
+    )
+    predeclaration_authority = _predeclaration_authority()
     runtime_start = _runtime_environment_identity()
     authority_start = _prior_authority(
         prior_integrity_receipt,
         build_000_integrity_receipt,
         HOLDOUT_NONCONSUMPTION_RECEIPT,
+        build_000_root=build_000_root,
+        build_001_root=build_001_root,
     )
     cache_start = _environment_cache_identity(environments)
     identity_predicates = {
@@ -1554,14 +2013,12 @@ def preflight(
                     "prior_authority": authority_start,
                     "environment_cache": {"start": cache_start},
                     "runtime_identity": _runtime_identity(),
+                    "predeclaration_authority": predeclaration_authority,
                     "predicates": identity_predicates,
                 },
                 hash_field="preflight_hash",
             ),
         )
-    declaration = validate_predeclaration_bytes(
-        PREDECLARATION.read_bytes(), expected_file_sha256=PREDECLARATION_FILE_SHA256
-    )
     source_000 = _source_identity(
         build_000_root,
         expected_commit=FROZEN_BUILD_000_COMMIT,
@@ -1578,22 +2035,38 @@ def preflight(
     predecessor = _stage08_boundary(stage08_result, stage08_exposure)
     inherited = _inherited_exposures()
     current_events = _validate_exposures(exposure)
-    manifest_hashes = {
-        "build_000": sha256_file(build_000_root / PUBLIC_MANIFEST_RELATIVE),
-        "build_001": sha256_file(build_001_root / PUBLIC_MANIFEST_RELATIVE),
-    }
+    authority_integrity = cast(dict[str, object], authority_start["integrity"])
+    development_scans = cast(dict[str, object], authority_integrity["development_scans"])
+    authority_predicates = cast(dict[str, object], authority_start["predicates"])
     integrity = {
-        "build_000": _development_integrity(build_000_root),
-        "build_001": _development_integrity(build_001_root),
+        "build_000_development": cast(dict[str, object], development_scans["build_000"]),
+        "build_001_development": cast(dict[str, object], development_scans["build_001"]),
+        "build_001_package_only": {
+            "passed": authority_predicates["build_001_package_integrity"] is True,
+            "status": cast(dict[str, object], authority_integrity["build_001_package_only"])[
+                "status"
+            ],
+        },
+    }
+    manifest_identity = {
+        "pinned_sha256": PUBLIC_PARTITION_MANIFEST_SHA256,
+        "semantic_access": False,
+        "verified_by_prior_authority": authority_predicates["holdout_manifest_hash"] is True,
     }
     predicates = {
         "assets": assets["passed"] is True,
-        "build_000_integrity": integrity["build_000"]["passed"] is True,
+        "build_000_integrity": integrity["build_000_development"]["passed"] is True,
         "build_000_source": source_000["passed"] is True,
-        "build_001_integrity": integrity["build_001"]["passed"] is True,
+        "build_001_integrity": all(
+            item["passed"] is True
+            for item in (
+                integrity["build_001_development"],
+                integrity["build_001_package_only"],
+            )
+        ),
         "build_001_source": source_001["passed"] is True,
         "inherited_exposures": inherited["passed"] is True,
-        "manifest_hashes": set(manifest_hashes.values()) == {PUBLIC_PARTITION_MANIFEST_SHA256},
+        "manifest_identity": manifest_identity["verified_by_prior_authority"] is True,
         "matrix": len(build_matrix()) == EXPECTED_CELL_COUNT,
         "predecessor": predecessor["passed"] is True,
         "worker": WORKER.is_file(),
@@ -1611,13 +2084,16 @@ def preflight(
         },
         "predeclaration_core_hash": declaration["predeclaration_core_hash"],
         "predeclaration_sha256": sha256_file(PREDECLARATION),
+        "predeclaration_amendment_core_hash": amendment["amendment_core_hash"],
+        "predeclaration_amendment_sha256": sha256_file(PREDECLARATION_AMENDMENT),
+        "predeclaration_authority": predeclaration_authority,
         "matrix_hash": matrix_hash(),
         "sources": {"build_000": source_000, "build_001": source_001},
         "assets": assets,
         "stage08_predecessor": predecessor,
         "inherited_exposures": inherited,
         "stage09_exposure_event_count": len(current_events),
-        "public_manifest_hashes": manifest_hashes,
+        "public_manifest_identity": manifest_identity,
         "competition_integrity": integrity,
         "runtime_identity": _runtime_identity(),
         "harness_source": {"expected": expected_harness, "start": harness_start},
@@ -1641,12 +2117,261 @@ def preflight(
     return cast(dict[str, object], seal_object(payload, hash_field="preflight_hash"))
 
 
-def _terminate_tree(process: subprocess.Popen[bytes]) -> dict[str, object]:
+def _windows_job_for_suspended_process(process: subprocess.Popen[bytes]) -> int:
+    if os.name != "nt":
+        raise OSError("Windows Job Objects are unavailable")
+    kernel32 = ctypes.windll.kernel32
+    kernel32.CreateJobObjectW.restype = ctypes.c_void_p
+    job = kernel32.CreateJobObjectW(None, None)
+    if not job:
+        raise OSError("CreateJobObjectW failed")
+    handle = int(job)
+    try:
+        limits = _WindowsJobExtendedLimits()
+        limits.basic.limit_flags = WINDOWS_JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
+        if not kernel32.SetInformationJobObject(
+            ctypes.c_void_p(handle),
+            9,
+            ctypes.byref(limits),
+            ctypes.sizeof(limits),
+        ):
+            raise OSError("SetInformationJobObject failed")
+        process_handle = ctypes.c_void_p(int(cast(Any, process)._handle))
+        if not kernel32.AssignProcessToJobObject(ctypes.c_void_p(handle), process_handle):
+            raise OSError("AssignProcessToJobObject failed")
+        ntdll = ctypes.windll.ntdll
+        status = int(ntdll.NtResumeProcess(process_handle))
+        if status != 0:
+            raise OSError(f"NtResumeProcess failed with NTSTATUS {status:#x}")
+    except OSError as error:
+        try:
+            _close_windows_handle(handle)
+        except OSError as close_error:
+            raise OSError(f"{error}; {close_error}") from error
+        raise
+    return handle
+
+
+def _windows_job_active_processes(handle: int) -> int:
+    accounting = _WindowsJobAccounting()
+    if not ctypes.windll.kernel32.QueryInformationJobObject(
+        ctypes.c_void_p(handle),
+        1,
+        ctypes.byref(accounting),
+        ctypes.sizeof(accounting),
+        None,
+    ):
+        raise OSError("QueryInformationJobObject failed")
+    return int(accounting.active_processes)
+
+
+def _wait_for_windows_job_empty(
+    handle: int, *, timeout_seconds: float = 5.0
+) -> tuple[int | None, str | None]:
+    deadline = time.perf_counter() + timeout_seconds
+    while True:
+        try:
+            active = _windows_job_active_processes(handle)
+        except OSError as error:
+            return None, f"{type(error).__name__}: {error}"
+        if active == 0 or time.perf_counter() >= deadline:
+            return active, None
+        time.sleep(0.05)
+
+
+def _checked_windows_close_handle(close_handle: Any, handle: int) -> None:
+    """Close one pointer-width HANDLE and reject a failed kernel transition."""
+
+    close_handle.argtypes = [ctypes.c_void_p]
+    close_handle.restype = ctypes.c_int
+    if not close_handle(ctypes.c_void_p(handle)):
+        raise OSError("CloseHandle failed")
+
+
+def _close_windows_handle(handle: int) -> None:
+    if os.name != "nt":
+        raise OSError("Windows HANDLE close is unavailable")
+    _checked_windows_close_handle(ctypes.windll.kernel32.CloseHandle, handle)
+
+
+def _cleanup_assigned_containment(
+    process: subprocess.Popen[bytes] | None,
+    *,
+    windows_job_handle: int | None,
+) -> dict[str, object]:
+    """Drain and verify the whole assigned process container after root exit."""
+
+    if os.name == "nt":
+        if windows_job_handle is None:
+            return {
+                "active_processes_after": None,
+                "active_processes_before": None,
+                "assigned_before_resume": False,
+                "authority": "windows-job-object",
+                "close_attempted": False,
+                "close_error": None,
+                "close_succeeded": None,
+                "error": "job assignment unavailable",
+                "limitation": None,
+                "members_after": None,
+                "members_before": None,
+                "observation_error_before": "job assignment unavailable",
+                "passed": False,
+                "termination_attempted": False,
+                "termination_error": None,
+                "termination_succeeded": None,
+                "verification_error": "job assignment unavailable",
+            }
+        active_before, observation_error = _wait_for_windows_job_empty(
+            windows_job_handle, timeout_seconds=0.0
+        )
+        termination_attempted = active_before is None or active_before > 0
+        termination_error: str | None = None
+        termination_succeeded: bool | None = None
+        if termination_attempted:
+            try:
+                succeeded = bool(
+                    ctypes.windll.kernel32.TerminateJobObject(
+                        ctypes.c_void_p(windows_job_handle), 1
+                    )
+                )
+                if not succeeded:
+                    raise OSError("TerminateJobObject failed")
+                termination_succeeded = True
+            except OSError as error:
+                termination_error = f"{type(error).__name__}: {error}"
+                termination_succeeded = False
+        active_after, verification_error = _wait_for_windows_job_empty(windows_job_handle)
+        errors = tuple(
+            item
+            for item in (observation_error, termination_error, verification_error)
+            if item is not None
+        )
+        passed = (
+            active_after == 0
+            and not errors
+            and (not termination_attempted or termination_succeeded is True)
+        )
+        return {
+            "active_processes_after": active_after,
+            "active_processes_before": active_before,
+            "assigned_before_resume": True,
+            "authority": "windows-job-object-assigned-before-resume",
+            "close_attempted": False,
+            "close_error": None,
+            "close_succeeded": None,
+            "error": "; ".join(errors) if errors else None,
+            "limitation": None,
+            "members_after": None,
+            "members_before": None,
+            "observation_error_before": observation_error,
+            "passed": passed,
+            "termination_attempted": termination_attempted,
+            "termination_error": termination_error,
+            "termination_succeeded": termination_succeeded,
+            "verification_error": verification_error,
+        }
+
+    if process is None:
+        return {
+            "active_processes_after": None,
+            "active_processes_before": None,
+            "assigned_before_resume": False,
+            "authority": "posix-new-session-process-group",
+            "close_attempted": False,
+            "close_error": None,
+            "close_succeeded": None,
+            "error": "process-group assignment unavailable",
+            "limitation": "setsid-or-double-fork escape is not OS-contained",
+            "members_after": None,
+            "members_before": None,
+            "observation_error_before": "process-group assignment unavailable",
+            "passed": False,
+            "termination_attempted": False,
+            "termination_error": None,
+            "termination_succeeded": None,
+            "verification_error": "process-group assignment unavailable",
+        }
+    members_before, observation_error = _wait_for_process_group_exit(
+        process.pid, timeout_seconds=0.0
+    )
+    termination_attempted = bool(members_before) or observation_error is not None
+    termination_error = None
+    termination_succeeded = None
+    if termination_attempted:
+        try:
+            kill_group = getattr(os, "killpg", None)
+            if not callable(kill_group):
+                raise OSError("process-group termination is unavailable")
+            kill_group(process.pid, int(getattr(signal, "SIGKILL", signal.SIGTERM)))
+            termination_succeeded = True
+        except ProcessLookupError:
+            # A member may exit after the observation.  Only the fresh empty
+            # group observation below can turn that race into authority.
+            termination_succeeded = True
+        except OSError as error:
+            termination_error = f"{type(error).__name__}: {error}"
+            termination_succeeded = False
+    members_after, verification_error = _wait_for_process_group_exit(process.pid)
+    errors = tuple(
+        item
+        for item in (observation_error, termination_error, verification_error)
+        if item is not None
+    )
+    passed = (
+        not members_after
+        and not errors
+        and (not termination_attempted or termination_succeeded is True)
+    )
+    return {
+        "active_processes_after": len(members_after),
+        "active_processes_before": len(members_before),
+        "assigned_before_resume": True,
+        "authority": "posix-new-session-process-group",
+        "close_attempted": False,
+        "close_error": None,
+        "close_succeeded": None,
+        "error": "; ".join(errors) if errors else None,
+        "limitation": "setsid-or-double-fork escape is not OS-contained",
+        "members_after": members_after,
+        "members_before": members_before,
+        "observation_error_before": observation_error,
+        "passed": passed,
+        "termination_attempted": termination_attempted,
+        "termination_error": termination_error,
+        "termination_succeeded": termination_succeeded,
+        "verification_error": verification_error,
+    }
+
+
+def _terminate_tree(
+    process: subprocess.Popen[bytes],
+    *,
+    expected_root_token: str | None = None,
+    windows_job_handle: int | None = None,
+) -> dict[str, object]:
     method = "windows-taskkill-tree" if os.name == "nt" else "posix-killpg"
+    tree_before, enumeration_error = _process_tree_snapshot(
+        process.pid,
+        expected_root_token=expected_root_token,
+    )
     error: str | None = None
     returncode: int | None = None
     try:
-        if os.name == "nt":
+        if os.name == "nt" and windows_job_handle is not None:
+            if not ctypes.windll.kernel32.TerminateJobObject(
+                ctypes.c_void_p(windows_job_handle), 1
+            ):
+                raise OSError("TerminateJobObject failed")
+            method = "windows-kill-on-close-job-object"
+            returncode = 0
+        elif enumeration_error is not None:
+            # A PID-targeted tree command is unsafe when the exact root identity
+            # could not be enumerated.  The Popen handle still permits a narrow
+            # root-only kill, but the receipt must remain failed closed.
+            process.kill()
+            method = "root-handle-kill-after-tree-enumeration-failure"
+        elif os.name == "nt":
             result = subprocess.run(
                 ["taskkill", "/PID", str(process.pid), "/T", "/F"],
                 check=False,
@@ -1662,16 +2387,58 @@ def _terminate_tree(process: subprocess.Popen[bytes]) -> dict[str, object]:
     except (OSError, subprocess.TimeoutExpired) as caught:
         error = f"{type(caught).__name__}: {caught}"
     if process.poll() is None:
-        process.kill()
-    passed = error is None and (
-        (method == "windows-taskkill-tree" and returncode == 0)
-        or (method == "posix-killpg" and returncode is None)
-    )
+        try:
+            process.kill()
+        except OSError as caught:
+            fallback_error = f"{type(caught).__name__}: {caught}"
+            error = fallback_error if error is None else f"{error}; {fallback_error}"
+    try:
+        process.wait(timeout=5.0)
+    except (OSError, subprocess.TimeoutExpired) as caught:
+        wait_error = f"{type(caught).__name__}: {caught}"
+        error = wait_error if error is None else f"{error}; {wait_error}"
+    if os.name == "nt" and windows_job_handle is not None:
+        active_after, verification_error = _wait_for_windows_job_empty(windows_job_handle)
+        tree_live_after: list[dict[str, object]] = []
+        tree_verified_empty = active_after == 0 and verification_error is None
+        containment_authority = "windows-job-object-assigned-before-resume"
+        containment_limit = None
+    elif os.name != "nt":
+        tree_live_after, verification_error = _wait_for_process_group_exit(process.pid)
+        active_after = len(tree_live_after)
+        tree_verified_empty = verification_error is None and not tree_live_after
+        containment_authority = "posix-new-session-process-group"
+        containment_limit = "setsid-or-double-fork escape is not OS-contained"
+    else:
+        tree_live_after, verification_error = _wait_for_process_tree_exit(tree_before)
+        active_after = len(tree_live_after)
+        tree_verified_empty = (
+            enumeration_error is None and verification_error is None and not tree_live_after
+        )
+        containment_authority = "suspended-root-or-best-effort-tree"
+        containment_limit = "not authoritative for a resumed uncontained process tree"
     return {
         "attempted": True,
+        "command_succeeded": (
+            (
+                method in {"windows-taskkill-tree", "windows-kill-on-close-job-object"}
+                and returncode == 0
+            )
+            or (method == "posix-killpg" and returncode is None and error is None)
+        ),
         "error": error,
+        "containment_active_processes_after": active_after,
+        "containment_authority": containment_authority,
+        "containment_limit": containment_limit,
         "method": method,
-        "passed": passed,
+        "passed": tree_verified_empty,
+        "process_tree_before": tree_before,
+        "process_tree_enumeration_error": enumeration_error,
+        "process_tree_live_after": tree_live_after,
+        "process_tree_verification_error": verification_error,
+        "process_tree_verified_empty": tree_verified_empty,
+        "root_pid": process.pid,
+        "root_process_creation_token": expected_root_token,
         "returncode": returncode,
     }
 
@@ -1729,10 +2496,13 @@ def _boot_identity() -> str:
     return f"linux-boot-id:{value}"
 
 
-def _run_clock(work_root: Path, *, harness_binding_hash: object) -> dict[str, object]:
+def _run_clock(
+    work_root: Path,
+    *,
+    harness_binding_hash: object,
+    create_missing: bool = True,
+) -> dict[str, object]:
     path = work_root.resolve() / "run-clock.json"
-    boot = _boot_identity()
-    now = time.perf_counter_ns()
     if path.is_file():
         receipt = _load_canonical_sealed(
             path,
@@ -1740,28 +2510,30 @@ def _run_clock(work_root: Path, *, harness_binding_hash: object) -> dict[str, ob
             hash_field="run_clock_hash",
             label="run monotonic clock",
         )
-        started = receipt.get("started_monotonic_ns")
         if (
-            receipt.get("boot_identity") != boot
-            or receipt.get("clock") != "time.perf_counter_ns"
+            receipt.get("accounting") != "sealed-per-cell-active-segments"
+            or receipt.get("clock") != "time.perf_counter_ns-per-active-segment"
             or receipt.get("harness_binding_hash") != harness_binding_hash
+            or receipt.get("interruption_downtime_excluded") is not True
             or receipt.get("overall_active_wall_limit_ns")
             != int(OVERALL_ACTIVE_WALL_SECONDS * 1_000_000_000)
+            or receipt.get("open_segment_conservative_charge_ns") != CELL_ADMISSION_CHARGE_NS
+            or receipt.get("reboot_stable") is not True
             or receipt.get("terminal_write_reserve_ns") != TERMINAL_WRITE_RESERVE_NS
-            or isinstance(started, bool)
-            or not isinstance(started, int)
-            or started < 0
-            or now < started
         ):
-            raise EvaluationError("Stage 09 run monotonic clock identity changed")
+            raise EvaluationError("Stage 09 active-wall accounting identity changed")
         return cast(dict[str, object], receipt)
+    if not create_missing:
+        raise EvaluationError("Stage 09 run clock receipt is absent")
     payload = {
         "schema": RUN_CLOCK_SCHEMA,
-        "boot_identity": boot,
-        "clock": "time.perf_counter_ns",
+        "accounting": "sealed-per-cell-active-segments",
+        "clock": "time.perf_counter_ns-per-active-segment",
         "harness_binding_hash": harness_binding_hash,
+        "interruption_downtime_excluded": True,
+        "open_segment_conservative_charge_ns": CELL_ADMISSION_CHARGE_NS,
         "overall_active_wall_limit_ns": int(OVERALL_ACTIVE_WALL_SECONDS * 1_000_000_000),
-        "started_monotonic_ns": now,
+        "reboot_stable": True,
         "terminal_write_reserve_ns": TERMINAL_WRITE_RESERVE_NS,
     }
     receipt = cast(dict[str, object], seal_object(payload, hash_field="run_clock_hash"))
@@ -1770,9 +2542,17 @@ def _run_clock(work_root: Path, *, harness_binding_hash: object) -> dict[str, ob
 
 
 def _attach_run_clock(
-    check: Mapping[str, object], *, work_root: Path, harness_binding_hash: object
+    check: Mapping[str, object],
+    *,
+    work_root: Path,
+    harness_binding_hash: object,
+    create_missing: bool = True,
 ) -> dict[str, object]:
-    clock = _run_clock(work_root, harness_binding_hash=harness_binding_hash)
+    clock = _run_clock(
+        work_root,
+        harness_binding_hash=harness_binding_hash,
+        create_missing=create_missing,
+    )
     payload = dict(check)
     payload.pop("preflight_hash", None)
     payload["run_clock"] = {
@@ -1803,29 +2583,106 @@ def _clock_from_check(check: Mapping[str, object]) -> tuple[dict[str, object], P
     return cast(dict[str, object], live), path
 
 
-def _run_elapsed_ns(check: Mapping[str, object]) -> int:
-    clock, _path = _clock_from_check(check)
-    if clock.get("boot_identity") != _boot_identity():
-        raise EvaluationError("Stage 09 run clock crossed a boot boundary")
-    started = clock.get("started_monotonic_ns")
-    if isinstance(started, bool) or not isinstance(started, int):
-        raise EvaluationError("Stage 09 run clock start is invalid")
-    elapsed = time.perf_counter_ns() - started
-    if elapsed < 0:
-        raise EvaluationError("Stage 09 run monotonic clock moved backwards")
-    return elapsed
+def _cell_segment_payload(
+    *,
+    cell: DevelopmentCell,
+    check: Mapping[str, object],
+    boot_identity: str,
+    started_perf_counter_ns: int,
+) -> dict[str, object]:
+    if (
+        not isinstance(boot_identity, str)
+        or not boot_identity
+        or isinstance(started_perf_counter_ns, bool)
+        or not isinstance(started_perf_counter_ns, int)
+        or started_perf_counter_ns < 0
+    ):
+        raise EvaluationError("Stage 09 active cell-segment clock is invalid")
+    clock, clock_path = _clock_from_check(check)
+    payload = {
+        "schema": CELL_SEGMENT_SCHEMA,
+        "admission_charge_ns": CELL_ADMISSION_CHARGE_NS,
+        "boot_identity": boot_identity,
+        "cell_id": cell.cell_id,
+        "cell_ordinal": cell.ordinal,
+        "cell_spec_hash": cell.spec_hash,
+        "interruption_recovery": "full-admission-charge-and-failed-infrastructure",
+        "run_clock_hash": clock.get("run_clock_hash"),
+        "run_clock_sha256": sha256_file(clock_path),
+        "segment_started_perf_counter_ns": started_perf_counter_ns,
+        "state": "OPEN",
+    }
+    return cast(dict[str, object], seal_object(payload, hash_field="cell_segment_hash"))
+
+
+def _load_cell_segment(
+    *,
+    cell: DevelopmentCell,
+    paths: Mapping[str, Path],
+    check: Mapping[str, object],
+) -> dict[str, object]:
+    persisted = _load_canonical_sealed(
+        paths["cell_segment"],
+        schema=CELL_SEGMENT_SCHEMA,
+        hash_field="cell_segment_hash",
+        label="active cell segment",
+    )
+    boot = persisted.get("boot_identity")
+    started = persisted.get("segment_started_perf_counter_ns")
+    if not isinstance(boot, str) or isinstance(started, bool) or not isinstance(started, int):
+        raise EvaluationError("Stage 09 active cell segment is malformed")
+    expected = _cell_segment_payload(
+        cell=cell,
+        check=check,
+        boot_identity=boot,
+        started_perf_counter_ns=started,
+    )
+    if persisted != expected:
+        raise EvaluationError("Stage 09 active cell segment does not reconstruct exactly")
+    return cast(dict[str, object], persisted)
+
+
+def _open_cell_segment(
+    *,
+    cell: DevelopmentCell,
+    paths: Mapping[str, Path],
+    check: Mapping[str, object],
+) -> tuple[dict[str, object], int]:
+    started = time.perf_counter_ns()
+    if paths["cell_segment"].exists():
+        raise EvaluationError("Stage 09 cell segment was already opened")
+    segment = _cell_segment_payload(
+        cell=cell,
+        check=check,
+        boot_identity=_boot_identity(),
+        started_perf_counter_ns=started,
+    )
+    _atomic_create(paths["cell_segment"], canonical_json_bytes(segment))
+    return segment, started
+
+
+def _terminal_active_base_ns(value: Mapping[str, object]) -> int:
+    resources = value.get("resources")
+    active = (
+        resources.get("cumulative_active_accounted_wall_ns")
+        if isinstance(resources, dict)
+        else None
+    )
+    if isinstance(active, bool) or not isinstance(active, int) or active < 0:
+        raise EvaluationError("Stage 09 terminal active-wall resource projection is invalid")
+    return active
 
 
 def _bind_terminal_clock(
     value: Mapping[str, object],
     *,
     check: Mapping[str, object],
-    elapsed_before_output_ns: int,
+    active_before_output_ns: int,
 ) -> dict[str, object]:
     if (
-        isinstance(elapsed_before_output_ns, bool)
-        or not isinstance(elapsed_before_output_ns, int)
-        or elapsed_before_output_ns < 0
+        isinstance(active_before_output_ns, bool)
+        or not isinstance(active_before_output_ns, int)
+        or active_before_output_ns < 0
     ):
         raise EvaluationError("Stage 09 terminal pre-write wall is invalid")
     clock, clock_path = _clock_from_check(check)
@@ -1838,11 +2695,12 @@ def _bind_terminal_clock(
         "sha256": sha256_file(clock_path),
     }
     payload["run_active_wall"] = {
-        "clock": "time.perf_counter_ns",
-        "elapsed_before_output_ns": elapsed_before_output_ns,
+        "accounting": "sealed-per-cell-active-segments",
+        "active_before_output_ns": active_before_output_ns,
+        "interruption_downtime_excluded": True,
         "overall_active_wall_limit_ns": limit,
         "terminal_write_reserve_ns": TERMINAL_WRITE_RESERVE_NS,
-        "within_prewrite_reserve": elapsed_before_output_ns <= limit - TERMINAL_WRITE_RESERVE_NS,
+        "within_prewrite_reserve": active_before_output_ns <= limit - TERMINAL_WRITE_RESERVE_NS,
     }
     return cast(dict[str, object], seal_object(payload, hash_field="artifact_core_hash"))
 
@@ -1851,38 +2709,145 @@ def _terminal_finalization_path(output: Path) -> Path:
     return Path(f"{output.resolve()}.finalization.json")
 
 
+def _terminal_evidence_authority(check: Mapping[str, object]) -> dict[str, object]:
+    predeclaration = check.get("predeclaration_authority")
+    if not isinstance(predeclaration, dict) or predeclaration != _predeclaration_authority():
+        raise EvaluationError("Stage 09 terminal predeclaration authority changed")
+    prior_value = check.get("prior_authority")
+    if not isinstance(prior_value, dict):
+        raise EvaluationError("Stage 09 terminal prior authority is absent")
+    prior = validate_prior_authority_observation(prior_value)
+    if prior.get("passed") is not True:
+        raise EvaluationError("Stage 09 terminal prior authority does not pass")
+    integrity = prior.get("integrity")
+    if not isinstance(integrity, dict):
+        raise EvaluationError("Stage 09 terminal integrity projection is absent")
+    package = integrity.get("build_001_package_only")
+    scans = integrity.get("development_scans")
+    holdout = prior.get("holdout")
+    if (
+        not isinstance(package, dict)
+        or not isinstance(scans, dict)
+        or not isinstance(holdout, dict)
+    ):
+        raise EvaluationError("Stage 09 terminal composite authority is malformed")
+    build_000_scan = scans.get("build_000")
+    build_001_scan = scans.get("build_001")
+    if not isinstance(build_000_scan, dict) or not isinstance(build_001_scan, dict):
+        raise EvaluationError("Stage 09 terminal development scans are absent")
+    projection = {
+        "predeclaration": predeclaration,
+        "prior_authority_hash": prior["authority_hash"],
+        "full_public_integrity_status": prior["full_public_integrity_status"],
+        "build_001_package_only": {
+            "file_sha256": package["file_sha256"],
+            "receipt_sha256": package["receipt_sha256"],
+            "git_commit": package["git_commit"],
+            "status": package["status"],
+            "package_only_passed": package["package_only_passed"],
+            "candidate_set_recomputed": package["candidate_set_recomputed"],
+            "reachable_paths_recomputed": package["reachable_paths_recomputed"],
+            "live_source_hashes_match": package["live_source_hashes_match"],
+            "policy_scan_covers_reachable_paths": package["policy_scan_covers_reachable_paths"],
+        },
+        "development_scans": {
+            "identifier_list_hash": scans["identifier_list_hash"],
+            "development_identity_count": scans["development_identity_count"],
+            "identifier_string_count": scans["identifier_string_count"],
+            "identity_values_disclosed": scans["identity_values_disclosed"],
+            "build_000_finding_count": build_000_scan["finding_count"],
+            "build_001_finding_count": build_001_scan["finding_count"],
+            "build_000_passed": build_000_scan["passed"],
+            "build_001_passed": build_001_scan["passed"],
+        },
+        "holdout": {
+            "file_sha256": holdout["file_sha256"],
+            "pinned_manifest_sha256": holdout["pinned_manifest_sha256"],
+            "identities_loaded": holdout["identities_loaded"],
+            "manifest_loaded_as_metadata": holdout["manifest_loaded_as_metadata"],
+            "public_holdout_gameplay_events": holdout["public_holdout_gameplay_events"],
+            "status": holdout["status"],
+        },
+        "assurance_limitation": (
+            "Package and development scans are static; dynamic-import and native-extension "
+            "containment are not proven; Build 001 public identifiers were not fully evaluated."
+        ),
+    }
+    package_projection = cast(dict[str, object], projection["build_001_package_only"])
+    scans_projection = cast(dict[str, object], projection["development_scans"])
+    holdout_projection = cast(dict[str, object], projection["holdout"])
+    if (
+        package_projection
+        != {
+            "file_sha256": BUILD_001_PACKAGE_INTEGRITY_RECEIPT_SHA256,
+            "receipt_sha256": BUILD_001_PACKAGE_INTEGRITY_SELF_HASH,
+            "git_commit": FROZEN_BUILD_001_COMMIT,
+            "status": "PASS",
+            "package_only_passed": True,
+            "candidate_set_recomputed": True,
+            "reachable_paths_recomputed": True,
+            "live_source_hashes_match": True,
+            "policy_scan_covers_reachable_paths": True,
+        }
+        or scans_projection["identifier_list_hash"] != development_identifier_list_hash()
+        or scans_projection["development_identity_count"] != len(DEVELOPMENT_GAMES)
+        or scans_projection["identifier_string_count"] != len(DEVELOPMENT_GAMES) * 2
+        or scans_projection["identity_values_disclosed"] is not False
+        or scans_projection["build_000_finding_count"] != 0
+        or scans_projection["build_001_finding_count"] != 0
+        or scans_projection["build_000_passed"] is not True
+        or scans_projection["build_001_passed"] is not True
+        or holdout_projection["file_sha256"] != HOLDOUT_NONCONSUMPTION_RECEIPT_SHA256
+        or holdout_projection["pinned_manifest_sha256"] != PUBLIC_PARTITION_MANIFEST_SHA256
+        or holdout_projection["identities_loaded"] != 0
+        or holdout_projection["manifest_loaded_as_metadata"] is not False
+        or holdout_projection["public_holdout_gameplay_events"] != 0
+        or holdout_projection["status"] != "SEALED_UNCONSUMED"
+    ):
+        raise EvaluationError("Stage 09 terminal composite authority changed")
+    return projection
+
+
 def _terminal_finalization_payload(
     *,
     output: Path,
     terminal: Mapping[str, object],
     check: Mapping[str, object],
-    elapsed_after_output_ns: int,
+    active_after_output_ns: int,
+    recovery_kind: str | None,
 ) -> dict[str, object]:
     wall = terminal.get("run_active_wall")
     if not isinstance(wall, dict):
         raise EvaluationError("Stage 09 terminal pre-write wall is absent")
-    before = wall.get("elapsed_before_output_ns")
+    before = wall.get("active_before_output_ns")
     if (
-        isinstance(elapsed_after_output_ns, bool)
-        or not isinstance(elapsed_after_output_ns, int)
+        isinstance(active_after_output_ns, bool)
+        or not isinstance(active_after_output_ns, int)
         or not isinstance(before, int)
         or isinstance(before, bool)
-        or elapsed_after_output_ns < before
+        or active_after_output_ns < before
+        or recovery_kind
+        not in {None, "terminal-output-durable-finalization-missing-after-interruption"}
     ):
         raise EvaluationError("Stage 09 terminal finalization wall is invalid")
     clock, clock_path = _clock_from_check(check)
     limit = int(OVERALL_ACTIVE_WALL_SECONDS * 1_000_000_000)
     payload = {
         "schema": TERMINAL_FINALIZATION_SCHEMA,
+        "evidence_authority": _terminal_evidence_authority(check),
+        "active_after_durable_output_ns": active_after_output_ns,
         "artifact_core_hash": terminal.get("artifact_core_hash"),
-        "elapsed_after_durable_output_ns": elapsed_after_output_ns,
-        "measurement_scope": "run-clock-start-through-durable-terminal-output",
+        "interruption_downtime_excluded": True,
+        "measurement_scope": "sealed-cell-segments-plus-current-terminal-write-segment",
+        "recovery_kind": recovery_kind,
+        "timing_measurement_available": recovery_kind is None,
+        "terminal_authority_passed": (recovery_kind is None and active_after_output_ns <= limit),
         "output_path": output.resolve().as_posix(),
         "output_sha256": sha256_file(output),
         "overall_active_wall_limit_ns": limit,
         "run_clock_hash": clock.get("run_clock_hash"),
         "run_clock_sha256": sha256_file(clock_path),
-        "within_overall_active_wall": elapsed_after_output_ns <= limit,
+        "within_overall_active_wall": active_after_output_ns <= limit,
     }
     return cast(dict[str, object], seal_object(payload, hash_field="terminal_finalization_hash"))
 
@@ -1890,8 +2855,14 @@ def _terminal_finalization_payload(
 def _write_terminal(
     output: Path, value: Mapping[str, object], *, check: Mapping[str, object]
 ) -> dict[str, object]:
-    before = _run_elapsed_ns(check)
-    terminal = _bind_terminal_clock(value, check=check, elapsed_before_output_ns=before)
+    segment_started_ns = time.perf_counter_ns()
+    active_base_ns = _terminal_active_base_ns(value)
+    active_before_output_ns = active_base_ns + max(0, time.perf_counter_ns() - segment_started_ns)
+    terminal = _bind_terminal_clock(
+        value,
+        check=check,
+        active_before_output_ns=active_before_output_ns,
+    )
     if (
         terminal.get("status") != "FAILED_INFRASTRUCTURE"
         and cast(dict[str, object], terminal["run_active_wall"]).get("within_prewrite_reserve")
@@ -1899,12 +2870,13 @@ def _write_terminal(
     ):
         raise EvaluationError("Stage 09 terminal cannot be admitted within its wall reserve")
     _atomic_create(output, canonical_json_bytes(terminal))
-    after = _run_elapsed_ns(check)
+    active_after_output_ns = active_base_ns + max(0, time.perf_counter_ns() - segment_started_ns)
     finalization = _terminal_finalization_payload(
         output=output,
         terminal=terminal,
         check=check,
-        elapsed_after_output_ns=after,
+        active_after_output_ns=active_after_output_ns,
+        recovery_kind=None,
     )
     _atomic_create(_terminal_finalization_path(output), canonical_json_bytes(finalization))
     if (
@@ -1916,15 +2888,26 @@ def _write_terminal(
 
 
 def _validate_terminal_finalization(
-    output: Path, terminal: Mapping[str, object], *, check: Mapping[str, object]
+    output: Path,
+    terminal: Mapping[str, object],
+    *,
+    check: Mapping[str, object],
+    recover_missing: bool = True,
 ) -> dict[str, object]:
     path = _terminal_finalization_path(output)
     if not path.exists():
+        if not recover_missing:
+            raise EvaluationError("Stage 09 terminal finalization receipt is absent")
+        wall = terminal.get("run_active_wall")
+        before = wall.get("active_before_output_ns") if isinstance(wall, dict) else None
+        if isinstance(before, bool) or not isinstance(before, int) or before < 0:
+            raise EvaluationError("Stage 09 terminal recovery wall is invalid")
         recovery = _terminal_finalization_payload(
             output=output,
             terminal=terminal,
             check=check,
-            elapsed_after_output_ns=_run_elapsed_ns(check),
+            active_after_output_ns=before + CELL_ADMISSION_CHARGE_NS,
+            recovery_kind="terminal-output-durable-finalization-missing-after-interruption",
         )
         _atomic_create(path, canonical_json_bytes(recovery))
     persisted = _load_canonical_sealed(
@@ -1933,20 +2916,33 @@ def _validate_terminal_finalization(
         hash_field="terminal_finalization_hash",
         label="terminal finalization receipt",
     )
-    elapsed = persisted.get("elapsed_after_durable_output_ns")
-    if isinstance(elapsed, bool) or not isinstance(elapsed, int) or elapsed < 0:
-        raise EvaluationError("Stage 09 terminal finalization elapsed wall changed")
+    active = persisted.get("active_after_durable_output_ns")
+    recovery_kind = persisted.get("recovery_kind")
+    if (
+        isinstance(active, bool)
+        or not isinstance(active, int)
+        or active < 0
+        or recovery_kind
+        not in {None, "terminal-output-durable-finalization-missing-after-interruption"}
+        or persisted.get("timing_measurement_available") is not (recovery_kind is None)
+        or persisted.get("terminal_authority_passed")
+        is not (
+            recovery_kind is None and active <= int(OVERALL_ACTIVE_WALL_SECONDS * 1_000_000_000)
+        )
+    ):
+        raise EvaluationError("Stage 09 terminal finalization active wall changed")
     expected = _terminal_finalization_payload(
         output=output,
         terminal=terminal,
         check=check,
-        elapsed_after_output_ns=elapsed,
+        active_after_output_ns=active,
+        recovery_kind=cast(str | None, recovery_kind),
     )
     if persisted != expected:
         raise EvaluationError("Stage 09 terminal finalization does not reconstruct exactly")
     if (
         terminal.get("status") != "FAILED_INFRASTRUCTURE"
-        and persisted.get("within_overall_active_wall") is not True
+        and persisted.get("terminal_authority_passed") is not True
     ):
         raise EvaluationError("Stage 09 claimed terminal exceeded the overall active wall")
     return persisted
@@ -1959,6 +2955,7 @@ def _cell_paths(work_root: Path, cell: DevelopmentCell) -> dict[str, Path]:
         "abort": work_root.resolve() / "worker-aborts" / f"{prefix}.json",
         "authorization": work_root.resolve() / "launch-authorizations" / f"{prefix}.json",
         "cell_root": cell_root,
+        "cell_segment": work_root.resolve() / "active-cell-segments" / f"{prefix}.json",
         "launch": work_root.resolve() / "process-launches" / f"{prefix}.json",
         "orphan": work_root.resolve() / "orphan-terminations" / f"{prefix}.json",
         "parent_evidence": work_root.resolve() / "parent-evidence" / f"{prefix}.json",
@@ -1966,10 +2963,37 @@ def _cell_paths(work_root: Path, cell: DevelopmentCell) -> dict[str, Path]:
         "raw": cell_root / "raw-worker-result.json",
         "receipt": work_root.resolve() / "parent-receipts" / f"{prefix}.json",
         "spec": work_root.resolve() / "specs" / f"{prefix}.json",
+        "spawn_intent": work_root.resolve() / "spawn-intents" / f"{prefix}.json",
         "stderr": work_root.resolve() / "parent-streams" / prefix / "stderr.bin",
         "stdout": work_root.resolve() / "parent-streams" / prefix / "stdout.bin",
         "supervision": work_root.resolve() / "supervision-receipts" / f"{prefix}.json",
     }
+
+
+def _assert_unexposed_cell_clean(
+    *, paths: Mapping[str, Path], recordings: Path, cell: DevelopmentCell
+) -> None:
+    evidence_paths = (
+        paths["abort"],
+        paths["authorization"],
+        paths["cell_root"],
+        paths["finalization"],
+        paths["launch"],
+        paths["orphan"],
+        paths["parent_evidence"],
+        paths["receipt"],
+        paths["stderr"].parent,
+        paths["supervision"],
+        recordings.resolve() / cell.cell_id,
+    )
+    if any(path.exists() for path in evidence_paths):
+        raise EvaluationError("unexposed Stage 09 cell already has execution evidence")
+
+
+def _lexical_python_launcher() -> str:
+    """Keep a venv launcher symlink lexical while runtime identity binds its target."""
+
+    return os.path.abspath(sys.executable)
 
 
 def _worker_command(
@@ -1982,7 +3006,7 @@ def _worker_command(
     launch_token: str,
 ) -> tuple[str, ...]:
     return (
-        str(Path(sys.executable).resolve()),
+        _lexical_python_launcher(),
         "-I",
         str(WORKER.resolve()),
         "--spec",
@@ -1998,6 +3022,83 @@ def _worker_command(
         "--launch-token",
         launch_token,
     )
+
+
+def _spawn_intent_payload(
+    *,
+    cell: DevelopmentCell,
+    paths: Mapping[str, Path],
+    spec: Mapping[str, object],
+    launch_token: str,
+) -> dict[str, object]:
+    if not re.fullmatch(r"[0-9a-f]{32}", launch_token):
+        raise EvaluationError("Stage 09 spawn-intent launch token is invalid")
+    command = _worker_command(
+        paths["spec"],
+        paths["raw"],
+        launch_path=paths["launch"],
+        authorization_path=paths["authorization"],
+        abort_path=paths["abort"],
+        launch_token=launch_token,
+    )
+    payload = {
+        "schema": SPAWN_INTENT_SCHEMA,
+        "cell_id": cell.cell_id,
+        "cell_spec_hash": cell.spec_hash,
+        "command": list(command),
+        "command_sha256": sha256_bytes(canonical_json_bytes(list(command))),
+        "environment_open_authority": "exact-launch-and-authorization-receipts-required",
+        "launch_token": launch_token,
+        "spec_sha256": sha256_file(paths["spec"]),
+    }
+    return cast(dict[str, object], seal_object(payload, hash_field="spawn_intent_hash"))
+
+
+def _prepare_spawn_intent(
+    *,
+    cell: DevelopmentCell,
+    paths: Mapping[str, Path],
+    spec: Mapping[str, object],
+) -> dict[str, object]:
+    path = paths["spawn_intent"]
+    if path.is_file():
+        existing = _load_canonical_sealed(
+            path,
+            schema=SPAWN_INTENT_SCHEMA,
+            hash_field="spawn_intent_hash",
+            label="spawn intent",
+        )
+        launch_token = existing.get("launch_token")
+        if not isinstance(launch_token, str):
+            raise EvaluationError("Stage 09 spawn-intent launch token is absent")
+        expected = _spawn_intent_payload(
+            cell=cell,
+            paths=paths,
+            spec=spec,
+            launch_token=launch_token,
+        )
+        if existing != expected:
+            raise EvaluationError("Stage 09 spawn intent does not reconstruct exactly")
+        return cast(dict[str, object], existing)
+    intent = _spawn_intent_payload(
+        cell=cell,
+        paths=paths,
+        spec=spec,
+        launch_token=uuid.uuid4().hex,
+    )
+    _atomic_create(path, canonical_json_bytes(intent))
+    return intent
+
+
+def _validate_spawn_intent(
+    *,
+    cell: DevelopmentCell,
+    paths: Mapping[str, Path],
+    spec: Mapping[str, object],
+) -> dict[str, object]:
+    if not paths["spawn_intent"].is_file():
+        raise EvaluationError("Stage 09 exposed cell spawn intent is absent")
+    return _prepare_spawn_intent(cell=cell, paths=paths, spec=spec)
 
 
 def _recorded_launch_token(command: object) -> str:
@@ -2057,6 +3158,303 @@ def _process_creation_token(pid: int) -> str | None:
             return None
         return f"linux-proc:{start_ticks}:{command_hash}"
     return None
+
+
+def _parse_windows_process_table_rows(rows: Sequence[object]) -> dict[int, dict[str, object]]:
+    table: dict[int, dict[str, object]] = {}
+    for row in rows:
+        if not isinstance(row, dict):
+            raise EvaluationError("Stage 09 process-table row is malformed")
+        pid = row.get("pid")
+        parent_pid = row.get("parent_pid")
+        command_line = row.get("command_line")
+        token = row.get("process_creation_token")
+        # Win32_Process includes the System Idle Process (PID 0), which is
+        # not an addressable process and cannot be part of a launched tree.
+        if pid == 0:
+            continue
+        if (
+            isinstance(pid, bool)
+            or not isinstance(pid, int)
+            or pid <= 0
+            or isinstance(parent_pid, bool)
+            or not isinstance(parent_pid, int)
+            or parent_pid < 0
+            or not isinstance(command_line, str)
+            or not isinstance(token, str)
+            or not token.startswith("windows-cim:")
+            or not token.removeprefix("windows-cim:").isdigit()
+            or pid in table
+        ):
+            raise EvaluationError("Stage 09 process-table row is malformed")
+        table[pid] = {
+            "command_line": command_line,
+            "parent_pid": parent_pid,
+            "process_creation_token": token,
+        }
+    return table
+
+
+def _process_table() -> dict[int, dict[str, object]]:
+    """Enumerate exact process identities for tree-termination verification."""
+
+    if os.name == "nt":
+        command = (
+            "$ErrorActionPreference='Stop';"
+            "@(Get-CimInstance Win32_Process|ForEach-Object {"
+            "[pscustomobject]@{pid=[int]$_.ProcessId;"
+            "parent_pid=[int]$_.ParentProcessId;"
+            "command_line=[string]$_.CommandLine;"
+            "process_creation_token=('windows-cim:' + "
+            "$_.CreationDate.ToUniversalTime().Ticks)}})|"
+            "ConvertTo-Json -Compress"
+        )
+        try:
+            probe = subprocess.run(
+                [
+                    "powershell.exe",
+                    "-NoProfile",
+                    "-NonInteractive",
+                    "-Command",
+                    command,
+                ],
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=10.0,
+            )
+        except (OSError, subprocess.TimeoutExpired) as error:
+            raise EvaluationError("Stage 09 process-table enumeration failed") from error
+        if probe.returncode != 0 or not probe.stdout.strip():
+            raise EvaluationError("Stage 09 process-table enumeration failed")
+        try:
+            decoded = json.loads(probe.stdout)
+        except json.JSONDecodeError as error:
+            raise EvaluationError("Stage 09 process-table enumeration is malformed") from error
+        rows = decoded if isinstance(decoded, list) else [decoded]
+        table = _parse_windows_process_table_rows(rows)
+        if not table:
+            raise EvaluationError("Stage 09 process-table enumeration is empty")
+        return table
+
+    proc_root = Path("/proc")
+    if not proc_root.is_dir():
+        raise EvaluationError("Stage 09 /proc process-table authority is unavailable")
+    table = {}
+    try:
+        entries = tuple(proc_root.iterdir())
+    except OSError as error:
+        raise EvaluationError("Stage 09 process-table enumeration failed") from error
+    for entry in entries:
+        if not entry.name.isdigit():
+            continue
+        pid = int(entry.name)
+        stat_path = entry / "stat"
+        command_path = entry / "cmdline"
+        try:
+            stat = stat_path.read_text(encoding="utf-8")
+            suffix = stat[stat.rfind(")") + 2 :].split()
+            parent_pid = int(suffix[1])
+            process_group_id = int(suffix[2])
+            start_ticks = suffix[19]
+            command_hash = sha256_bytes(command_path.read_bytes())
+            command_line = command_path.read_bytes().decode("utf-8", errors="replace")
+        except (OSError, IndexError, ValueError):
+            # Processes may disappear during enumeration.  A surviving target
+            # is still required below, and post-kill verification re-enumerates.
+            continue
+        table[pid] = {
+            "command_line": command_line,
+            "parent_pid": parent_pid,
+            "process_creation_token": f"linux-proc:{start_ticks}:{command_hash}",
+            "process_group_id": process_group_id,
+        }
+    if not table:
+        raise EvaluationError("Stage 09 process-table enumeration is empty")
+    return table
+
+
+def _process_tree_snapshot(
+    root_pid: int, *, expected_root_token: str | None
+) -> tuple[list[dict[str, object]], str | None]:
+    """Capture the exact root and every currently enumerated descendant."""
+
+    try:
+        table = _process_table()
+    except EvaluationError as error:
+        return [], str(error)
+    root = table.get(root_pid)
+    if root is None:
+        return [], "Stage 09 process-tree root is absent during termination"
+    root_token = root.get("process_creation_token")
+    if expected_root_token is not None and root_token != expected_root_token:
+        return [], "Stage 09 process-tree root creation identity changed"
+
+    member_pids = {root_pid}
+    changed = True
+    while changed:
+        changed = False
+        for pid, row in table.items():
+            if pid not in member_pids and row.get("parent_pid") in member_pids:
+                member_pids.add(pid)
+                changed = True
+    if os.name != "nt":
+        root_group = root.get("process_group_id")
+        if isinstance(root_group, int):
+            member_pids.update(
+                pid for pid, row in table.items() if row.get("process_group_id") == root_group
+            )
+    snapshot = [
+        {
+            "parent_pid": table[pid]["parent_pid"],
+            "pid": pid,
+            "process_creation_token": table[pid]["process_creation_token"],
+        }
+        for pid in sorted(member_pids)
+    ]
+    return snapshot, None
+
+
+def _spawn_intent_processes(
+    launch_token: str,
+) -> tuple[list[dict[str, object]], str | None]:
+    """Find live processes carrying one unguessable, durable spawn token."""
+
+    if not re.fullmatch(r"[0-9a-f]{32}", launch_token):
+        return [], "Stage 09 spawn-intent process token is invalid"
+    try:
+        table = _process_table()
+    except EvaluationError as error:
+        return [], str(error)
+    matches = [
+        {
+            "parent_pid": row["parent_pid"],
+            "pid": pid,
+            "process_creation_token": row["process_creation_token"],
+        }
+        for pid, row in table.items()
+        if launch_token in cast(str, row.get("command_line", ""))
+    ]
+    matches.sort(key=lambda item: cast(int, item["pid"]))
+    return matches, None
+
+
+def _exact_live_processes(
+    snapshot: Sequence[Mapping[str, object]],
+) -> tuple[list[dict[str, object]], str | None]:
+    try:
+        table = _process_table()
+    except EvaluationError as error:
+        return [dict(item) for item in snapshot], str(error)
+    live = [
+        dict(item)
+        for item in snapshot
+        if isinstance(item.get("pid"), int)
+        and table.get(cast(int, item["pid"]), {}).get("process_creation_token")
+        == item.get("process_creation_token")
+    ]
+    return live, None
+
+
+def _wait_for_process_tree_exit(
+    snapshot: Sequence[Mapping[str, object]], *, timeout_seconds: float = 5.0
+) -> tuple[list[dict[str, object]], str | None]:
+    if not snapshot:
+        return [], "Stage 09 process-tree snapshot is empty"
+    deadline = time.perf_counter() + timeout_seconds
+    while True:
+        live, error = _exact_live_processes(snapshot)
+        if error is not None or not live or time.perf_counter() >= deadline:
+            return live, error
+        time.sleep(0.05)
+
+
+def _wait_for_process_group_exit(
+    process_group_id: int, *, timeout_seconds: float = 5.0
+) -> tuple[list[dict[str, object]], str | None]:
+    deadline = time.perf_counter() + timeout_seconds
+    while True:
+        try:
+            table = _process_table()
+        except EvaluationError as error:
+            return [], str(error)
+        live = [
+            {
+                "parent_pid": row["parent_pid"],
+                "pid": pid,
+                "process_creation_token": row["process_creation_token"],
+            }
+            for pid, row in table.items()
+            if row.get("process_group_id") == process_group_id
+        ]
+        live.sort(key=lambda item: cast(int, item["pid"]))
+        if not live or time.perf_counter() >= deadline:
+            return live, None
+        time.sleep(0.05)
+
+
+def _validate_tree_termination_receipt(
+    value: Mapping[str, object],
+    *,
+    expected_root_pid: int,
+    expected_root_token: str,
+    require_target_match: bool,
+) -> None:
+    tree_before = value.get("process_tree_before")
+    tree_after = value.get("process_tree_live_after")
+    if not isinstance(tree_before, list) or not isinstance(tree_after, list):
+        raise EvaluationError("Stage 09 process-tree termination evidence is absent")
+    validated: dict[int, tuple[int, str]] = {}
+    for item in tree_before:
+        if not isinstance(item, dict) or set(item) != {
+            "parent_pid",
+            "pid",
+            "process_creation_token",
+        }:
+            raise EvaluationError("Stage 09 process-tree snapshot is malformed")
+        pid = item.get("pid")
+        parent_pid = item.get("parent_pid")
+        token = item.get("process_creation_token")
+        if (
+            isinstance(pid, bool)
+            or not isinstance(pid, int)
+            or pid <= 0
+            or isinstance(parent_pid, bool)
+            or not isinstance(parent_pid, int)
+            or parent_pid < 0
+            or not isinstance(token, str)
+            or not token
+            or pid in validated
+        ):
+            raise EvaluationError("Stage 09 process-tree snapshot is malformed")
+        validated[pid] = (parent_pid, token)
+    authority = value.get("containment_authority")
+    if authority == "posix-new-session-process-group":
+        if validated.get(expected_root_pid, (None, None))[1] != expected_root_token:
+            raise EvaluationError("Stage 09 process-tree root identity changed")
+        if any(
+            pid != expected_root_pid and parent not in validated
+            for pid, (parent, _token) in validated.items()
+        ):
+            raise EvaluationError("Stage 09 process-tree ancestry changed")
+    elif authority != "windows-job-object-assigned-before-resume":
+        raise EvaluationError("Stage 09 process containment authority changed")
+    if (
+        tree_after
+        or value.get("containment_active_processes_after") != 0
+        or (
+            authority == "posix-new-session-process-group"
+            and value.get("process_tree_enumeration_error") is not None
+        )
+        or value.get("process_tree_verification_error") is not None
+        or value.get("process_tree_verified_empty") is not True
+        or value.get("passed") is not True
+        or value.get("root_pid") != expected_root_pid
+        or value.get("root_process_creation_token") != expected_root_token
+        or not isinstance(value.get("command_succeeded"), bool)
+        or (require_target_match and value.get("target_token_matched") is not True)
+    ):
+        raise EvaluationError("Stage 09 process-tree termination did not verify empty")
 
 
 def _launch_payload(
@@ -2138,7 +3536,9 @@ def _supervise(
     returncode: int | None = None
     launch_receipt_hash: str | None = None
     authorization_hash: str | None = None
+    process_creation_token: str | None = None
     process: subprocess.Popen[bytes] | None = None
+    windows_job_handle: int | None = None
     try:
         options: dict[str, object] = {
             "cwd": cwd,
@@ -2148,10 +3548,12 @@ def _supervise(
             "stderr": subprocess.PIPE,
         }
         if os.name == "nt":
-            options["creationflags"] = WINDOWS_NEW_GROUP
+            options["creationflags"] = WINDOWS_NEW_GROUP | WINDOWS_CREATE_SUSPENDED
         else:
             options["start_new_session"] = True
         process = subprocess.Popen(list(command), **cast(dict[str, Any], options))
+        if os.name == "nt":
+            windows_job_handle = _windows_job_for_suspended_process(process)
         if launch_receipt_path is not None:
             if launch_context is None:
                 raise EvaluationError("Stage 09 launch context is absent")
@@ -2163,6 +3565,7 @@ def _supervise(
             )
             _atomic_create(launch_receipt_path, canonical_json_bytes(launch))
             launch_receipt_hash = cast(str, launch["launch_receipt_hash"])
+            process_creation_token = cast(str, launch["process_creation_token"])
             if authorization_path is None:
                 raise EvaluationError("Stage 09 launch authorization path is absent")
             authorization = _authorization_payload(
@@ -2178,7 +3581,11 @@ def _supervise(
             timed_out = True
             stdout = bytes(error.stdout or b"")
             stderr = bytes(error.stderr or b"")
-            termination = _terminate_tree(process)
+            termination = _terminate_tree(
+                process,
+                expected_root_token=process_creation_token,
+                windows_job_handle=windows_job_handle,
+            )
             try:
                 tail_out, tail_err = process.communicate(timeout=10.0)
                 stdout = tail_out if tail_out.startswith(stdout) else stdout + tail_out
@@ -2191,7 +3598,11 @@ def _supervise(
     except (EvaluationError, OSError) as error:
         launch_error = f"{type(error).__name__}: {error}"
         if process is not None and process.poll() is None:
-            termination = _terminate_tree(process)
+            termination = _terminate_tree(
+                process,
+                expected_root_token=process_creation_token,
+                windows_job_handle=windows_job_handle,
+            )
             try:
                 tail_out, tail_err = process.communicate(timeout=10.0)
                 stdout += tail_out
@@ -2199,6 +3610,32 @@ def _supervise(
             except (OSError, subprocess.TimeoutExpired):
                 pass
             returncode = process.returncode
+    cleanup = _cleanup_assigned_containment(
+        process,
+        windows_job_handle=windows_job_handle,
+    )
+    if windows_job_handle is not None:
+        cleanup["close_attempted"] = True
+        try:
+            _close_windows_handle(windows_job_handle)
+            cleanup["close_succeeded"] = True
+        except OSError as error:
+            close_error = f"{type(error).__name__}: {error}"
+            cleanup["close_error"] = close_error
+            cleanup["close_succeeded"] = False
+            prior_error = cleanup.get("error")
+            cleanup["error"] = (
+                close_error if prior_error is None else f"{prior_error}; {close_error}"
+            )
+            cleanup["passed"] = False
+    containment = {
+        "active_processes_after": cleanup["active_processes_after"],
+        "assigned_before_resume": cleanup["assigned_before_resume"],
+        "authority": cleanup["authority"],
+        "error": cleanup["error"],
+        "limitation": cleanup["limitation"],
+        "passed": cleanup["passed"],
+    }
     stdout_path = streams / "stdout.bin"
     stderr_path = streams / "stderr.bin"
     _atomic_create(stdout_path, stdout)
@@ -2207,6 +3644,8 @@ def _supervise(
         "schema": SUPERVISION_RECEIPT_SCHEMA,
         "authorization_hash": authorization_hash,
         "command": list(command),
+        "cleanup": cleanup,
+        "containment": containment,
         "launch_receipt_hash": launch_receipt_hash,
         "launch_error": launch_error,
         "returncode": returncode,
@@ -2655,6 +4094,8 @@ def _cell_receipt(
     )
     authority_stable = _prior_authority_stable(prior_authority_before, prior_authority_after)
     cache_stable = _environment_cache_stable(environment_cache_before, environment_cache_after)
+    containment = supervision.get("containment")
+    containment_stable = not isinstance(containment, dict) or containment.get("passed") is True
     raw_available = raw_path.is_file()
     successful_wrapper = (
         supervision.get("launch_error") is None
@@ -2758,6 +4199,9 @@ def _cell_receipt(
     if not cache_stable:
         status = CellStatus.INFRASTRUCTURE_FAILURE
         failure = "Stage 09 opaque public cache changed during cell execution"
+    if not containment_stable:
+        status = CellStatus.INFRASTRUCTURE_FAILURE
+        failure = "Stage 09 process containment did not verify empty"
     recovered_failure_result: dict[str, object] | None = None
     if status is not CellStatus.SUCCESS:
         if raw is not None:
@@ -2880,6 +4324,7 @@ def _cell_finalization(
     paths: Mapping[str, Path],
     receipt: Mapping[str, object],
     parent_evidence: Mapping[str, object],
+    cell_segment: Mapping[str, object],
     measured_active_wall_ns: int,
 ) -> dict[str, object]:
     if (
@@ -2896,6 +4341,8 @@ def _cell_finalization(
         "cell_spec_hash": cell.spec_hash,
         "cell_receipt_hash": receipt.get("cell_receipt_hash"),
         "cell_receipt_sha256": sha256_file(paths["receipt"]),
+        "cell_segment_hash": cell_segment.get("cell_segment_hash"),
+        "cell_segment_sha256": sha256_file(paths["cell_segment"]),
         "measurement_scope": "cell-preparation-start-through-durable-cell-receipt",
         "measured_active_wall_ns": measured_active_wall_ns,
         "normal_termination_definition": NORMAL_TERMINATION_DEFINITION,
@@ -2906,13 +4353,78 @@ def _cell_finalization(
     return cast(dict[str, object], seal_object(payload, hash_field="finalization_hash"))
 
 
+def _recovered_cell_finalization(
+    cell: DevelopmentCell,
+    *,
+    paths: Mapping[str, Path],
+    receipt: Mapping[str, object],
+    parent_evidence: Mapping[str, object],
+    cell_segment: Mapping[str, object],
+) -> dict[str, object]:
+    resources = receipt.get("resources")
+    pre_receipt_wall = (
+        resources.get("pre_receipt_active_wall_ns") if isinstance(resources, dict) else None
+    )
+    if (
+        isinstance(pre_receipt_wall, bool)
+        or not isinstance(pre_receipt_wall, int)
+        or pre_receipt_wall < 0
+    ):
+        raise EvaluationError("Stage 09 recovered finalization lacks its parent wall")
+    payload = {
+        "schema": RECOVERED_CELL_FINALIZATION_SCHEMA,
+        "admission_charge_ns": CELL_ADMISSION_CHARGE_NS,
+        "budget_accounting": "fixed-full-cell-admission-charge",
+        "cell_id": cell.cell_id,
+        "cell_spec_hash": cell.spec_hash,
+        "cell_receipt_hash": receipt.get("cell_receipt_hash"),
+        "cell_receipt_sha256": sha256_file(paths["receipt"]),
+        "cell_segment_hash": cell_segment.get("cell_segment_hash"),
+        "cell_segment_sha256": sha256_file(paths["cell_segment"]),
+        "conservative_accounted_active_wall_ns": max(pre_receipt_wall, CELL_ADMISSION_CHARGE_NS),
+        "measurement_scope": "durable-receipt-present-finalization-missing-after-interruption",
+        "measured_active_wall_ns": None,
+        "normal_termination_definition": NORMAL_TERMINATION_DEFINITION,
+        "parent_evidence_hash": parent_evidence.get("parent_evidence_hash"),
+        "parent_evidence_sha256": sha256_file(paths["parent_evidence"]),
+        "recovery_kind": "durable-cell-receipt-without-finalization",
+        "timing_measurement_available": False,
+        "within_admission_charge": False,
+    }
+    return cast(dict[str, object], seal_object(payload, hash_field="finalization_hash"))
+
+
 def _reconstruct_cell_finalization(
     *,
     paths: Mapping[str, Path],
     cell: DevelopmentCell,
     receipt: Mapping[str, object],
     parent_evidence: Mapping[str, object],
+    check: Mapping[str, object],
 ) -> dict[str, object]:
+    if not paths["finalization"].is_file():
+        raise EvaluationError("Stage 09 cell finalization receipt is absent")
+    cell_segment = _load_cell_segment(cell=cell, paths=paths, check=check)
+    schema = load_json(paths["finalization"]).get("schema")
+    if schema == RECOVERED_CELL_FINALIZATION_SCHEMA:
+        persisted = _load_canonical_sealed(
+            paths["finalization"],
+            schema=RECOVERED_CELL_FINALIZATION_SCHEMA,
+            hash_field="finalization_hash",
+            label="recovered cell finalization receipt",
+        )
+        expected = _recovered_cell_finalization(
+            cell,
+            paths=paths,
+            receipt=receipt,
+            parent_evidence=parent_evidence,
+            cell_segment=cell_segment,
+        )
+        if persisted != expected:
+            raise EvaluationError(
+                "Stage 09 recovered cell finalization does not reconstruct exactly"
+            )
+        return persisted
     persisted = _load_canonical_sealed(
         paths["finalization"],
         schema=CELL_FINALIZATION_SCHEMA,
@@ -2927,6 +4439,7 @@ def _reconstruct_cell_finalization(
         paths=paths,
         receipt=receipt,
         parent_evidence=parent_evidence,
+        cell_segment=cell_segment,
         measured_active_wall_ns=measured,
     )
     if persisted != expected:
@@ -3051,6 +4564,118 @@ def _validate_authorization_receipt(
     return cast(dict[str, object], authorization)
 
 
+def _validate_cleanup_receipt(cleanup: object, containment: object) -> None:
+    if not isinstance(cleanup, dict) or set(cleanup) != {
+        "active_processes_after",
+        "active_processes_before",
+        "assigned_before_resume",
+        "authority",
+        "close_attempted",
+        "close_error",
+        "close_succeeded",
+        "error",
+        "limitation",
+        "members_after",
+        "members_before",
+        "observation_error_before",
+        "passed",
+        "termination_attempted",
+        "termination_error",
+        "termination_succeeded",
+        "verification_error",
+    }:
+        raise EvaluationError("Stage 09 process cleanup receipt is malformed")
+    if not isinstance(containment, dict) or set(containment) != {
+        "active_processes_after",
+        "assigned_before_resume",
+        "authority",
+        "error",
+        "limitation",
+        "passed",
+    }:
+        raise EvaluationError("Stage 09 process containment receipt is malformed")
+    active_before = cleanup.get("active_processes_before")
+    active_after = cleanup.get("active_processes_after")
+    attempted = cleanup.get("termination_attempted")
+    succeeded = cleanup.get("termination_succeeded")
+    if (
+        isinstance(active_before, bool)
+        or not isinstance(active_before, int)
+        or active_before < 0
+        or active_after != 0
+        or cleanup.get("assigned_before_resume") is not True
+        or cleanup.get("close_error") is not None
+        or cleanup.get("error") is not None
+        or cleanup.get("observation_error_before") is not None
+        or cleanup.get("termination_error") is not None
+        or cleanup.get("verification_error") is not None
+        or cleanup.get("passed") is not True
+        or not isinstance(attempted, bool)
+        or attempted != (active_before > 0)
+        or succeeded != (True if attempted else None)
+    ):
+        raise EvaluationError("Stage 09 process cleanup did not verify empty")
+    authority = cleanup.get("authority")
+    members_before = cleanup.get("members_before")
+    members_after = cleanup.get("members_after")
+    if authority == "windows-job-object-assigned-before-resume":
+        if (
+            cleanup.get("close_attempted") is not True
+            or cleanup.get("close_succeeded") is not True
+            or cleanup.get("limitation") is not None
+            or members_before is not None
+            or members_after is not None
+        ):
+            raise EvaluationError("Stage 09 Windows Job cleanup receipt changed")
+    elif authority == "posix-new-session-process-group":
+        if (
+            cleanup.get("close_attempted") is not False
+            or cleanup.get("close_succeeded") is not None
+            or cleanup.get("limitation") != "setsid-or-double-fork escape is not OS-contained"
+            or not isinstance(members_before, list)
+            or not isinstance(members_after, list)
+            or members_after
+            or len(members_before) != active_before
+        ):
+            raise EvaluationError("Stage 09 POSIX group cleanup receipt changed")
+        member_pids: set[int] = set()
+        for member in members_before:
+            if not isinstance(member, dict) or set(member) != {
+                "parent_pid",
+                "pid",
+                "process_creation_token",
+            }:
+                raise EvaluationError("Stage 09 POSIX group member receipt is malformed")
+            pid = member.get("pid")
+            parent_pid = member.get("parent_pid")
+            token = member.get("process_creation_token")
+            if (
+                isinstance(pid, bool)
+                or not isinstance(pid, int)
+                or pid <= 0
+                or pid in member_pids
+                or isinstance(parent_pid, bool)
+                or not isinstance(parent_pid, int)
+                or parent_pid < 0
+                or not isinstance(token, str)
+                or not token
+            ):
+                raise EvaluationError("Stage 09 POSIX group member receipt is malformed")
+            member_pids.add(pid)
+    else:
+        raise EvaluationError("Stage 09 process cleanup authority changed")
+    expected_containment = {
+        "active_processes_after": cleanup["active_processes_after"],
+        "assigned_before_resume": cleanup["assigned_before_resume"],
+        "authority": cleanup["authority"],
+        "error": cleanup["error"],
+        "limitation": cleanup["limitation"],
+        "passed": cleanup["passed"],
+    }
+    if containment != expected_containment:
+        raise EvaluationError("Stage 09 process containment projection changed")
+
+
 def _validate_supervision_receipt(
     path: Path,
     *,
@@ -3088,6 +4713,8 @@ def _validate_supervision_receipt(
     launch_error = supervision.get("launch_error")
     returncode = supervision.get("returncode")
     termination = supervision.get("termination")
+    containment = supervision.get("containment")
+    _validate_cleanup_receipt(supervision.get("cleanup"), containment)
     if not isinstance(timed_out, bool):
         raise EvaluationError("Stage 09 timeout receipt is invalid")
     if launch_error is not None and (not isinstance(launch_error, str) or not launch_error):
@@ -3119,6 +4746,20 @@ def _validate_supervision_receipt(
     if timed_out:
         if launch_error is not None or not isinstance(termination, dict):
             raise EvaluationError("Stage 09 timeout supervision semantics changed")
+        launch_pid = launch.get("pid") if isinstance(launch, dict) else None
+        launch_token = launch.get("process_creation_token") if isinstance(launch, dict) else None
+        if (
+            isinstance(launch_pid, bool)
+            or not isinstance(launch_pid, int)
+            or not isinstance(launch_token, str)
+        ):
+            raise EvaluationError("Stage 09 timeout launch identity is absent")
+        _validate_tree_termination_receipt(
+            termination,
+            expected_root_pid=launch_pid,
+            expected_root_token=launch_token,
+            require_target_match=False,
+        )
     elif launch_error is None and termination is not None:
         raise EvaluationError("Stage 09 non-timeout process has a termination receipt")
     return cast(dict[str, object], supervision)
@@ -3327,19 +4968,33 @@ def _terminate_orphan_exact(pid: int, expected_token: str) -> dict[str, object]:
     if live_before != expected_token:
         return {
             "attempted": False,
+            "command_succeeded": False,
             "error": None,
             "live_process_token_after": live_before,
             "live_process_token_before": live_before,
             "method": None,
             "passed": live_before != expected_token,
+            "process_tree_before": [],
+            "process_tree_enumeration_error": None,
+            "process_tree_live_after": [],
+            "process_tree_verification_error": None,
+            "process_tree_verified_empty": live_before != expected_token,
+            "root_pid": pid,
+            "root_process_creation_token": expected_token,
             "returncode": None,
             "target_token_matched": False,
         }
     method = "windows-taskkill-tree" if os.name == "nt" else "posix-killpg"
+    tree_before, enumeration_error = _process_tree_snapshot(
+        pid,
+        expected_root_token=expected_token,
+    )
     error: str | None = None
     returncode: int | None = None
     try:
-        if os.name == "nt":
+        if enumeration_error is not None:
+            method = "none-after-tree-enumeration-failure"
+        elif os.name == "nt":
             result = subprocess.run(
                 ["taskkill", "/PID", str(pid), "/T", "/F"],
                 check=False,
@@ -3354,14 +5009,40 @@ def _terminate_orphan_exact(pid: int, expected_token: str) -> dict[str, object]:
             kill_group(pid, int(getattr(signal, "SIGKILL", signal.SIGTERM)))
     except (OSError, subprocess.TimeoutExpired) as caught:
         error = f"{type(caught).__name__}: {caught}"
+    if os.name == "nt":
+        tree_live_after, verification_error = _wait_for_process_tree_exit(tree_before)
+        active_after = len(tree_live_after)
+        tree_verified_empty = False
+        containment_authority = "uncontained-windows-orphan-tree"
+        containment_limit = "pre-kill snapshot cannot exclude a spawn-or-reparent race"
+    else:
+        tree_live_after, verification_error = _wait_for_process_group_exit(pid)
+        active_after = len(tree_live_after)
+        tree_verified_empty = verification_error is None and not tree_live_after
+        containment_authority = "posix-new-session-process-group"
+        containment_limit = "setsid-or-double-fork escape is not OS-contained"
     live_after = _process_creation_token(pid)
     return {
         "attempted": True,
+        "command_succeeded": (
+            (method == "windows-taskkill-tree" and returncode == 0)
+            or (method == "posix-killpg" and returncode is None and error is None)
+        ),
+        "containment_active_processes_after": active_after,
+        "containment_authority": containment_authority,
+        "containment_limit": containment_limit,
         "error": error,
         "live_process_token_after": live_after,
         "live_process_token_before": live_before,
         "method": method,
-        "passed": live_after != expected_token,
+        "passed": tree_verified_empty,
+        "process_tree_before": tree_before,
+        "process_tree_enumeration_error": enumeration_error,
+        "process_tree_live_after": tree_live_after,
+        "process_tree_verification_error": verification_error,
+        "process_tree_verified_empty": tree_verified_empty,
+        "root_pid": pid,
+        "root_process_creation_token": expected_token,
         "returncode": returncode,
         "target_token_matched": True,
     }
@@ -3376,6 +5057,7 @@ def _validate_orphan_semantics(value: Mapping[str, object]) -> dict[str, object]
         "authorization_sha256",
         "cell_id",
         "cell_spec_hash",
+        "cleanup_claimed",
         "exposure_event_hash",
         "launch_receipt_hash",
         "launch_receipt_sha256",
@@ -3386,7 +5068,10 @@ def _validate_orphan_semantics(value: Mapping[str, object]) -> dict[str, object]
         "passed",
         "pid",
         "process_creation_token",
+        "process_enumeration",
         "schema",
+        "spawn_intent_hash",
+        "spawn_intent_sha256",
         "state",
         "termination",
     }
@@ -3398,16 +5083,15 @@ def _validate_orphan_semantics(value: Mapping[str, object]) -> dict[str, object]
     stored = receipt.get("process_creation_token")
     termination = receipt.get("termination")
     launch_hash = receipt.get("launch_receipt_hash")
+    intent_hash = receipt.get("spawn_intent_hash")
+    if not isinstance(intent_hash, str) or not isinstance(receipt.get("spawn_intent_sha256"), str):
+        raise EvaluationError("Stage 09 orphan spawn intent is absent")
     if state == "pre-environment-handshake-aborted":
         if any(
             item is not None
             for item in (
                 launch_hash,
                 receipt.get("authorization_hash"),
-                receipt.get("pid"),
-                stored,
-                before,
-                after,
                 termination,
             )
         ) or not all(
@@ -3415,8 +5099,45 @@ def _validate_orphan_semantics(value: Mapping[str, object]) -> dict[str, object]
             for field in ("abort_receipt_hash", "abort_receipt_sha256")
         ):
             raise EvaluationError("Stage 09 pre-environment orphan evidence changed")
+        enumeration = receipt.get("process_enumeration")
+        if (
+            receipt.get("cleanup_claimed") is not False
+            or receipt.get("pid") is not None
+            or stored is not None
+            or before is not None
+            or after is not None
+            or not isinstance(enumeration, dict)
+            or enumeration.get("error") is not None
+            or enumeration.get("matching_processes") != []
+            or enumeration.get("verified_empty") is not True
+        ):
+            raise EvaluationError("Stage 09 pre-environment process proof changed")
+    elif state == "unreceipted-launch-not-running":
+        enumeration = receipt.get("process_enumeration")
+        if (
+            launch_hash is not None
+            or receipt.get("authorization_hash") is not None
+            or receipt.get("abort_receipt_hash") is not None
+            or receipt.get("cleanup_claimed") is not False
+            or receipt.get("pid") is not None
+            or stored is not None
+            or before is not None
+            or after is not None
+            or termination is not None
+            or not isinstance(enumeration, dict)
+            or enumeration.get("error") is not None
+            or enumeration.get("matching_processes") != []
+            or enumeration.get("verified_empty") is not True
+        ):
+            raise EvaluationError("Stage 09 unreceipted non-running proof changed")
     elif state == "not-running":
-        if not isinstance(launch_hash, str) or before is not None or after is not None:
+        if (
+            not isinstance(launch_hash, str)
+            or before is not None
+            or after is not None
+            or receipt.get("cleanup_claimed") is not False
+            or receipt.get("process_enumeration") is not None
+        ):
             raise EvaluationError("Stage 09 non-running orphan evidence changed")
         if termination is not None:
             raise EvaluationError("Stage 09 non-running orphan claims termination")
@@ -3427,6 +5148,8 @@ def _validate_orphan_semantics(value: Mapping[str, object]) -> dict[str, object]
             or before == stored
             or after != before
             or termination is not None
+            or receipt.get("cleanup_claimed") is not False
+            or receipt.get("process_enumeration") is not None
         ):
             raise EvaluationError("Stage 09 PID-reuse orphan evidence changed")
     elif state == "terminated":
@@ -3439,8 +5162,41 @@ def _validate_orphan_semantics(value: Mapping[str, object]) -> dict[str, object]
             or termination.get("live_process_token_after") != after
             or before != stored
             or after == stored
+            or receipt.get("cleanup_claimed") is not True
+            or receipt.get("process_enumeration") is not None
         ):
             raise EvaluationError("Stage 09 terminated orphan evidence changed")
+        if not isinstance(receipt.get("pid"), int) or not isinstance(stored, str):
+            raise EvaluationError("Stage 09 terminated orphan identity changed")
+        _validate_tree_termination_receipt(
+            termination,
+            expected_root_pid=cast(int, receipt["pid"]),
+            expected_root_token=stored,
+            require_target_match=True,
+        )
+    elif state == "unreceipted-launch-terminated":
+        enumeration = receipt.get("process_enumeration")
+        if (
+            launch_hash is not None
+            or receipt.get("authorization_hash") is not None
+            or receipt.get("cleanup_claimed") is not True
+            or not isinstance(enumeration, dict)
+            or enumeration.get("error") is not None
+            or not isinstance(enumeration.get("matching_processes"), list)
+            or len(cast(list[object], enumeration["matching_processes"])) != 1
+            or not isinstance(termination, dict)
+            or not isinstance(receipt.get("pid"), int)
+            or not isinstance(stored, str)
+            or before != stored
+            or after == stored
+        ):
+            raise EvaluationError("Stage 09 unreceipted termination evidence changed")
+        _validate_tree_termination_receipt(
+            termination,
+            expected_root_pid=cast(int, receipt["pid"]),
+            expected_root_token=stored,
+            require_target_match=True,
+        )
     else:
         raise EvaluationError("Stage 09 orphan termination state changed")
     return receipt
@@ -3484,6 +5240,12 @@ def _seal_orphan_boundary(
         expected_spec
     ):
         raise EvaluationError("Stage 09 orphan worker specification changed")
+    spawn_intent = _validate_spawn_intent(
+        cell=cell,
+        paths=paths,
+        spec=expected_spec,
+    )
+    intent_launch_token = cast(str, spawn_intent["launch_token"])
     launch: dict[str, object] | None = None
     authorization: dict[str, object] | None = None
     if paths["launch"].is_file():
@@ -3494,7 +5256,7 @@ def _seal_orphan_boundary(
             label="process launch receipt",
         )
         launch_token = launch_preview.get("launch_token")
-        if not isinstance(launch_token, str) or not launch_token:
+        if launch_token != intent_launch_token:
             raise EvaluationError("Stage 09 orphan launch token is invalid")
         command = _worker_command(
             paths["spec"],
@@ -3529,6 +5291,8 @@ def _seal_orphan_boundary(
     live_token = _process_creation_token(pid_value) if isinstance(pid_value, int) else None
     termination: dict[str, object] | None = None
     abort: dict[str, object] | None = None
+    process_enumeration: dict[str, object] | None = None
+    cleanup_claimed = False
     if launch is None:
         if paths["abort"].is_file():
             abort = _load_canonical_sealed(
@@ -3547,15 +5311,34 @@ def _seal_orphan_boundary(
                 or not isinstance(abort.get("pid"), int)
                 or cast(int, abort.get("pid")) <= 0
                 or not isinstance(abort.get("launch_token"), str)
-                or not abort.get("launch_token")
+                or abort.get("launch_token") != intent_launch_token
             ):
                 raise EvaluationError("Stage 09 worker abort receipt changed")
+        matches, enumeration_error = _spawn_intent_processes(intent_launch_token)
+        process_enumeration = {
+            "error": enumeration_error,
+            "matching_processes": matches,
+            "verified_empty": enumeration_error is None and not matches,
+        }
+        if enumeration_error is not None or len(matches) > 1:
+            raise EvaluationError("Stage 09 unreceipted spawn process authority is ambiguous")
+        if matches:
+            match = matches[0]
+            pid_value = cast(int, match["pid"])
+            stored_token = cast(str, match["process_creation_token"])
+            live_token = stored_token
+            termination = _terminate_orphan_exact(pid_value, stored_token)
+            if termination.get("passed") is not True:
+                raise EvaluationError("Stage 09 unreceipted spawn process tree did not terminate")
+            state = "unreceipted-launch-terminated"
+            passed = True
+            cleanup_claimed = True
+        elif abort is not None:
             state = "pre-environment-handshake-aborted"
             passed = True
         else:
-            raise EvaluationError(
-                "Stage 09 exposed cell has neither a launch nor a sealed pre-environment abort"
-            )
+            state = "unreceipted-launch-not-running"
+            passed = True
     elif live_token is None:
         state = "not-running"
         passed = True
@@ -3571,10 +5354,12 @@ def _seal_orphan_boundary(
             )
         state = "terminated"
         passed = termination.get("passed") is True
+        cleanup_claimed = True
     payload = {
         "schema": ORPHAN_RECEIPT_SCHEMA,
         "cell_id": cell.cell_id,
         "cell_spec_hash": cell.spec_hash,
+        "cleanup_claimed": cleanup_claimed,
         "exposure_event_hash": exposure_event.get("event_hash"),
         "abort_receipt_hash": abort.get("worker_abort_hash") if abort is not None else None,
         "abort_receipt_sha256": sha256_file(paths["abort"]) if abort is not None else None,
@@ -3586,15 +5371,18 @@ def _seal_orphan_boundary(
         "authorization_sha256": (
             sha256_file(paths["authorization"]) if authorization is not None else None
         ),
-        "launch_token": launch.get("launch_token") if launch is not None else None,
+        "launch_token": intent_launch_token,
         "pid": pid_value,
         "process_creation_token": stored_token,
+        "process_enumeration": process_enumeration,
         "live_process_token_before": live_token,
         "live_process_token_after": (
             termination.get("live_process_token_after") if termination is not None else live_token
         ),
         "passed": passed,
         "state": state,
+        "spawn_intent_hash": spawn_intent.get("spawn_intent_hash"),
+        "spawn_intent_sha256": sha256_file(paths["spawn_intent"]),
         "termination": termination,
     }
     sealed = cast(dict[str, object], seal_object(payload, hash_field="orphan_receipt_hash"))
@@ -3624,6 +5412,8 @@ def _seal_orphan_boundary(
             "pid",
             "process_creation_token",
             "schema",
+            "spawn_intent_hash",
+            "spawn_intent_sha256",
         )
         if any(existing.get(field) != sealed.get(field) for field in static_fields):
             raise EvaluationError("Stage 09 orphan termination identity changed")
@@ -3632,6 +5422,8 @@ def _seal_orphan_boundary(
             "pid-reused-original-not-running",
             "pre-environment-handshake-aborted",
             "terminated",
+            "unreceipted-launch-not-running",
+            "unreceipted-launch-terminated",
         }:
             raise EvaluationError("Stage 09 orphan termination semantics changed")
         if isinstance(pid_value, int) and isinstance(stored_token, str):
@@ -3652,11 +5444,20 @@ def _resource_summary(
     *,
     runtime_start: Mapping[str, object],
     execution_complete: bool,
+    open_segment_charge_ns: int = 0,
 ) -> dict[str, object]:
     if len(receipts) != len(finalizations):
         raise EvaluationError("Stage 09 receipt/finalization prefix lengths differ")
+    if (
+        isinstance(open_segment_charge_ns, bool)
+        or not isinstance(open_segment_charge_ns, int)
+        or open_segment_charge_ns not in {0, CELL_ADMISSION_CHARGE_NS}
+    ):
+        raise EvaluationError("Stage 09 open active-segment charge is invalid")
     pre_receipt_wall_ns = 0
     measured_wall_ns = 0
+    recovery_accounted_wall_ns = 0
+    recovery_count = 0
     admission_charges_ns = 0
     supervision_wall_ns = 0
     cpu_values: list[float] = []
@@ -3675,21 +5476,43 @@ def _resource_summary(
             raise EvaluationError("Stage 09 pre-receipt wall is below supervision wall")
         if resources.get("worker_wall_seconds") != WORKER_WALL_SECONDS:
             raise EvaluationError("Stage 09 worker wall limit receipt changed")
-        measured = finalization.get("measured_active_wall_ns")
         charge = finalization.get("admission_charge_ns")
-        if (
-            isinstance(measured, bool)
-            or not isinstance(measured, int)
-            or measured < parent
-            or charge != CELL_ADMISSION_CHARGE_NS
-            or finalization.get("budget_accounting") != "fixed-full-cell-admission-charge"
-            or finalization.get("normal_termination_definition") != NORMAL_TERMINATION_DEFINITION
-            or finalization.get("within_admission_charge")
-            is not (measured <= CELL_ADMISSION_CHARGE_NS)
-        ):
-            raise EvaluationError("Stage 09 cell finalization timing changed")
+        if finalization.get("schema") == RECOVERED_CELL_FINALIZATION_SCHEMA:
+            accounted = finalization.get("conservative_accounted_active_wall_ns")
+            if (
+                finalization.get("recovery_kind") != "durable-cell-receipt-without-finalization"
+                or finalization.get("measurement_scope")
+                != "durable-receipt-present-finalization-missing-after-interruption"
+                or finalization.get("measured_active_wall_ns") is not None
+                or finalization.get("timing_measurement_available") is not False
+                or finalization.get("within_admission_charge") is not False
+                or isinstance(accounted, bool)
+                or not isinstance(accounted, int)
+                or accounted != max(parent, CELL_ADMISSION_CHARGE_NS)
+                or charge != CELL_ADMISSION_CHARGE_NS
+                or finalization.get("budget_accounting") != "fixed-full-cell-admission-charge"
+                or finalization.get("normal_termination_definition")
+                != NORMAL_TERMINATION_DEFINITION
+            ):
+                raise EvaluationError("Stage 09 recovered cell finalization timing changed")
+            recovery_accounted_wall_ns += accounted
+            recovery_count += 1
+        else:
+            measured = finalization.get("measured_active_wall_ns")
+            if (
+                isinstance(measured, bool)
+                or not isinstance(measured, int)
+                or measured < parent
+                or charge != CELL_ADMISSION_CHARGE_NS
+                or finalization.get("budget_accounting") != "fixed-full-cell-admission-charge"
+                or finalization.get("normal_termination_definition")
+                != NORMAL_TERMINATION_DEFINITION
+                or finalization.get("within_admission_charge")
+                is not (measured <= CELL_ADMISSION_CHARGE_NS)
+            ):
+                raise EvaluationError("Stage 09 cell finalization timing changed")
+            measured_wall_ns += measured
         pre_receipt_wall_ns += parent
-        measured_wall_ns += measured
         admission_charges_ns += CELL_ADMISSION_CHARGE_NS
         supervision_wall_ns += supervised
         cpu = resources.get("child_cpu_seconds")
@@ -3712,14 +5535,22 @@ def _resource_summary(
         "admission_accounting": "fixed-full-cell-admission-charge",
         "cell_admission_charge_ns": CELL_ADMISSION_CHARGE_NS,
         "cumulative_admission_charge_ns": admission_charges_ns,
+        "cumulative_active_accounted_wall_ns": (
+            measured_wall_ns + recovery_accounted_wall_ns + open_segment_charge_ns
+        ),
         "cumulative_measured_active_wall_ns": measured_wall_ns,
+        "cumulative_recovery_accounted_active_wall_ns": recovery_accounted_wall_ns,
         "cumulative_pre_receipt_active_wall_ns": pre_receipt_wall_ns,
         "cumulative_worker_supervision_wall_ns": supervision_wall_ns,
         "overall_active_wall_limit_ns": limit_ns,
+        "open_segment_conservative_charge_ns": open_segment_charge_ns,
+        "recovered_cell_finalization_count": recovery_count,
         "runtime_end": _runtime_identity(),
         "runtime_start": dict(runtime_start),
         "wall_measurement_complete": execution_complete,
-        "wall_within_limit": admission_charges_ns <= limit_ns,
+        "wall_within_limit": (
+            measured_wall_ns + recovery_accounted_wall_ns + open_segment_charge_ns <= limit_ns
+        ),
     }
 
 
@@ -3874,6 +5705,16 @@ def _failure_terminal_value(
     runtime_start = check.get("runtime_identity")
     if not isinstance(runtime_start, dict):
         raise EvaluationError("Stage 09 preflight runtime identity is absent")
+    open_segment_charge_ns = (
+        CELL_ADMISSION_CHARGE_NS
+        if failure_kind
+        in {
+            "exposed-without-terminal-receipt",
+            "open-cell-segment-without-finalization",
+            "pre-cell-source-runtime-authority-boundary-failed",
+        }
+        else 0
+    )
     payload = {
         "schema": AGGREGATE_SCHEMA,
         "status": "FAILED_INFRASTRUCTURE",
@@ -3908,6 +5749,7 @@ def _failure_terminal_value(
             finalizations,
             runtime_start=runtime_start,
             execution_complete=False,
+            open_segment_charge_ns=open_segment_charge_ns,
         ),
         "exposure_ledger_sha256": sha256_file(exposure) if exposure.is_file() else None,
         "holdout": dict(SEALED_HOLDOUT),
@@ -3954,6 +5796,8 @@ def _load_finalization_prefix(
     *,
     work_root: Path,
     receipts: Sequence[Mapping[str, object]],
+    check: Mapping[str, object],
+    recover_missing: bool = False,
 ) -> list[dict[str, object]]:
     matrix = build_matrix()
     if len(receipts) > len(matrix):
@@ -3967,12 +5811,23 @@ def _load_finalization_prefix(
             hash_field="parent_evidence_hash",
             label="parent resource evidence",
         )
+        cell_segment = _load_cell_segment(cell=cell, paths=paths, check=check)
+        if recover_missing and not paths["finalization"].exists():
+            recovered = _recovered_cell_finalization(
+                cell,
+                paths=paths,
+                receipt=receipt,
+                parent_evidence=parent_evidence,
+                cell_segment=cell_segment,
+            )
+            _atomic_create(paths["finalization"], canonical_json_bytes(recovered))
         finalizations.append(
             _reconstruct_cell_finalization(
                 paths=paths,
                 cell=cell,
                 receipt=receipt,
                 parent_evidence=parent_evidence,
+                check=check,
             )
         )
     return finalizations
@@ -3988,6 +5843,7 @@ def _load_existing_terminal(
     environments: Path = DEFAULT_ENVIRONMENTS,
     build_000_root: Path = DEFAULT_BUILD_000_ROOT,
     build_001_root: Path = DEFAULT_BUILD_001_ROOT,
+    allow_recovery: bool = True,
 ) -> dict[str, object] | None:
     if not output.exists():
         return None
@@ -4000,8 +5856,8 @@ def _load_existing_terminal(
     prior_wall = prior.get("run_active_wall")
     if not isinstance(prior_wall, dict):
         raise EvaluationError("existing Stage 09 terminal run wall is absent")
-    prior_elapsed = prior_wall.get("elapsed_before_output_ns")
-    if isinstance(prior_elapsed, bool) or not isinstance(prior_elapsed, int):
+    prior_active_wall = prior_wall.get("active_before_output_ns")
+    if isinstance(prior_active_wall, bool) or not isinstance(prior_active_wall, int):
         raise EvaluationError("existing Stage 09 terminal run wall is invalid")
     if (
         prior.get("evidence_label") != "local-public"
@@ -4051,7 +5907,11 @@ def _load_existing_terminal(
         check=check,
         exposure_events=events,
     )
-    finalizations = _load_finalization_prefix(work_root=work_root, receipts=receipts)
+    finalizations = _load_finalization_prefix(
+        work_root=work_root,
+        receipts=receipts,
+        check=check,
+    )
     if prior.get("cell_receipt_hashes") != [
         receipt.get("cell_receipt_hash") for receipt in receipts
     ]:
@@ -4061,11 +5921,27 @@ def _load_existing_terminal(
     ]:
         raise EvaluationError("existing Stage 09 terminal finalization projection changed")
     execution_complete = prior.get("execution_complete")
+    if not allow_recovery and execution_complete is not True:
+        raise EvaluationError("Stage 09 read-only verifier requires complete execution")
+    prior_failure = prior.get("failure")
+    prior_failure_kind = prior_failure.get("kind") if isinstance(prior_failure, dict) else None
+    open_segment_charge_ns = (
+        CELL_ADMISSION_CHARGE_NS
+        if execution_complete is False
+        and prior_failure_kind
+        in {
+            "exposed-without-terminal-receipt",
+            "open-cell-segment-without-finalization",
+            "pre-cell-source-runtime-authority-boundary-failed",
+        }
+        else 0
+    )
     expected_resources = _resource_summary(
         receipts,
         finalizations,
         runtime_start=runtime_start,
         execution_complete=execution_complete is True,
+        open_segment_charge_ns=open_segment_charge_ns,
     )
     if prior.get("resources") != expected_resources:
         raise EvaluationError("existing Stage 09 resource projection changed")
@@ -4150,7 +6026,7 @@ def _load_existing_terminal(
         expected_terminal = _bind_terminal_clock(
             seal_object(expected, hash_field="artifact_core_hash"),
             check=embedded_preflight,
-            elapsed_before_output_ns=prior_elapsed,
+            active_before_output_ns=prior_active_wall,
         )
         if prior != expected_terminal:
             raise EvaluationError(
@@ -4209,7 +6085,15 @@ def _load_existing_terminal(
 
         matrix = build_matrix()
         orphan: dict[str, object] | None = None
-        if count > 0 and finalizations[-1].get("within_admission_charge") is not True:
+        if (
+            count > 0
+            and finalizations[-1].get("recovery_kind")
+            == "durable-cell-receipt-without-finalization"
+        ):
+            failed_cell = matrix[count - 1]
+            failure_kind = "durable-cell-receipt-without-finalization"
+            expected_exposure_hash = events[count - 1].get("event_hash")
+        elif count > 0 and finalizations[-1].get("within_admission_charge") is not True:
             failed_cell = matrix[count - 1]
             failure_kind = "cell-finalization-exceeded-admission-charge"
             expected_exposure_hash = events[count - 1].get("event_hash")
@@ -4237,7 +6121,11 @@ def _load_existing_terminal(
             expected_exposure_hash = None
             used = count * CELL_ADMISSION_CHARGE_NS
             limit = int(OVERALL_ACTIVE_WALL_SECONDS * 1_000_000_000)
-            if limit - used < CELL_ADMISSION_CHARGE_NS:
+            failed_paths = _cell_paths(work_root, failed_cell)
+            if failed_paths["cell_segment"].exists():
+                _load_cell_segment(cell=failed_cell, paths=failed_paths, check=check)
+                failure_kind = "open-cell-segment-without-finalization"
+            elif limit - used < CELL_ADMISSION_CHARGE_NS:
                 failure_kind = "overall-active-wall-cannot-admit-next-cell"
             elif reconstructed_boundaries.get("passed") is False:
                 failure_kind = "pre-cell-source-runtime-authority-boundary-failed"
@@ -4259,14 +6147,183 @@ def _load_existing_terminal(
                 cache_end=partial_cache_end,
             ),
             check=embedded_preflight,
-            elapsed_before_output_ns=prior_elapsed,
+            active_before_output_ns=prior_active_wall,
         )
         if prior != expected_terminal:
             raise EvaluationError("existing partial Stage 09 terminal does not reconstruct exactly")
     else:
         raise EvaluationError("existing Stage 09 terminal completion state is invalid")
-    _validate_terminal_finalization(output, prior, check=embedded_preflight)
+    _validate_terminal_finalization(
+        output,
+        prior,
+        check=embedded_preflight,
+        recover_missing=allow_recovery,
+    )
     return cast(dict[str, object], prior)
+
+
+def verify_complete_terminal(
+    *,
+    source_root: Path,
+    attempt_root: Path,
+    output: Path,
+    exposure: Path,
+    expected_output_sha256: str,
+    expected_artifact_core_hash: str,
+    expected_terminal_finalization_sha256: str,
+    expected_terminal_finalization_hash: str,
+    recordings: Path = DEFAULT_RECORDINGS,
+    environments: Path = DEFAULT_ENVIRONMENTS,
+    build_000_root: Path = DEFAULT_BUILD_000_ROOT,
+    build_001_root: Path = DEFAULT_BUILD_001_ROOT,
+    stage08_result: Path = DEFAULT_STAGE08_RESULT,
+    stage08_exposure: Path = DEFAULT_STAGE08_EXPOSURE,
+    prior_integrity_receipt: Path = DEFAULT_PRIOR_INTEGRITY_RECEIPT,
+    build_000_integrity_receipt: Path = DEFAULT_BUILD_000_INTEGRITY_RECEIPT,
+) -> dict[str, object]:
+    """Authenticate one complete terminal graph without opening gameplay.
+
+    ``passed`` means evidence authority, not mechanism success.  The returned
+    ``status`` remains ``PASS`` or ``FAILED_MECHANISM`` so Stage 11 can require
+    the former while Stage 10 can still consume an honest completed failure.
+    """
+
+    if source_root.resolve() != ROOT.resolve():
+        raise EvaluationError("Stage 09 verifier source root differs from its imported authority")
+    if not output.is_file() or sha256_file(output) != expected_output_sha256:
+        raise EvaluationError("Stage 09 verifier output file hash changed")
+    candidate = _load_canonical_sealed(
+        output,
+        schema=AGGREGATE_SCHEMA,
+        hash_field="artifact_core_hash",
+        label="terminal output",
+    )
+    if candidate.get("artifact_core_hash") != expected_artifact_core_hash:
+        raise EvaluationError("Stage 09 verifier terminal core hash changed")
+    embedded_preflight = candidate.get("preflight")
+    harness_source = (
+        embedded_preflight.get("harness_source") if isinstance(embedded_preflight, dict) else None
+    )
+    harness_source_expected = (
+        harness_source.get("expected") if isinstance(harness_source, dict) else None
+    )
+    if not isinstance(harness_source_expected, dict):
+        raise EvaluationError("Stage 09 verifier harness authority is absent")
+    check = preflight(
+        harness_source_expected=cast(dict[str, object], harness_source_expected),
+        output=output,
+        work_root=attempt_root,
+        exposure=exposure,
+        recordings=recordings,
+        environments=environments,
+        build_000_root=build_000_root,
+        build_001_root=build_001_root,
+        stage08_result=stage08_result,
+        stage08_exposure=stage08_exposure,
+        prior_integrity_receipt=prior_integrity_receipt,
+        build_000_integrity_receipt=build_000_integrity_receipt,
+        enforce_official_paths=False,
+    )
+    if check.get("status") != "READY_NOT_EXECUTED":
+        raise EvaluationError("Stage 09 verifier live preflight is not ready")
+    live_harness = check.get("harness_source")
+    live_expected = live_harness.get("expected") if isinstance(live_harness, dict) else None
+    binding_hash = live_expected.get("binding_hash") if isinstance(live_expected, dict) else None
+    check = _attach_run_clock(
+        check,
+        work_root=attempt_root,
+        harness_binding_hash=binding_hash,
+        create_missing=False,
+    )
+    terminal = _load_existing_terminal(
+        output=output,
+        work_root=attempt_root,
+        exposure=exposure,
+        check=check,
+        recordings=recordings,
+        environments=environments,
+        build_000_root=build_000_root,
+        build_001_root=build_001_root,
+        allow_recovery=False,
+    )
+    if terminal is None:
+        raise EvaluationError("Stage 09 verifier terminal output is absent")
+    gate = terminal.get("gate")
+    if (
+        terminal.get("status") not in {"PASS", "FAILED_MECHANISM"}
+        or terminal.get("execution_complete") is not True
+        or not isinstance(gate, dict)
+        or gate.get("all_evidence_verifies") is not True
+        or gate.get("competition_integrity") is not True
+        or terminal.get("source_stable") is not True
+        or terminal.get("cell_count") != EXPECTED_CELL_COUNT
+    ):
+        raise EvaluationError("Stage 09 verifier terminal is not evidence-complete")
+    finalization_path = _terminal_finalization_path(output)
+    if (
+        not finalization_path.is_file()
+        or sha256_file(finalization_path) != expected_terminal_finalization_sha256
+    ):
+        raise EvaluationError("Stage 09 verifier terminal finalization file hash changed")
+    finalization = _load_canonical_sealed(
+        finalization_path,
+        schema=TERMINAL_FINALIZATION_SCHEMA,
+        hash_field="terminal_finalization_hash",
+        label="terminal finalization receipt",
+    )
+    evidence_authority = _terminal_evidence_authority(check)
+    if (
+        finalization.get("terminal_finalization_hash") != expected_terminal_finalization_hash
+        or finalization.get("within_overall_active_wall") is not True
+        or finalization.get("terminal_authority_passed") is not True
+        or finalization.get("recovery_kind") is not None
+        or finalization.get("timing_measurement_available") is not True
+        or finalization.get("artifact_core_hash") != terminal.get("artifact_core_hash")
+        or finalization.get("output_sha256") != expected_output_sha256
+        or finalization.get("evidence_authority") != evidence_authority
+        or sha256_file(output) != expected_output_sha256
+    ):
+        raise EvaluationError("Stage 09 verifier terminal finalization authority changed")
+    return cast(
+        dict[str, object],
+        seal_object(
+            {
+                "schema": TERMINAL_VERIFICATION_SCHEMA,
+                "passed": True,
+                "source_root": source_root.resolve().as_posix(),
+                "attempt_root": attempt_root.resolve().as_posix(),
+                "output": {
+                    "path": output.resolve().as_posix(),
+                    "sha256": expected_output_sha256,
+                    "artifact_core_hash": terminal["artifact_core_hash"],
+                },
+                "exposure": {
+                    "path": exposure.resolve().as_posix(),
+                    "sha256": terminal["exposure_ledger_sha256"],
+                },
+                "terminal_finalization": {
+                    "path": finalization_path.resolve().as_posix(),
+                    "sha256": expected_terminal_finalization_sha256,
+                    "terminal_finalization_hash": finalization["terminal_finalization_hash"],
+                },
+                "work_authority": {
+                    "cell_count": terminal["cell_count"],
+                    "cell_receipt_hashes": terminal["cell_receipt_hashes"],
+                    "cell_finalization_hashes": terminal["cell_finalization_hashes"],
+                    "matrix_hash": terminal["matrix_hash"],
+                },
+                "status": terminal["status"],
+                "execution_complete": terminal["execution_complete"],
+                "evidence_integrity": gate["all_evidence_verifies"],
+                "competition_integrity": gate["competition_integrity"],
+                "prior_authority": evidence_authority,
+                "source_end": terminal["source_end"],
+                "source_stable": terminal["source_stable"],
+                "gate": terminal["gate"],
+            },
+            hash_field="verification_hash",
+        ),
+    )
 
 
 def execute(
@@ -4397,10 +6454,28 @@ def execute(
             )
             existing_receipts.append(receipt)
             finalization = _load_finalization_prefix(
-                work_root=work_root, receipts=existing_receipts
+                work_root=work_root,
+                receipts=existing_receipts,
+                check=check,
+                recover_missing=True,
             )[-1]
             existing_finalizations.append(finalization)
             receipt_ends = _receipt_after_boundaries(receipt)
+            if finalization.get("recovery_kind") == "durable-cell-receipt-without-finalization":
+                return _failure_terminal(
+                    output=output,
+                    check=check,
+                    receipts=existing_receipts,
+                    finalizations=existing_finalizations,
+                    exposure=exposure,
+                    failed_cell=cell,
+                    failure_kind="durable-cell-receipt-without-finalization",
+                    exposure_event_hash=events[ordinal].get("event_hash"),
+                    harness_end=receipt_ends[0],
+                    runtime_end=receipt_ends[1],
+                    authority_end=receipt_ends[2],
+                    cache_end=receipt_ends[3],
+                )
             if finalization.get("within_admission_charge") is not True:
                 return _failure_terminal(
                     output=output,
@@ -4432,6 +6507,18 @@ def execute(
                     cache_end=receipt_ends[3],
                 )
             continue
+        if paths["cell_segment"].exists():
+            _load_cell_segment(cell=cell, paths=paths, check=check)
+            return _failure_terminal(
+                output=output,
+                check=check,
+                receipts=existing_receipts,
+                finalizations=existing_finalizations,
+                exposure=exposure,
+                failed_cell=cell,
+                failure_kind="open-cell-segment-without-finalization",
+                exposure_event_hash=None,
+            )
         used_admission_ns = len(existing_finalizations) * CELL_ADMISSION_CHARGE_NS
         remaining_ns = int(OVERALL_ACTIVE_WALL_SECONDS * 1_000_000_000) - used_admission_ns
         if remaining_ns < CELL_ADMISSION_CHARGE_NS:
@@ -4445,10 +6532,16 @@ def execute(
                 failure_kind="overall-active-wall-cannot-admit-next-cell",
                 exposure_event_hash=None,
             )
-        cell_started_ns = time.perf_counter_ns()
+        cell_segment, cell_started_ns = _open_cell_segment(
+            cell=cell,
+            paths=paths,
+            check=check,
+        )
         boundary_before = _observe_execution_boundaries(
             harness_source_expected=harness_source_expected,
             environments=environments,
+            build_000_root=build_000_root,
+            build_001_root=build_001_root,
             prior_integrity_receipt=prior_integrity_receipt,
             build_000_integrity_receipt=build_000_integrity_receipt,
         )
@@ -4489,24 +6582,12 @@ def execute(
         _atomic_create_or_verify(
             spec_path, canonical_json_bytes(spec), label="unexposed worker specification"
         )
-        for path in (
-            paths["abort"],
-            paths["authorization"],
-            paths["finalization"],
-            paths["launch"],
-            paths["parent_evidence"],
-            paths["raw"],
-            paths["receipt"],
-            paths["stderr"],
-            paths["stdout"],
-            paths["supervision"],
-        ):
-            if path.exists():
-                raise EvaluationError("unexposed Stage 09 cell already has execution evidence")
+        _assert_unexposed_cell_clean(paths=paths, recordings=recordings, cell=cell)
+        spawn_intent = _prepare_spawn_intent(cell=cell, paths=paths, spec=spec)
+        launch_token = cast(str, spawn_intent["launch_token"])
         event = _append_exposure(exposure, cell)
         raw_path = paths["raw"]
         streams = paths["stdout"].parent
-        launch_token = uuid.uuid4().hex
         command = _worker_command(
             spec_path,
             raw_path,
@@ -4515,6 +6596,8 @@ def execute(
             abort_path=paths["abort"],
             launch_token=launch_token,
         )
+        if list(command) != spawn_intent.get("command"):
+            raise EvaluationError("Stage 09 spawn-intent command changed before launch")
         supervision = _supervise(
             command,
             cwd=ROOT,
@@ -4540,6 +6623,8 @@ def execute(
         boundary_after = _observe_execution_boundaries(
             harness_source_expected=harness_source_expected,
             environments=environments,
+            build_000_root=build_000_root,
+            build_001_root=build_001_root,
             prior_integrity_receipt=prior_integrity_receipt,
             build_000_integrity_receipt=build_000_integrity_receipt,
             short_circuit_on_harness_failure=False,
@@ -4600,6 +6685,7 @@ def execute(
             paths=paths,
             receipt=receipt,
             parent_evidence=parent_evidence,
+            cell_segment=cell_segment,
             measured_active_wall_ns=max(0, time.perf_counter_ns() - cell_started_ns),
         )
         _atomic_create(paths["finalization"], canonical_json_bytes(finalization))
@@ -4615,9 +6701,11 @@ def execute(
             exposure_event=event,
         )
         existing_receipts.append(receipt)
-        finalization = _load_finalization_prefix(work_root=work_root, receipts=existing_receipts)[
-            -1
-        ]
+        finalization = _load_finalization_prefix(
+            work_root=work_root,
+            receipts=existing_receipts,
+            check=check,
+        )[-1]
         existing_finalizations.append(finalization)
         if finalization.get("within_admission_charge") is not True:
             return _failure_terminal(
@@ -4652,6 +6740,8 @@ def execute(
     boundary_end = _observe_execution_boundaries(
         harness_source_expected=harness_source_expected,
         environments=environments,
+        build_000_root=build_000_root,
+        build_001_root=build_001_root,
         prior_integrity_receipt=prior_integrity_receipt,
         build_000_integrity_receipt=build_000_integrity_receipt,
         short_circuit_on_harness_failure=False,
@@ -4681,15 +6771,21 @@ def execute(
     )
     asset_end = _all_assets(environments)
     exposures_end = _validate_exposures(exposure)
-    elapsed_before_terminal_ns = _run_elapsed_ns(check)
     overall_limit_ns = int(OVERALL_ACTIVE_WALL_SECONDS * 1_000_000_000)
+    resources = _resource_summary(
+        existing_receipts,
+        existing_finalizations,
+        runtime_start=cast(dict[str, object], check["runtime_identity"]),
+        execution_complete=True,
+    )
+    active_before_terminal_ns = cast(int, resources["cumulative_active_accounted_wall_ns"])
     evidence_integrity = bool(
         source_stable
         and execution_boundaries["passed"] is True
         and asset_end["passed"] is True
         and len(exposures_end) == EXPECTED_CELL_COUNT
         and len(existing_finalizations) * CELL_ADMISSION_CHARGE_NS <= overall_limit_ns
-        and elapsed_before_terminal_ns <= overall_limit_ns - TERMINAL_WRITE_RESERVE_NS
+        and active_before_terminal_ns <= overall_limit_ns - TERMINAL_WRITE_RESERVE_NS
     )
     integrity = cast(dict[str, Mapping[str, object]], check["competition_integrity"])
     competition_integrity = all(value.get("passed") is True for value in integrity.values())
@@ -4707,12 +6803,7 @@ def execute(
                 item.get("finalization_hash") for item in existing_finalizations
             ],
             "execution_boundaries": execution_boundaries,
-            "resources": _resource_summary(
-                existing_receipts,
-                existing_finalizations,
-                runtime_start=cast(dict[str, object], check["runtime_identity"]),
-                execution_complete=True,
-            ),
+            "resources": resources,
             "source_end": {"build_000": end_000, "build_001": end_001},
             "source_stable": source_stable,
             "asset_end": asset_end,

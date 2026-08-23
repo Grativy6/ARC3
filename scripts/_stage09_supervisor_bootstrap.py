@@ -90,6 +90,10 @@ def _deny_network(event: str, _arguments: tuple[object, ...]) -> None:
         raise RuntimeError("Stage 09 supervisor bootstrap denies network access")
 
 
+def _lexical_python_launcher() -> str:
+    return os.path.abspath(sys.executable)
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     args, remaining = _parser().parse_known_args(list(argv) if argv is not None else None)
     files = {
@@ -119,7 +123,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     with tempfile.TemporaryDirectory(prefix="arc3-stage09-bootstrap-") as temporary:
         observation_path = Path(temporary) / "runtime-observation.json"
         command = [
-            str(Path(sys.executable).resolve()),
+            _lexical_python_launcher(),
             "-I",
             str(WORKER),
             "--bootstrap-runtime-binding",

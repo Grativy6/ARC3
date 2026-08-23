@@ -61,7 +61,7 @@ def _atomic_create(path: Path, value: Mapping[str, object]) -> None:
 
 def _expected_command(args: argparse.Namespace) -> list[str]:
     return [
-        str(Path(sys.executable).resolve()),
+        os.path.abspath(sys.executable),
         "-I",
         str(Path(__file__).resolve()),
         "--spec",
@@ -489,7 +489,7 @@ def _runtime_observation(root: Path, expected: Mapping[str, object]) -> dict[str
     if static_pass:
         sdk_probe = subprocess.run(
             [
-                str(Path(sys.executable).resolve()),
+                os.path.abspath(sys.executable),
                 "-I",
                 "-c",
                 (

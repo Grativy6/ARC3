@@ -41,6 +41,11 @@ from arc3.evaluation.public import PUBLIC_RUN_SCHEMA, PublicExposureLedger
 from arc3.evaluation.public_runner import _asset_identity_check
 from arc3.integrity import IntegrityReceipt
 
+PACKAGE_ONLY_RECEIPT = Path(
+    "C:/a/arc3-b001/artifacts/stage09/policy-integrity-d6d4bac-package-only.json"
+)
+PACKAGE_ONLY_SOURCE = Path("C:/a/arc3-stage09-build001-d6d4bac")
+
 
 def _execution_identity() -> dict[str, object]:
     return _boundaries()
@@ -78,6 +83,57 @@ def test_integrity_authority_uses_the_integrity_receipt_hash_contract(tmp_path: 
 
     assert all(predicates.values())
     assert projection["receipt_sha256"] == receipt.receipt_sha256
+
+
+@pytest.mark.skipif(
+    not PACKAGE_ONLY_RECEIPT.is_file() or not PACKAGE_ONLY_SOURCE.is_dir(),
+    reason="exact detached d6d4 package authority is not installed",
+)
+def test_exact_package_only_authority_recomputes_live_reachable_closure() -> None:
+    projection, predicates = harness._package_integrity_authority(
+        PACKAGE_ONLY_RECEIPT,
+        source_root=PACKAGE_ONLY_SOURCE,
+        expected_file_hash=harness.BUILD_001_PACKAGE_INTEGRITY_RECEIPT_SHA256,
+        expected_self_hash=harness.BUILD_001_PACKAGE_INTEGRITY_SELF_HASH,
+        expected_commit=harness.BUILD_001_PACKAGE_INTEGRITY_COMMIT,
+    )
+
+    assert all(predicates.values())
+    assert projection["status"] == "PASS"
+    assert projection["candidate_set_recomputed"] is True
+    assert projection["reachable_paths_recomputed"] is True
+    assert projection["live_source_hashes_match"] is True
+    assert projection["reachable_file_count"] == 86
+
+
+@pytest.mark.skipif(
+    not PACKAGE_ONLY_RECEIPT.is_file() or not PACKAGE_ONLY_SOURCE.is_dir(),
+    reason="exact detached d6d4 package authority is not installed",
+)
+def test_rehashed_package_receipt_cannot_override_live_source_hashes(tmp_path: Path) -> None:
+    body = cast(dict[str, Any], load_json(PACKAGE_ONLY_RECEIPT))
+    body.pop("receipt_sha256")
+    reachable = cast(dict[str, object], body["reachable_policy_source_hashes"])
+    first = sorted(reachable)[0]
+    reachable[first] = "sha256:" + "f" * 64
+    receipt = IntegrityReceipt(body=body)
+    path = tmp_path / "tampered-package-only.json"
+    path.write_bytes(receipt.canonical_bytes())
+
+    projection, predicates = harness._package_integrity_authority(
+        path,
+        source_root=PACKAGE_ONLY_SOURCE,
+        expected_file_hash=sha256_file(path),
+        expected_self_hash=receipt.receipt_sha256,
+        expected_commit=harness.BUILD_001_PACKAGE_INTEGRITY_COMMIT,
+    )
+
+    assert predicates["canonical_self_hash"] is True
+    assert predicates["file_hash"] is True
+    assert predicates["self_hash"] is True
+    assert predicates["complete_reachable_coverage"] is False
+    assert projection["live_source_hashes_match"] is False
+    assert projection["status"] == "FAIL"
 
 
 def _worker_identity_keywords() -> dict[str, object]:
@@ -129,6 +185,7 @@ def _preflight_execution_identity() -> dict[str, object]:
         },
         "prior_authority": prior_authority["before"],
         "environment_cache": {"start": environment_cache["before"]},
+        "predeclaration_authority": harness._predeclaration_authority(),
     }
 
 
@@ -281,9 +338,26 @@ def _materialize_cell_chain(
     public_spec = cast(dict[str, object], spec["public_worker_spec"])
     Path(cast(str, public_spec["trace_path"])).mkdir(parents=True, exist_ok=True)
     _write(paths["spec"], spec)
+    check_payload = _preflight_execution_identity()
+    check_payload["runtime_identity"] = runtime
+    check = _attach_fixture_clock(tmp_path, monkeypatch, check_payload)
+    cell_segment = harness._cell_segment_payload(
+        cell=cell,
+        check=check,
+        boot_identity="fixture-boot",
+        started_perf_counter_ns=0,
+    )
+    _write(paths["cell_segment"], cell_segment)
     exposure = tmp_path / "exposure.jsonl"
     event = harness._append_exposure(exposure, cell)
-    token = "fixture-launch-token"
+    token = "1" * 32
+    spawn_intent = harness._spawn_intent_payload(
+        cell=cell,
+        paths=paths,
+        spec=spec,
+        launch_token=token,
+    )
+    _write(paths["spawn_intent"], spawn_intent)
     command = harness._worker_command(
         paths["spec"],
         paths["raw"],
@@ -364,7 +438,7 @@ def _materialize_cell_chain(
             changed["passed"] = False
             changed = seal_object(changed, hash_field="observation_hash")
         elif boundary_drift == "prior":
-            predicates["build_001_integrity"] = False
+            predicates["build_001_package_integrity"] = False
             changed["passed"] = False
             changed = seal_object(changed, hash_field="authority_hash")
         else:
@@ -396,7 +470,34 @@ def _materialize_cell_chain(
         {
             "schema": harness.SUPERVISION_RECEIPT_SCHEMA,
             "authorization_hash": authorization["authorization_hash"],
+            "cleanup": {
+                "active_processes_after": 0,
+                "active_processes_before": 0,
+                "assigned_before_resume": True,
+                "authority": "windows-job-object-assigned-before-resume",
+                "close_attempted": True,
+                "close_error": None,
+                "close_succeeded": True,
+                "error": None,
+                "limitation": None,
+                "members_after": None,
+                "members_before": None,
+                "observation_error_before": None,
+                "passed": True,
+                "termination_attempted": False,
+                "termination_error": None,
+                "termination_succeeded": None,
+                "verification_error": None,
+            },
             "command": list(command),
+            "containment": {
+                "active_processes_after": 0,
+                "assigned_before_resume": True,
+                "authority": "windows-job-object-assigned-before-resume",
+                "error": None,
+                "limitation": None,
+                "passed": True,
+            },
             "launch_receipt_hash": launch["launch_receipt_hash"],
             "launch_error": None,
             "returncode": 0,
@@ -446,6 +547,7 @@ def _materialize_cell_chain(
         paths=paths,
         receipt=receipt,
         parent_evidence=parent_evidence,
+        cell_segment=cell_segment,
         measured_active_wall_ns=21,
     )
     _write(paths["finalization"], finalization)
@@ -453,7 +555,7 @@ def _materialize_cell_chain(
         receipt,
         event,
         {
-            "check": _preflight_execution_identity(),
+            "check": check,
             "runtime": runtime,
             "work_root": work_root,
             "exposure": exposure,
@@ -522,6 +624,227 @@ def test_worker_spec_binds_source_asset_and_public_worker_identity(
     assert public["specification"]["run_spec_hash"].startswith("sha256:")
 
 
+@pytest.mark.parametrize(
+    "stale_state",
+    [
+        "abort",
+        "authorization",
+        "cell_root",
+        "finalization",
+        "launch",
+        "orphan",
+        "parent_evidence",
+        "receipt",
+        "recording",
+        "stream_directory",
+        "supervision",
+    ],
+)
+def test_unexposed_cell_rejects_every_attempt_state(tmp_path: Path, stale_state: str) -> None:
+    cell = build_matrix()[0]
+    recordings = tmp_path / "recordings"
+    paths = harness._cell_paths(tmp_path / "work", cell)
+    if stale_state == "recording":
+        target = recordings / cell.cell_id
+        target.mkdir(parents=True)
+    elif stale_state == "stream_directory":
+        target = paths["stdout"].parent
+        target.mkdir(parents=True)
+    elif stale_state == "cell_root":
+        target = paths["cell_root"]
+        target.mkdir(parents=True)
+    else:
+        target = paths[stale_state]
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(b"stale")
+
+    with pytest.raises(EvaluationError, match="already has execution evidence"):
+        harness._assert_unexposed_cell_clean(
+            paths=paths,
+            recordings=recordings,
+            cell=cell,
+        )
+
+
+def test_worker_command_preserves_lexical_symlinked_venv_launcher(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    interpreter_target = Path(sys.executable).resolve()
+    launcher = tmp_path / "venv" / ("python.exe" if os.name == "nt" else "python")
+    launcher.parent.mkdir(parents=True)
+    try:
+        launcher.symlink_to(Path(sys.executable))
+    except OSError:
+        pytest.skip("host does not permit a test interpreter symlink")
+    monkeypatch.setattr(harness.sys, "executable", str(launcher))
+
+    command = harness._worker_command(
+        tmp_path / "spec.json",
+        tmp_path / "raw.json",
+        launch_path=tmp_path / "launch.json",
+        authorization_path=tmp_path / "authorization.json",
+        abort_path=tmp_path / "abort.json",
+        launch_token="1" * 32,
+    )
+
+    assert Path(command[0]) == launcher.absolute()
+    assert Path(command[0]).resolve() == interpreter_target
+
+
+def test_parent_and_worker_commands_use_the_same_lexical_launcher(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    launcher = tmp_path / "venv" / ("python.exe" if os.name == "nt" else "python")
+    monkeypatch.setattr(harness.sys, "executable", str(launcher))
+    spec = tmp_path / "spec.json"
+    raw = tmp_path / "raw.json"
+    launch = tmp_path / "launch.json"
+    authorization = tmp_path / "authorization.json"
+    abort = tmp_path / "abort.json"
+    token = "1" * 32
+    args = argparse.Namespace(
+        spec=spec,
+        result=raw,
+        launch_receipt=launch,
+        authorization=authorization,
+        abort_receipt=abort,
+        launch_token=token,
+    )
+
+    parent_command = harness._worker_command(
+        spec,
+        raw,
+        launch_path=launch,
+        authorization_path=authorization,
+        abort_path=abort,
+        launch_token=token,
+    )
+
+    assert tuple(worker._expected_command(args)) == parent_command
+    assert parent_command[0] == os.path.abspath(str(launcher))
+    assert bootstrap._lexical_python_launcher() == parent_command[0]
+
+
+def test_windows_process_table_ignores_unaddressable_system_idle_process() -> None:
+    table = harness._parse_windows_process_table_rows(
+        [
+            {
+                "command_line": "",
+                "parent_pid": 0,
+                "pid": 0,
+                "process_creation_token": "windows-cim:0",
+            },
+            {
+                "command_line": "fixture",
+                "parent_pid": 0,
+                "pid": 4,
+                "process_creation_token": "windows-cim:123",
+            },
+        ]
+    )
+
+    assert set(table) == {4}
+
+
+def test_windows_handle_close_preserves_pointer_width_and_checks_success() -> None:
+    class FakeCloseHandle:
+        argtypes: object = None
+        restype: object = None
+        received: int | None = None
+
+        def __call__(self, handle: object) -> int:
+            assert isinstance(handle, harness.ctypes.c_void_p)
+            self.received = handle.value
+            return 1
+
+    close_handle = FakeCloseHandle()
+    high_bit_handle = (1 << 63) | 0x1234
+
+    harness._checked_windows_close_handle(close_handle, high_bit_handle)
+
+    assert close_handle.argtypes == [harness.ctypes.c_void_p]
+    assert close_handle.restype is harness.ctypes.c_int
+    assert close_handle.received == high_bit_handle
+
+
+def test_windows_handle_close_rejects_zero_kernel_result() -> None:
+    class FailingCloseHandle:
+        argtypes: object = None
+        restype: object = None
+
+        def __call__(self, handle: object) -> int:
+            assert isinstance(handle, harness.ctypes.c_void_p)
+            return 0
+
+    close_handle = FailingCloseHandle()
+
+    with pytest.raises(OSError, match="CloseHandle failed"):
+        harness._checked_windows_close_handle(close_handle, (1 << 63) | 0x5678)
+
+    assert close_handle.argtypes == [harness.ctypes.c_void_p]
+    assert close_handle.restype is harness.ctypes.c_int
+
+
+@pytest.mark.skipif(os.name != "nt", reason="requires native Windows Job Object cleanup")
+def test_windows_job_close_failure_is_nonpromotable_infrastructure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    actual_close = harness._close_windows_handle
+
+    def close_then_report_failure(handle: int) -> None:
+        actual_close(handle)
+        raise OSError("fixture CloseHandle failure")
+
+    monkeypatch.setattr(harness, "_close_windows_handle", close_then_report_failure)
+    supervision = harness._supervise(
+        [sys.executable, "-I", "-c", "pass"],
+        cwd=tmp_path,
+        streams=tmp_path / "streams",
+        timeout_seconds=5.0,
+    )
+    cleanup = cast(dict[str, object], supervision["cleanup"])
+    containment = cast(dict[str, object], supervision["containment"])
+    assert cleanup["close_attempted"] is True
+    assert cleanup["close_succeeded"] is False
+    assert cleanup["passed"] is False
+    assert containment["passed"] is False
+    with pytest.raises(EvaluationError, match="did not verify empty"):
+        harness._validate_cleanup_receipt(cleanup, containment)
+
+    cell = build_matrix()[0]
+    boundaries = _execution_identity()
+    harness_boundary = cast(dict[str, object], boundaries["harness_source"])
+    runtime_boundary = cast(dict[str, object], boundaries["runtime_environment"])
+    prior_boundary = cast(dict[str, object], boundaries["prior_authority"])
+    cache_boundary = cast(dict[str, object], boundaries["environment_cache"])
+    receipt = harness._cell_receipt(
+        cell,
+        spec={"worker_spec_hash": "sha256:" + "1" * 64},
+        exposure_event={"event_hash": "sha256:" + "2" * 64},
+        supervision=supervision,
+        raw_path=tmp_path / "absent-raw.json",
+        asset_after=_asset(cell),
+        pre_receipt_active_wall_ns=1,
+        harness_source_expected=cast(dict[str, object], harness_boundary["expected"]),
+        harness_source_before=cast(dict[str, object], harness_boundary["before"]),
+        harness_source_after=cast(dict[str, object], harness_boundary["after"]),
+        runtime_environment_expected=cast(dict[str, object], runtime_boundary["expected"]),
+        runtime_environment_before=cast(dict[str, object], runtime_boundary["before"]),
+        runtime_environment_after=cast(dict[str, object], runtime_boundary["after"]),
+        prior_authority_before=cast(dict[str, object], prior_boundary["before"]),
+        prior_authority_after=cast(dict[str, object], prior_boundary["after"]),
+        environment_cache_before=cast(dict[str, object], cache_boundary["before"]),
+        environment_cache_after=cast(dict[str, object], cache_boundary["after"]),
+    )
+    assert receipt["status"] == CellStatus.INFRASTRUCTURE_FAILURE.value
+    assert receipt["result"] == {
+        "completed": False,
+        "environment_actions": 0,
+        "levels_completed": 0,
+        "score_verified": False,
+    }
+
+
 def test_parent_supervisor_hashes_raw_streams_without_shell(tmp_path: Path) -> None:
     result = harness._supervise(
         [sys.executable, "-I", "-c", "import sys;sys.stdout.write('ok')"],
@@ -540,6 +863,107 @@ def test_parent_supervisor_hashes_raw_streams_without_shell(tmp_path: Path) -> N
     assert isinstance(stderr_path, str)
     assert Path(stdout_path).read_bytes() == b"ok"
     assert Path(stderr_path).read_bytes() == b""
+
+
+def test_normal_root_exit_drains_and_verifies_long_lived_descendant(tmp_path: Path) -> None:
+    child_code = (
+        "import subprocess,sys;"
+        "child=subprocess.Popen([sys.executable,'-c','import time;time.sleep(30)'],"
+        "stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,"
+        "close_fds=True);print(child.pid,flush=True)"
+    )
+    result = harness._supervise(
+        [sys.executable, "-I", "-c", child_code],
+        cwd=tmp_path,
+        streams=tmp_path / "streams",
+        timeout_seconds=5.0,
+    )
+
+    assert result["launch_error"] is None
+    assert result["returncode"] == 0
+    assert result["timed_out"] is False
+    stdout_path = cast(str, result["stdout_path"])
+    child_pid = int(Path(stdout_path).read_text(encoding="utf-8").strip())
+    cleanup = cast(dict[str, object], result["cleanup"])
+    assert cast(int, cleanup["active_processes_before"]) >= 1
+    assert cleanup["termination_attempted"] is True
+    assert cleanup["termination_succeeded"] is True
+    assert cleanup["active_processes_after"] == 0
+    assert cleanup["passed"] is True
+    containment = cast(dict[str, object], result["containment"])
+    assert containment["active_processes_after"] == 0
+    assert containment["passed"] is True
+    assert harness._process_creation_token(child_pid) is None
+
+
+def test_timeout_kills_and_verifies_spawned_descendant_tree(tmp_path: Path) -> None:
+    child_code = (
+        "import subprocess,sys,time;"
+        "subprocess.Popen([sys.executable,'-c','import time;time.sleep(30)']);"
+        "time.sleep(30)"
+    )
+    result = harness._supervise(
+        [sys.executable, "-I", "-c", child_code],
+        cwd=tmp_path,
+        streams=tmp_path / "streams",
+        timeout_seconds=0.5,
+    )
+
+    assert result["timed_out"] is True
+    termination = cast(dict[str, object], result["termination"])
+    assert termination["passed"] is True
+    assert termination["process_tree_verified_empty"] is True
+    assert termination["containment_active_processes_after"] == 0
+    containment = cast(dict[str, object], result["containment"])
+    assert containment["passed"] is True
+    assert containment["active_processes_after"] == 0
+    if os.name == "nt":
+        assert termination["containment_authority"] == ("windows-job-object-assigned-before-resume")
+    else:
+        assert termination["containment_authority"] == "posix-new-session-process-group"
+
+
+def test_command_success_alone_cannot_verify_tree_termination() -> None:
+    root_pid = 123
+    root_token = "fixture-root-token"
+    receipt = {
+        "command_succeeded": True,
+        "containment_active_processes_after": 1,
+        "containment_authority": "posix-new-session-process-group",
+        "passed": True,
+        "process_tree_before": [
+            {
+                "parent_pid": 1,
+                "pid": root_pid,
+                "process_creation_token": root_token,
+            },
+            {
+                "parent_pid": root_pid,
+                "pid": 124,
+                "process_creation_token": "fixture-child-token",
+            },
+        ],
+        "process_tree_enumeration_error": None,
+        "process_tree_live_after": [
+            {
+                "parent_pid": root_pid,
+                "pid": 124,
+                "process_creation_token": "fixture-child-token",
+            }
+        ],
+        "process_tree_verification_error": None,
+        "process_tree_verified_empty": True,
+        "root_pid": root_pid,
+        "root_process_creation_token": root_token,
+    }
+
+    with pytest.raises(EvaluationError, match="did not verify empty"):
+        harness._validate_tree_termination_receipt(
+            receipt,
+            expected_root_pid=root_pid,
+            expected_root_token=root_token,
+            require_target_match=False,
+        )
 
 
 def test_runtime_identity_avoids_hostname_dependent_platform_helpers(
@@ -1283,13 +1707,17 @@ def test_resume_validates_pre_environment_worker_abort(
             "cell_id": cell.cell_id,
             "environment_opened": False,
             "launch_receipt_path": paths["launch"].resolve().as_posix(),
-            "launch_token": "aborted-token",
+            "launch_token": cast(
+                str,
+                cast(dict[str, object], load_json(paths["spawn_intent"]))["launch_token"],
+            ),
             "pid": 123,
             "reason": "launch-authorization-unavailable-or-invalid",
         },
         hash_field="worker_abort_hash",
     )
     _write(paths["abort"], abort)
+    monkeypatch.setattr(harness, "_spawn_intent_processes", lambda _token: ([], None))
 
     orphan = harness._seal_orphan_boundary(
         work_root=cast(Path, fixture["work_root"]),
@@ -1506,6 +1934,291 @@ def test_exposed_cell_without_terminal_receipt_is_never_relaunched(
     assert failure["kind"] == "exposed-without-terminal-receipt"
 
 
+def test_exposed_without_launch_or_abort_seals_typed_failure_without_cleanup_claim(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _receipt, event, fixture = _materialize_cell_chain(tmp_path, monkeypatch)
+    cell = build_matrix()[0]
+    work_root = cast(Path, fixture["work_root"])
+    paths = harness._cell_paths(work_root, cell)
+    for name in (
+        "authorization",
+        "finalization",
+        "launch",
+        "parent_evidence",
+        "raw",
+        "receipt",
+        "stderr",
+        "stdout",
+        "supervision",
+    ):
+        paths[name].unlink()
+    monkeypatch.setattr(harness, "_spawn_intent_processes", lambda _token: ([], None))
+
+    orphan = harness._seal_orphan_boundary(
+        work_root=work_root,
+        recordings=tmp_path / "recordings",
+        environments=tmp_path / "environments",
+        build_000_root=tmp_path / "build000",
+        build_001_root=tmp_path / "build001",
+        runtime_identity=cast(dict[str, object], fixture["runtime"]),
+        check=cast(dict[str, object], fixture["check"]),
+        cell=cell,
+        exposure_event=event,
+    )
+    assert orphan["state"] == "unreceipted-launch-not-running"
+    assert orphan["cleanup_claimed"] is False
+    process_proof = cast(dict[str, object], orphan["process_enumeration"])
+    assert process_proof["verified_empty"] is True
+
+    output = tmp_path / "unreceipted-failure.json"
+    terminal = harness._failure_terminal(
+        output=output,
+        check=cast(dict[str, object], fixture["check"]),
+        receipts=[],
+        finalizations=[],
+        exposure=cast(Path, fixture["exposure"]),
+        failed_cell=cell,
+        failure_kind="exposed-without-terminal-receipt",
+        exposure_event_hash=event["event_hash"],
+        orphan_process=orphan,
+    )
+    assert terminal["status"] == "FAILED_INFRASTRUCTURE"
+    resources = cast(dict[str, object], terminal["resources"])
+    assert resources["open_segment_conservative_charge_ns"] == (harness.CELL_ADMISSION_CHARGE_NS)
+
+
+def test_unreceipted_live_spawn_without_exact_containment_blocks_terminal(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _receipt, event, fixture = _materialize_cell_chain(tmp_path, monkeypatch)
+    cell = build_matrix()[0]
+    work_root = cast(Path, fixture["work_root"])
+    paths = harness._cell_paths(work_root, cell)
+    for name in (
+        "authorization",
+        "finalization",
+        "launch",
+        "parent_evidence",
+        "raw",
+        "receipt",
+        "stderr",
+        "stdout",
+        "supervision",
+    ):
+        paths[name].unlink()
+    match = {
+        "parent_pid": 1,
+        "pid": 123,
+        "process_creation_token": "fixture-live-token",
+    }
+    monkeypatch.setattr(
+        harness,
+        "_spawn_intent_processes",
+        lambda _token: ([match], None),
+    )
+    monkeypatch.setattr(
+        harness,
+        "_terminate_orphan_exact",
+        lambda _pid, _token: {
+            "live_process_token_after": "fixture-live-token",
+            "passed": False,
+        },
+    )
+
+    with pytest.raises(EvaluationError, match="did not terminate"):
+        harness._seal_orphan_boundary(
+            work_root=work_root,
+            recordings=tmp_path / "recordings",
+            environments=tmp_path / "environments",
+            build_000_root=tmp_path / "build000",
+            build_001_root=tmp_path / "build001",
+            runtime_identity=cast(dict[str, object], fixture["runtime"]),
+            check=cast(dict[str, object], fixture["check"]),
+            cell=cell,
+            exposure_event=event,
+        )
+    assert not paths["orphan"].exists()
+
+
+def test_open_cell_segment_resume_charges_full_cell_and_excludes_reboot_downtime(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    identity = _execution_identity()
+    harness_boundary = cast(dict[str, object], identity["harness_source"])
+    expected_harness = cast(dict[str, object], harness_boundary["expected"])
+    monkeypatch.setattr(
+        harness,
+        "_BOOTSTRAP_AUTHORITY",
+        {
+            "files": expected_harness["files"],
+            "git_commit": expected_harness["git_commit"],
+            "git_tree": expected_harness["git_tree"],
+            "runtime_binding_hash": harness.EXPECTED_RUNTIME_ENVIRONMENT["runtime_binding_hash"],
+            "socket_audit_denial_installed": True,
+        },
+    )
+    runtime: dict[str, object] = {}
+    monkeypatch.setattr(harness, "_runtime_identity", lambda: runtime)
+    monkeypatch.setattr(harness, "_official_paths", lambda **_kwargs: None)
+    base_preflight = seal_object(
+        {
+            "schema": PREFLIGHT_SCHEMA,
+            "status": "READY_NOT_EXECUTED",
+            "gameplay_opened": False,
+            "runtime_identity": runtime,
+            "sources": {},
+            "competition_integrity": {},
+            "stage09_exposure_event_count": 0,
+            **_preflight_execution_identity(),
+        },
+        hash_field="preflight_hash",
+    )
+    work_root = tmp_path / "run-clock"
+    check = harness._attach_run_clock(
+        base_preflight,
+        work_root=work_root,
+        harness_binding_hash=expected_harness["binding_hash"],
+    )
+    cell = build_matrix()[0]
+    paths = harness._cell_paths(work_root, cell)
+    segment = harness._cell_segment_payload(
+        cell=cell,
+        check=check,
+        boot_identity="old-boot",
+        started_perf_counter_ns=1,
+    )
+    _write(paths["cell_segment"], segment)
+    monkeypatch.setattr(harness, "preflight", lambda **_kwargs: base_preflight)
+    monkeypatch.setattr(harness, "_validate_exposures", lambda _path: ())
+    monkeypatch.setattr(harness, "_boot_identity", lambda: "simulated-new-boot")
+    monkeypatch.setattr(harness.time, "perf_counter_ns", lambda: 10**18)
+
+    def forbidden(*_args: object, **_kwargs: object) -> NoReturn:
+        raise AssertionError("open cell segment was relaunched")
+
+    monkeypatch.setattr(harness, "_supervise", forbidden)
+    output = tmp_path / "open-segment-failure.json"
+    kwargs = {
+        "harness_source_expected": expected_harness,
+        "output": output,
+        "work_root": work_root,
+        "exposure": tmp_path / "exposure.jsonl",
+        "recordings": tmp_path / "recordings",
+        "environments": tmp_path / "environments",
+        "build_000_root": tmp_path / "build000",
+        "build_001_root": tmp_path / "build001",
+        "stage08_result": tmp_path / "stage08.json",
+        "stage08_exposure": tmp_path / "stage08-exposure.jsonl",
+    }
+    terminal = harness.execute(**kwargs)
+    assert terminal["status"] == "FAILED_INFRASTRUCTURE"
+    assert cast(dict[str, object], terminal["failure"])["kind"] == (
+        "open-cell-segment-without-finalization"
+    )
+    resources = cast(dict[str, object], terminal["resources"])
+    assert resources["cumulative_active_accounted_wall_ns"] == (harness.CELL_ADMISSION_CHARGE_NS)
+    assert resources["open_segment_conservative_charge_ns"] == (harness.CELL_ADMISSION_CHARGE_NS)
+    assert harness.execute(**kwargs) == terminal
+
+
+def test_resume_seals_receipt_without_finalization_and_never_relaunches(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    receipt, _event, fixture = _materialize_cell_chain(tmp_path, monkeypatch)
+    cell = build_matrix()[0]
+    work_root = cast(Path, fixture["work_root"])
+    paths = harness._cell_paths(work_root, cell)
+    receipt_bytes = paths["receipt"].read_bytes()
+    paths["finalization"].unlink()
+    identity = _execution_identity()
+    harness_boundary = cast(dict[str, object], identity["harness_source"])
+    expected_harness = cast(dict[str, object], harness_boundary["expected"])
+    monkeypatch.setattr(
+        harness,
+        "_BOOTSTRAP_AUTHORITY",
+        {
+            "files": expected_harness["files"],
+            "git_commit": expected_harness["git_commit"],
+            "git_tree": expected_harness["git_tree"],
+            "runtime_binding_hash": harness.EXPECTED_RUNTIME_ENVIRONMENT["runtime_binding_hash"],
+            "socket_audit_denial_installed": True,
+        },
+    )
+    runtime = cast(dict[str, object], fixture["runtime"])
+    monkeypatch.setattr(harness, "_runtime_identity", lambda: runtime)
+    monkeypatch.setattr(harness, "_official_paths", lambda **_kwargs: None)
+    preflight_receipt = seal_object(
+        {
+            "schema": PREFLIGHT_SCHEMA,
+            "status": "READY_NOT_EXECUTED",
+            "gameplay_opened": False,
+            "runtime_identity": runtime,
+            "sources": {},
+            "competition_integrity": {},
+            "stage09_exposure_event_count": 1,
+            **_preflight_execution_identity(),
+        },
+        hash_field="preflight_hash",
+    )
+    monkeypatch.setattr(harness, "preflight", lambda **_kwargs: preflight_receipt)
+
+    def forbidden(*_args: object, **_kwargs: object) -> NoReturn:
+        raise AssertionError("a receipt-bearing cell was relaunched")
+
+    monkeypatch.setattr(harness, "_supervise", forbidden)
+    output = tmp_path / "output.json"
+
+    result = harness.execute(
+        harness_source_expected=expected_harness,
+        output=output,
+        work_root=work_root,
+        exposure=cast(Path, fixture["exposure"]),
+        recordings=tmp_path / "recordings",
+        environments=tmp_path / "environments",
+        build_000_root=tmp_path / "build000",
+        build_001_root=tmp_path / "build001",
+        stage08_result=tmp_path / "stage08.json",
+        stage08_exposure=tmp_path / "stage08-exposure.jsonl",
+    )
+
+    assert result["status"] == "FAILED_INFRASTRUCTURE"
+    assert result["execution_complete"] is False
+    assert cast(dict[str, object], result["failure"])["kind"] == (
+        "durable-cell-receipt-without-finalization"
+    )
+    assert result["cell_count"] == 1
+    assert result["cell_receipt_hashes"] == [receipt["cell_receipt_hash"]]
+    assert paths["receipt"].read_bytes() == receipt_bytes
+    recovered = harness._load_finalization_prefix(
+        work_root=work_root,
+        receipts=[receipt],
+        check=cast(dict[str, object], fixture["check"]),
+    )[0]
+    assert recovered["schema"] == harness.RECOVERED_CELL_FINALIZATION_SCHEMA
+    assert recovered["recovery_kind"] == "durable-cell-receipt-without-finalization"
+    assert recovered["timing_measurement_available"] is False
+    assert recovered["measured_active_wall_ns"] is None
+    assert recovered["within_admission_charge"] is False
+    assert result["cell_finalization_hashes"] == [recovered["finalization_hash"]]
+    assert len(harness._validate_exposures(cast(Path, fixture["exposure"]))) == 1
+    monkeypatch.setattr(harness, "_boot_identity", lambda: "simulated-new-boot")
+    monkeypatch.setattr(harness.time, "perf_counter_ns", lambda: 10**18)
+    resumed = harness.execute(
+        harness_source_expected=expected_harness,
+        output=output,
+        work_root=work_root,
+        exposure=cast(Path, fixture["exposure"]),
+        recordings=tmp_path / "recordings",
+        environments=tmp_path / "environments",
+        build_000_root=tmp_path / "build000",
+        build_001_root=tmp_path / "build001",
+        stage08_result=tmp_path / "stage08.json",
+        stage08_exposure=tmp_path / "stage08-exposure.jsonl",
+    )
+    assert resumed == result
+
+
 def _aggregate_receipts() -> list[dict[str, object]]:
     receipts: list[dict[str, object]] = []
     for cell in build_matrix():
@@ -1610,13 +2323,11 @@ def test_terminal_output_overhead_cannot_escape_overall_run_wall(
         cast(dict[str, object], _execution_identity()["harness_source"])["expected"],
     )
     monkeypatch.setattr(harness.time, "perf_counter_ns", lambda: 0)
-    check = _attach_fixture_clock(
-        tmp_path,
-        monkeypatch,
-        {"harness_source": {"expected": expected}},
-    )
+    check_payload = _preflight_execution_identity()
+    cast(dict[str, object], check_payload["harness_source"])["expected"] = expected
+    check = _attach_fixture_clock(tmp_path, monkeypatch, check_payload)
     limit = int(harness.OVERALL_ACTIVE_WALL_SECONDS * 1_000_000_000)
-    ticks = iter((limit - harness.TERMINAL_WRITE_RESERVE_NS, limit + 1))
+    ticks = iter((0, 0, harness.TERMINAL_WRITE_RESERVE_NS + 1))
     monkeypatch.setattr(harness.time, "perf_counter_ns", lambda: next(ticks))
     output = tmp_path / "terminal.json"
 
@@ -1624,7 +2335,15 @@ def test_terminal_output_overhead_cannot_escape_overall_run_wall(
         harness._write_terminal(
             output,
             seal_object(
-                {"schema": harness.AGGREGATE_SCHEMA, "status": "PASS"},
+                {
+                    "schema": harness.AGGREGATE_SCHEMA,
+                    "status": "PASS",
+                    "resources": {
+                        "cumulative_active_accounted_wall_ns": (
+                            limit - harness.TERMINAL_WRITE_RESERVE_NS
+                        )
+                    },
+                },
                 hash_field="artifact_core_hash",
             ),
             check=check,
@@ -1633,7 +2352,36 @@ def test_terminal_output_overhead_cannot_escape_overall_run_wall(
     assert output.is_file()
     finalization = cast(dict[str, object], load_json(harness._terminal_finalization_path(output)))
     assert finalization["within_overall_active_wall"] is False
-    assert finalization["elapsed_after_durable_output_ns"] == limit + 1
+    assert finalization["active_after_durable_output_ns"] == limit + 1
+
+
+def test_active_wall_clock_is_stable_across_downtime_and_reboot(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    expected = cast(
+        dict[str, object],
+        cast(dict[str, object], _execution_identity()["harness_source"])["expected"],
+    )
+    base = {"harness_source": {"expected": expected}}
+    monkeypatch.setattr(harness, "_boot_identity", lambda: "first-boot")
+    first = harness._attach_run_clock(
+        base,
+        work_root=tmp_path,
+        harness_binding_hash=expected["binding_hash"],
+    )
+    monkeypatch.setattr(harness, "_boot_identity", lambda: "new-boot")
+    monkeypatch.setattr(harness.time, "perf_counter_ns", lambda: 10**18)
+    resumed = harness._attach_run_clock(
+        base,
+        work_root=tmp_path,
+        harness_binding_hash=expected["binding_hash"],
+    )
+
+    assert resumed == first
+    clock = cast(dict[str, object], cast(dict[str, object], resumed["run_clock"])["receipt"])
+    assert clock["interruption_downtime_excluded"] is True
+    assert clock["reboot_stable"] is True
+    assert clock["open_segment_conservative_charge_ns"] == harness.CELL_ADMISSION_CHARGE_NS
 
 
 def _complete_terminal_fixture(
@@ -1724,6 +2472,245 @@ def _complete_terminal_fixture(
     monkeypatch.setattr(harness, "_load_receipt_prefix", lambda **_kwargs: receipts)
     monkeypatch.setattr(harness, "_load_finalization_prefix", lambda **_kwargs: finalizations)
     return output, exposure, check, receipts
+
+
+def test_complete_terminal_verifier_returns_hash_bound_authority(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    output, exposure, check, _receipts = _complete_terminal_fixture(tmp_path, monkeypatch)
+    monkeypatch.setattr(harness, "preflight", lambda **_kwargs: check)
+    monkeypatch.setattr(harness, "_attach_run_clock", lambda *_args, **_kwargs: check)
+    terminal = cast(dict[str, object], load_json(output))
+    finalization_path = harness._terminal_finalization_path(output)
+    finalization = cast(dict[str, object], load_json(finalization_path))
+
+    verified = harness.verify_complete_terminal(
+        source_root=harness.ROOT,
+        attempt_root=tmp_path / "run-clock",
+        output=output,
+        exposure=exposure,
+        expected_output_sha256=sha256_file(output),
+        expected_artifact_core_hash=cast(str, terminal["artifact_core_hash"]),
+        expected_terminal_finalization_sha256=sha256_file(finalization_path),
+        expected_terminal_finalization_hash=cast(str, finalization["terminal_finalization_hash"]),
+    )
+
+    assert verified["schema"] == harness.TERMINAL_VERIFICATION_SCHEMA
+    assert verified["passed"] is True
+    assert verified["status"] == "PASS"
+    assert verified["execution_complete"] is True
+    assert verified["evidence_integrity"] is True
+    assert verified["competition_integrity"] is True
+    assert verify_object_hash(verified, hash_field="verification_hash")
+    assert set(verified) == {
+        "attempt_root",
+        "competition_integrity",
+        "evidence_integrity",
+        "execution_complete",
+        "exposure",
+        "gate",
+        "output",
+        "passed",
+        "prior_authority",
+        "schema",
+        "source_end",
+        "source_root",
+        "source_stable",
+        "status",
+        "terminal_finalization",
+        "verification_hash",
+        "work_authority",
+    }
+    output_authority = cast(dict[str, object], verified["output"])
+    assert output_authority["sha256"] == sha256_file(output)
+    assert output_authority["artifact_core_hash"] == terminal["artifact_core_hash"]
+    work_authority = cast(dict[str, object], verified["work_authority"])
+    assert work_authority["cell_count"] == len(build_matrix())
+    assert work_authority["cell_receipt_hashes"] == terminal["cell_receipt_hashes"]
+    assert work_authority["cell_finalization_hashes"] == terminal["cell_finalization_hashes"]
+    assert set(work_authority) == {
+        "cell_count",
+        "cell_finalization_hashes",
+        "cell_receipt_hashes",
+        "matrix_hash",
+    }
+    authority = cast(dict[str, object], verified["prior_authority"])
+    assert set(authority) == {
+        "assurance_limitation",
+        "build_001_package_only",
+        "development_scans",
+        "full_public_integrity_status",
+        "holdout",
+        "predeclaration",
+        "prior_authority_hash",
+    }
+    assert set(cast(dict[str, object], authority["build_001_package_only"])) == {
+        "candidate_set_recomputed",
+        "file_sha256",
+        "git_commit",
+        "live_source_hashes_match",
+        "package_only_passed",
+        "policy_scan_covers_reachable_paths",
+        "reachable_paths_recomputed",
+        "receipt_sha256",
+        "status",
+    }
+    assert set(cast(dict[str, object], authority["development_scans"])) == {
+        "build_000_finding_count",
+        "build_000_passed",
+        "build_001_finding_count",
+        "build_001_passed",
+        "development_identity_count",
+        "identifier_list_hash",
+        "identifier_string_count",
+        "identity_values_disclosed",
+    }
+    assert set(cast(dict[str, object], authority["holdout"])) == {
+        "file_sha256",
+        "identities_loaded",
+        "manifest_loaded_as_metadata",
+        "pinned_manifest_sha256",
+        "public_holdout_gameplay_events",
+        "status",
+    }
+
+    with pytest.raises(EvaluationError, match="output file hash changed"):
+        harness.verify_complete_terminal(
+            source_root=harness.ROOT,
+            attempt_root=tmp_path / "run-clock",
+            output=output,
+            exposure=exposure,
+            expected_output_sha256="sha256:" + "f" * 64,
+            expected_artifact_core_hash=cast(str, terminal["artifact_core_hash"]),
+            expected_terminal_finalization_sha256=sha256_file(finalization_path),
+            expected_terminal_finalization_hash=cast(
+                str, finalization["terminal_finalization_hash"]
+            ),
+        )
+
+
+def test_complete_failed_mechanism_terminal_retains_evidence_authority(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    output, exposure, check, _receipts = _complete_terminal_fixture(tmp_path, monkeypatch)
+    terminal = cast(dict[str, Any], load_json(output))
+    terminal.pop("artifact_core_hash")
+    terminal["status"] = "FAILED_MECHANISM"
+    gate = cast(dict[str, object], terminal["gate"])
+    gate["distinct_new_completed_games"] = False
+    terminal = seal_object(terminal, hash_field="artifact_core_hash")
+    output.write_bytes(canonical_json_bytes(terminal))
+    wall = cast(dict[str, object], terminal["run_active_wall"])
+    active = cast(int, wall["active_before_output_ns"])
+    finalization = harness._terminal_finalization_payload(
+        output=output,
+        terminal=terminal,
+        check=check,
+        active_after_output_ns=active,
+        recovery_kind=None,
+    )
+    finalization_path = harness._terminal_finalization_path(output)
+    finalization_path.write_bytes(canonical_json_bytes(finalization))
+    monkeypatch.setattr(harness, "preflight", lambda **_kwargs: check)
+    monkeypatch.setattr(harness, "_attach_run_clock", lambda *_args, **_kwargs: check)
+    monkeypatch.setattr(harness, "_load_existing_terminal", lambda **_kwargs: terminal)
+
+    verified = harness.verify_complete_terminal(
+        source_root=harness.ROOT,
+        attempt_root=tmp_path / "run-clock",
+        output=output,
+        exposure=exposure,
+        expected_output_sha256=sha256_file(output),
+        expected_artifact_core_hash=cast(str, terminal["artifact_core_hash"]),
+        expected_terminal_finalization_sha256=sha256_file(finalization_path),
+        expected_terminal_finalization_hash=cast(str, finalization["terminal_finalization_hash"]),
+    )
+
+    assert verified["passed"] is True
+    assert verified["status"] == "FAILED_MECHANISM"
+    assert verified["evidence_integrity"] is True
+    assert verified["competition_integrity"] is True
+
+
+def test_crash_after_pass_output_before_finalization_cannot_earn_authority(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    output, exposure, check, _receipts = _complete_terminal_fixture(tmp_path, monkeypatch)
+    finalization_path = harness._terminal_finalization_path(output)
+    finalization_path.unlink()
+
+    with pytest.raises(EvaluationError, match="claimed terminal"):
+        harness._load_existing_terminal(
+            output=output,
+            work_root=tmp_path / "work",
+            exposure=exposure,
+            check=check,
+        )
+
+    recovered = cast(dict[str, object], load_json(finalization_path))
+    assert recovered["recovery_kind"] == (
+        "terminal-output-durable-finalization-missing-after-interruption"
+    )
+    assert recovered["timing_measurement_available"] is False
+    assert recovered["terminal_authority_passed"] is False
+    assert verify_object_hash(recovered, hash_field="terminal_finalization_hash")
+
+
+def test_complete_terminal_verifier_is_read_only_when_finalization_is_missing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    output, exposure, check, _receipts = _complete_terminal_fixture(tmp_path, monkeypatch)
+    terminal = cast(dict[str, object], load_json(output))
+    finalization_path = harness._terminal_finalization_path(output)
+    finalization = cast(dict[str, object], load_json(finalization_path))
+    finalization_sha256 = sha256_file(finalization_path)
+    finalization_path.unlink()
+    monkeypatch.setattr(harness, "preflight", lambda **_kwargs: check)
+    monkeypatch.setattr(harness, "_attach_run_clock", lambda *_args, **_kwargs: check)
+
+    with pytest.raises(EvaluationError, match="finalization receipt is absent"):
+        harness.verify_complete_terminal(
+            source_root=harness.ROOT,
+            attempt_root=tmp_path / "run-clock",
+            output=output,
+            exposure=exposure,
+            expected_output_sha256=sha256_file(output),
+            expected_artifact_core_hash=cast(str, terminal["artifact_core_hash"]),
+            expected_terminal_finalization_sha256=finalization_sha256,
+            expected_terminal_finalization_hash=cast(
+                str, finalization["terminal_finalization_hash"]
+            ),
+        )
+
+    assert not finalization_path.exists()
+
+
+def test_complete_terminal_verifier_is_read_only_when_run_clock_is_missing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    output, exposure, check, _receipts = _complete_terminal_fixture(tmp_path, monkeypatch)
+    terminal = cast(dict[str, object], load_json(output))
+    finalization_path = harness._terminal_finalization_path(output)
+    finalization = cast(dict[str, object], load_json(finalization_path))
+    clock_path = tmp_path / "run-clock" / "run-clock.json"
+    clock_path.unlink()
+    monkeypatch.setattr(harness, "preflight", lambda **_kwargs: check)
+
+    with pytest.raises(EvaluationError, match="run clock receipt is absent"):
+        harness.verify_complete_terminal(
+            source_root=harness.ROOT,
+            attempt_root=tmp_path / "run-clock",
+            output=output,
+            exposure=exposure,
+            expected_output_sha256=sha256_file(output),
+            expected_artifact_core_hash=cast(str, terminal["artifact_core_hash"]),
+            expected_terminal_finalization_sha256=sha256_file(finalization_path),
+            expected_terminal_finalization_hash=cast(
+                str, finalization["terminal_finalization_hash"]
+            ),
+        )
+
+    assert not clock_path.exists()
 
 
 @pytest.mark.parametrize("projection", ["source_end", "asset_end", "exposure_hash"])
