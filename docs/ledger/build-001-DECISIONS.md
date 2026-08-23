@@ -1323,3 +1323,47 @@ independent authorities.
   generalization result. Stage 09 and Stage 10 remain their original infrastructure failures.
 - Reopening condition: none inside Build 001. A later explicitly owner-directed exploratory run
   must use a separate protocol and label and cannot revise this sealed decision.
+
+## D-001-0066 — Preserve the long-root package failure and accept only a bounded path retry
+
+- Recorded: 2026-08-23T12:08:30Z
+- Status: accepted after both attempts were independently checked.
+- Decision: preserve the first final-package verification as `FAILED_MECHANISM`; its three Windows
+  `FileNotFoundError` failures arose under avoidably long external output/transient roots. Accept a
+  single retry only because it changed those external root lengths while retaining the exact
+  `d9c19558…` source, lock, package profile, verifier, budgets, and deterministic package bytes.
+  Never rewrite or delete the failed receipt.
+- Evidence: the failed receipt file SHA-256 is
+  `sha256:cd8aed1cb97cdac6bfd7f27b1a3852724e09ca71a5740360b40e55dcc931e4e3`
+  with 696 passed, two skipped, and three failed. The accepted short-root receipt file SHA-256 is
+  `sha256:c2feeee04fbf0a82291a0c7ba335a1bfe041a6bffbefed4db73d51901c9ec234`;
+  699 tests passed with two platform skips, 20 available checks passed, and only the declared
+  private Kaggle surface remained `BLOCKED_EXTERNAL`.
+- Boundary: shortening first-party temporary paths is a packaging-infrastructure repair, not a
+  gameplay, public-recovery, private-platform, or generalization result.
+- Reopening condition: the retry differs in source, lock, profile, verifier, budget, or package
+  payload; or the failed attempt is omitted from the evidence graph.
+
+## D-001-0067 — Freeze the final package source and classify Stage 13 at the private boundary
+
+- Recorded: 2026-08-23T12:08:30Z
+- Status: accepted after local, hosted package, and ordinary-CI terminals completed.
+- Decision: freeze `9f25e13b4672ff0ea87544ba20c5677f194cf291`, tree
+  `d7fc05c9dff0f63cc97e7b752e1fe59ff7583900`, as the final Build 001 package/code/test source.
+  Allow only documentation, evidence, report, ledger, and review descendants after this point.
+  Classify Stage 13 as `BLOCKED_EXTERNAL`, not PASS: every available package check passes, but the
+  exact private Kaggle wheel/framework-input/gateway/scorer surface remains unavailable.
+- Evidence: eight exact-source hosted A/B builds across push run `32636996137` and draft-PR run
+  `32636997645` are byte-identical at 788,070 bytes and SHA-256
+  `sha256:02326a145d510c017dc04ffd79a61cfe8c46771cbc9e74b7c8f29a9b75756d21`.
+  Exact-source ordinary-CI push run `32636996144` and draft-PR run `32636997705` passed lint,
+  formatting, strict typing, runtime doctor, and full tests on Ubuntu and Windows. The exact
+  48-file Windows-hosted artifact set is preserved at
+  `C:/a/arc3-b001/artifacts/stage13/final-package-9f25e13-exact` with file-record manifest
+  `sha256:2aca4b7e6f1430b33444459470850b05947fedef2c0bfed34d0eb07a69d03295`.
+- Boundary: this is `synthetic` package/reproducibility evidence. It creates no game score, private
+  compatibility result, official submission, or hidden-game generalization claim.
+- Reopening condition: any post-freeze descendant changes `agent/`, `src/`, `scripts/`,
+  `pyproject.toml`, `uv.lock`, `LICENSE`, `THIRD_PARTY_NOTICES.md`, or `upstream.lock.json`; an
+  authenticated package receipt fails; or a claimed private result lacks the corresponding
+  evaluator receipt.

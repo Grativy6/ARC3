@@ -1841,3 +1841,83 @@ does not erase earlier uncertainty or failed mechanisms.
 - Resolution: bind `PYTHONPATH` to the exact detached root and `src` directory. Import-origin smoke
   then named only H=`262b5f1…`, and the environment-free receipt generation/verification passed.
 - Residual: none. No manifest, identity, adapter, or gameplay surface was opened.
+
+### B-001-0054 — Final-source package evidence resolves the crossed-boundary false-pass risk
+
+- Status update: RESOLVED for all available local and hosted surfaces.
+- Resolved: 2026-08-23T12:08:30Z
+- Resolving evidence: exact source `9f25e13b4672ff0ea87544ba20c5677f194cf291` produced four
+  independently authenticated Ubuntu/Windows package receipts across runs `32636996137` and
+  `32636997645`. Every job passed 20 available checks, stopped only at
+  `private-kaggle-surfaces`, rehashed its complete sealed set, and produced matching A/B packages.
+  All eight candidates are 788,070 bytes at
+  `sha256:02326a145d510c017dc04ffd79a61cfe8c46771cbc9e74b7c8f29a9b75756d21`.
+- Residual: the exact private surface remains external under B-001-0068; Python/OS containment
+  limits remain under B-001-0055.
+
+### B-001-0055 — Python audit scope remains narrower than OS/native containment
+
+- Status update: OPEN and narrowed; no contrary claim is made.
+- Last updated: 2026-08-23T12:08:30Z
+- Current evidence: local and hosted package receipts record zero audited network/process-launch
+  attempts, and all static package checks pass. Those controls cover Python audit events and
+  selected guarded in-process tests; they are not a complete OS filesystem, native-extension, or
+  process-tree sandbox and do not establish trusted execution.
+- Next discriminating action: a future separately authorized build may add OS-level containment and
+  adversarial native probes without revising Build 001's receipts.
+- Resolution condition: measured OS/native containment evidence exists for the frozen package on
+  every claimed platform.
+
+### B-001-0064 — Final-source receipts confirm the evidence-producer repairs
+
+- Status update: RESOLVED for the repaired collection and subprocess-free doctor mechanisms.
+- Resolved: 2026-08-23T12:08:30Z
+- Resolving evidence: all four final-source package jobs completed with authenticated nonzero test
+  collection, zero disallowed process attempts, complete artifacts, and the exact declared private
+  boundary. No receipt-upload or interpreter-origin failure recurred.
+- Residual: preserved earlier failures remain evidence; exact private compatibility remains
+  B-001-0068.
+
+### B-001-0066 — Exact-source ordinary CI passes on both platforms and both events
+
+- Status update: RESOLVED.
+- Resolved: 2026-08-23T12:08:30Z
+- Resolving evidence: push run `32636996144` and draft-PR run `32636997705` passed Ruff lint and
+  format, strict mypy, full pytest with 80% total coverage, and runtime doctor on Ubuntu and
+  Windows at exact commit `9f25e13…`. Push Ubuntu/Windows reported 1,329 passed/10 skipped and
+  1,323 passed/16 skipped; PR Ubuntu/Windows reported the same platform counts. The prior stale
+  classification and POSIX fork-guard failures did not recur.
+- Residual: the GitHub runner's Node 20 forced-to-24 deprecation annotation is upstream workflow
+  maintenance, not a test failure; it does not alter these terminals.
+
+## B-001-0068 — Exact private Kaggle execution surfaces are unavailable
+
+- Status: OPEN; `BLOCKED_EXTERNAL`.
+- Stage: 13, 14.
+- Opened: 2026-08-23T12:08:30Z
+- Owner: Christopher D. Pang for any later legal/submission boundary; no Build 001 action is
+  authorized or required.
+- Burden: the exact private competition wheels, platform framework input, gateway, and scorer were
+  unavailable. Public locked dependencies and gateway-shaped fixtures cannot establish exact
+  private compatibility or a private score.
+- Why it matters: deterministic offline packaging on available surfaces is not a Kaggle-public,
+  semi-private, or official-private evaluation.
+- Current evidence: Stage 13 local and hosted receipts stop only at the typed
+  `private-kaggle-surfaces` check. No legal terms were accepted, no package was uploaded, and no
+  official submission was made.
+- Resolution condition: a future owner-authorized official/private evaluator returns an exact
+  receipt. Build 001 remains frozen and must not be relabeled retroactively.
+
+## B-001-0069 — Long Windows artifact roots exceeded path limits
+
+- Status: RESOLVED by a bounded path-only retry; failed evidence preserved.
+- Stage: 13.
+- Opened and resolved: 2026-08-23T12:08:30Z
+- Evidence: the first run preserved three `FileNotFoundError` failures after 696 passes and two
+  skips at receipt file SHA-256
+  `sha256:cd8aed1cb97cdac6bfd7f27b1a3852724e09ca71a5740360b40e55dcc931e4e3`.
+  A retry using only shorter external output/transient roots passed 699 tests with two skips and
+  preserved the same package bytes at source `d9c19558…`.
+- Resolution: keep Windows verification/output roots short. The original failure remains in the
+  evidence graph and is not treated as a passing run.
+- Residual: none for this path-length mechanism; B-001-0068 and B-001-0055 remain separate.
