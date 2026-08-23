@@ -1102,3 +1102,23 @@ independent authorities.
   result.
 - Reopening condition: either helper accepts replacement-object semantics or caller Git
   redirection, or a composite/gate receipt lacks exact source-root/commit/tree agreement.
+
+## D-001-0056 — Bind every executable Stage 09 harness byte to the exact Git tree
+
+- Recorded: 2026-08-23T06:50:59.5689341Z
+- Status: accepted before decisive execution.
+- Decision: project every committed regular file under `agent/`, `scripts/`, and `src/arc3/`
+  from the exact no-replacement Git tree; require SHA-1 object format explicitly; read canonical
+  blobs with `git cat-file`; require exact live-byte SHA-256 and blob identity; reject extra
+  non-cache files, symlink components, non-regular entries, and every non-`H` index tag; and carry
+  the same sealed mapping through bootstrap, supervisor, and worker observations.
+- Evidence: source commit `bfdf914b7ad50cc2ac39c3c3b2a0dbfc581255e0`; root recheck passed
+  120 focused tests with one bounded Windows symlink-capability skip, Ruff check/format, strict
+  mypy on four source files, and diff check. Regressions cover assume-unchanged, skip-worktree,
+  extra source, clean/smudge filter normalization, non-SHA1 repositories, and mapping drift.
+- Boundary: this is premeasurement source-authority evidence. It changes no production policy,
+  development identity, seed, action/wall budget, PASS rule, or holdout gate, and it supplies no
+  gameplay or generalization result.
+- Reopening condition: any executable harness source is outside the mapping, canonical blob reads
+  accept Git replacement/redirection, live bytes may differ from the committed blob while passing,
+  or a bootstrap/supervisor/worker boundary accepts a different mapping.

@@ -1487,3 +1487,22 @@ does not erase earlier uncertainty or failed mechanisms.
   focused tests pass, including a real replacement-ref denial; Ruff and strict typing pass.
 - Remaining boundary: exact detached preflight/terminal equality and the broader local-host trust
   boundary remain. The package verifier has its own separately tracked Git-authority repair.
+
+## B-001-0059 — Named-file hashing did not close the complete Stage 09 harness source
+
+- Status: RESOLVED before decisive execution.
+- Stage: 09
+- Opened: 2026-08-23
+- Resolved: 2026-08-23
+- Owner: Codex
+- Burden: the earlier bootstrap named four critical files but imported additional first-party
+  modules. Git cleanliness alone could miss assume-unchanged/skip-worktree changes, and accepting a
+  clean-filter-normalized worktree could allow executable bytes to differ from the committed blob.
+- Resolving evidence: commit `bfdf914b7ad50cc2ac39c3c3b2a0dbfc581255e0` binds every regular
+  committed file under all executable first-party roots to the exact Git blob and canonical
+  SHA-256, verifies exact live bytes plus ordinary index tags at every authority boundary, and
+  rejects extra or symlinked source. The root suite passed 120 tests with one bounded host skip;
+  Ruff and strict mypy pass.
+- Residual: final H is not frozen until the independent package repair lands. The exact clean
+  detached preflight, one-shot Stage 09 terminal, and local-host trust boundary remain under
+  B-001-0051; this repair is not gameplay evidence or OS containment.

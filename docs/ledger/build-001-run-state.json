@@ -7,12 +7,12 @@
   "build_status": "IN_PROGRESS",
   "status": "IN_PROGRESS",
   "current_stage": "09",
-  "current_task": "Finish and independently audit the recursive package-integrity repair, freeze one exact harness commit, then execute the unchanged predeclared development matrix",
+  "current_task": "Finish and independently audit the exact-snapshot package-integrity repair, freeze one exact harness commit, then execute the unchanged predeclared development matrix",
   "implementation_branch": "build/001-local-public-recovery",
   "pull_request": "https://github.com/Grativy6/ARC3/pull/5",
   "started_at": "2026-08-21T15:41:02Z",
-  "last_checkpoint_at": "2026-08-23T06:21:59.2272232Z",
-  "last_checkpoint_commit": "c1fd1bcfeb1d5b420fd3f6975ff243cf3ea9166b",
+  "last_checkpoint_at": "2026-08-23T06:50:59.5689341Z",
+  "last_checkpoint_commit": "bfdf914b7ad50cc2ac39c3c3b2a0dbfc581255e0",
   "base": {
     "main_commit": "28c7a00732ce48e5c231211b01bc6eba7d0d71b4",
     "main_tree": "4586299448e9b1b585a0878674ed5f9afa60c384",
@@ -661,7 +661,7 @@
     "B-001-0055: package evidence is Python-audit scoped and lacks OS process-tree containment",
     "B-001-0056: complete policy reachability invalidated the 2e78c25 wrapper integrity authority; premeasurement source amendment required"
   ],
-  "next_action": "Integrate the independently audited Stage 09/10 harness, bind it to the amended d6d4bac policy freeze and fresh receipts, then execute Stage 09 from one clean final harness commit without holdout access.",
+  "next_action": "Integrate the independently audited exact-snapshot package repair, freeze the final harness source commit, then execute Stage 09 from one clean detached checkout without holdout access.",
   "notes": [
     "Build 000 ledgers and reports are immutable historical evidence and are not overwritten by Build 001.",
     "The owner explicitly approved MIT-0 for ARC3 first-party source in the active Build 001 instruction.",
