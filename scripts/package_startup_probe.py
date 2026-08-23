@@ -7,12 +7,13 @@ import hashlib
 import importlib
 import json
 import re
+import stat
 import sys
 import tempfile
 import time
 import zipfile
 from collections.abc import Sequence
-from pathlib import Path
+from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Any, cast
 
 _COMMIT = re.compile(r"^[0-9a-f]{40}$")
@@ -76,6 +77,28 @@ def _verify_build_receipt(package_root: Path, expected_commit: str) -> tuple[Pat
     return payload, payload_sha256
 
 
+def _safe_payload_member(info: zipfile.ZipInfo) -> bool:
+    name = info.orig_filename
+    if not name or "\x00" in name or "\\" in name or info.is_dir():
+        return False
+    posix = PurePosixPath(name)
+    windows = PureWindowsPath(name)
+    raw_parts = name.split("/")
+    if (
+        posix.is_absolute()
+        or windows.is_absolute()
+        or bool(windows.drive)
+        or any(part in {"", ".", ".."} for part in raw_parts)
+        or any(":" in part for part in raw_parts)
+    ):
+        return False
+    mode = info.external_attr >> 16
+    file_type = stat.S_IFMT(mode)
+    if file_type not in {0, stat.S_IFREG}:
+        return False
+    return not (info.create_system == 0 and bool(info.external_attr & 0x400))
+
+
 def _extract_payload(payload: Path, destination: Path) -> None:
     with zipfile.ZipFile(payload) as archive:
         infos = archive.infolist()
@@ -83,13 +106,7 @@ def _extract_payload(payload: Path, destination: Path) -> None:
         if (
             len(names) != len(set(names))
             or not {"agent/my_agent.py", "src/arc3/__init__.py"} <= set(names)
-            or any(
-                info.is_dir()
-                or info.filename.startswith("/")
-                or ".." in Path(info.filename).parts
-                or (info.external_attr >> 16) & 0o170000 == 0o120000
-                for info in infos
-            )
+            or any(not _safe_payload_member(info) for info in infos)
         ):
             raise ValueError("package payload has an unsafe or incomplete member set")
         for info in infos:

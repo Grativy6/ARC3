@@ -108,6 +108,71 @@ def test_package_only_receipt_rejects_manifest_identity_inputs(
 
 
 @pytest.mark.competition
+@pytest.mark.parametrize(
+    "protected_relative",
+    (
+        "artifacts/sealed-fixture.bin",
+        "docs/evaluation/sealed-fixture.json",
+        "docs/ledger/build-001-run-state.json",
+        "docs/ledger/run-state.json",
+    ),
+)
+def test_package_only_receipt_rejects_protected_candidate_before_scanning(
+    integrity_repo: tuple[Path, str, str],
+    protected_relative: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root, _, _ = integrity_repo
+
+    def refuse_scan(*_args: object, **_kwargs: object) -> tuple[Path, ...]:
+        raise AssertionError("protected candidate must be rejected before policy discovery")
+
+    monkeypatch.setattr(scanner, "discover_reachable_policy_files", refuse_scan)
+    with pytest.raises(ValueError, match="forbids protected candidate file"):
+        build_integrity_receipt(
+            root,
+            candidate_files=(root / protected_relative,),
+            include_installed_metadata=False,
+            semantic_public_manifest_access=False,
+        )
+
+
+@pytest.mark.competition
+def test_package_only_receipt_requires_explicit_candidate_boundary(
+    integrity_repo: tuple[Path, str, str],
+) -> None:
+    root, _, _ = integrity_repo
+    with pytest.raises(ValueError, match="requires an explicit protected-surface-free"):
+        build_integrity_receipt(
+            root,
+            include_installed_metadata=False,
+            semantic_public_manifest_access=False,
+        )
+
+
+@pytest.mark.competition
+def test_package_only_receipt_rejects_symlink_alias_to_protected_candidate(
+    integrity_repo: tuple[Path, str, str],
+) -> None:
+    root, _, _ = integrity_repo
+    protected = root / "docs" / "evaluation" / "public-game-partitions.v0.1.json"
+    alias = root / "policy" / "protected-alias.py"
+    try:
+        alias.symlink_to(protected)
+    except OSError as error:
+        pytest.skip(f"symlink creation is unavailable on this host: {error}")
+
+    with pytest.raises(ValueError, match="forbids protected candidate file"):
+        build_integrity_receipt(
+            root,
+            policy_paths=("policy",),
+            candidate_files=(alias,),
+            include_installed_metadata=False,
+            semantic_public_manifest_access=False,
+        )
+
+
+@pytest.mark.competition
 def test_source_change_changes_receipt_identity(integrity_repo: tuple[Path, str, str]) -> None:
     root, _, _ = integrity_repo
     policy = root / "policy" / "clean.py"

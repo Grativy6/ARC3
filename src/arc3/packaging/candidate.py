@@ -7,12 +7,12 @@ import re
 import stat
 import tomllib
 import zipfile
-from pathlib import Path, PurePosixPath
+from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import cast
 from urllib.parse import unquote, urlparse
 
 from arc3.licensing import MIT0_LICENSE_SHA256
-from arc3.packaging.models import PackagingError
+from arc3.packaging.models import PYTHON_NETWORK_ENFORCEMENT, PackagingError
 from arc3.packaging.notebook import validate_kernel_metadata, validate_notebook
 from arc3.packaging.requirements import (
     TARGET_ABI,
@@ -56,13 +56,29 @@ def _safe_unique_names(archive: zipfile.ZipFile, *, label: str) -> tuple[str, ..
     names = tuple(archive.namelist())
     if len(names) != len(set(names)):
         raise PackagingError(f"{label} contains duplicate member names")
-    for name in names:
-        parsed = PurePosixPath(name)
-        if parsed.is_absolute() or ".." in parsed.parts or "\\" in name:
+    for info in archive.infolist():
+        name = info.orig_filename
+        posix = PurePosixPath(name)
+        windows = PureWindowsPath(name)
+        raw_parts = name.split("/")
+        if (
+            not name
+            or "\x00" in name
+            or "\\" in name
+            or info.is_dir()
+            or posix.is_absolute()
+            or windows.is_absolute()
+            or bool(windows.drive)
+            or any(part in {"", ".", ".."} for part in raw_parts)
+            or any(":" in part for part in raw_parts)
+        ):
             raise PackagingError(f"{label} contains an unsafe member: {name!r}")
-        mode = archive.getinfo(name).external_attr >> 16
-        if stat.S_ISLNK(mode):
-            raise PackagingError(f"{label} contains a symbolic link: {name!r}")
+        mode = info.external_attr >> 16
+        file_type = stat.S_IFMT(mode)
+        if file_type not in {0, stat.S_IFREG} or (
+            info.create_system == 0 and bool(info.external_attr & 0x400)
+        ):
+            raise PackagingError(f"{label} contains a link or special member: {name!r}")
     return names
 
 
@@ -328,6 +344,7 @@ def validate_candidate_archive(path: Path) -> dict[str, JSONValue]:
                 or cast(list[object], sandbox["agent_cycle_actions"])[0:1] != ["RESET"]
                 or sandbox.get("dependency_install_status") != "PASS"
                 or sandbox.get("network_attempts") != 0
+                or sandbox.get("network_enforcement") != PYTHON_NETWORK_ENFORCEMENT
                 or sandbox.get("credentials_present") != []
                 or sandbox.get("framework_commit") != AGENTS_COMMIT
                 or sandbox.get("framework_identity") != SAFE_FRAMEWORK_FIXTURE_IDENTITY
@@ -337,7 +354,14 @@ def validate_candidate_archive(path: Path) -> dict[str, JSONValue]:
             ):
                 raise PackagingError("sandbox receipt did not exercise the hardened rerun path")
             limitations = sandbox.get("limitations")
-            if not isinstance(limitations, list) or len(limitations) < 3:
+            if (
+                not isinstance(limitations, list)
+                or len(limitations) < 4
+                or not any(
+                    isinstance(item, str) and "OS-level network containment is absent" in item
+                    for item in limitations
+                )
+            ):
                 raise PackagingError("sandbox receipt does not preserve its external limitations")
             secret_scan = manifest.get("secret_scan")
             if (

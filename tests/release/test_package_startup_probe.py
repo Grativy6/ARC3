@@ -5,10 +5,13 @@ from __future__ import annotations
 import hashlib
 import io
 import json
+import stat
 import subprocess
 import sys
 import zipfile
 from pathlib import Path
+
+import pytest
 
 
 def _canonical_line(value: object) -> bytes:
@@ -28,7 +31,13 @@ def _sha256(value: bytes) -> str:
     return f"sha256:{hashlib.sha256(value).hexdigest()}"
 
 
-def _payload(*, agent_source: bytes | None = None) -> bytes:
+def _payload(
+    *,
+    agent_source: bytes | None = None,
+    extra_name: str | None = None,
+    extra_mode: int | None = None,
+    extra_create_system: int = 3,
+) -> bytes:
     buffer = io.BytesIO()
     with zipfile.ZipFile(buffer, "w", compression=zipfile.ZIP_STORED) as archive:
         for name, content in {
@@ -42,15 +51,19 @@ def _payload(*, agent_source: bytes | None = None) -> bytes:
         }.items():
             info = zipfile.ZipInfo(name, date_time=(1980, 1, 1, 0, 0, 0))
             archive.writestr(info, content)
+        if extra_name is not None:
+            info = zipfile.ZipInfo(extra_name, date_time=(1980, 1, 1, 0, 0, 0))
+            info.filename = extra_name
+            info.create_system = extra_create_system
+            if extra_mode is not None:
+                info.external_attr = extra_mode
+            archive.writestr(info, b"unsafe-fixture")
     return buffer.getvalue()
 
 
-def test_package_startup_probe_uses_only_extracted_offline_fixture(tmp_path: Path) -> None:
-    package = tmp_path / "package"
+def _write_package(package: Path, payload: bytes, expected_commit: str) -> None:
     package.mkdir()
-    payload = _payload()
     (package / "arc3-first-party.zip").write_bytes(payload)
-    expected_commit = "a" * 40
     (package / "package-manifest.json").write_bytes(
         _canonical_line({"source": {"git_commit": expected_commit}})
     )
@@ -61,9 +74,11 @@ def test_package_startup_probe_uses_only_extracted_offline_fixture(tmp_path: Pat
     receipt = dict(body)
     receipt["receipt_sha256"] = _sha256(_canonical_line(body))
     (package / "build-receipt.json").write_bytes(_canonical_line(receipt))
-    repository = Path(__file__).resolve().parents[2]
 
-    completed = subprocess.run(
+
+def _run_probe(package: Path, expected_commit: str) -> subprocess.CompletedProcess[str]:
+    repository = Path(__file__).resolve().parents[2]
+    return subprocess.run(
         (
             sys.executable,
             "-I",
@@ -78,6 +93,14 @@ def test_package_startup_probe_uses_only_extracted_offline_fixture(tmp_path: Pat
         text=True,
         timeout=30,
     )
+
+
+def test_package_startup_probe_uses_only_extracted_offline_fixture(tmp_path: Path) -> None:
+    package = tmp_path / "package"
+    expected_commit = "a" * 40
+    payload = _payload()
+    _write_package(package, payload, expected_commit)
+    completed = _run_probe(package, expected_commit)
 
     assert completed.returncode == 0, completed.stderr
     result = json.loads(completed.stdout)
@@ -93,7 +116,6 @@ def test_package_startup_probe_uses_only_extracted_offline_fixture(tmp_path: Pat
 
 def test_package_startup_probe_denies_udp_sendto(tmp_path: Path) -> None:
     package = tmp_path / "package"
-    package.mkdir()
     payload = _payload(
         agent_source=(
             b"import socket\n"
@@ -103,32 +125,9 @@ def test_package_startup_probe_denies_udp_sendto(tmp_path: Path) -> None:
             b"        self.name = agent_name\n"
         )
     )
-    (package / "arc3-first-party.zip").write_bytes(payload)
     expected_commit = "a" * 40
-    (package / "package-manifest.json").write_bytes(
-        _canonical_line({"source": {"git_commit": expected_commit}})
-    )
-    body = {"payload_sha256": _sha256(payload), "status": "PACKAGING_PASS"}
-    receipt = dict(body)
-    receipt["receipt_sha256"] = _sha256(_canonical_line(body))
-    (package / "build-receipt.json").write_bytes(_canonical_line(receipt))
-    repository = Path(__file__).resolve().parents[2]
-
-    completed = subprocess.run(
-        (
-            sys.executable,
-            "-I",
-            str(repository / "scripts" / "package_startup_probe.py"),
-            "--package-root",
-            str(package),
-            "--expected-commit",
-            expected_commit,
-        ),
-        check=False,
-        capture_output=True,
-        text=True,
-        timeout=30,
-    )
+    _write_package(package, payload, expected_commit)
+    completed = _run_probe(package, expected_commit)
 
     assert completed.returncode == 2
     assert "forbids Python socket event" in completed.stderr
@@ -136,7 +135,6 @@ def test_package_startup_probe_denies_udp_sendto(tmp_path: Path) -> None:
 
 def test_package_startup_probe_denies_child_process(tmp_path: Path) -> None:
     package = tmp_path / "package"
-    package.mkdir()
     payload = _payload(
         agent_source=(
             b"import subprocess, sys\n"
@@ -146,32 +144,44 @@ def test_package_startup_probe_denies_child_process(tmp_path: Path) -> None:
             b"        self.name = agent_name\n"
         )
     )
-    (package / "arc3-first-party.zip").write_bytes(payload)
     expected_commit = "a" * 40
-    (package / "package-manifest.json").write_bytes(
-        _canonical_line({"source": {"git_commit": expected_commit}})
-    )
-    body = {"payload_sha256": _sha256(payload), "status": "PACKAGING_PASS"}
-    receipt = dict(body)
-    receipt["receipt_sha256"] = _sha256(_canonical_line(body))
-    (package / "build-receipt.json").write_bytes(_canonical_line(receipt))
-    repository = Path(__file__).resolve().parents[2]
-
-    completed = subprocess.run(
-        (
-            sys.executable,
-            "-I",
-            str(repository / "scripts" / "package_startup_probe.py"),
-            "--package-root",
-            str(package),
-            "--expected-commit",
-            expected_commit,
-        ),
-        check=False,
-        capture_output=True,
-        text=True,
-        timeout=30,
-    )
+    _write_package(package, payload, expected_commit)
+    completed = _run_probe(package, expected_commit)
 
     assert completed.returncode == 2
     assert "forbids child process event subprocess.Popen" in completed.stderr
+
+
+@pytest.mark.parametrize(
+    ("member_name", "external_attr", "create_system"),
+    (
+        ("C:/escape.py", None, 3),
+        ("C:escape.py", None, 3),
+        ("agent/cache:stream.py", None, 3),
+        ("//server/share/escape.py", None, 3),
+        (r"agent\shadow.py", None, 3),
+        ("src/arc3/../escape.py", None, 3),
+        ("agent/./shadow.py", None, 3),
+        ("agent/link.py", (stat.S_IFLNK | 0o777) << 16, 3),
+        ("agent/reparse.py", 0x400, 0),
+    ),
+)
+def test_package_startup_probe_rejects_cross_platform_unsafe_members(
+    tmp_path: Path,
+    member_name: str,
+    external_attr: int | None,
+    create_system: int,
+) -> None:
+    package = tmp_path / "package"
+    expected_commit = "b" * 40
+    payload = _payload(
+        extra_name=member_name,
+        extra_mode=external_attr,
+        extra_create_system=create_system,
+    )
+    _write_package(package, payload, expected_commit)
+
+    completed = _run_probe(package, expected_commit)
+
+    assert completed.returncode == 2
+    assert "unsafe or incomplete member set" in completed.stderr

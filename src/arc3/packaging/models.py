@@ -7,6 +7,12 @@ from pathlib import Path
 
 from arc3.types import JSONValue
 
+PYTHON_NETWORK_ENFORCEMENT = (
+    "Python-level socket guard: loopback-only connect, connect_ex, create_connection, sendto, "
+    "and sendmsg; getaddrinfo permits numeric loopback only; gethostbyname, gethostbyname_ex, "
+    "gethostbyaddr, and getnameinfo are denied; OS-level network containment is absent."
+)
+
 
 class PackagingError(RuntimeError):
     """Raised when a candidate cannot be built or validated safely."""
@@ -65,6 +71,7 @@ class SandboxReceipt:
     agent_consequence_state: str
     agent_cycle_actions: tuple[str, str]
     network_attempts: int
+    network_enforcement: str
     credentials_present: tuple[str, ...]
     imported_agent_path: str
     imported_arc3_path: str
@@ -105,6 +112,7 @@ class SandboxReceipt:
             "installed_wheel_sha256": list(self.installed_wheel_sha256),
             "limitations": list(self.limitations),
             "network_attempts": self.network_attempts,
+            "network_enforcement": self.network_enforcement,
             "notebook_sha256": self.notebook_sha256,
             "max_concurrency": self.max_concurrency,
             "orchestration": self.orchestration,

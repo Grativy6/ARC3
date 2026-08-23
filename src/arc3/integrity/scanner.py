@@ -34,6 +34,14 @@ DEFAULT_MAX_ARCHIVE_MEMBER_BYTES = 32 * 1024 * 1024
 DEFAULT_MAX_ARCHIVE_MEMBERS = 20_000
 DEFAULT_MAX_ARCHIVE_EXPANDED_BYTES = 512 * 1024 * 1024
 DEFAULT_ENTRY_POINTS: tuple[str, ...] = ("agent/my_agent.py",)
+_PACKAGE_ONLY_PROTECTED_DIRECTORIES: tuple[str, ...] = (
+    "artifacts",
+    "docs/evaluation",
+)
+_PACKAGE_ONLY_PROTECTED_FILES: tuple[str, ...] = (
+    "docs/ledger/build-001-run-state.json",
+    "docs/ledger/run-state.json",
+)
 
 DEFAULT_POLICY_PATHS: tuple[str, ...] = (
     "agent",
@@ -388,6 +396,30 @@ def _repository_input_path(root: Path, raw_path: str | Path) -> Path:
 
 def _path_at_or_below(path: Path, prefix: Path) -> bool:
     return path == prefix or prefix in path.parents
+
+
+def _package_only_protected_candidate(root: Path, path: Path) -> str | None:
+    lexical_directories = tuple(
+        _repository_input_path(root, relative) for relative in _PACKAGE_ONLY_PROTECTED_DIRECTORIES
+    )
+    lexical_files = tuple(
+        _repository_input_path(root, relative) for relative in _PACKAGE_ONLY_PROTECTED_FILES
+    )
+    try:
+        resolved_path = path.resolve(strict=False)
+        resolved_directories = tuple(item.resolve(strict=False) for item in lexical_directories)
+        resolved_files = tuple(item.resolve(strict=False) for item in lexical_files)
+    except OSError as error:
+        raise ValueError(
+            "package-only integrity cannot validate a candidate path without reading it"
+        ) from error
+    if path in lexical_files or resolved_path in resolved_files:
+        return _relative_path(root, path)
+    if any(_path_at_or_below(path, item) for item in lexical_directories) or any(
+        _path_at_or_below(resolved_path, item) for item in resolved_directories
+    ):
+        return _relative_path(root, path)
+    return None
 
 
 def _module_name_for_path(root: Path, path: Path) -> str | None:
@@ -1361,6 +1393,10 @@ def build_integrity_receipt(
         raise ValueError(
             "package-only integrity forbids manifest, run-state, and manifest-identity inputs"
         )
+    if not semantic_public_manifest_access and candidate_files is None:
+        raise ValueError(
+            "package-only integrity requires an explicit protected-surface-free candidate set"
+        )
     manifest = (
         _repository_input_path(
             repository,
@@ -1405,6 +1441,13 @@ def build_integrity_receipt(
             )
         )
     )
+    if not semantic_public_manifest_access:
+        for candidate in normalized_candidates:
+            protected = _package_only_protected_candidate(repository, candidate)
+            if protected is not None:
+                raise ValueError(
+                    "package-only integrity forbids protected candidate file: " + protected
+                )
     reachable_files = discover_reachable_policy_files(
         repository,
         candidate_files=normalized_candidates,

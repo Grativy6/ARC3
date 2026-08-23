@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import subprocess
 import sys
 import tomllib
 import zipfile
@@ -22,7 +23,7 @@ from arc3.packaging import sbom as sbom_module
 from arc3.packaging import submission as submission_module
 from arc3.packaging.builder import build_kaggle_candidate, scan_payload_for_secrets
 from arc3.packaging.candidate import validate_candidate_archive
-from arc3.packaging.models import PackagingError
+from arc3.packaging.models import PYTHON_NETWORK_ENFORCEMENT, PackagingError
 from arc3.packaging.notebook import validate_kernel_metadata, validate_notebook
 from arc3.packaging.requirements import (
     TARGET_ABI,
@@ -51,6 +52,93 @@ def test_stage17_offline_runner_canonicalizes_argv_roots_before_path_checks() ->
 
 
 @pytest.mark.competition
+def test_stage17_python_socket_guard_blocks_udp_and_dns_bypasses() -> None:
+    preamble = r"""
+import json
+import socket
+
+gateway_connections = []
+blocked_attempts = []
+real_socket = socket.socket
+real_create_connection = socket.create_connection
+real_getaddrinfo = socket.getaddrinfo
+real_gethostbyname = socket.gethostbyname
+real_gethostbyname_ex = socket.gethostbyname_ex
+real_gethostbyaddr = socket.gethostbyaddr
+real_getnameinfo = socket.getnameinfo
+allowed_hosts = {"127.0.0.1", "::1"}
+"""
+    adversarial_probe = r"""
+sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+operations = (
+    lambda: socket.getaddrinfo("example.invalid", 443),
+    lambda: socket.gethostbyname("example.invalid"),
+    lambda: socket.gethostbyname_ex("example.invalid"),
+    lambda: socket.gethostbyaddr("203.0.113.1"),
+    lambda: socket.getnameinfo(("203.0.113.1", 443), 0),
+    lambda: sock.sendto(b"fixture", ("203.0.113.1", 9)),
+    lambda: sock.sendmsg([b"fixture"], [], 0, ("203.0.113.1", 9)),
+    lambda: socket.create_connection(("203.0.113.1", 9)),
+    lambda: sock.connect(("203.0.113.1", 9)),
+)
+for operation in operations:
+    try:
+        operation()
+    except RuntimeError:
+        pass
+    else:
+        raise AssertionError("guarded operation reached an OS network entry point")
+if sock.connect_ex(("203.0.113.1", 9)) == 0:
+    raise AssertionError("guarded connect_ex reported success")
+sock.close()
+expected = {
+    "connect",
+    "connect_ex",
+    "create_connection",
+    "getaddrinfo",
+    "gethostbyaddr",
+    "gethostbyname",
+    "gethostbyname_ex",
+    "getnameinfo",
+    "sendmsg",
+    "sendto",
+}
+observed = {item.split(":", 1)[0] for item in blocked_attempts}
+if observed != expected or socket.SocketType is not GuardedSocket:
+    raise AssertionError(f"incomplete Python socket guard: {observed!r}")
+print(json.dumps({"attempt_count": len(blocked_attempts), "operations": sorted(observed)}))
+"""
+    completed = subprocess.run(
+        (
+            sys.executable,
+            "-I",
+            "-c",
+            preamble + sandbox_module._PYTHON_SOCKET_GUARD + adversarial_probe,
+        ),
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    receipt = json.loads(completed.stdout)
+    assert receipt["attempt_count"] == 10
+    assert set(receipt["operations"]) == {
+        "connect",
+        "connect_ex",
+        "create_connection",
+        "getaddrinfo",
+        "gethostbyaddr",
+        "gethostbyname",
+        "gethostbyname_ex",
+        "getnameinfo",
+        "sendmsg",
+        "sendto",
+    }
+
+
+@pytest.mark.competition
 def test_stage17_candidate_is_cpu_only_secret_free_and_offline(tmp_path: Path) -> None:
     result = build_kaggle_candidate(
         REPOSITORY, tmp_path / "candidate", allow_dirty_preacceptance=True
@@ -62,8 +150,12 @@ def test_stage17_candidate_is_cpu_only_secret_free_and_offline(tmp_path: Path) -
     assert result.sandbox.agent_cycle_actions[0] == "RESET"
     assert result.sandbox.agent_cycle_actions[1].startswith("ACTION")
     assert result.sandbox.network_attempts == 0
+    assert result.sandbox.network_enforcement == PYTHON_NETWORK_ENFORCEMENT
     assert result.sandbox.credentials_present == ()
-    assert len(result.sandbox.limitations) == 3
+    assert len(result.sandbox.limitations) == 4
+    assert any(
+        "OS-level network containment is absent" in item for item in result.sandbox.limitations
+    )
     assert result.sandbox.production_rerun_exercised is True
     assert result.sandbox.dependency_install_status == "PASS"
     assert result.sandbox.framework_fixture is True
