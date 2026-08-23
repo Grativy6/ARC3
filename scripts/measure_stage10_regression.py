@@ -53,6 +53,7 @@ from arc3.types import JSONValue
 ROOT = Path(__file__).resolve().parents[1]
 _MANIFEST = Path("docs/evaluation/public-game-partitions.v0.1.json")
 _LEDGER_SCHEMA = "arc3.build-001.stage-10-invocation.v0.1"
+_WINDOWS_CREATE_NEW_PROCESS_GROUP = int(getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0))
 _SENSITIVE_ENV_MARKERS = (
     "API_KEY",
     "AUTH",
@@ -357,7 +358,7 @@ def _run_child(
         return None, False, "raw stream path already exists", 0
     stdout_path.parent.mkdir(parents=True, exist_ok=True)
     started = time.perf_counter_ns()
-    creationflags = subprocess.CREATE_NEW_PROCESS_GROUP if os.name == "nt" else 0
+    creationflags = _WINDOWS_CREATE_NEW_PROCESS_GROUP if os.name == "nt" else 0
     try:
         with stdout_path.open("xb") as stdout, stderr_path.open("xb") as stderr:
             process = subprocess.Popen(
