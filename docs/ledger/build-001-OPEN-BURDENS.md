@@ -1273,6 +1273,21 @@ does not erase earlier uncertainty or failed mechanisms.
   and a passing denial under the repair; package receipts preserve the scoped claim below; and
   package archive/integrity safety findings are closed or separately reported.
 
+### B-001-0054 — Complete local repair is verified; hosted exact-source execution remains open
+
+- Status update: NARROWED, not resolved.
+- Last updated: 2026-08-23T04:45:18.5941520Z
+- Current evidence: commit `d6d4bac1e33c9837856c08abcee61bcb14afd34e` isolates pytest
+  framework state under the guarded root, preserves verifier evidence on failure, launches the
+  lexical clone-local virtual-environment interpreter, and fails closed on process-tree accounting
+  and Windows handle-close errors. The integrated Windows run passed 176 relevant tests with four
+  bounded platform skips, including all 12 package-only path-guard tests; strict typing and Ruff
+  passed. The isolated audit reported Linux-target type PASS and 86 reachable policy files with
+  zero package-only static findings.
+- Remaining burden: the fresh exact-source package receipt and hosted Linux/Windows workflow have
+  not yet confirmed the repair. The prior failures remain evidence and are not relabeled.
+- Resolution receipt: pending exact-source receipt and CI artifacts.
+
 ## B-001-0055 — Python audit guards are not OS process-tree containment
 
 - Status: OPEN
@@ -1294,6 +1309,20 @@ does not erase earlier uncertainty or failed mechanisms.
 - Resolution condition: either add measured cross-platform OS filesystem/network/process-tree
   containment with adversarial orphan/native tests, or finish Stage 13 honestly as bounded/partial
   and keep the narrower Python-level claim in every receipt, report, and PR summary.
+
+### B-001-0055 — Descendant supervision is measured but the OS-containment limit remains
+
+- Status update: NARROWED, not resolved.
+- Last updated: 2026-08-23T04:45:18.5941520Z
+- Current evidence: commit `d6d4bac1e33c9837856c08abcee61bcb14afd34e` adds Windows
+  suspended launch followed by kill-on-close Job assignment, POSIX inherited process groups,
+  aggregate sampled RSS, bounded pipe drain, verified teardown, checked full-width Windows HANDLE
+  closure, and adversarial descendant tests. Cleanup/accounting failure now forces
+  `FAILED_INFRASTRUCTURE`.
+- Remaining burden: Python audit hooks still are not OS filesystem/network containment; POSIX
+  `setsid`/double-fork escape remains explicitly outside the claim; RSS is sampled rather than a
+  hard memory limit; dynamic imports and native extensions are not proven contained.
+- Resolution receipt: pending final Stage 13 bounded acceptance and cross-platform execution.
 
 ## B-001-0056 — Complete policy reachability invalidated the frozen wrapper integrity PASS
 
@@ -1318,3 +1347,16 @@ does not erase earlier uncertainty or failed mechanisms.
   09 predeclaration and add a hash-bound amendment naming the new exact commit/tree/source hash;
   repin Stage 09 and Stage 10/11 authority before any decisive gameplay; and independently verify
   that the amended source has no forbidden production reachability finding.
+
+### B-001-0056 — Generic source repair is committed; authority repinning remains open
+
+- Status update: NARROWED, not resolved.
+- Last updated: 2026-08-23T04:45:18.5941520Z
+- Current evidence: commit `d6d4bac1e33c9837856c08abcee61bcb14afd34e` moves pure frame
+  normalization out of the live environment adapter while retaining its public import, and the
+  complete package-only closure now reaches 86 scanned/hashed production files with zero local
+  findings. Adapter compatibility, release/integrity/package tests, strict typing, and Ruff pass.
+- Remaining burden: generate and independently validate the fresh canonical receipt at the exact
+  clean commit; add the before-results Stage 09 amendment without changing the frozen matrix,
+  seeds, budgets, pass rule, or holdout gate; then repin Stage 09/10/11 authority before gameplay.
+- Resolution receipt: pending amended freeze and fresh exact-source authority artifacts.

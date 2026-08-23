@@ -953,3 +953,28 @@ independent authorities.
 - Reopening condition: the refactor changes observed wrapper behavior; any decisive result exists
   before the amended freeze; fresh full-policy integrity does not pass complete reachability; or a
   later production-policy byte changes after the amended decisive evaluation.
+
+## D-001-0049 — Use complete package-only reachability as bounded premeasurement policy authority
+
+- Recorded: 2026-08-23T04:45:18.5941520Z
+- Status: accepted
+- Decision: extract observation normalization into a pure first-party module, make the production
+  wrapper import that module directly, and require the package-only integrity receipt to discover,
+  scan, and hash the complete static first-party import closure from `agent/my_agent.py`. Treat
+  `package_only_passed=true` as bounded production-policy evidence only when the entry point is
+  reached, every reachable path is a scanned candidate, every hash is independently recomputed,
+  and all generic game-ID, scripted-table, hosted/network, secret, source, supply-chain, and license
+  checks pass. Keep the top-level full-public result false until public identifiers are actually
+  evaluated.
+- Evidence: commit `d6d4bac1e33c9837856c08abcee61bcb14afd34e`, tree
+  `dd8e82e4b34337a208110929e3f5f8079d1e0a18`; 176 relevant tests passed with four bounded
+  platform skips; Ruff check/format and strict mypy over 176 first-party files passed on Windows;
+  the isolated audit also passed strict Linux-target mypy and a package-only static scan with 86
+  reachable files and zero findings.
+- Boundary: this does not evaluate the sealed holdout identifiers, prove dynamic-import or native-
+  extension containment, establish OS filesystem/network containment, or supply any gameplay or
+  performance result. Fresh exact-commit receipt generation, the before-results Stage 09 amendment,
+  and hosted Linux/Windows package execution remain required.
+- Reopening condition: wrapper behavior differs after extraction; a reachable module is omitted,
+  unscanned, or unhashed; exact-source receipt validation fails; hosted cross-platform execution
+  contradicts the local result; or production-policy bytes change after the amended freeze.
