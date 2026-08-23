@@ -35,10 +35,45 @@ from arc3.evaluation.development_recovery import (
 )
 from arc3.evaluation.public import PUBLIC_RUN_SCHEMA, PublicExposureLedger
 from arc3.evaluation.public_runner import _asset_identity_check
+from arc3.integrity import IntegrityReceipt
 
 
 def _execution_identity() -> dict[str, object]:
     return _boundaries()
+
+
+def test_integrity_authority_uses_the_integrity_receipt_hash_contract(tmp_path: Path) -> None:
+    commit = "a" * 40
+    body: dict[str, Any] = {
+        "schema": "arc3.integrity.receipt.v0.2",
+        "checks": {
+            name: {"passed": True}
+            for name in (
+                "archive_static",
+                "policy_static",
+                "secret_scan",
+                "source_identity",
+                "supply_chain",
+            )
+        },
+        "finding_counts": {"blocking": 0, "total": 0, "warnings": 0},
+        "git": {"commit": commit, "dirty_worktree": False},
+        "inputs": {"manifest_sha256": harness.PUBLIC_PARTITION_MANIFEST_SHA256},
+        "passed": True,
+    }
+    receipt = IntegrityReceipt(body=body)
+    path = tmp_path / "integrity.json"
+    path.write_bytes(receipt.canonical_bytes())
+
+    projection, predicates = harness._integrity_authority(
+        path,
+        expected_file_hash=sha256_file(path),
+        expected_self_hash=receipt.receipt_sha256,
+        expected_commit=commit,
+    )
+
+    assert all(predicates.values())
+    assert projection["receipt_sha256"] == receipt.receipt_sha256
 
 
 def _worker_identity_keywords() -> dict[str, object]:

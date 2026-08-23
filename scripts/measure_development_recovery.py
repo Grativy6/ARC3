@@ -87,7 +87,7 @@ from arc3.evaluation.development_recovery import (  # noqa: E402
 )
 from arc3.evaluation.public import PublicExposureLedger, _trace_receipt  # noqa: E402
 from arc3.evaluation.public_runner import _receipt_valid  # noqa: E402
-from arc3.integrity import discover_policy_files, scan_policy_files  # noqa: E402
+from arc3.integrity import IntegrityReceipt, discover_policy_files, scan_policy_files  # noqa: E402
 
 PREDECLARATION = ROOT / "docs/evidence/001-09-development-recovery-predeclaration.json"
 DEFAULT_OUTPUT = Path("C:/a/arc3-b001/artifacts/stage09/development-recovery-attempt-01.json")
@@ -469,6 +469,14 @@ def _integrity_authority(
 ) -> tuple[dict[str, object], dict[str, bool]]:
     file_hash = sha256_file(path) if path.is_file() else None
     receipt = load_json(path) if path.is_file() else {}
+    canonical_self_hash = False
+    if path.is_file():
+        try:
+            canonical_self_hash = (
+                IntegrityReceipt.from_bytes(path.read_bytes()).receipt_sha256 == expected_self_hash
+            )
+        except (TypeError, UnicodeDecodeError, ValueError):
+            canonical_self_hash = False
     checks = receipt.get("checks")
     finding_counts = receipt.get("finding_counts")
     checks_pass = bool(
@@ -499,8 +507,7 @@ def _integrity_authority(
         and cast(dict[str, object], receipt["inputs"]).get("manifest_sha256")
         == PUBLIC_PARTITION_MANIFEST_SHA256,
         "passed": receipt.get("passed") is True,
-        "self_hash": receipt.get("receipt_sha256") == expected_self_hash
-        and verify_object_hash(receipt, hash_field="receipt_sha256"),
+        "self_hash": receipt.get("receipt_sha256") == expected_self_hash and canonical_self_hash,
     }
     projection = {
         "file_sha256": file_hash,
