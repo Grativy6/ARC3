@@ -86,7 +86,7 @@ _FORBIDDEN_MODULES: tuple[str, ...] = (
     "xai",
     "xmlrpc.client",
 )
-_SAFE_IMPORT_MEMBERS = frozenset({("arc3.adapters.arc_agi", "normalize_frame_data")})
+_SAFE_IMPORT_MEMBERS: frozenset[tuple[str, str]] = frozenset()
 _PATH_SCOPED_SAFE_IMPORT_MEMBERS = {
     "src/arc3/packaging/runtime_launcher.py": frozenset(
         {
@@ -480,8 +480,9 @@ def _module_import_targets(
             safe_boundary_import = bool(base) and all(
                 (base, alias.name) in _SAFE_IMPORT_MEMBERS for alias in node.names
             )
-            if base and not safe_boundary_import:
+            if base:
                 targets.add(base)
+            if base and not safe_boundary_import:
                 targets.update(f"{base}.{alias.name}" for alias in node.names)
         elif isinstance(node, ast.Call):
             called = _qualified_name(node.func) or ""
@@ -1811,11 +1812,36 @@ def build_integrity_receipt(
         reachable_hashes = {
             label: file_hashes[label] for label in reachable_labels if label in file_hashes
         }
-        continuity_complete = len(reachable_hashes) == len(reachable_labels)
+        entry_point_labels = tuple(Path(item).as_posix() for item in entry_points)
+        reached_entry_points = tuple(
+            label for label in entry_point_labels if label in reachable_labels
+        )
+        policy_labels = frozenset(_relative_path(repository, path) for path in policy_files)
+        continuity_complete = (
+            bool(reachable_labels)
+            and len(reachable_hashes) == len(reachable_labels)
+            and reached_entry_points == entry_point_labels
+            and all(label in policy_labels for label in reachable_labels)
+        )
         body["full_competition_integrity_status"] = "NOT_EVALUATED_PUBLIC_IDENTIFIERS"
         body["integrity_scope"] = "package-only-no-public-identifiers"
         body["package_only_passed"] = overall_passed and continuity_complete
         body["passed"] = False
+        body["production_policy_static_coverage"] = {
+            "algorithm": "static-first-party-import-closure-v0.1",
+            "entry_points": list(entry_point_labels),
+            "entry_points_reached": list(reached_entry_points),
+            "limitations": (
+                "Static first-party import reachability does not prove runtime dynamic-import "
+                "or native-extension containment."
+            ),
+            "policy_scan_covers_reachable_paths": all(
+                label in policy_labels for label in reachable_labels
+            ),
+            "reachable_file_count": len(reachable_labels),
+            "reachable_paths_hashed": len(reachable_hashes) == len(reachable_labels),
+            "status": "PASS" if continuity_complete else "FAIL",
+        }
         body["reachable_policy_source_hashes"] = reachable_hashes
     return IntegrityReceipt(body=body)
 

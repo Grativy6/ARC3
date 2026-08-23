@@ -18,6 +18,7 @@ import platform
 import re
 import shlex
 import shutil
+import signal
 import subprocess
 import sys
 import tempfile
@@ -114,6 +115,7 @@ _PACKAGE_ONLY_FORBIDDEN_PLAN_FRAGMENTS = (
     "scripts/evaluate_public",
     "scripts.evaluate_public",
 )
+_PRODUCTION_POLICY_ENTRY_POINTS = ("agent/my_agent.py",)
 
 
 def canonical_json_bytes(value: object) -> bytes:
@@ -431,8 +433,246 @@ class _ProcessMemoryCounters(ctypes.Structure):
     ]
 
 
+class _IoCounters(ctypes.Structure):
+    _fields_ = [
+        ("ReadOperationCount", ctypes.c_uint64),
+        ("WriteOperationCount", ctypes.c_uint64),
+        ("OtherOperationCount", ctypes.c_uint64),
+        ("ReadTransferCount", ctypes.c_uint64),
+        ("WriteTransferCount", ctypes.c_uint64),
+        ("OtherTransferCount", ctypes.c_uint64),
+    ]
+
+
+class _JobObjectBasicLimitInformation(ctypes.Structure):
+    _fields_ = [
+        ("PerProcessUserTimeLimit", ctypes.c_int64),
+        ("PerJobUserTimeLimit", ctypes.c_int64),
+        ("LimitFlags", ctypes.c_uint32),
+        ("MinimumWorkingSetSize", ctypes.c_size_t),
+        ("MaximumWorkingSetSize", ctypes.c_size_t),
+        ("ActiveProcessLimit", ctypes.c_uint32),
+        ("Affinity", ctypes.c_size_t),
+        ("PriorityClass", ctypes.c_uint32),
+        ("SchedulingClass", ctypes.c_uint32),
+    ]
+
+
+class _JobObjectExtendedLimitInformation(ctypes.Structure):
+    _fields_ = [
+        ("BasicLimitInformation", _JobObjectBasicLimitInformation),
+        ("IoInfo", _IoCounters),
+        ("ProcessMemoryLimit", ctypes.c_size_t),
+        ("JobMemoryLimit", ctypes.c_size_t),
+        ("PeakProcessMemoryUsed", ctypes.c_size_t),
+        ("PeakJobMemoryUsed", ctypes.c_size_t),
+    ]
+
+
+class _ThreadEntry32(ctypes.Structure):
+    _fields_ = [
+        ("dwSize", ctypes.c_uint32),
+        ("cntUsage", ctypes.c_uint32),
+        ("th32ThreadID", ctypes.c_uint32),
+        ("th32OwnerProcessID", ctypes.c_uint32),
+        ("tpBasePri", ctypes.c_long),
+        ("tpDeltaPri", ctypes.c_long),
+        ("dwFlags", ctypes.c_uint32),
+    ]
+
+
+def _windows_kernel32() -> Any:
+    windll = getattr(ctypes, "windll", None)
+    if windll is None:
+        raise OSError("Windows kernel32 is unavailable through ctypes")
+    return windll.kernel32
+
+
+def _close_windows_handle(handle: int, *, context: str) -> None:
+    """Close one full-width Windows HANDLE and fail if the kernel rejects it."""
+
+    close_handle = _windows_kernel32().CloseHandle
+    close_handle.argtypes = (ctypes.c_void_p,)
+    close_handle.restype = ctypes.c_int
+    if not close_handle(ctypes.c_void_p(handle)):
+        raise OSError(f"{context}: CloseHandle failed")
+
+
+def _resume_suspended_windows_process(pid: int) -> None:
+    """Resume every initial thread after the suspended process joins its kill job."""
+
+    kernel32 = _windows_kernel32()
+    create_snapshot = kernel32.CreateToolhelp32Snapshot
+    create_snapshot.argtypes = (ctypes.c_uint32, ctypes.c_uint32)
+    create_snapshot.restype = ctypes.c_void_p
+    snapshot = create_snapshot(0x00000004, 0)  # TH32CS_SNAPTHREAD
+    invalid_handle = ctypes.c_void_p(-1).value
+    if not snapshot or snapshot == invalid_handle:
+        raise OSError("CreateToolhelp32Snapshot(threads) failed")
+    entry = _ThreadEntry32()
+    entry.dwSize = ctypes.sizeof(entry)
+    first = kernel32.Thread32First
+    first.argtypes = (ctypes.c_void_p, ctypes.POINTER(_ThreadEntry32))
+    first.restype = ctypes.c_int
+    next_entry = kernel32.Thread32Next
+    next_entry.argtypes = (ctypes.c_void_p, ctypes.POINTER(_ThreadEntry32))
+    next_entry.restype = ctypes.c_int
+    thread_ids: list[int] = []
+    try:
+        more = bool(first(snapshot, ctypes.byref(entry)))
+        while more:
+            if int(entry.th32OwnerProcessID) == pid:
+                thread_ids.append(int(entry.th32ThreadID))
+            more = bool(next_entry(snapshot, ctypes.byref(entry)))
+    finally:
+        _close_windows_handle(int(snapshot), context="thread snapshot")
+    if not thread_ids:
+        raise OSError("suspended Windows process has no enumerable initial thread")
+    open_thread = kernel32.OpenThread
+    open_thread.argtypes = (ctypes.c_uint32, ctypes.c_int, ctypes.c_uint32)
+    open_thread.restype = ctypes.c_void_p
+    resume_thread = kernel32.ResumeThread
+    resume_thread.argtypes = (ctypes.c_void_p,)
+    resume_thread.restype = ctypes.c_uint32
+    for thread_id in thread_ids:
+        thread = open_thread(0x0002, False, thread_id)  # THREAD_SUSPEND_RESUME
+        if not thread:
+            raise OSError("OpenThread(THREAD_SUSPEND_RESUME) failed")
+        try:
+            if resume_thread(thread) == 0xFFFFFFFF:
+                raise OSError("ResumeThread failed")
+        finally:
+            _close_windows_handle(int(thread), context="suspended process thread")
+
+
+@dataclass(slots=True)
+class _WindowsKillJob:
+    """A fail-closed Windows job whose close/termination covers descendants."""
+
+    handle: int
+    closed: bool = False
+    accounting_error: str | None = None
+    close_error: str | None = None
+
+    @classmethod
+    def create(cls) -> _WindowsKillJob:
+        windll = getattr(ctypes, "windll", None)
+        if windll is None:
+            raise OSError("Windows job objects are unavailable through ctypes")
+        kernel32 = windll.kernel32
+        create_job = kernel32.CreateJobObjectW
+        create_job.argtypes = (ctypes.c_void_p, ctypes.c_wchar_p)
+        create_job.restype = ctypes.c_void_p
+        handle = create_job(None, None)
+        if not handle:
+            raise OSError("CreateJobObjectW failed")
+        information = _JobObjectExtendedLimitInformation()
+        information.BasicLimitInformation.LimitFlags = 0x00002000  # KILL_ON_JOB_CLOSE
+        set_information = kernel32.SetInformationJobObject
+        set_information.argtypes = (
+            ctypes.c_void_p,
+            ctypes.c_int,
+            ctypes.c_void_p,
+            ctypes.c_uint32,
+        )
+        set_information.restype = ctypes.c_int
+        if not set_information(
+            handle,
+            9,  # JobObjectExtendedLimitInformation
+            ctypes.byref(information),
+            ctypes.sizeof(information),
+        ):
+            try:
+                _close_windows_handle(int(handle), context="unconfigured Windows job")
+            except OSError as close_error:
+                raise OSError(
+                    f"SetInformationJobObject(KILL_ON_JOB_CLOSE) failed; {close_error}"
+                ) from close_error
+            raise OSError("SetInformationJobObject(KILL_ON_JOB_CLOSE) failed")
+        return cls(int(handle))
+
+    def assign(self, process: subprocess.Popen[bytes]) -> None:
+        process_handle = getattr(process, "_handle", None)
+        if not isinstance(process_handle, int):
+            raise OSError("spawned Windows process has no assignable native handle")
+        assign = _windows_kernel32().AssignProcessToJobObject
+        assign.argtypes = (ctypes.c_void_p, ctypes.c_void_p)
+        assign.restype = ctypes.c_int
+        if not assign(self.handle, process_handle):
+            raise OSError("AssignProcessToJobObject failed")
+
+    def process_ids(self) -> tuple[int, ...]:
+        capacity = 16_384
+        pointer_size = ctypes.sizeof(ctypes.c_size_t)
+        buffer = ctypes.create_string_buffer(8 + capacity * pointer_size)
+        returned = ctypes.c_uint32()
+        query = _windows_kernel32().QueryInformationJobObject
+        query.argtypes = (
+            ctypes.c_void_p,
+            ctypes.c_int,
+            ctypes.c_void_p,
+            ctypes.c_uint32,
+            ctypes.POINTER(ctypes.c_uint32),
+        )
+        query.restype = ctypes.c_int
+        if not query(
+            self.handle,
+            3,  # JobObjectBasicProcessIdList
+            buffer,
+            len(buffer),
+            ctypes.byref(returned),
+        ):
+            self.accounting_error = "QueryInformationJobObject process-list accounting failed"
+            return ()
+        assigned = ctypes.c_uint32.from_buffer(buffer, 0).value
+        count = ctypes.c_uint32.from_buffer(buffer, 4).value
+        if assigned > capacity or count > capacity:
+            self.accounting_error = "Windows job process-list accounting exceeded capacity"
+            return ()
+        identifiers = (ctypes.c_size_t * count).from_buffer(buffer, 8)
+        return tuple(sorted({int(identifier) for identifier in identifiers if identifier}))
+
+    def terminate(self) -> bool:
+        terminate = _windows_kernel32().TerminateJobObject
+        terminate.argtypes = (ctypes.c_void_p, ctypes.c_uint32)
+        terminate.restype = ctypes.c_int
+        return bool(terminate(self.handle, 1))
+
+    def close(self) -> bool:
+        if self.closed:
+            return True
+        try:
+            _close_windows_handle(self.handle, context="Windows kill job")
+        except OSError as error:
+            self.close_error = str(error)
+            return False
+        self.closed = True
+        self.close_error = None
+        return True
+
+
+def _linux_process_group_ids(process_group: int) -> tuple[int, ...]:
+    identifiers: list[int] = []
+    try:
+        candidates = tuple(Path("/proc").iterdir())
+    except OSError:
+        return ()
+    for candidate in candidates:
+        if not candidate.name.isdigit():
+            continue
+        try:
+            raw = (candidate / "stat").read_text(encoding="ascii")
+            _prefix, separator, suffix = raw.rpartition(")")
+            fields = suffix.strip().split() if separator else ()
+            if len(fields) >= 3 and int(fields[2]) == process_group:
+                identifiers.append(int(candidate.name))
+        except (OSError, UnicodeDecodeError, ValueError):
+            continue
+    return tuple(sorted(set(identifiers)))
+
+
 def _sample_process_rss(pid: int) -> tuple[int | None, str]:
-    """Sample direct-process peak RSS using only platform standard-library surfaces."""
+    """Sample one process's current resident set using standard-library surfaces."""
 
     current_platform = platform.system().lower()
     if current_platform == "windows":
@@ -444,9 +684,6 @@ def _sample_process_rss(pid: int) -> tuple[int | None, str]:
         open_process = windll.kernel32.OpenProcess
         open_process.argtypes = (ctypes.c_uint32, ctypes.c_int, ctypes.c_uint32)
         open_process.restype = ctypes.c_void_p
-        close_handle = windll.kernel32.CloseHandle
-        close_handle.argtypes = (ctypes.c_void_p,)
-        close_handle.restype = ctypes.c_int
         get_process_memory_info = windll.psapi.GetProcessMemoryInfo
         get_process_memory_info.argtypes = (
             ctypes.c_void_p,
@@ -471,24 +708,182 @@ def _sample_process_rss(pid: int) -> tuple[int | None, str]:
             )
             if not success:
                 return None, "windows-get-process-memory-info-failed"
-            return int(counters.PeakWorkingSetSize), "windows-peak-working-set"
+            return int(counters.WorkingSetSize), "windows-working-set"
         finally:
-            close_handle(handle)
+            _close_windows_handle(int(handle), context="RSS process query")
     if current_platform == "linux":
         try:
             fields: dict[str, int] = {}
             for line in Path(f"/proc/{pid}/status").read_text(encoding="ascii").splitlines():
                 name, separator, value = line.partition(":")
-                if separator and name in {"VmHWM", "VmRSS"}:
+                if separator and name == "VmRSS":
                     fields[name] = int(value.strip().split()[0]) * 1024
-            if "VmHWM" in fields:
-                return fields["VmHWM"], "linux-proc-vmhwm"
             if "VmRSS" in fields:
                 return fields["VmRSS"], "linux-proc-vmrss"
         except (OSError, UnicodeDecodeError, ValueError):
             pass
         return None, "linux-proc-unavailable"
     return None, "unsupported-platform"
+
+
+@dataclass(slots=True)
+class _ProcessTreeSupervisor:
+    """Supervise one isolated process tree for aggregate RSS and bounded teardown."""
+
+    process: subprocess.Popen[bytes]
+    supervision_source: str
+    windows_job: _WindowsKillJob | None = None
+    termination_attempted: bool = False
+    termination_succeeded: bool | None = None
+    close_succeeded: bool | None = None
+    max_observed_process_count: int = 0
+
+    @classmethod
+    def start(
+        cls,
+        argv: Sequence[str],
+        *,
+        cwd: Path,
+        env: Mapping[str, str],
+    ) -> _ProcessTreeSupervisor:
+        current_platform = platform.system().lower()
+        if current_platform == "windows":
+            job = _WindowsKillJob.create()
+            try:
+                process = subprocess.Popen(
+                    list(argv),
+                    cwd=cwd,
+                    env=dict(env),
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    creationflags=(
+                        getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+                        | 0x00000004  # CREATE_SUSPENDED
+                    ),
+                )
+                try:
+                    job.assign(process)
+                    _resume_suspended_windows_process(process.pid)
+                except OSError as start_error:
+                    job.terminate()
+                    direct_termination_error: str | None = None
+                    try:
+                        process.kill()
+                        process.wait(timeout=5.0)
+                    except (OSError, subprocess.TimeoutExpired) as cleanup_error:
+                        direct_termination_error = (
+                            f"{type(cleanup_error).__name__}: {cleanup_error}"
+                        )
+                    finally:
+                        for stream in (process.stdout, process.stderr):
+                            if stream is not None:
+                                stream.close()
+                    detail = "suspended child terminated through the Popen handle"
+                    if direct_termination_error is not None:
+                        detail = (
+                            "suspended child Popen termination could not be verified: "
+                            f"{direct_termination_error}"
+                        )
+                    raise OSError(f"{start_error}; {detail}") from start_error
+            except BaseException as start_error:
+                if not job.close():
+                    raise OSError(
+                        f"{start_error}; {job.close_error or 'Windows job handle close failed'}"
+                    ) from start_error
+                raise
+            return cls(process, "windows-job-object-kill-on-close", windows_job=job)
+        process = subprocess.Popen(
+            list(argv),
+            cwd=cwd,
+            env=dict(env),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            start_new_session=True,
+        )
+        return cls(process, "posix-new-session-process-group")
+
+    def process_ids(self) -> tuple[int, ...]:
+        if self.windows_job is not None:
+            return self.windows_job.process_ids()
+        if platform.system().lower() == "linux":
+            return _linux_process_group_ids(self.process.pid)
+        return (self.process.pid,) if self.process.poll() is None else ()
+
+    def sample_tree_rss(self) -> tuple[int | None, str]:
+        identifiers = self.process_ids()
+        self.max_observed_process_count = max(self.max_observed_process_count, len(identifiers))
+        samples = tuple(_sample_process_rss(pid) for pid in identifiers)
+        resident = tuple(value for value, _source in samples if value is not None)
+        if not resident:
+            source = samples[0][1] if samples else "process-tree-unavailable"
+            return None, source
+        if self.windows_job is not None:
+            return sum(resident), "windows-job-process-list-working-set-sum"
+        if platform.system().lower() == "linux":
+            return sum(resident), "linux-proc-process-group-vmrss-sum"
+        return sum(resident), "direct-process-current-rss-fallback"
+
+    def terminate_tree(self) -> tuple[bool, tuple[int, ...]]:
+        self.termination_attempted = True
+        if self.windows_job is not None:
+            attempted = self.windows_job.terminate()
+        else:
+            try:
+                kill_process_group = getattr(os, "killpg", None)
+                kill_signal = getattr(signal, "SIGKILL", signal.SIGTERM)
+                if not callable(kill_process_group):
+                    raise OSError("POSIX process-group termination is unavailable")
+                kill_process_group(self.process.pid, kill_signal)
+                attempted = True
+            except ProcessLookupError:
+                attempted = True
+            except OSError:
+                attempted = False
+        try:
+            self.process.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            self.process.kill()
+            try:
+                self.process.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                pass
+        deadline = time.monotonic() + 5.0
+        remaining = self.process_ids()
+        accounting_failed = (
+            self.windows_job is not None and self.windows_job.accounting_error is not None
+        )
+        while remaining and not accounting_failed and time.monotonic() < deadline:
+            time.sleep(0.01)
+            remaining = self.process_ids()
+            accounting_failed = (
+                self.windows_job is not None and self.windows_job.accounting_error is not None
+            )
+        self.termination_succeeded = attempted and not remaining and not accounting_failed
+        return self.termination_succeeded, remaining
+
+    def close(self) -> bool:
+        if self.windows_job is not None:
+            self.close_succeeded = self.windows_job.close()
+            return self.close_succeeded
+        self.close_succeeded = True
+        return True
+
+
+def _bounded_communicate_after_termination(
+    process: subprocess.Popen[bytes], *, timeout_seconds: float = 1.0
+) -> tuple[bytes, bytes, bool]:
+    """Drain a terminated process without trusting escaped pipe owners to exit."""
+
+    try:
+        stdout, stderr = process.communicate(timeout=timeout_seconds)
+        return stdout, stderr, True
+    except subprocess.TimeoutExpired as error:
+        stdout = error.stdout if isinstance(error.stdout, bytes) else b""
+        stderr = error.stderr if isinstance(error.stderr, bytes) else b""
+        for stream in (process.stdout, process.stderr):
+            if stream is not None:
+                stream.close()
+        return stdout, stderr, False
 
 
 def run_command(
@@ -524,66 +919,98 @@ def run_command(
     stderr = b""
     peak_rss_bytes: int | None = None
     rss_measurement_source = "process-not-started"
+    supervisor: _ProcessTreeSupervisor | None = None
+    process_tree_remaining_pids: tuple[int, ...] = ()
+    process_tree_pipe_drain_succeeded: bool | None = None
+    timeout_triggered = False
     status = spec.failure_status
     reason: str | None = None
     try:
-        if spec.measure_peak_rss:
-            process = subprocess.Popen(
-                list(spec.argv),
-                cwd=repository,
-                env=environment,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-            )
-            deadline = time.monotonic() + spec.timeout_seconds
-            while True:
-                sampled_rss, sampled_source = _sample_process_rss(process.pid)
+        supervisor = _ProcessTreeSupervisor.start(
+            spec.argv,
+            cwd=repository,
+            env=environment,
+        )
+        process = supervisor.process
+        deadline = time.monotonic() + spec.timeout_seconds
+        while True:
+            if spec.measure_peak_rss:
+                sampled_rss, sampled_source = supervisor.sample_tree_rss()
                 if sampled_rss is not None:
                     peak_rss_bytes = max(peak_rss_bytes or 0, sampled_rss)
                     rss_measurement_source = sampled_source
-                remaining = deadline - time.monotonic()
-                if remaining <= 0:
-                    process.kill()
-                    stdout, stderr = process.communicate()
-                    return_code = process.returncode
-                    status = "FAILED_INFRASTRUCTURE"
-                    reason = f"command exceeded {spec.timeout_seconds} seconds"
-                    break
-                try:
-                    stdout, stderr = process.communicate(timeout=min(0.05, remaining))
-                except subprocess.TimeoutExpired:
-                    continue
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                timeout_triggered = True
+                _terminated, process_tree_remaining_pids = supervisor.terminate_tree()
+                stdout, stderr, process_tree_pipe_drain_succeeded = (
+                    _bounded_communicate_after_termination(process)
+                )
                 return_code = process.returncode
-                if return_code == 0:
-                    status = "PASS"
-                else:
-                    reason = f"command returned exit code {return_code}"
+                status = "FAILED_INFRASTRUCTURE"
+                reason = f"command exceeded {spec.timeout_seconds} seconds"
                 break
-        else:
-            completed = subprocess.run(
-                list(spec.argv),
-                cwd=repository,
-                env=environment,
-                check=False,
-                capture_output=True,
-                timeout=spec.timeout_seconds,
-            )
-            return_code = completed.returncode
-            stdout = completed.stdout
-            stderr = completed.stderr
+            try:
+                stdout, stderr = process.communicate(timeout=min(0.05, remaining))
+            except subprocess.TimeoutExpired:
+                continue
+            process_tree_pipe_drain_succeeded = True
+            return_code = process.returncode
             if return_code == 0:
                 status = "PASS"
             else:
                 reason = f"command returned exit code {return_code}"
+            _terminated, process_tree_remaining_pids = supervisor.terminate_tree()
+            break
     except subprocess.TimeoutExpired as error:
+        timeout_triggered = True
         status = "FAILED_INFRASTRUCTURE"
         reason = f"command exceeded {spec.timeout_seconds} seconds"
         stdout = error.stdout or b""
         stderr = error.stderr or b""
+        process_tree_pipe_drain_succeeded = False
     except OSError as error:
         status = "FAILED_INFRASTRUCTURE"
         reason = f"command could not start: {type(error).__name__}: {error}"
         stderr = reason.encode("utf-8", errors="replace")
+    finally:
+        if supervisor is not None:
+            if supervisor.termination_attempted is False:
+                _terminated, process_tree_remaining_pids = supervisor.terminate_tree()
+            supervisor.close()
+    if (
+        spec.measure_peak_rss
+        and status == "PASS"
+        and (
+            peak_rss_bytes is None
+            or (
+                supervisor is not None
+                and supervisor.windows_job is not None
+                and supervisor.windows_job.accounting_error is not None
+            )
+        )
+    ):
+        status = "FAILED_INFRASTRUCTURE"
+        reason = (
+            supervisor.windows_job.accounting_error
+            if supervisor is not None
+            and supervisor.windows_job is not None
+            and supervisor.windows_job.accounting_error is not None
+            else "aggregate process-tree RSS accounting was unavailable"
+        )
+    if (
+        spec.required
+        and supervisor is not None
+        and (
+            supervisor.termination_succeeded is not True
+            or bool(process_tree_remaining_pids)
+            or process_tree_pipe_drain_succeeded is not True
+            or (supervisor.windows_job is not None and supervisor.close_succeeded is not True)
+        )
+    ):
+        status = "FAILED_INFRASTRUCTURE"
+        cleanup_reason = "required command process-tree cleanup did not complete"
+        reason = cleanup_reason if reason is None else f"{reason}; {cleanup_reason}"
     completed_at = _utc_now()
     duration = time.perf_counter() - started
     stdout, stdout_redactions = _redact_generated_log(stdout)
@@ -596,13 +1023,61 @@ def run_command(
         "generated_log_redactions": stdout_redactions + stderr_redactions,
         "nondeterminism": list(spec.nondeterminism),
         "non_allowlisted_environment_variables_removed": removed_sensitive_variables,
+        "process_tree_cleanup_attempted": (
+            supervisor.termination_attempted if supervisor is not None else False
+        ),
+        "process_tree_cleanup_succeeded": (
+            supervisor.termination_succeeded if supervisor is not None else False
+        ),
+        "process_tree_remaining_pid_count": len(process_tree_remaining_pids),
+        "process_tree_pipe_drain_succeeded": process_tree_pipe_drain_succeeded,
+        "process_tree_supervision_source": (
+            supervisor.supervision_source if supervisor is not None else "process-not-started"
+        ),
+        "process_tree_windows_job_handle_closed": (
+            supervisor.windows_job.closed
+            if supervisor is not None and supervisor.windows_job is not None
+            else None
+        ),
+        "process_tree_windows_job_handle_close_succeeded": (
+            supervisor.close_succeeded
+            if supervisor is not None and supervisor.windows_job is not None
+            else None
+        ),
+        "process_tree_windows_job_close_kill_is_fallback_not_verification": (
+            supervisor is not None and supervisor.windows_job is not None
+        ),
+        "process_tree_windows_launch_suspended_before_assignment": (
+            supervisor is not None and supervisor.windows_job is not None
+        ),
+        "process_tree_supervision_scope": (
+            "Windows kill-on-close job covers assigned descendants"
+            if supervisor is not None and supervisor.windows_job is not None
+            else (
+                "POSIX inherited process group; deliberate setsid/double-fork escape is not "
+                "contained"
+                if supervisor is not None
+                else "process-not-started"
+            )
+        ),
+        "timeout_triggered": timeout_triggered,
     }
     if spec.measure_peak_rss:
         details.update(
             {
                 "peak_rss_bytes": peak_rss_bytes,
-                "rss_measurement_scope": "direct spawned process; descendants are excluded",
+                "rss_measurement_scope": (
+                    "sampled aggregate resident bytes across the supervised process tree; "
+                    "this is measurement, not a hard memory limit"
+                ),
                 "rss_measurement_source": rss_measurement_source,
+                "rss_sampling_limitations": (
+                    "sampled current resident bytes can miss descendants that start and exit "
+                    "between samples"
+                ),
+                "rss_sampling_max_observed_process_count": (
+                    supervisor.max_observed_process_count if supervisor is not None else 0
+                ),
             }
         )
     return CheckResult(
@@ -807,17 +1282,42 @@ def _interpreter_origin_probe_argv(executable: Path, source_root: Path) -> tuple
     )
 
 
+def _lexical_absolute_path(path: str | Path) -> Path:
+    """Make a path absolute without resolving a virtual-environment launcher symlink."""
+
+    return Path(os.path.abspath(path))
+
+
+def _interpreter_origin_mismatches(
+    *,
+    expected: Mapping[str, Path],
+    observed: Mapping[str, Path],
+) -> tuple[str, ...]:
+    """Return path-free component names for safe CI mismatch diagnostics."""
+
+    return tuple(
+        name
+        for name in ("executable_target", "prefix", "source_root", "arc3_origin")
+        if observed.get(name) != expected.get(name)
+    )
+
+
 def interpreter_source_identity(repository: Path, transient_root: Path) -> dict[str, object]:
     """Prove the verifier and its isolated subprocess import ARC3 from this clone."""
 
     repository = repository.resolve()
     expected_prefix = (repository / ".venv").resolve()
-    executable = Path(sys.executable).resolve()
+    executable = _lexical_absolute_path(sys.executable)
+    executable_target = executable.resolve(strict=True)
     prefix = Path(sys.prefix).resolve()
     if prefix != expected_prefix:
+        raise ValueError("release verifier clone-local component mismatch: prefix")
+    try:
+        executable.relative_to(expected_prefix)
+    except ValueError as error:
         raise ValueError(
-            f"release verifier must run from the clone-local .venv: {prefix} != {expected_prefix}"
-        )
+            "release verifier executable is not under the clone-local .venv"
+        ) from error
     expected_origin = (repository / "src" / "arc3" / "__init__.py").resolve()
     spec = importlib.util.find_spec("arc3")
     if spec is None or spec.origin is None:
@@ -846,17 +1346,36 @@ def interpreter_source_identity(repository: Path, transient_root: Path) -> dict[
         payload = _required_mapping(json.loads(probe.stdout), name="interpreter origin probe")
     except json.JSONDecodeError as error:
         raise ValueError(f"interpreter origin probe did not return JSON: {error}") from error
-    probed_executable = Path(str(payload.get("executable"))).resolve()
+    probed_executable = _lexical_absolute_path(str(payload.get("executable")))
+    try:
+        probed_executable.relative_to(expected_prefix)
+    except ValueError as error:
+        raise ValueError(
+            "isolated interpreter executable is not under the clone-local .venv"
+        ) from error
+    probed_executable_target = probed_executable.resolve(strict=True)
     probed_prefix = Path(str(payload.get("prefix"))).resolve()
     probed_source_root = Path(str(payload.get("source_root"))).resolve()
     probed_origin = Path(str(payload.get("arc3_origin"))).resolve()
-    if (probed_executable, probed_prefix, probed_source_root, probed_origin) != (
-        executable,
-        expected_prefix,
-        source_root,
-        expected_origin,
-    ):
-        raise ValueError("isolated interpreter origin disagrees with the candidate runtime")
+    mismatches = _interpreter_origin_mismatches(
+        expected={
+            "executable_target": executable_target,
+            "prefix": expected_prefix,
+            "source_root": source_root,
+            "arc3_origin": expected_origin,
+        },
+        observed={
+            "executable_target": probed_executable_target,
+            "prefix": probed_prefix,
+            "source_root": probed_source_root,
+            "arc3_origin": probed_origin,
+        },
+    )
+    if mismatches:
+        raise ValueError(
+            "isolated interpreter origin disagrees with the candidate runtime components: "
+            + ", ".join(mismatches)
+        )
     return {
         "arc3_origin": expected_origin.relative_to(repository).as_posix(),
         "arc3_origin_sha256": sha256_file(expected_origin),
@@ -866,7 +1385,8 @@ def interpreter_source_identity(repository: Path, transient_root: Path) -> dict[
         "network_denied_during_probe": True,
         "non_allowlisted_environment_variables_removed": removed,
         "python_executable": _path_for_receipt(executable, repository),
-        "python_executable_sha256": sha256_file(executable),
+        "python_executable_sha256": sha256_file(executable_target),
+        "python_executable_venv_launcher_preserved": True,
         "python_prefix": _path_for_receipt(expected_prefix, repository),
     }
 
@@ -1210,12 +1730,28 @@ def _build_package_only_plan(
             ),
         ),
     )
-    _validate_package_only_plan(specs)
+    _validate_package_only_plan(
+        specs,
+        repository=repository,
+        output_root=output_root,
+    )
     return specs
 
 
-def _validate_package_only_plan(specs: Sequence[CommandSpec]) -> None:
-    """Fail closed if a package-only plan can reach public inventory or gameplay."""
+def _single_option_value(argv: Sequence[str], option: str) -> str:
+    positions = tuple(index for index, value in enumerate(argv) if value == option)
+    if len(positions) != 1 or positions[0] + 1 >= len(argv):
+        raise ValueError(f"package-only integrity plan requires exactly one {option} value")
+    return argv[positions[0] + 1]
+
+
+def _validate_package_only_plan(
+    specs: Sequence[CommandSpec],
+    *,
+    repository: Path | None = None,
+    output_root: Path | None = None,
+) -> None:
+    """Fail closed unless the plan contains the exact static production-policy gate."""
 
     rendered = canonical_json_bytes([spec.to_dict() for spec in specs]).decode("utf-8").lower()
     normalized = rendered.replace("\\", "/")
@@ -1230,6 +1766,46 @@ def _validate_package_only_plan(specs: Sequence[CommandSpec]) -> None:
     for spec in specs:
         if forbidden_arguments & set(spec.argv):
             raise ValueError(f"package-only check {spec.check_id} has a forbidden argument")
+    integrity_specs = tuple(spec for spec in specs if spec.check_id == "package-integrity")
+    if len(integrity_specs) != 1:
+        raise ValueError("package-only plan requires exactly one package-integrity check")
+    integrity = integrity_specs[0]
+    if integrity.argv[:3] != (
+        sys.executable,
+        "-m",
+        "scripts.check_competition_integrity",
+    ):
+        raise ValueError(
+            "package-only package-integrity check must execute the production static scanner"
+        )
+    if integrity.argv.count("--package-only") != 1:
+        raise ValueError("package-only package-integrity check must select package-only mode once")
+    if (
+        len(integrity.argv) != 10
+        or integrity.argv[3] != "--root"
+        or integrity.argv[5] != "--package-only"
+        or integrity.argv[6] != "--archive"
+        or integrity.argv[8] != "--output"
+    ):
+        raise ValueError("package-only package-integrity argv shape is not the frozen static gate")
+    if integrity.required is not True or integrity.dependencies != (
+        "dependency-sync",
+        "dependency-lock",
+        "offline-package-a",
+    ):
+        raise ValueError("package-only package-integrity dependency boundary is incomplete")
+    root_value = _single_option_value(integrity.argv, "--root")
+    archive_value = _single_option_value(integrity.argv, "--archive")
+    output_value = _single_option_value(integrity.argv, "--output")
+    if repository is not None and Path(root_value).resolve() != repository.resolve():
+        raise ValueError("package-only integrity root is not the exact candidate repository")
+    if output_root is not None:
+        expected_archive = (output_root / "package-a" / "arc3-kaggle-candidate.zip").resolve()
+        expected_output = (output_root / "integrity-receipt.json").resolve()
+        if Path(archive_value).resolve() != expected_archive:
+            raise ValueError("package-only integrity archive is not package A")
+        if Path(output_value).resolve() != expected_output:
+            raise ValueError("package-only integrity receipt leaves the sealed output root")
 
 
 def build_plan(
@@ -2385,7 +2961,10 @@ def verify_release_receipt(path: Path) -> dict[str, Any]:
 
 
 def _validate_package_only_integrity(
-    path: Path, *, expected_commit: str
+    path: Path,
+    *,
+    expected_commit: str,
+    repository: Path,
 ) -> tuple[bool, dict[str, object]]:
     integrity = _verified_self_hashed_object(path, hash_field=RECEIPT_HASH_FIELD)
     inputs = _required_mapping(integrity.get("inputs"), name="package integrity inputs")
@@ -2397,6 +2976,13 @@ def _validate_package_only_integrity(
         integrity.get("license_summary"), name="package integrity license summary"
     )
     git_identity = _required_mapping(integrity.get("git"), name="package integrity Git identity")
+    coverage = _required_mapping(
+        integrity.get("production_policy_static_coverage"),
+        name="production policy static coverage",
+    )
+    source_hashes = _required_mapping(
+        integrity.get("source_hashes"), name="package integrity source hashes"
+    )
     check_passed = all(
         isinstance(checks.get(name), dict) and checks[name].get("passed") is True
         for name in (
@@ -2424,7 +3010,8 @@ def _validate_package_only_integrity(
     )
     reachable_paths = inputs.get("reachable_policy_paths")
     reachable_hashes = integrity.get("reachable_policy_source_hashes")
-    continuity_passed = (
+    declared_candidate_paths = inputs.get("candidate_paths")
+    declared_continuity = (
         isinstance(reachable_paths, list)
         and bool(reachable_paths)
         and all(isinstance(item, str) for item in reachable_paths)
@@ -2436,6 +3023,75 @@ def _validate_package_only_integrity(
             for value in reachable_hashes.values()
         )
     )
+    recomputed_hashes: dict[str, str] = {}
+    if declared_continuity:
+        assert isinstance(reachable_paths, list)
+        for relative in cast(list[str], reachable_paths):
+            lexical_candidate = repository / relative
+            if lexical_candidate.is_symlink():
+                recomputed_hashes = {}
+                break
+            candidate = lexical_candidate.resolve()
+            try:
+                candidate.relative_to(repository.resolve())
+            except ValueError:
+                recomputed_hashes = {}
+                break
+            if not candidate.is_file() or candidate.is_symlink():
+                recomputed_hashes = {}
+                break
+            recomputed_hashes[relative] = sha256_file(candidate)
+    candidate_set_passed = False
+    recomputed_reachable_paths: list[str] = []
+    if isinstance(declared_candidate_paths, list) and all(
+        isinstance(item, str) for item in declared_candidate_paths
+    ):
+        from arc3.integrity import discover_reachable_policy_files
+        from scripts.check_competition_integrity import package_only_candidate_files
+
+        try:
+            independent_candidates = package_only_candidate_files(repository)
+            independent_candidate_labels = [
+                path.relative_to(repository).as_posix() for path in independent_candidates
+            ]
+            candidate_set_passed = declared_candidate_paths == independent_candidate_labels
+            recomputed_reachable_paths = [
+                path.relative_to(repository).as_posix()
+                for path in discover_reachable_policy_files(
+                    repository,
+                    candidate_files=independent_candidates,
+                    entry_points=_PRODUCTION_POLICY_ENTRY_POINTS,
+                )
+            ]
+        except (OSError, ValueError):
+            candidate_set_passed = False
+            recomputed_reachable_paths = []
+    coverage_passed = (
+        declared_continuity
+        and isinstance(reachable_paths, list)
+        and isinstance(reachable_hashes, dict)
+        and inputs.get("entry_points") == list(_PRODUCTION_POLICY_ENTRY_POINTS)
+        and all(entry in reachable_paths for entry in _PRODUCTION_POLICY_ENTRY_POINTS)
+        and candidate_set_passed
+        and reachable_paths == recomputed_reachable_paths
+        and coverage
+        == {
+            "algorithm": "static-first-party-import-closure-v0.1",
+            "entry_points": list(_PRODUCTION_POLICY_ENTRY_POINTS),
+            "entry_points_reached": list(_PRODUCTION_POLICY_ENTRY_POINTS),
+            "limitations": (
+                "Static first-party import reachability does not prove runtime dynamic-import "
+                "or native-extension containment."
+            ),
+            "policy_scan_covers_reachable_paths": True,
+            "reachable_file_count": len(reachable_paths),
+            "reachable_paths_hashed": True,
+            "status": "PASS",
+        }
+        and recomputed_hashes == reachable_hashes
+        and all(source_hashes.get(key) == value for key, value in recomputed_hashes.items())
+    )
+    continuity_passed = declared_continuity and coverage_passed
     source_identity_passed = (
         git_identity.get("commit") == expected_commit
         and git_identity.get("dirty_worktree") is False
@@ -2454,6 +3110,7 @@ def _validate_package_only_integrity(
     )
     details: dict[str, object] = {
         "checks_passed": check_passed,
+        "candidate_set_passed": candidate_set_passed,
         "finding_counts": cast(object, integrity.get("finding_counts")),
         "first_party_license_status": cast(
             object, license_summary.get("first_party_license_status")
@@ -2462,17 +3119,17 @@ def _validate_package_only_integrity(
         "package_only_passed": integrity.get("package_only_passed") is True,
         "passed": passed,
         "policy_continuity_passed": continuity_passed,
+        "production_policy_static_coverage": cast(object, coverage),
         "public_semantic_boundary_passed": public_boundary,
         "reachable_policy_source_hashes": cast(object, reachable_hashes),
+        "recomputed_reachable_policy_paths": recomputed_reachable_paths,
         "schema": cast(object, integrity.get("schema")),
         "source_identity_passed": source_identity_passed,
     }
-    source_hashes = integrity.get("source_hashes")
-    if isinstance(source_hashes, dict):
-        for key in ("LICENSE", "THIRD_PARTY_NOTICES.md", "pyproject.toml", "uv.lock"):
-            value = source_hashes.get(key)
-            if isinstance(value, str):
-                details[f"source_hash:{key}"] = value
+    for key in ("LICENSE", "THIRD_PARTY_NOTICES.md", "pyproject.toml", "uv.lock"):
+        value = source_hashes.get(key)
+        if isinstance(value, str):
+            details[f"source_hash:{key}"] = value
     return passed, details
 
 
@@ -2495,6 +3152,10 @@ def _validate_package_test_guard(path: Path) -> dict[str, object]:
             "child process; this is not OS containment"
         )
         or guard.get("external_paths_default_denied") is not True
+        or guard.get("framework_writable_state") != "isolated-under-allowed-guard-parent"
+        or not isinstance(guard.get("sys_path_entries_outside_allowed_roots_removed"), int)
+        or cast(int, guard["sys_path_entries_outside_allowed_roots_removed"]) < 0
+        or guard.get("pytest_rootdir_forced") is not True
         or guard.get("selection_policy")
         != "static-process-capability-exclusion-plus-runtime-process-denial"
         or not isinstance(guard.get("selected_test_file_count"), int)
@@ -2520,10 +3181,15 @@ def _validate_package_test_guard(path: Path) -> dict[str, object]:
             cast(list[object], guard["excluded_process_capable_tests"])
         ),
         "external_paths_default_denied": True,
+        "framework_writable_state": cast(object, guard.get("framework_writable_state")),
         "protected_directories": cast(object, guard.get("protected_directories")),
         "protected_files": cast(object, guard.get("protected_files")),
+        "pytest_rootdir_forced": True,
         "schema": cast(object, guard.get("schema")),
         "status": cast(object, guard.get("status")),
+        "sys_path_entries_outside_allowed_roots_removed": cast(
+            object, guard.get("sys_path_entries_outside_allowed_roots_removed")
+        ),
     }
 
 
@@ -2553,6 +3219,18 @@ def _package_runtime_measurements(
         and cast(int, command_peak_rss_bytes[check_id]) > 0
         for check_id in measured_ids
     )
+    rss_tree_scoped = all(
+        check_id in by_id
+        and by_id[check_id].details.get("rss_measurement_scope")
+        == (
+            "sampled aggregate resident bytes across the supervised process tree; "
+            "this is measurement, not a hard memory limit"
+        )
+        and by_id[check_id].details.get("process_tree_cleanup_succeeded") is True
+        and isinstance(by_id[check_id].details.get("rss_sampling_max_observed_process_count"), int)
+        and cast(int, by_id[check_id].details["rss_sampling_max_observed_process_count"]) >= 1
+        for check_id in measured_ids
+    )
     startup_passed = (
         startup.get("schema") == "arc3.package-startup-probe.v0.2"
         and startup.get("status") == "PASS"
@@ -2577,7 +3255,13 @@ def _package_runtime_measurements(
     required_commands_passed = all(
         check_id in by_id and by_id[check_id].status == "PASS" for check_id in measured_ids
     )
-    passed = rss_available and startup_passed and package_values_equal and required_commands_passed
+    passed = (
+        rss_available
+        and rss_tree_scoped
+        and startup_passed
+        and package_values_equal
+        and required_commands_passed
+    )
     return passed, {
         "archive_size_bytes": first.get("archive_size_bytes"),
         "command_peak_rss_bytes": command_peak_rss_bytes,
@@ -2592,11 +3276,37 @@ def _package_runtime_measurements(
         },
         "package_values_equal": package_values_equal,
         "rss_available": rss_available,
-        "rss_scope": "direct spawned process; descendants excluded and reported separately",
+        "rss_scope": (
+            "sampled aggregate resident bytes across supervised process trees; measurement only, "
+            "not a hard memory limit"
+        ),
+        "rss_tree_scoped": rss_tree_scoped,
         "runtime_wheel_count": first.get("runtime_wheel_count"),
         "startup": dict(startup),
         "startup_passed": startup_passed,
     }
+
+
+def _private_kaggle_surface_boundary() -> tuple[dict[str, object], str]:
+    """Describe unprovided private inputs without asserting their host availability."""
+
+    details: dict[str, object] = {
+        "access_attempted": False,
+        "availability_assessment": "NOT_ASSESSED",
+        "compatibility_status": "NOT_VERIFIED",
+        "exact_private_gateway": "NOT_PROVIDED_TO_VERIFIER",
+        "exact_private_platform_agents_input": "NOT_PROVIDED_TO_VERIFIER",
+        "exact_private_scorer": "NOT_PROVIDED_TO_VERIFIER",
+        "exact_private_wheel_inventory": "NOT_PROVIDED_TO_VERIFIER",
+        "official_submission_performed": False,
+        "status": "BLOCKED_EXTERNAL",
+    }
+    reason = (
+        "exact private Kaggle wheels, platform Agents input, gateway, and scorer were not "
+        "provided to this verifier; availability was not assessed, and local gateway-shaped "
+        "fixtures cannot establish private compatibility"
+    )
+    return details, reason
 
 
 def _run_package_only_verification(
@@ -2626,7 +3336,11 @@ def _run_package_only_verification(
         profile=BUILD001_PACKAGE_ONLY_PROFILE,
     )
     specs = tuple(_replace_candidate_commit(spec, expected_commit) for spec in raw_specs)
-    _validate_package_only_plan(specs)
+    _validate_package_only_plan(
+        specs,
+        repository=repository,
+        output_root=output_root,
+    )
     results: list[CheckResult] = [
         internal_result(
             "interpreter-source-identity",
@@ -2721,6 +3435,7 @@ def _run_package_only_verification(
             integrity_passed, integrity_details = _validate_package_only_integrity(
                 output_root / "integrity-receipt.json",
                 expected_commit=expected_commit,
+                repository=repository,
             )
             raw_status = integrity_details.get("first_party_license_status")
             if isinstance(raw_status, str):
@@ -2794,23 +3509,12 @@ def _run_package_only_verification(
     results.append(metrics_result)
     prior[metrics_result.check_id] = metrics_result
 
-    private_surfaces = {
-        "access_attempted": False,
-        "exact_private_gateway": "UNAVAILABLE",
-        "exact_private_platform_agents_input": "UNAVAILABLE",
-        "exact_private_scorer": "UNAVAILABLE",
-        "exact_private_wheel_inventory": "UNAVAILABLE",
-        "official_submission_performed": False,
-        "status": "BLOCKED_EXTERNAL",
-    }
+    private_surfaces, private_reason = _private_kaggle_surface_boundary()
     private_result = internal_result(
         "private-kaggle-surfaces",
         "external-boundary",
         status="BLOCKED_EXTERNAL",
-        reason=(
-            "exact private Kaggle wheels, platform Agents input, gateway, and scorer are not "
-            "available; local gateway-shaped fixtures cannot establish private compatibility"
-        ),
+        reason=private_reason,
         details=private_surfaces,
     )
     results.append(private_result)

@@ -16,6 +16,7 @@ def _run_guarded_test(
     fake_root: Path,
     test_source: str,
     tmp_path: Path,
+    extra_environment: dict[str, str] | None = None,
 ) -> tuple[subprocess.CompletedProcess[str], dict[str, object]]:
     test_file = fake_root / "tests" / "test_boundary_probe.py"
     test_file.parent.mkdir(parents=True, exist_ok=True)
@@ -23,6 +24,9 @@ def _run_guarded_test(
     guard_log = tmp_path / "guard" / "attempts.jsonl"
     receipt = tmp_path / "output" / "guard-receipt.json"
     repository = Path(__file__).resolve().parents[2]
+    environment = dict(os.environ)
+    if extra_environment is not None:
+        environment.update(extra_environment)
     completed = subprocess.run(
         (
             sys.executable,
@@ -44,12 +48,40 @@ def _run_guarded_test(
             str(test_file),
         ),
         cwd=repository,
+        env=environment,
         check=False,
         capture_output=True,
         text=True,
         timeout=30,
     )
     return completed, json.loads(receipt.read_text(encoding="utf-8"))
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows framework path isolation")
+def test_package_only_pytest_isolates_windows_framework_writable_paths(tmp_path: Path) -> None:
+    fake_root = tmp_path / "repository"
+    fake_manifest = fake_root / "docs" / "evaluation" / "fixture.json"
+    fake_manifest.parent.mkdir(parents=True)
+    fake_manifest.write_text("sealed\n", encoding="utf-8")
+    hostile = tmp_path / "host-provided-state"
+    hostile.mkdir()
+    completed, document = _run_guarded_test(
+        fake_root=fake_root,
+        tmp_path=tmp_path,
+        test_source=(
+            "from pathlib import Path\n"
+            "def test_denied():\n"
+            f"    Path({str(fake_manifest)!r}).read_text(encoding='utf-8')\n"
+        ),
+        extra_environment={
+            name: str(hostile)
+            for name in ("APPDATA", "HOME", "LOCALAPPDATA", "TEMP", "TMP", "USERPROFILE")
+        },
+    )
+
+    assert completed.returncode == 3
+    assert document["framework_writable_state"] == "isolated-under-allowed-guard-parent"
+    assert document["attempts"] == [{"event": "open", "path": "docs/evaluation/fixture.json"}]
 
 
 def test_package_only_pytest_denies_semantic_manifest_access(tmp_path: Path) -> None:

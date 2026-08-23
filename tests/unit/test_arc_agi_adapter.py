@@ -10,6 +10,7 @@ import numpy as np
 import pytest
 
 from arc3.adapters.arc_agi import ArcAGIAdapter, _SDKBindings, normalize_frame_data
+from arc3.adapters.normalization import normalize_frame_data as normalize_frame_data_pure
 from arc3.config import ARC3Config
 from arc3.errors import AdapterError, ConfigurationError, InvalidActionError, NetworkDisabledError
 from arc3.types import (
@@ -192,6 +193,13 @@ def test_frame_normalization_deep_copies_private_raw_frames() -> None:
     assert observation.available_actions == (ActionName.ACTION1, ActionName.ACTION6)
     assert observation.returned_action == ActionRequest(ActionName.RESET)
     assert "numpy" not in type(observation.frames[0].cells).__module__
+
+
+def test_arc_agi_adapter_reexports_the_exact_pure_normalization_boundary() -> None:
+    frame = make_frame()
+
+    assert normalize_frame_data is normalize_frame_data_pure
+    assert normalize_frame_data(frame) == normalize_frame_data_pure(frame)
 
 
 def test_normalization_rejects_unknown_upstream_action() -> None:

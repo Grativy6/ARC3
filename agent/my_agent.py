@@ -15,7 +15,7 @@ from importlib import import_module
 from pathlib import Path
 from typing import ClassVar
 
-from arc3.adapters.arc_agi import normalize_frame_data
+from arc3.adapters.normalization import normalize_frame_data
 from arc3.competition_runtime import FROZEN_COMPETITION_RUNTIME
 from arc3.config import ARC3Config, derive_seed
 from arc3.errors import ConfigurationError

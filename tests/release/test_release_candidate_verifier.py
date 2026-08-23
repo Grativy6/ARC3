@@ -8,8 +8,10 @@ import json
 import os
 import subprocess
 import sys
+import time
 import zipfile
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 import scripts.release_candidate_verifier as verifier
@@ -636,6 +638,403 @@ def test_command_runner_allowlists_environment_and_redacts_logs(
     passed, details = scan_generated_logs(output, [result])
     assert passed is False
     assert details["redaction_count"] == 1
+
+
+def test_command_runner_measures_descendant_rss_in_supervised_tree(tmp_path: Path) -> None:
+    child = "import time; payload=bytearray(32*1024*1024); time.sleep(0.5)"
+    parent = (
+        "import subprocess,sys,time; "
+        f"child=subprocess.Popen([sys.executable,'-c',{child!r}]); "
+        "time.sleep(0.45); child.wait()"
+    )
+    spec = CommandSpec(
+        "tree-rss",
+        "test",
+        (sys.executable, "-c", parent),
+        10.0,
+        measure_peak_rss=True,
+    )
+
+    result = run_command(
+        spec,
+        repository=tmp_path,
+        output_root=tmp_path / "out",
+        transient_root=tmp_path / "transient",
+        prior={},
+    )
+
+    assert result.status == "PASS", result.reason
+    assert result.details["rss_sampling_max_observed_process_count"] >= 2
+    assert result.details["process_tree_cleanup_succeeded"] is True
+    assert result.details["rss_measurement_scope"] == (
+        "sampled aggregate resident bytes across the supervised process tree; "
+        "this is measurement, not a hard memory limit"
+    )
+
+
+def test_command_timeout_terminates_inherited_descendant_tree(tmp_path: Path) -> None:
+    marker = tmp_path / "escaped-marker.txt"
+    child = (
+        "import pathlib,sys,time; time.sleep(0.8); "
+        "pathlib.Path(sys.argv[1]).write_text('survived',encoding='utf-8')"
+    )
+    parent = (
+        "import subprocess,sys,time; "
+        f"subprocess.Popen([sys.executable,'-c',{child!r},sys.argv[1]],"
+        "stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL); "
+        "time.sleep(30)"
+    )
+    spec = CommandSpec(
+        "tree-timeout",
+        "test",
+        (sys.executable, "-c", parent, str(marker)),
+        0.3,
+        measure_peak_rss=True,
+    )
+
+    result = run_command(
+        spec,
+        repository=tmp_path,
+        output_root=tmp_path / "out",
+        transient_root=tmp_path / "transient",
+        prior={},
+    )
+    time.sleep(1.0)
+
+    assert result.status == "FAILED_INFRASTRUCTURE"
+    assert result.details["timeout_triggered"] is True
+    assert result.details["process_tree_cleanup_succeeded"] is True
+    assert result.details["process_tree_remaining_pid_count"] == 0
+    assert not marker.exists()
+    if os.name != "nt":
+        assert "setsid/double-fork escape is not contained" in str(
+            result.details["process_tree_supervision_scope"]
+        )
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX process-group escape boundary")
+def test_posix_new_session_descendant_is_explicitly_outside_supervision(tmp_path: Path) -> None:
+    marker = tmp_path / "setsid-escape.txt"
+    child = (
+        "import pathlib,sys,time; time.sleep(0.6); "
+        "pathlib.Path(sys.argv[1]).write_text('outside-group',encoding='utf-8')"
+    )
+    parent = (
+        "import subprocess,sys,time; "
+        f"subprocess.Popen([sys.executable,'-c',{child!r},sys.argv[1]],"
+        "start_new_session=True); time.sleep(30)"
+    )
+    started = time.monotonic()
+    result = run_command(
+        CommandSpec(
+            "setsid-boundary",
+            "test",
+            (sys.executable, "-c", parent, str(marker)),
+            0.2,
+        ),
+        repository=tmp_path,
+        output_root=tmp_path / "out",
+        transient_root=tmp_path / "transient",
+        prior={},
+    )
+    time.sleep(0.8)
+
+    assert time.monotonic() - started < 3.0
+    assert result.status == "FAILED_INFRASTRUCTURE"
+    assert "setsid/double-fork escape is not contained" in str(
+        result.details["process_tree_supervision_scope"]
+    )
+    assert marker.read_text(encoding="utf-8") == "outside-group"
+
+
+def test_required_command_fails_closed_when_tree_cleanup_is_unverified(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    original = verifier._ProcessTreeSupervisor.terminate_tree
+
+    def cleanup_but_report_failure(
+        supervisor: verifier._ProcessTreeSupervisor,
+    ) -> tuple[bool, tuple[int, ...]]:
+        original(supervisor)
+        supervisor.termination_succeeded = False
+        return False, (999_999,)
+
+    monkeypatch.setattr(
+        verifier._ProcessTreeSupervisor,
+        "terminate_tree",
+        cleanup_but_report_failure,
+    )
+    result = run_command(
+        CommandSpec("cleanup-failure", "test", (sys.executable, "-c", "pass"), 10.0),
+        repository=tmp_path,
+        output_root=tmp_path / "out",
+        transient_root=tmp_path / "transient",
+        prior={},
+    )
+
+    assert result.status == "FAILED_INFRASTRUCTURE"
+    assert result.details["process_tree_cleanup_succeeded"] is False
+    assert result.details["process_tree_remaining_pid_count"] == 1
+    assert "cleanup did not complete" in str(result.reason)
+
+
+def test_normal_parent_exit_cleans_background_descendant(tmp_path: Path) -> None:
+    marker = tmp_path / "background-marker.txt"
+    child = (
+        "import pathlib,sys,time; time.sleep(0.8); "
+        "pathlib.Path(sys.argv[1]).write_text('survived',encoding='utf-8')"
+    )
+    parent = (
+        "import subprocess,sys; "
+        f"subprocess.Popen([sys.executable,'-c',{child!r},sys.argv[1]],"
+        "stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)"
+    )
+    result = run_command(
+        CommandSpec(
+            "tree-normal-exit",
+            "test",
+            (sys.executable, "-c", parent, str(marker)),
+            10.0,
+        ),
+        repository=tmp_path,
+        output_root=tmp_path / "out",
+        transient_root=tmp_path / "transient",
+        prior={},
+    )
+    time.sleep(1.0)
+
+    assert result.status == "PASS", result.reason
+    assert result.details["process_tree_cleanup_succeeded"] is True
+    assert not marker.exists()
+    if os.name == "nt":
+        assert result.details["process_tree_windows_job_handle_closed"] is True
+        assert (
+            result.details["process_tree_windows_job_close_kill_is_fallback_not_verification"]
+            is True
+        )
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows suspended-assignment ordering")
+def test_windows_process_cannot_run_before_job_assignment(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    marker = tmp_path / "started-before-assignment.txt"
+    original = verifier._WindowsKillJob.assign
+    observations: list[bool] = []
+
+    def delayed_assignment(job: verifier._WindowsKillJob, process: subprocess.Popen[bytes]) -> None:
+        time.sleep(0.2)
+        observations.append(marker.exists())
+        original(job, process)
+
+    monkeypatch.setattr(verifier._WindowsKillJob, "assign", delayed_assignment)
+    program = "import pathlib,sys; pathlib.Path(sys.argv[1]).write_text('started',encoding='utf-8')"
+    result = run_command(
+        CommandSpec(
+            "suspended-assignment",
+            "test",
+            (sys.executable, "-c", program, str(marker)),
+            10.0,
+        ),
+        repository=tmp_path,
+        output_root=tmp_path / "out",
+        transient_root=tmp_path / "transient",
+        prior={},
+    )
+
+    assert result.status == "PASS", result.reason
+    assert observations == [False]
+    assert marker.read_text(encoding="utf-8") == "started"
+    assert result.details["process_tree_windows_launch_suspended_before_assignment"] is True
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows suspended-assignment failure cleanup")
+def test_windows_assignment_failure_kills_suspended_child_without_hanging(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    marker = tmp_path / "ran-after-assignment-failure.txt"
+
+    def refuse_assignment(
+        _job: verifier._WindowsKillJob, _process: subprocess.Popen[bytes]
+    ) -> None:
+        raise OSError("synthetic assignment refusal")
+
+    monkeypatch.setattr(verifier._WindowsKillJob, "assign", refuse_assignment)
+    program = "import pathlib,sys; pathlib.Path(sys.argv[1]).write_text('escaped',encoding='utf-8')"
+    started = time.monotonic()
+    result = run_command(
+        CommandSpec(
+            "assignment-failure",
+            "test",
+            (sys.executable, "-c", program, str(marker)),
+            10.0,
+        ),
+        repository=tmp_path,
+        output_root=tmp_path / "out",
+        transient_root=tmp_path / "transient",
+        prior={},
+    )
+
+    assert time.monotonic() - started < 7.0
+    assert result.status == "FAILED_INFRASTRUCTURE"
+    assert "synthetic assignment refusal" in str(result.reason)
+    assert "suspended child terminated through the Popen handle" in str(result.reason)
+    assert not marker.exists()
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows job accounting fail-closed behavior")
+def test_windows_job_enumeration_error_invalidates_cleanup(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def fail_accounting(job: verifier._WindowsKillJob) -> tuple[int, ...]:
+        job.accounting_error = "synthetic Windows job accounting failure"
+        return ()
+
+    monkeypatch.setattr(verifier._WindowsKillJob, "process_ids", fail_accounting)
+    result = run_command(
+        CommandSpec("job-accounting-failure", "test", (sys.executable, "-c", "pass"), 10.0),
+        repository=tmp_path,
+        output_root=tmp_path / "out",
+        transient_root=tmp_path / "transient",
+        prior={},
+    )
+
+    assert result.status == "FAILED_INFRASTRUCTURE"
+    assert result.details["process_tree_cleanup_succeeded"] is False
+    assert "cleanup did not complete" in str(result.reason)
+
+
+def test_windows_close_handle_uses_full_width_signature(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    observed: list[int] = []
+
+    class CloseHandle:
+        argtypes: object = None
+        restype: object = None
+
+        def __call__(self, value: object) -> int:
+            assert isinstance(value, verifier.ctypes.c_void_p)
+            assert value.value is not None
+            observed.append(value.value)
+            return 1
+
+    close = CloseHandle()
+    monkeypatch.setattr(
+        verifier.ctypes,
+        "windll",
+        SimpleNamespace(kernel32=SimpleNamespace(CloseHandle=close)),
+        raising=False,
+    )
+    high_bit_handle = (1 << (verifier.ctypes.sizeof(verifier.ctypes.c_void_p) * 8 - 1)) + 17
+
+    verifier._close_windows_handle(high_bit_handle, context="fixture")
+
+    assert observed == [high_bit_handle]
+    assert close.argtypes == (verifier.ctypes.c_void_p,)
+    assert close.restype is verifier.ctypes.c_int
+
+
+def test_windows_job_close_failure_is_not_reported_as_closed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class CloseHandle:
+        argtypes: object = None
+        restype: object = None
+
+        def __call__(self, _value: object) -> int:
+            return 0
+
+    monkeypatch.setattr(
+        verifier.ctypes,
+        "windll",
+        SimpleNamespace(kernel32=SimpleNamespace(CloseHandle=CloseHandle())),
+        raising=False,
+    )
+    job = verifier._WindowsKillJob(handle=(1 << 63) + 17)
+
+    assert job.close() is False
+    assert job.closed is False
+    assert job.close_error == "Windows kill job: CloseHandle failed"
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows job close evidence propagation")
+def test_windows_job_close_failure_invalidates_required_command(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    original = verifier._WindowsKillJob.close
+
+    def close_but_report_failure(job: verifier._WindowsKillJob) -> bool:
+        original(job)
+        job.closed = False
+        job.close_error = "synthetic Windows job close failure"
+        return False
+
+    monkeypatch.setattr(verifier._WindowsKillJob, "close", close_but_report_failure)
+    result = run_command(
+        CommandSpec("job-close-failure", "test", (sys.executable, "-c", "pass"), 10.0),
+        repository=tmp_path,
+        output_root=tmp_path / "out",
+        transient_root=tmp_path / "transient",
+        prior={},
+    )
+
+    assert result.status == "FAILED_INFRASTRUCTURE"
+    assert result.details["process_tree_windows_job_handle_closed"] is False
+    assert result.details["process_tree_windows_job_handle_close_succeeded"] is False
+    assert "cleanup did not complete" in str(result.reason)
+
+
+def test_interpreter_origin_mismatch_diagnostics_name_components_only() -> None:
+    root = Path("/expected")
+    mismatches = verifier._interpreter_origin_mismatches(
+        expected={
+            "executable_target": root / "python",
+            "prefix": root / "venv",
+            "source_root": root / "src",
+            "arc3_origin": root / "src" / "arc3" / "__init__.py",
+        },
+        observed={
+            "executable_target": root / "python",
+            "prefix": root / "wrong-prefix",
+            "source_root": root / "src",
+            "arc3_origin": root / "wrong-origin.py",
+        },
+    )
+
+    assert mismatches == ("prefix", "arc3_origin")
+
+
+def test_lexical_interpreter_launcher_is_not_resolved_before_probe(tmp_path: Path) -> None:
+    target = tmp_path / "runtime" / "python"
+    target.parent.mkdir()
+    target.write_bytes(b"fixture")
+    launcher = tmp_path / ".venv" / "bin" / "python"
+    launcher.parent.mkdir(parents=True)
+    try:
+        launcher.symlink_to(target)
+    except OSError as error:
+        pytest.skip(f"symlink creation is unavailable on this host: {error}")
+
+    lexical = verifier._lexical_absolute_path(launcher)
+
+    assert lexical == launcher.absolute()
+    assert lexical != launcher.resolve()
+    assert verifier._interpreter_origin_probe_argv(lexical, tmp_path / "src")[0] == str(lexical)
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX venv launcher regression")
+def test_interpreter_identity_accepts_clone_local_posix_venv_launcher(tmp_path: Path) -> None:
+    repository = Path(__file__).resolve().parents[2]
+    expected_prefix = (repository / ".venv").resolve()
+    if Path(sys.prefix).resolve() != expected_prefix:
+        pytest.skip("test interpreter does not belong to this clone-local virtual environment")
+
+    identity = verifier.interpreter_source_identity(repository, tmp_path / "transient")
+
+    assert identity["clone_local_virtual_environment"] is True
+    assert identity["isolated_probe"] is True
+    assert identity["python_executable_venv_launcher_preserved"] is True
 
 
 def test_fresh_output_root_refuses_reuse_and_unignored_repository_path(

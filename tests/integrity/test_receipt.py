@@ -7,6 +7,7 @@ import json
 from pathlib import Path
 
 import pytest
+import scripts.release_candidate_verifier as verifier
 
 import arc3.integrity.scanner as scanner
 from arc3.integrity import IntegrityReceipt, build_integrity_receipt
@@ -86,11 +87,110 @@ def test_package_only_receipt_cannot_load_or_hash_public_manifest(
     assert isinstance(reachable, list)
     assert isinstance(reachable_hashes, dict)
     assert set(reachable) == set(reachable_hashes)
+    assert receipt.body["production_policy_static_coverage"] == {
+        "algorithm": "static-first-party-import-closure-v0.1",
+        "entry_points": ["agent/my_agent.py"],
+        "entry_points_reached": ["agent/my_agent.py"],
+        "limitations": (
+            "Static first-party import reachability does not prove runtime dynamic-import "
+            "or native-extension containment."
+        ),
+        "policy_scan_covers_reachable_paths": True,
+        "reachable_file_count": len(reachable),
+        "reachable_paths_hashed": True,
+        "status": "PASS",
+    }
     assert (
         assurance["public_identifier_scan"]
         == "NOT_EVALUATED_PACKAGE_ONLY_NO_SEMANTIC_MANIFEST_ACCESS"
     )
     assert "docs/evaluation/public-game-partitions.v0.1.json" not in source_hashes
+
+
+@pytest.mark.competition
+def test_package_only_static_coverage_hashes_reachable_module_outside_policy_root(
+    integrity_repo: tuple[Path, str, str],
+) -> None:
+    root, _, _ = integrity_repo
+    helper_package = root / "helpers"
+    helper_package.mkdir()
+    helper_init = helper_package / "__init__.py"
+    helper_runtime = helper_package / "runtime.py"
+    helper_init.write_text("from helpers.runtime import VALUE\n", encoding="utf-8")
+    helper_runtime.write_text("VALUE = 42\n", encoding="utf-8")
+    entry = root / "agent" / "my_agent.py"
+    entry.write_text("from helpers.runtime import VALUE\n", encoding="utf-8")
+
+    receipt = build_integrity_receipt(
+        root,
+        policy_paths=("policy",),
+        candidate_files=(entry, helper_init, helper_runtime),
+        include_installed_metadata=False,
+        semantic_public_manifest_access=False,
+    )
+
+    reachable = receipt.body["inputs"]["reachable_policy_paths"]  # type: ignore[index]
+    hashes = receipt.body["reachable_policy_source_hashes"]
+    assert reachable == ["agent/my_agent.py", "helpers/__init__.py", "helpers/runtime.py"]
+    assert isinstance(hashes, dict)
+    assert set(hashes) == set(reachable)
+    assert receipt.body["production_policy_static_coverage"]["status"] == "PASS"  # type: ignore[index]
+
+
+@pytest.mark.competition
+def test_package_only_static_coverage_fails_when_entry_point_is_not_reached(
+    integrity_repo: tuple[Path, str, str],
+) -> None:
+    root, _, _ = integrity_repo
+    policy = root / "policy" / "clean.py"
+    policy.write_text("VALUE = 1\n", encoding="utf-8")
+
+    receipt = build_integrity_receipt(
+        root,
+        policy_paths=("policy",),
+        candidate_files=(policy,),
+        entry_points=("agent/missing.py",),
+        include_installed_metadata=False,
+        semantic_public_manifest_access=False,
+    )
+
+    coverage = receipt.body["production_policy_static_coverage"]
+    assert isinstance(coverage, dict)
+    assert coverage["entry_points_reached"] == []
+    assert coverage["status"] == "FAIL"
+    assert receipt.body["package_only_passed"] is False
+
+
+@pytest.mark.competition
+def test_release_validator_recomputes_reachable_policy_hashes(
+    integrity_repo: tuple[Path, str, str], tmp_path: Path
+) -> None:
+    root, _, _ = integrity_repo
+    entry = root / "agent" / "my_agent.py"
+    receipt = build_integrity_receipt(
+        root,
+        candidate_files=(entry,),
+        include_installed_metadata=False,
+        semantic_public_manifest_access=False,
+    )
+    tampered = dict(receipt.body)
+    reachable_hashes = dict(tampered["reachable_policy_source_hashes"])  # type: ignore[arg-type]
+    reachable_hashes["agent/my_agent.py"] = f"sha256:{'0' * 64}"
+    tampered["reachable_policy_source_hashes"] = reachable_hashes
+    source_hashes = dict(tampered["source_hashes"])  # type: ignore[arg-type]
+    source_hashes["agent/my_agent.py"] = f"sha256:{'0' * 64}"
+    tampered["source_hashes"] = source_hashes
+    path = tmp_path / "integrity.json"
+    path.write_bytes(IntegrityReceipt(body=tampered).canonical_bytes())
+
+    passed, details = verifier._validate_package_only_integrity(
+        path,
+        expected_commit="0" * 40,
+        repository=root,
+    )
+
+    assert passed is False
+    assert details["policy_continuity_passed"] is False
 
 
 @pytest.mark.competition

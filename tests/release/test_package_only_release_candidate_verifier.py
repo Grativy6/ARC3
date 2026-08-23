@@ -86,6 +86,56 @@ def test_package_only_plan_guard_rejects_public_semantic_reachability(
         _validate_package_only_plan((dangerous,))
 
 
+def test_package_only_plan_rejects_substring_only_integrity_impostor(tmp_path: Path) -> None:
+    impostor = CommandSpec(
+        "package-integrity",
+        "integrity",
+        (
+            sys.executable,
+            "-c",
+            "print('scripts.check_competition_integrity')",
+            "--package-only",
+            "--root",
+            str(tmp_path),
+            "--archive",
+            str(tmp_path / "candidate.zip"),
+            "--output",
+            str(tmp_path / "receipt.json"),
+        ),
+        30.0,
+        dependencies=("dependency-sync", "dependency-lock", "offline-package-a"),
+    )
+
+    with pytest.raises(ValueError, match="production static scanner"):
+        _validate_package_only_plan((impostor,))
+
+
+def test_package_only_plan_rejects_extra_static_scanner_overrides(tmp_path: Path) -> None:
+    evasive = CommandSpec(
+        "package-integrity",
+        "integrity",
+        (
+            sys.executable,
+            "-m",
+            "scripts.check_competition_integrity",
+            "--root",
+            str(tmp_path),
+            "--package-only",
+            "--archive",
+            str(tmp_path / "candidate.zip"),
+            "--output",
+            str(tmp_path / "receipt.json"),
+            "--max-candidate-bytes",
+            "1",
+        ),
+        30.0,
+        dependencies=("dependency-sync", "dependency-lock", "offline-package-a"),
+    )
+
+    with pytest.raises(ValueError, match="argv shape"):
+        _validate_package_only_plan((evasive,))
+
+
 def test_missing_private_surface_keeps_package_profile_blocked() -> None:
     passing = verifier.internal_result("package-check", "fixture", status="PASS")
     blocked = verifier.internal_result(
@@ -95,6 +145,26 @@ def test_missing_private_surface_keeps_package_profile_blocked() -> None:
     )
     assert _overall_status((passing, blocked), blocked_is_complete=True) == "BLOCKED_EXTERNAL"
     assert _overall_status((passing, blocked)) == "FAILED_MECHANISM"
+
+
+def test_private_surface_boundary_does_not_claim_unassessed_inputs_are_unavailable() -> None:
+    details, reason = verifier._private_kaggle_surface_boundary()
+
+    assert details["availability_assessment"] == "NOT_ASSESSED"
+    assert details["compatibility_status"] == "NOT_VERIFIED"
+    assert details["access_attempted"] is False
+    assert all(
+        details[key] == "NOT_PROVIDED_TO_VERIFIER"
+        for key in (
+            "exact_private_gateway",
+            "exact_private_platform_agents_input",
+            "exact_private_scorer",
+            "exact_private_wheel_inventory",
+        )
+    )
+    assert "unavailable" not in canonical_json_bytes(details).decode("utf-8").lower()
+    assert "not provided" in reason
+    assert "availability was not assessed" in reason
 
 
 def test_package_workflow_normalizes_expected_blocked_exit_only_after_receipt_checks() -> None:
@@ -111,6 +181,23 @@ def test_package_workflow_normalizes_expected_blocked_exit_only_after_receipt_ch
     assert expected_exit < blocked_status < sealed_boundary < normalized_exit
     assert 'push:\n    branches:\n      - "build/**"' in workflow
     assert "pull_request:\n    branches:\n      - main" in workflow
+
+
+def test_package_workflow_uploads_available_failure_evidence() -> None:
+    repository = Path(__file__).resolve().parents[2]
+    workflow = (repository / ".github/workflows/build001-package-only.yml").read_text(
+        encoding="utf-8"
+    )
+
+    environment_export = workflow.index('"ARC3_OUTPUT_ROOT=$outputRoot"')
+    verifier_launch = workflow.index("& $python -m scripts.release_candidate_verifier")
+    evidence_step = workflow.index("Detect verifier evidence after success or failure")
+    upload_step = workflow.index("Upload hash-bound verifier evidence")
+
+    assert environment_export < verifier_launch < evidence_step < upload_step
+    assert "id: evidence\n        if: always()" in workflow
+    assert "if: always() && steps.evidence.outputs.available == 'true'" in workflow
+    assert "if-no-files-found: error" in workflow
 
 
 def test_package_runtime_format_metrics_bind_archive_and_wheel_inventory(

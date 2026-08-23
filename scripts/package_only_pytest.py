@@ -102,6 +102,33 @@ def main(argv: Sequence[str] | None = None) -> int:
     if guard_log.exists() or receipt_path.exists():
         print("package-only pytest refused: guard log and receipt must be fresh", file=sys.stderr)
         return 2
+    pytest_args = list(args.pytest_args)
+    if pytest_args[:1] == ["--"]:
+        pytest_args.pop(0)
+    if any(
+        argument == "--rootdir" or argument.startswith("--rootdir=") for argument in pytest_args
+    ):
+        print("package-only pytest refused: caller cannot override --rootdir", file=sys.stderr)
+        return 2
+    framework_root = guard_log.parent / "framework-runtime"
+    framework_temp = framework_root / "tmp"
+    framework_home = framework_root / "home"
+    framework_cache = framework_root / "cache"
+    for directory in (framework_temp, framework_home, framework_cache):
+        directory.mkdir(parents=True, exist_ok=True)
+    os.environ.update(
+        {
+            "APPDATA": str(framework_home / "AppData" / "Roaming"),
+            "HOME": str(framework_home),
+            "LOCALAPPDATA": str(framework_home / "AppData" / "Local"),
+            "TEMP": str(framework_temp),
+            "TMP": str(framework_temp),
+            "TMPDIR": str(framework_temp),
+            "USERPROFILE": str(framework_home),
+            "XDG_CACHE_HOME": str(framework_cache),
+        }
+    )
+    tempfile.tempdir = str(framework_temp)
     excluded_process_capable_tests: list[str] = []
     selected_test_file_count = 0
     if args.select_in_process_tests:
@@ -122,6 +149,21 @@ def main(argv: Sequence[str] | None = None) -> int:
         Path(os.devnull).resolve(),
         *(candidate.resolve() for candidate in args.allow_root),
     }
+    canonical_allowed_roots = tuple(
+        os.path.normcase(os.path.realpath(os.path.abspath(path))) for path in allowed_roots
+    )
+    original_sys_path_count = len(sys.path)
+    sys.path[:] = [
+        entry
+        for entry in sys.path
+        if any(
+            (candidate := os.path.normcase(os.path.realpath(os.path.abspath(entry or Path.cwd()))))
+            == allowed
+            or candidate.startswith(allowed + os.sep)
+            for allowed in canonical_allowed_roots
+        )
+    ]
+    filtered_sys_path_count = original_sys_path_count - len(sys.path)
     os.environ["ARC3_PACKAGE_ONLY_ROOT"] = str(root)
     os.environ["ARC3_PACKAGE_ONLY_GUARD_LOG"] = str(guard_log)
     os.environ["ARC3_PACKAGE_ONLY_ALLOWED_ROOTS"] = json.dumps(
@@ -139,9 +181,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         allowed_roots=tuple(allowed_roots),
         protected_paths=(receipt_path,),
     )
-    pytest_args = list(args.pytest_args)
-    if pytest_args[:1] == ["--"]:
-        pytest_args.pop(0)
+    pytest_args[:0] = ["--rootdir", str(root), "-p", "no:cacheprovider"]
     for relative in excluded_process_capable_tests:
         pytest_args.extend(("--ignore", str(root / relative)))
     runner_failure: str | None = None
@@ -170,6 +210,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         ),
         "excluded_process_capable_tests": excluded_process_capable_tests,
         "external_paths_default_denied": True,
+        "framework_writable_state": "isolated-under-allowed-guard-parent",
         "protected_directories": ["artifacts", "docs/evaluation"],
         "protected_files": [
             "docs/ledger/build-001-run-state.json",
@@ -177,6 +218,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             "guard-attempt-log",
             "guard-receipt",
         ],
+        "pytest_rootdir_forced": True,
         "pytest_exit_code": pytest_exit_code,
         "runner_failure": runner_failure,
         "selected_test_file_count": selected_test_file_count,
@@ -185,6 +227,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             if args.select_in_process_tests
             else "caller-selected-tests-plus-runtime-process-denial"
         ),
+        "sys_path_entries_outside_allowed_roots_removed": filtered_sys_path_count,
         "schema": SCHEMA,
         "status": status,
     }

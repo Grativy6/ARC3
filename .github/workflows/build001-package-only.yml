@@ -57,6 +57,8 @@ jobs:
           $short = $expected.Substring(0, 12)
           $outputRoot = Join-Path $env:RUNNER_TEMP ("arc3-o-" + $short)
           $transientRoot = Join-Path $env:RUNNER_TEMP ("arc3-t-" + $short)
+          "ARC3_OUTPUT_ROOT=$outputRoot" | Out-File -FilePath $env:GITHUB_ENV -Append
+          "ARC3_CANDIDATE_COMMIT=$expected" | Out-File -FilePath $env:GITHUB_ENV -Append
           $python = if ($IsWindows) { ".venv/Scripts/python.exe" } else { ".venv/bin/python" }
           & $python -m scripts.release_candidate_verifier `
             --profile build001-package-only `
@@ -86,8 +88,6 @@ jobs:
             throw "The package-only verifier crossed a public semantic boundary"
           }
           $receiptHash = (Get-FileHash -LiteralPath $receiptPath -Algorithm SHA256).Hash.ToLowerInvariant()
-          "ARC3_OUTPUT_ROOT=$outputRoot" | Out-File -FilePath $env:GITHUB_ENV -Append
-          "ARC3_CANDIDATE_COMMIT=$expected" | Out-File -FilePath $env:GITHUB_ENV -Append
           "receipt_sha256=sha256:$receiptHash" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
           "### ${{ matrix.os }}`n`nCandidate: ``$expected```n`nReceipt: ``sha256:$receiptHash``" |
             Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
@@ -95,8 +95,26 @@ jobs:
           # that native exit code only after every receipt assertion above.
           exit 0
 
+      - name: Detect verifier evidence after success or failure
+        id: evidence
+        if: always()
+        shell: pwsh
+        run: |
+          $available = Test-Path -LiteralPath $env:ARC3_OUTPUT_ROOT -PathType Container
+          if ($available) {
+            $available = $null -ne (Get-ChildItem -LiteralPath $env:ARC3_OUTPUT_ROOT -File -Recurse |
+              Select-Object -First 1)
+          }
+          "available=$($available.ToString().ToLowerInvariant())" |
+            Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          if (-not $available) {
+            "Verifier produced no uploadable evidence directory." |
+              Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
+          }
+
       - name: Upload hash-bound verifier evidence
         id: upload
+        if: always() && steps.evidence.outputs.available == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: "arc3-build001-package-only-${{ matrix.os }}-${{ env.ARC3_CANDIDATE_COMMIT }}"
@@ -105,6 +123,7 @@ jobs:
           retention-days: 14
 
       - name: Record archive transport identity
+        if: always() && steps.upload.outcome == 'success'
         shell: pwsh
         run: |
           "Uploaded artifact digest: ``${{ steps.upload.outputs.artifact-digest }}``" |
