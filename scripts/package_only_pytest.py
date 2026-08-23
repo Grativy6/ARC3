@@ -14,7 +14,27 @@ from typing import cast
 
 from scripts.package_only_path_guard import install
 
-SCHEMA = "arc3.package-only-pytest.v0.1"
+SCHEMA = "arc3.package-only-pytest.v0.2"
+_PROCESS_ESCAPE_TOKENS = (
+    b"_posixsubprocess",
+    b"_winapi",
+    b"asyncio.create_subprocess",
+    b"createprocess",
+    b"ctypes",
+    b"execve",
+    b"fork(",
+    b"multiprocessing",
+    b"os.exec",
+    b"os.fork",
+    b"os.popen",
+    b"os.spawn",
+    b"os.startfile",
+    b"os.system",
+    b"pexpect",
+    b"posix_spawn",
+    b"subprocess",
+    b"win32process",
+)
 
 
 def _canonical_bytes(value: object) -> bytes:
@@ -68,6 +88,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--root", type=Path, required=True)
     parser.add_argument("--guard-log", type=Path, required=True)
     parser.add_argument("--receipt", type=Path, required=True)
+    parser.add_argument("--allow-root", action="append", default=[], type=Path)
+    parser.add_argument("--select-in-process-tests", action="store_true")
     parser.add_argument("pytest_args", nargs=argparse.REMAINDER)
     return parser
 
@@ -80,19 +102,56 @@ def main(argv: Sequence[str] | None = None) -> int:
     if guard_log.exists() or receipt_path.exists():
         print("package-only pytest refused: guard log and receipt must be fresh", file=sys.stderr)
         return 2
+    excluded_process_capable_tests: list[str] = []
+    selected_test_file_count = 0
+    if args.select_in_process_tests:
+        test_files = sorted((root / "tests").rglob("test_*.py"))
+        for test_file in test_files:
+            content = test_file.read_bytes().lower()
+            relative = test_file.relative_to(root).as_posix()
+            if any(token.lower() in content for token in _PROCESS_ESCAPE_TOKENS):
+                excluded_process_capable_tests.append(relative)
+            else:
+                selected_test_file_count += 1
+    allowed_roots = {
+        root,
+        guard_log.parent,
+        receipt_path.parent,
+        Path(sys.base_prefix).resolve(),
+        Path(sys.prefix).resolve(),
+        Path(os.devnull).resolve(),
+        *(candidate.resolve() for candidate in args.allow_root),
+    }
     os.environ["ARC3_PACKAGE_ONLY_ROOT"] = str(root)
     os.environ["ARC3_PACKAGE_ONLY_GUARD_LOG"] = str(guard_log)
+    os.environ["ARC3_PACKAGE_ONLY_ALLOWED_ROOTS"] = json.dumps(
+        [str(path) for path in sorted(allowed_roots)], separators=(",", ":")
+    )
+    os.environ["ARC3_PACKAGE_ONLY_PROTECTED_PATHS"] = json.dumps(
+        [str(receipt_path)], separators=(",", ":")
+    )
     bootstrap = root / "scripts" / "_package_only_bootstrap"
     inherited_path = os.pathsep.join((str(root), str(bootstrap)))
     os.environ["PYTHONPATH"] = inherited_path
-    guard = install(root, guard_log)
+    guard = install(
+        root,
+        guard_log,
+        allowed_roots=tuple(allowed_roots),
+        protected_paths=(receipt_path,),
+    )
     pytest_args = list(args.pytest_args)
     if pytest_args[:1] == ["--"]:
         pytest_args.pop(0)
+    for relative in excluded_process_capable_tests:
+        pytest_args.extend(("--ignore", str(root / relative)))
+    runner_failure: str | None = None
     try:
         import pytest
 
         pytest_exit_code = int(pytest.main(pytest_args))
+    except BaseException as error:  # fail closed and preserve a boundary receipt
+        pytest_exit_code = 4
+        runner_failure = type(error).__name__
     finally:
         guard.close()
     attempts = _attempts(guard_log)
@@ -100,12 +159,32 @@ def main(argv: Sequence[str] | None = None) -> int:
     body: dict[str, object] = {
         "attempt_count": len(attempts),
         "attempts": attempts,
+        "allowed_root_count": len(allowed_roots),
+        "allow_root_ancestor_directory_metadata_allowed": True,
+        "canonical_paths": True,
+        "child_processes_denied": True,
+        "claim_scope": (
+            "selected Python-level in-process tests made no Python-audited disallowed path "
+            "access beyond allow-root-ancestor directory metadata and spawned no Python-audited "
+            "child process; this is not OS containment"
+        ),
+        "excluded_process_capable_tests": excluded_process_capable_tests,
+        "external_paths_default_denied": True,
         "protected_directories": ["artifacts", "docs/evaluation"],
         "protected_files": [
             "docs/ledger/build-001-run-state.json",
             "docs/ledger/run-state.json",
+            "guard-attempt-log",
+            "guard-receipt",
         ],
         "pytest_exit_code": pytest_exit_code,
+        "runner_failure": runner_failure,
+        "selected_test_file_count": selected_test_file_count,
+        "selection_policy": (
+            "static-process-capability-exclusion-plus-runtime-process-denial"
+            if args.select_in_process_tests
+            else "caller-selected-tests-plus-runtime-process-denial"
+        ),
         "schema": SCHEMA,
         "status": status,
     }
@@ -114,6 +193,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     print(json.dumps(body, separators=(",", ":"), sort_keys=True))
     if attempts:
         return 3
+    if runner_failure is not None:
+        return 4
     return pytest_exit_code
 
 

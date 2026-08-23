@@ -1038,6 +1038,11 @@ def _build_package_only_plan(
         str(transient_root / "package-only-test-guard-attempts.jsonl"),
         "--receipt",
         str(output_root / "package-only-test-guard.json"),
+        "--allow-root",
+        str(transient_root),
+        "--allow-root",
+        str(output_root),
+        "--select-in-process-tests",
         "--",
         "-q",
         "--basetemp",
@@ -2474,21 +2479,47 @@ def _validate_package_only_integrity(
 def _validate_package_test_guard(path: Path) -> dict[str, object]:
     guard = _verified_self_hashed_object(path, hash_field=RECEIPT_HASH_FIELD)
     if (
-        guard.get("schema") != "arc3.package-only-pytest.v0.1"
+        guard.get("schema") != "arc3.package-only-pytest.v0.2"
         or guard.get("status") != "PASS"
         or guard.get("attempt_count") != 0
         or guard.get("attempts") != []
         or guard.get("pytest_exit_code") != 0
+        or guard.get("runner_failure") is not None
+        or guard.get("canonical_paths") is not True
+        or guard.get("allow_root_ancestor_directory_metadata_allowed") is not True
+        or guard.get("child_processes_denied") is not True
+        or guard.get("claim_scope")
+        != (
+            "selected Python-level in-process tests made no Python-audited disallowed path "
+            "access beyond allow-root-ancestor directory metadata and spawned no Python-audited "
+            "child process; this is not OS containment"
+        )
+        or guard.get("external_paths_default_denied") is not True
+        or guard.get("selection_policy")
+        != "static-process-capability-exclusion-plus-runtime-process-denial"
+        or not isinstance(guard.get("selected_test_file_count"), int)
+        or cast(int, guard["selected_test_file_count"]) <= 0
+        or not isinstance(guard.get("excluded_process_capable_tests"), list)
         or guard.get("protected_directories") != ["artifacts", "docs/evaluation"]
         or guard.get("protected_files")
         != [
             "docs/ledger/build-001-run-state.json",
             "docs/ledger/run-state.json",
+            "guard-attempt-log",
+            "guard-receipt",
         ]
     ):
         raise ValueError("package-only pytest guard did not prove a clean protected-path boundary")
     return {
         "attempt_count": 0,
+        "allow_root_ancestor_directory_metadata_allowed": True,
+        "canonical_paths": True,
+        "child_processes_denied": True,
+        "claim_scope": cast(object, guard.get("claim_scope")),
+        "excluded_process_capable_test_count": len(
+            cast(list[object], guard["excluded_process_capable_tests"])
+        ),
+        "external_paths_default_denied": True,
         "protected_directories": cast(object, guard.get("protected_directories")),
         "protected_files": cast(object, guard.get("protected_files")),
         "schema": cast(object, guard.get("schema")),
@@ -2523,9 +2554,14 @@ def _package_runtime_measurements(
         for check_id in measured_ids
     )
     startup_passed = (
-        startup.get("schema") == "arc3.package-startup-probe.v0.1"
+        startup.get("schema") == "arc3.package-startup-probe.v0.2"
         and startup.get("status") == "PASS"
         and startup.get("network_attempts") == 0
+        and startup.get("network_attempt_events") == []
+        and startup.get("network_enforcement") == "python-audit-hook-socket-events"
+        and startup.get("process_launch_attempts") == 0
+        and startup.get("process_launch_attempt_events") == []
+        and startup.get("process_launch_enforcement") == "python-audit-hook-process-events"
         and startup.get("payload_sha256") == first.get("payload_sha256")
         and all(
             isinstance(startup.get(field), (int, float))

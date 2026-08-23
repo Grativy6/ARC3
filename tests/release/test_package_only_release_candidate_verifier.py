@@ -48,6 +48,7 @@ def test_package_only_plan_has_no_public_inventory_or_gameplay(tmp_path: Path) -
     assert by_id["dependency-lock"].argv[-1] == "--offline"
     assert "--package-only" in by_id["package-integrity"].argv
     assert "scripts.package_only_pytest" in by_id["package-safe-test-suite"].argv
+    assert "--select-in-process-tests" in by_id["package-safe-test-suite"].argv
     assert "package-only-test-guard.json" in " ".join(by_id["package-safe-test-suite"].argv)
     assert all(
         by_id[check_id].measure_peak_rss

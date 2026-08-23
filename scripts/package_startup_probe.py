@@ -7,7 +7,6 @@ import hashlib
 import importlib
 import json
 import re
-import socket
 import sys
 import tempfile
 import time
@@ -17,6 +16,16 @@ from pathlib import Path
 from typing import Any, cast
 
 _COMMIT = re.compile(r"^[0-9a-f]{40}$")
+_PROCESS_LAUNCH_EVENTS = frozenset(
+    {
+        "os.exec",
+        "os.posix_spawn",
+        "os.posix_spawnp",
+        "os.spawn",
+        "os.system",
+        "subprocess.Popen",
+    }
+)
 
 
 def _sha256_bytes(value: bytes) -> str:
@@ -90,36 +99,27 @@ def _extract_payload(payload: Path, destination: Path) -> None:
 
 
 def run_probe(package_root: Path, expected_commit: str) -> dict[str, object]:
-    """Import and instantiate the packaged wrapper with all socket connects denied."""
+    """Import and instantiate the package under a scoped Python audit boundary."""
 
     if _COMMIT.fullmatch(expected_commit) is None:
         raise ValueError("expected commit must be a lowercase full SHA")
     package_root = package_root.resolve()
     payload, payload_sha256 = _verify_build_receipt(package_root, expected_commit)
     started = time.perf_counter()
-    network_attempts = 0
+    network_attempt_events: list[str] = []
+    process_launch_events: list[str] = []
 
-    def deny_connect(_socket: object, _address: object) -> None:
-        nonlocal network_attempts
-        network_attempts += 1
-        raise RuntimeError("package startup probe forbids socket connections")
+    def deny_external_capabilities(event: str, _args: tuple[Any, ...]) -> None:
+        if event.startswith("socket."):
+            network_attempt_events.append(event)
+            raise PermissionError(f"package startup probe forbids Python socket event {event}")
+        if event in _PROCESS_LAUNCH_EVENTS or event.startswith("os.exec"):
+            process_launch_events.append(event)
+            raise PermissionError(f"package startup probe forbids child process event {event}")
 
-    def deny_connect_ex(_socket: object, _address: object) -> int:
-        deny_connect(_socket, _address)
-        return 1
-
-    def deny_create_connection(*_args: object, **_kwargs: object) -> object:
-        deny_connect(None, None)
-        raise AssertionError("unreachable")
-
-    original_connect = socket.socket.connect
-    original_connect_ex = socket.socket.connect_ex
-    original_create_connection = socket.create_connection
+    sys.addaudithook(deny_external_capabilities)
     inserted_paths: list[str] = []
     try:
-        setattr(socket.socket, "connect", deny_connect)  # noqa: B010
-        setattr(socket.socket, "connect_ex", deny_connect_ex)  # noqa: B010
-        setattr(socket, "create_connection", deny_create_connection)  # noqa: B010
         with tempfile.TemporaryDirectory(prefix="arc3-package-startup-") as temporary:
             extracted = Path(temporary) / "payload"
             _extract_payload(payload, extracted)
@@ -145,21 +145,23 @@ def run_probe(package_root: Path, expected_commit: str) -> dict[str, object]:
             if not isinstance(getattr(agent, "name", None), str):
                 raise ValueError("packaged MyAgent did not initialize a string name")
     finally:
-        setattr(socket.socket, "connect", original_connect)  # noqa: B010
-        setattr(socket.socket, "connect_ex", original_connect_ex)  # noqa: B010
-        setattr(socket, "create_connection", original_create_connection)  # noqa: B010
         for path in inserted_paths:
             while path in sys.path:
                 sys.path.remove(path)
-    if network_attempts:
-        raise ValueError("packaged startup attempted a network connection")
+    if network_attempt_events or process_launch_events:
+        raise ValueError("packaged startup crossed the Python capability boundary")
     return {
         "expected_commit": expected_commit,
         "import_seconds": import_seconds,
         "instantiate_seconds": instantiate_seconds,
-        "network_attempts": network_attempts,
+        "network_attempt_events": network_attempt_events,
+        "network_attempts": len(network_attempt_events),
+        "network_enforcement": "python-audit-hook-socket-events",
         "payload_sha256": payload_sha256,
-        "schema": "arc3.package-startup-probe.v0.1",
+        "process_launch_attempt_events": process_launch_events,
+        "process_launch_attempts": len(process_launch_events),
+        "process_launch_enforcement": "python-audit-hook-process-events",
+        "schema": "arc3.package-startup-probe.v0.2",
         "status": "PASS",
         "total_seconds": time.perf_counter() - started,
     }
