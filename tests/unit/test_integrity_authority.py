@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib
+import subprocess
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -11,6 +12,26 @@ import arc3.evaluation.integrity_authority as authority
 from arc3.errors import EvaluationError
 from arc3.evaluation.artifacts import atomic_write_json, seal_object, sha256_file
 from arc3.integrity import INTEGRITY_SCHEMA, IntegrityReceipt
+
+
+def test_integrity_authority_git_disables_replacements_and_redirection(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setenv("GIT_DIR", str(tmp_path / "redirected.git"))
+    monkeypatch.setenv("git_work_tree", str(tmp_path / "redirected-worktree"))
+    captured: dict[str, str] = {}
+
+    def fake_run(*_args: object, **kwargs: object) -> subprocess.CompletedProcess[str]:
+        captured.update(kwargs["env"])
+        return subprocess.CompletedProcess([], 0, stdout="", stderr="")
+
+    monkeypatch.setattr(authority.subprocess, "run", fake_run)
+
+    assert authority._git(tmp_path, "rev-parse", "HEAD") == ""
+    assert captured["GIT_NO_REPLACE_OBJECTS"] == "1"
+    assert "GIT_DIR" not in captured
+    assert "git_work_tree" not in captured
 
 
 def _receipt_body(

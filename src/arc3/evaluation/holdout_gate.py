@@ -362,6 +362,7 @@ def _git(root: Path, *arguments: str) -> str:
     environment = {
         key: value for key, value in os.environ.items() if not key.upper().startswith("GIT_")
     }
+    environment["GIT_NO_REPLACE_OBJECTS"] = "1"
     try:
         completed = subprocess.run(
             ("git", *arguments),

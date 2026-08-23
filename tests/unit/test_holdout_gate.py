@@ -98,6 +98,50 @@ def _source_receipt(identity: SourceIdentity) -> dict[str, object]:
     }
 
 
+def test_holdout_source_identity_ignores_inherited_git_redirection(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    expected = _init_source(tmp_path / "source", evaluation_marker="expected")
+    monkeypatch.setenv("GIT_DIR", str(tmp_path / "redirected.git"))
+    monkeypatch.setenv("git_index_file", str(tmp_path / "redirected.index"))
+
+    observed = source_identity(tmp_path / "source")
+
+    assert observed == expected
+
+
+def test_holdout_source_identity_ignores_local_replace_refs(tmp_path: Path) -> None:
+    source = tmp_path / "source"
+    original = _init_source(source, evaluation_marker="original")
+    marker = source / "src/arc3/evaluation/infrastructure.py"
+    marker.write_text("MARKER = 'replacement'\n", encoding="utf-8")
+    _run_git(source, "add", marker.relative_to(source).as_posix())
+    _run_git(source, "commit", "--quiet", "-m", "replacement")
+    replacement_commit = _run_git(source, "rev-parse", "HEAD")
+    _run_git(source, "config", "core.autocrlf", "false")
+    subprocess.run(
+        (
+            "git",
+            "-C",
+            str(source),
+            "--no-replace-objects",
+            "checkout",
+            "--quiet",
+            "--force",
+            "--detach",
+            original.commit,
+        ),
+        check=True,
+        timeout=30,
+    )
+    _run_git(source, "replace", original.commit, replacement_commit)
+
+    observed = source_identity(source)
+
+    assert observed == original
+
+
 def _stage09(
     identity: SourceIdentity,
     *,
