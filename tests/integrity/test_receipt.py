@@ -151,6 +151,22 @@ def test_package_only_receipt_requires_explicit_candidate_boundary(
 
 
 @pytest.mark.competition
+def test_package_only_protected_candidate_cannot_hide_as_receipt_output(
+    integrity_repo: tuple[Path, str, str],
+) -> None:
+    root, _, _ = integrity_repo
+    protected = root / "artifacts" / "integrity-receipt.json"
+    with pytest.raises(ValueError, match="forbids protected candidate file"):
+        build_integrity_receipt(
+            root,
+            candidate_files=(protected,),
+            include_installed_metadata=False,
+            receipt_output_path=protected,
+            semantic_public_manifest_access=False,
+        )
+
+
+@pytest.mark.competition
 def test_package_only_receipt_rejects_symlink_alias_to_protected_candidate(
     integrity_repo: tuple[Path, str, str],
 ) -> None:

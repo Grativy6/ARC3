@@ -1397,6 +1397,15 @@ def build_integrity_receipt(
         raise ValueError(
             "package-only integrity requires an explicit protected-surface-free candidate set"
         )
+    if not semantic_public_manifest_access:
+        assert candidate_files is not None
+        for raw_candidate in candidate_files:
+            candidate = _repository_input_path(repository, raw_candidate)
+            protected = _package_only_protected_candidate(repository, candidate)
+            if protected is not None:
+                raise ValueError(
+                    "package-only integrity forbids protected candidate file: " + protected
+                )
     manifest = (
         _repository_input_path(
             repository,
@@ -1441,13 +1450,6 @@ def build_integrity_receipt(
             )
         )
     )
-    if not semantic_public_manifest_access:
-        for candidate in normalized_candidates:
-            protected = _package_only_protected_candidate(repository, candidate)
-            if protected is not None:
-                raise ValueError(
-                    "package-only integrity forbids protected candidate file: " + protected
-                )
     reachable_files = discover_reachable_policy_files(
         repository,
         candidate_files=normalized_candidates,
