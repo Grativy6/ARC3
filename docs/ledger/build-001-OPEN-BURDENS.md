@@ -1381,3 +1381,27 @@ does not erase earlier uncertainty or failed mechanisms.
 - Remaining burden: commit the repair, execute the literal exact-head workflow on Linux and
   Windows, validate both uploaded receipts and ordinary-CI coverage, and preserve any contradiction.
 - Resolution receipt: pending exact-head cross-platform run.
+
+### B-001-0054 — Literal-head CI exposed transitive selection and nested-payload gaps
+
+- Status update: REOPENED and NARROWED, not resolved.
+- Last updated: 2026-08-23T05:48:14.9077086Z
+- Current evidence: exact-head package workflow run `32620135768` evaluated literal commit
+  `a959bdfdcf0d9af08f713d450b5c8712956f25ba` on both hosted systems. The Ubuntu receipt is
+  `sha256:e7728990385b9eb85c4f8f9941197f9ffd20d71c68c9e02a3b3dcbcbc38de09c`; its
+  verifier ran 711 passing selected tests but correctly returned `FAILED_MECHANISM` after the
+  Python audit guard recorded 78 disallowed attempts. The Windows receipt is
+  `sha256:ad0776072f972345522bd5996c2afc2fda36dd2cd997ba4f93d8e21b36dabfff`;
+  it likewise ran 711 passing tests but recorded 34 transitive child-process attempts. Ubuntu also
+  preserved six strict-mypy `ctypes.windll` errors; commit
+  `f4e00ccfbcc5bfccf8765cae96e3c089973df7c3` repairs and Linux-types that boundary without
+  changing the predeclared gameplay policy, matrix, seeds, budgets, or gate. Independent package
+  audit additionally proved that scanning the outer `arc3-kaggle-candidate.zip` did not recurse
+  into its executable `arc3-first-party.zip`, allowing a synthetic hosted import in the shipped
+  payload to produce zero findings.
+- Remaining burden: integrate recursive bounded nested-ZIP inspection, bind the exact effective
+  package-safe test set and its exclusions in the receipt, retain complete ordinary-CI coverage,
+  rerun literal-head Linux and Windows package workflows, and independently validate the uploaded
+  evidence. Static Python/AST evidence remains narrower than OS or native containment.
+- Resolution receipt: pending the audited repair commit and clean exact-head cross-platform PASS at
+  the declared `BLOCKED_EXTERNAL` private-surface boundary.

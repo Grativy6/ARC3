@@ -1004,3 +1004,27 @@ independent authorities.
   weakened, an excluded test disappears from ordinary CI, a pull-request package run verifies a
   synthetic merge commit as if it were the literal branch head, or exact-head cross-platform CI
   contradicts the focused repair.
+
+## D-001-0051 — Inspect the executable nested payload and bind the effective guarded test set
+
+- Recorded: 2026-08-23T05:48:14.9077086Z
+- Status: accepted.
+- Decision: package integrity must recursively inspect the exact executable first-party ZIP nested
+  inside the outer Kaggle candidate, using shared depth, member-count, and expanded-byte limits and
+  preserving portable nested-member labels. The package-only Python audit receipt must bind the
+  exact effective selected test set, its exclusions, and their derivation; direct-token selection
+  is insufficient because process/path-capable helpers are reached transitively. Every excluded
+  test remains required in ordinary CI.
+- Evidence: literal-head workflow `32620135768` produced 711 passing selected tests on each hosted
+  system while the guard rejected 78 Ubuntu and 34 Windows attempts; independent synthetic
+  reproduction placed a hosted import inside the real outer-to-inner package layout and obtained
+  zero findings under the vulnerable scanner. Exact Windows attribution identifies transitive
+  subprocess use in integrity dependency/license/receipt/secret tests and hot-path measurement
+  helpers. The original failure receipts remain immutable.
+- Boundary: this decision expands static package coverage and narrows a Python-level test claim; it
+  does not establish OS containment, dynamic/native reachability completeness, public-game
+  performance, holdout authority, or private Kaggle compatibility.
+- Reopening condition: any executable nested archive is unscanned; limits reset across nesting;
+  unsafe nested members normalize into accepted paths; outer-package identity is not bound to the
+  scanned projection; the effective selection cannot be reproduced exactly; or ordinary CI drops
+  coverage for an excluded test.
