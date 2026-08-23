@@ -16,6 +16,7 @@ from arc3.evaluation.development_recovery import AGGREGATE_SCHEMA as STAGE09_SCH
 from arc3.evaluation.holdout_gate import (
     COMPETITION_CONFIG_PATH,
     STAGE11_GATE_SCHEMA,
+    STAGE11_LEGACY_GATE_SCHEMA,
     HoldoutDecision,
     HoldoutEvaluationDeclaration,
     SourceIdentity,
@@ -24,6 +25,7 @@ from arc3.evaluation.holdout_gate import (
     load_bound_holdout_gate,
     revalidate_earned_holdout_gate,
     source_identity,
+    validate_holdout_gate_receipt,
     validate_nonconsumption_receipt,
 )
 from arc3.evaluation.integrity_authority import COMPOSITE_INTEGRITY_SCHEMA
@@ -195,7 +197,7 @@ def _stage10(
     invocation_ledger: dict[str, object],
     status: str = "PASS",
 ) -> dict[str, Any]:
-    disposition = "PASS" if status == "PASS" else "FAILED_MECHANISM"
+    disposition = status
     source = {
         "clean_worktree": True,
         "commit": identity.commit,
@@ -206,7 +208,11 @@ def _stage10(
     payload: dict[str, Any] = {
         "claim": "NO_GENERALIZATION_CLAIM",
         "evidence_label": "synthetic",
-        "infrastructure_failure": None,
+        "infrastructure_failure": (
+            "suite-failed-infrastructure:competition-integrity"
+            if status == "FAILED_INFRASTRUCTURE"
+            else None
+        ),
         "invocation_ledger": invocation_ledger,
         "plan_hash": sha256_bytes(b"synthetic-stage10-plan"),
         "predeclaration_sha256": PREDECLARATION_SHA256,
@@ -598,6 +604,171 @@ def test_stage10_failed_result_yields_not_earned_and_nonconsumption(evidence: Ev
     assert receipt["gameplay_opened"] is False
     assert receipt["environment_adapter_loaded"] is False
     assert receipt["environment_actions"] == 0
+
+
+def test_authenticated_stage10_infrastructure_failure_allows_only_absent_composite_denial(
+    evidence: Evidence,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    stage10 = _stage10(
+        evidence.execution,
+        composite_file_sha256=evidence.integrity_file,
+        composite_core_hash=evidence.integrity_core,
+        invocation_ledger=evidence.stage10_ledger,
+        status="FAILED_INFRASTRUCTURE",
+    )
+    evidence.stage10_file, evidence.stage10_core = _artifact(evidence.stage10, stage10)
+    evidence.integrity.unlink()
+    monkeypatch.setattr(
+        holdout_gate_module,
+        "_stage10_terminal_status",
+        lambda **_kwargs: holdout_gate_module.Stage10Status.FAILED_INFRASTRUCTURE,
+    )
+
+    document = evidence.gate(
+        integrity_file_sha256=None,
+        integrity_core_hash=None,
+        stage10_source_root=evidence.execution_root,
+        stage10_frozen_commit=evidence.execution.commit,
+    )
+
+    assert document["decision"] == HoldoutDecision.NOT_EARNED.value
+    assert cast(dict[str, bool], document["criteria"])["stage10_pass"] is False
+    assert cast(dict[str, bool], document["criteria"])["competition_integrity_clear"] is False
+    authority = cast(dict[str, Any], document["integrity_authority"])
+    assert authority["availability"] == "ABSENT"
+    assert authority["reason"] == "AUTHENTICATED_STAGE10_FAILED_INFRASTRUCTURE_NO_COMPOSITE"
+    terminal = cast(dict[str, Any], authority["terminal_authority"])
+    assert terminal == {
+        "execution_commit": evidence.execution.commit,
+        "execution_source_root": evidence.execution_root.resolve().as_posix(),
+        "execution_tree": evidence.execution.tree,
+        "status": "FAILED_INFRASTRUCTURE",
+        "verified": True,
+        "verifier_commit": evidence.execution.commit,
+        "verifier_source_root": evidence.execution_root.resolve().as_posix(),
+        "verifier_tree": evidence.execution.tree,
+    }
+    validated = validate_holdout_gate_receipt(document)
+    assert validated.decision is HoldoutDecision.NOT_EARNED
+
+    changed_identity = deepcopy(document)
+    changed_authority = cast(dict[str, Any], changed_identity["integrity_authority"])
+    changed_terminal = cast(dict[str, Any], changed_authority["terminal_authority"])
+    changed_terminal["verifier_tree"] = "0" * 40
+    changed_identity = seal_object(changed_identity, hash_field="artifact_core_hash")
+    with pytest.raises(EvaluationError, match="absent composite cannot authorize"):
+        validate_holdout_gate_receipt(changed_identity)
+
+    gate = _written_gate(evidence.manifest.parent, document)
+    nonconsumption = create_nonconsumption_receipt(
+        gate_path=gate[0],
+        gate_file_sha256=gate[1],
+        gate_core_hash=gate[2],
+        generated_at=NOW,
+    )
+    assert nonconsumption["gameplay_opened"] is False
+    assert nonconsumption["environment_actions"] == 0
+
+
+@pytest.mark.parametrize(
+    "authenticated_status",
+    [
+        None,
+        holdout_gate_module.Stage10Status.PASS,
+        holdout_gate_module.Stage10Status.FAILED_MECHANISM,
+    ],
+)
+def test_absent_composite_rejects_every_status_except_authenticated_failed_infrastructure(
+    evidence: Evidence,
+    monkeypatch: pytest.MonkeyPatch,
+    authenticated_status: object,
+) -> None:
+    stage10 = _stage10(
+        evidence.execution,
+        composite_file_sha256=evidence.integrity_file,
+        composite_core_hash=evidence.integrity_core,
+        invocation_ledger=evidence.stage10_ledger,
+        status="FAILED_INFRASTRUCTURE",
+    )
+    evidence.stage10_file, evidence.stage10_core = _artifact(evidence.stage10, stage10)
+    evidence.integrity.unlink()
+    monkeypatch.setattr(
+        holdout_gate_module,
+        "_stage10_terminal_status",
+        lambda **_kwargs: authenticated_status,
+    )
+
+    with pytest.raises(EvaluationError, match="authenticated Stage 10 FAILED_INFRASTRUCTURE"):
+        evidence.gate(integrity_file_sha256=None, integrity_core_hash=None)
+
+
+def test_absent_composite_rejects_result_status_disagreement(
+    evidence: Evidence,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    evidence.integrity.unlink()
+    monkeypatch.setattr(
+        holdout_gate_module,
+        "_stage10_terminal_status",
+        lambda **_kwargs: holdout_gate_module.Stage10Status.FAILED_INFRASTRUCTURE,
+    )
+
+    with pytest.raises(EvaluationError, match="authenticated Stage 10 FAILED_INFRASTRUCTURE"):
+        evidence.gate(integrity_file_sha256=None, integrity_core_hash=None)
+
+
+def test_absent_composite_hash_authority_must_be_atomic(evidence: Evidence) -> None:
+    evidence.integrity.unlink()
+    with pytest.raises(EvaluationError, match="hashes must be supplied together"):
+        evidence.gate(integrity_file_sha256=evidence.integrity_file, integrity_core_hash=None)
+
+
+def test_existing_composite_cannot_be_reclassified_as_absent(evidence: Evidence) -> None:
+    with pytest.raises(EvaluationError, match="exists but has no hash authority"):
+        evidence.gate(integrity_file_sha256=None, integrity_core_hash=None)
+
+
+def test_absent_composite_receipt_cannot_be_resigned_into_earned_authority(
+    evidence: Evidence,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    stage10 = _stage10(
+        evidence.execution,
+        composite_file_sha256=evidence.integrity_file,
+        composite_core_hash=evidence.integrity_core,
+        invocation_ledger=evidence.stage10_ledger,
+        status="FAILED_INFRASTRUCTURE",
+    )
+    evidence.stage10_file, evidence.stage10_core = _artifact(evidence.stage10, stage10)
+    evidence.integrity.unlink()
+    monkeypatch.setattr(
+        holdout_gate_module,
+        "_stage10_terminal_status",
+        lambda **_kwargs: holdout_gate_module.Stage10Status.FAILED_INFRASTRUCTURE,
+    )
+    document = evidence.gate(integrity_file_sha256=None, integrity_core_hash=None)
+    cast(dict[str, bool], document["criteria"])["stage10_pass"] = True
+    document = seal_object(document, hash_field="artifact_core_hash")
+
+    with pytest.raises(EvaluationError, match="absent composite cannot authorize"):
+        validate_holdout_gate_receipt(document)
+
+
+def test_legacy_present_composite_gate_remains_loadable(evidence: Evidence) -> None:
+    document = evidence.gate()
+    document["schema"] = STAGE11_LEGACY_GATE_SCHEMA
+    document = seal_object(document, hash_field="artifact_core_hash")
+    gate = _written_gate(evidence.manifest.parent, document)
+
+    loaded = load_bound_holdout_gate(
+        gate[0],
+        expected_file_sha256=gate[1],
+        expected_core_hash=gate[2],
+    )
+
+    assert loaded.decision is HoldoutDecision.EARNED
+    assert loaded.receipt["schema"] == STAGE11_LEGACY_GATE_SCHEMA
 
 
 def test_nonconsumption_is_unreachable_for_an_earned_gate(evidence: Evidence) -> None:

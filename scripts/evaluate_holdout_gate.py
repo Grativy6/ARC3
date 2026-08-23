@@ -56,9 +56,24 @@ def _parser() -> argparse.ArgumentParser:
     gate.add_argument("--stage10-attempt-root", type=Path, required=True)
     gate.add_argument("--stage10-file-sha256", required=True)
     gate.add_argument("--stage10-core-hash", required=True)
+    gate.add_argument(
+        "--stage10-source-root",
+        type=Path,
+        help="exact historical source root for a denial-only terminal reconstruction",
+    )
+    gate.add_argument(
+        "--stage10-frozen-commit",
+        help="exact historical Stage 10 commit; defaults to --frozen-commit",
+    )
     gate.add_argument("--integrity", type=Path, required=True)
-    gate.add_argument("--integrity-file-sha256", required=True)
-    gate.add_argument("--integrity-core-hash", required=True)
+    gate.add_argument(
+        "--integrity-file-sha256",
+        help="omit with --integrity-core-hash only when the composite is absent",
+    )
+    gate.add_argument(
+        "--integrity-core-hash",
+        help="omit with --integrity-file-sha256 only when the composite is absent",
+    )
     gate.add_argument("--development-source-root", type=Path, required=True)
     gate.add_argument("--execution-source-root", type=Path, required=True)
     gate.add_argument("--frozen-commit", required=True)
@@ -125,6 +140,8 @@ def _gate(args: argparse.Namespace) -> dict[str, object]:
         expected_manifest_sha256=args.manifest_sha256,
         evaluation=evaluation,
         generated_at=args.generated_at,
+        stage10_source_root=args.stage10_source_root,
+        stage10_frozen_commit=args.stage10_frozen_commit,
     )
     write_canonical_once(args.output, receipt)
     gate_file_sha256 = sha256_file(args.output.resolve())
