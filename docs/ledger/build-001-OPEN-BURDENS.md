@@ -1457,3 +1457,21 @@ does not erase earlier uncertainty or failed mechanisms.
 - Residual: Git and Python executable provenance remains bounded by the frozen runtime/environment
   receipt and local host trust; these controls are evidence-integrity checks, not an adversarial OS
   containment claim. Final exact detached preflight is still required under B-001-0051.
+
+## B-001-0058 — Stage 10 initially allowed repository replacement-object semantics
+
+- Status: RESOLVED for the Stage 10 decisive harness.
+- Stage: 10
+- Opened: 2026-08-23
+- Resolved: 2026-08-23
+- Owner: Codex
+- Burden: Stage 10 stripped inherited Git redirection but did not disable repository-local replace
+  refs, and its checkpoint worker trusted the child Git environment. A replacement could make a
+  literal frozen commit resolve through different object content while preserving the commit name.
+- Resolving evidence: commit `971dcc81e6642335e111c69cd8ab84511c05050e` disables replacement
+  objects in parent and worker Git commands and in the child environment. The focused suite passed
+  18 tests with one platform skip; Ruff and strict typing pass. Direct host audit found no active
+  replace refs or hidden Build 001/Build 000 index flags, so this is a prefreeze repair rather than
+  evidence of prior contamination.
+- Residual: exact detached preflight and terminal source-identity equality remain required; this is
+  not an adversarial Git-binary or OS containment proof.

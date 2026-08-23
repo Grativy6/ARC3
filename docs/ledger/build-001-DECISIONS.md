@@ -1067,3 +1067,21 @@ independent authorities.
 - Reopening condition: any decisive Git read accepts caller redirection or replacement objects;
   candidate membership comes from the index/worktree instead of the exact tree; live policy bytes
   are not compared with the sealed receipt; or a Stage 09 child inherits Git redirection state.
+
+## D-001-0054 — Disable Git replacement objects across Stage 10 authority
+
+- Recorded: 2026-08-23T06:10:53.9954608Z
+- Status: accepted.
+- Decision: set `GIT_NO_REPLACE_OBJECTS=1` after stripping caller `GIT_*` variables in every Stage
+  10 parent Git command, propagate the same setting into suite children, and independently sanitize
+  the checkpoint worker. An object replacement must not let a named frozen commit resolve to a
+  different tree during decisive regression measurement.
+- Evidence: commit `971dcc81e6642335e111c69cd8ab84511c05050e`; 18 focused no-gameplay
+  tests passed with one expected platform skip; environment/redirection regressions, Ruff
+  check/format, and strict mypy passed. A host audit found zero replacement refs and no inherited
+  redirection/index environment beyond non-authoritative `GIT_PAGER`, so prior evidence was not
+  observed to be contaminated.
+- Boundary: this is source-authority hardening only, not a synthetic mechanism result, public-game
+  result, holdout decision, or OS containment claim.
+- Reopening condition: a Stage 10 process can resolve the frozen commit through a replacement
+  object, receives caller Git redirection, or reports verified source without the exact clean root.
