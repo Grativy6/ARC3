@@ -941,7 +941,7 @@ def test_lifecycle_fold_does_not_infer_plan_invalidation_from_goal_narrative() -
     assert folded["invalidated_plan_ids"] == []
 
 
-def test_top_level_status_classifier_preserves_all_four_frozen_labels() -> None:
+def test_top_level_status_classifier_fails_closed_without_acceptance() -> None:
     no_mechanism_failure = {"example": False}
     assert (
         _classify_stage_status(
@@ -957,7 +957,7 @@ def test_top_level_status_classifier_preserves_all_four_frozen_labels() -> None:
             failed_mechanism_predicates=no_mechanism_failure,
             infrastructure_failure_count=0,
         )
-        == "PARTIAL"
+        == "FAILED_MECHANISM"
     )
     assert (
         _classify_stage_status(
@@ -1146,7 +1146,7 @@ def test_bound_verification_receipt_preserves_exact_command_output(tmp_path: Pat
     assert receipt["artifact_sha256"] == sha256_file(artifact)
 
 
-def test_verification_timeout_is_not_relabelled_as_infrastructure(
+def test_verification_timeout_fails_mechanism_without_becoming_infrastructure(
     tmp_path: Path,
 ) -> None:
     receipt = _run_verification_command(
@@ -1164,7 +1164,7 @@ def test_verification_timeout_is_not_relabelled_as_infrastructure(
             failed_mechanism_predicates={"mechanism": False},
             infrastructure_failure_count=0,
         )
-        == "PARTIAL"
+        == "FAILED_MECHANISM"
     )
 
 

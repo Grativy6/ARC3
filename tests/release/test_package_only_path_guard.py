@@ -146,13 +146,22 @@ def test_package_only_pytest_denies_transitive_posix_clone_events(
             "from process_clone_probe import attempt_clone\n"
             f"OPERATION = {operation!r}\n"
             "def test_clone_event():\n"
-            "    attempt_clone(OPERATION)\n"
+            "    try:\n"
+            "        attempt_clone(OPERATION)\n"
+            "    except PermissionError as error:\n"
+            "        assert str(error) == "
+            "f'package-only test guard denied os.{OPERATION}'\n"
+            "        return\n"
+            "    raise AssertionError(f'guard did not deny os.{OPERATION}')\n"
         ),
     )
 
     assert completed.returncode == 3
     assert document["status"] == "FAILED_BOUNDARY"
-    assert {"event": f"os.{operation}", "path": "child-process"} in document["attempts"]
+    assert document["pytest_exit_code"] == 0
+    assert document["runner_failure"] is None
+    assert document["attempt_count"] == 1
+    assert document["attempts"] == [{"event": f"os.{operation}", "path": "child-process"}]
 
 
 @pytest.mark.parametrize(
