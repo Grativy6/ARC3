@@ -177,6 +177,15 @@ def test_infrastructure_cell_cannot_be_promoted_by_other_successes() -> None:
     assert current["infrastructure_failures"] == 1
 
 
+def test_competition_integrity_failure_is_infrastructure() -> None:
+    result = aggregate(_passing_receipts(), evidence_integrity=True, competition_integrity=False)
+
+    assert result["status"] == "FAILED_INFRASTRUCTURE"
+    gate = result["gate"]
+    assert isinstance(gate, dict)
+    assert gate["competition_integrity"] is False
+
+
 def test_rehashed_cell_identity_tamper_is_rejected() -> None:
     receipts = _passing_receipts()
     tampered = copy.deepcopy(receipts[0])

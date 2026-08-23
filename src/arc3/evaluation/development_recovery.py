@@ -490,7 +490,7 @@ def aggregate(
     }
     status = (
         "FAILED_INFRASTRUCTURE"
-        if infrastructure_failures or not evidence_integrity
+        if infrastructure_failures or not evidence_integrity or not competition_integrity
         else "PASS"
         if all(gate.values())
         else "FAILED_MECHANISM"
