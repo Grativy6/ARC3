@@ -11,8 +11,8 @@
   "implementation_branch": "build/001-local-public-recovery",
   "pull_request": "https://github.com/Grativy6/ARC3/pull/5",
   "started_at": "2026-08-21T15:41:02Z",
-  "last_checkpoint_at": "2026-08-23T06:10:53.9954608Z",
-  "last_checkpoint_commit": "971dcc81e6642335e111c69cd8ab84511c05050e",
+  "last_checkpoint_at": "2026-08-23T06:21:59.2272232Z",
+  "last_checkpoint_commit": "c1fd1bcfeb1d5b420fd3f6975ff243cf3ea9166b",
   "base": {
     "main_commit": "28c7a00732ce48e5c231211b01bc6eba7d0d71b4",
     "main_tree": "4586299448e9b1b585a0878674ed5f9afa60c384",

@@ -1085,3 +1085,20 @@ independent authorities.
   result, holdout decision, or OS containment claim.
 - Reopening condition: a Stage 10 process can resolve the frozen commit through a replacement
   object, receives caller Git redirection, or reports verified source without the exact clean root.
+
+## D-001-0055 — Restore no-replacement authority inside composite and holdout helpers
+
+- Recorded: 2026-08-23T06:21:59.2272232Z
+- Status: accepted; completes the scope intended by D-001-0054.
+- Decision: after stripping inherited `GIT_*` variables, explicitly set
+  `GIT_NO_REPLACE_OBJECTS=1` inside both the composite-integrity and holdout-gate Git helpers. Do
+  not rely on the parent environment because each helper deliberately reconstructs a clean Git
+  environment and would otherwise remove the parent's safety setting.
+- Evidence: commit `c1fd1bcfeb1d5b420fd3f6975ff243cf3ea9166b`; 37 focused tests pass,
+  including hostile redirection and a real local replacement-ref fixture; Ruff check/format and
+  strict mypy pass.
+- Boundary: D-001-0054 alone did not protect these same-process helper calls. This follow-up closes
+  that recorded gap before any Stage 10 execution; it supplies no mechanism, public, or holdout
+  result.
+- Reopening condition: either helper accepts replacement-object semantics or caller Git
+  redirection, or a composite/gate receipt lacks exact source-root/commit/tree agreement.

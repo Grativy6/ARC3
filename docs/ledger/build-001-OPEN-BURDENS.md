@@ -1475,3 +1475,15 @@ does not erase earlier uncertainty or failed mechanisms.
   evidence of prior contamination.
 - Residual: exact detached preflight and terminal source-identity equality remain required; this is
   not an adversarial Git-binary or OS containment proof.
+
+### B-001-0058 — Same-process composite and gate helper gap is closed
+
+- Status update: RESOLVED for every currently reachable Stage 10/11 Git helper.
+- Last updated: 2026-08-23T06:21:59.2272232Z
+- Current evidence: audit after `971dcc81e6642335e111c69cd8ab84511c05050e` found that
+  `integrity_authority` and `holdout_gate` rebuilt environments by stripping all `GIT_*` variables,
+  inadvertently removing the parent's no-replacement setting. Commit
+  `c1fd1bcfeb1d5b420fd3f6975ff243cf3ea9166b` re-adds the setting inside each helper. Thirty-seven
+  focused tests pass, including a real replacement-ref denial; Ruff and strict typing pass.
+- Remaining boundary: exact detached preflight/terminal equality and the broader local-host trust
+  boundary remain. The package verifier has its own separately tracked Git-authority repair.
