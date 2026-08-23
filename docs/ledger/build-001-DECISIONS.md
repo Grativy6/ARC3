@@ -1122,3 +1122,26 @@ independent authorities.
 - Reopening condition: any executable harness source is outside the mapping, canonical blob reads
   accept Git replacement/redirection, live bytes may differ from the committed blob while passing,
   or a bootstrap/supervisor/worker boundary accepts a different mapping.
+
+## D-001-0057 — Freeze exact-snapshot package hardening as the final Stage 09 harness source
+
+- Recorded: 2026-08-23T08:08:13.7327243Z
+- Status: accepted before decisive execution.
+- Decision: accept commit `c318f8f1a80b6b501aad13610cdaad905d3835a0`, tree
+  `fabd0d6a0b7023f72dc4d075dc459c32e0036328`, as final harness source `H`. Preserve
+  production-policy source `P` at `d6d4bac1e33c9837856c08abcee61bcb14afd34e`, tree
+  `dd8e82e4b34337a208110929e3f5f8079d1e0a18`, source hash
+  `sha256:8f0de1a9c2c88761951ba2bcd69f2612bedfa0cc4226f44f1ed272b54b9023a8`.
+  The original Stage 09 matrix, partitions, seeds, budgets, PASS rule, and holdout gate remain
+  unchanged. Decisive work must run from the clean detached `H` checkout.
+- Evidence: `c318f8f` integrates bounded immutable exact-source snapshots, recursive nested-archive
+  inspection, guarded-test closure binding, strict notebook/package bindings, and final sealed-byte
+  scanning. Independent integration audit found no P0/P1 issue. From clean detached
+  `C:\a\arc3-stage09-harness-c318f8f`, the exact package suite passed `212 passed, 15 skipped`,
+  exit 0, in 144.10 seconds.
+- Boundary: this is source/evidence hardening only. It supplies no gameplay, development-recovery,
+  holdout, private-platform, or OS-containment result. Fresh Stage 09 non-playing preflight,
+  one-shot execution, and Stage 13 hosted exact-source evidence remain required.
+- Reopening condition: any live harness byte differs from the exact Git tree; the `P`/`H`
+  distinction is lost; package reachability, nested archive, selected-test, or sealed-output
+  bindings fail; or a later production-policy byte changes after decisive evaluation.

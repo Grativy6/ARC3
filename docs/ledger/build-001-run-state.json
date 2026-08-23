@@ -7,12 +7,12 @@
   "build_status": "IN_PROGRESS",
   "status": "IN_PROGRESS",
   "current_stage": "09",
-  "current_task": "Finish and independently audit the exact-snapshot package-integrity repair, freeze one exact harness commit, then execute the unchanged predeclared development matrix",
+  "current_task": "Run the exact detached Stage 09 non-playing preflight for frozen harness H, independently validate every predicate, then launch the sole unchanged development-recovery attempt",
   "implementation_branch": "build/001-local-public-recovery",
   "pull_request": "https://github.com/Grativy6/ARC3/pull/5",
   "started_at": "2026-08-21T15:41:02Z",
-  "last_checkpoint_at": "2026-08-23T06:50:59.5689341Z",
-  "last_checkpoint_commit": "bfdf914b7ad50cc2ac39c3c3b2a0dbfc581255e0",
+  "last_checkpoint_at": "2026-08-23T08:08:13.7327243Z",
+  "last_checkpoint_commit": "c318f8f1a80b6b501aad13610cdaad905d3835a0",
   "base": {
     "main_commit": "28c7a00732ce48e5c231211b01bc6eba7d0d71b4",
     "main_tree": "4586299448e9b1b585a0878674ed5f9afa60c384",
@@ -473,6 +473,42 @@
       ],
       "public_holdout_consumed": false
     },
+    "09": {
+      "status": "PENDING",
+      "label": "local-public",
+      "claim": "NO_GENERALIZATION_CLAIM",
+      "original_predeclaration": "docs/evidence/001-09-development-recovery-predeclaration.json",
+      "original_predeclaration_file_sha256": "sha256:dce14e30d47aff7ac99551ad462c9202113dcd44c591dacd410b86363ddad348",
+      "original_predeclaration_core_hash": "sha256:b32f91fa228a7f1f2c2bbfee23e8fafc3a9affc18f9b0d3cbf9e050b0e498f3c",
+      "predeclaration_amendment": "docs/evidence/001-09-development-recovery-predeclaration-amendment-v0.1.json",
+      "predeclaration_amendment_file_sha256": "sha256:137532b196ffcbd6bbeb07c8ca5ef716c0987f04467663efb6ce1da8508d3084",
+      "predeclaration_amendment_core_hash": "sha256:36104da8f7ea6532ab1ea7cf6f8df16760d1236f8f551d7bef2239f7d1ab93a4",
+      "production_policy_commit": "d6d4bac1e33c9837856c08abcee61bcb14afd34e",
+      "production_policy_tree": "dd8e82e4b34337a208110929e3f5f8079d1e0a18",
+      "production_policy_source_sha256": "sha256:8f0de1a9c2c88761951ba2bcd69f2612bedfa0cc4226f44f1ed272b54b9023a8",
+      "frozen_harness_commit": "c318f8f1a80b6b501aad13610cdaad905d3835a0",
+      "frozen_harness_tree": "fabd0d6a0b7023f72dc4d075dc459c32e0036328",
+      "production_package_integrity_receipt": "C:/a/arc3-b001/artifacts/stage09/policy-integrity-d6d4bac-package-only.json",
+      "production_package_integrity_file_sha256": "sha256:173c0a6c3aee154df67920227e3b5303c59682186a2254a220e24dd5589269fe",
+      "production_package_integrity_receipt_sha256": "sha256:3e29edd69d7999760c53a80de474d701f9124faed73ccc1b9047adbf9a766702",
+      "package_only_passed": true,
+      "full_public_identifiers_status": "NOT_EVALUATED_PUBLIC_IDENTIFIERS",
+      "runtime_binding": "docs/evidence/001-09-runtime-binding.json",
+      "runtime_binding_file_sha256": "sha256:6f9230ae8b3560cddbf605814985bf404d6d2cdea83dbdfc44b30c2cc6a476f1",
+      "runtime_binding_hash": "sha256:7c772d556584caa28002a93c4de190ac0396b31d4c2ab6c1fc675e08be3ebf14",
+      "development_identity_count": 12,
+      "cell_count": 96,
+      "seeds": [7, 11],
+      "max_actions": 80,
+      "max_resets": 8,
+      "worker_wall_seconds": 120.0,
+      "overall_active_wall_seconds": 14400.0,
+      "decisive_execution_started": false,
+      "attempt_execution_count": 0,
+      "stage09_exposure_events": 0,
+      "stage09_gameplay_events": 0,
+      "public_holdout_consumed": false
+    },
     "10": {
       "status": "PENDING",
       "label": "synthetic",
@@ -507,7 +543,11 @@
       "package_archive_checkpoint_tree": "bc3f4d48251328a4058a72b749c449c70a2fda8c",
       "complete_reachability_checkpoint_commit": "d6d4bac1e33c9837856c08abcee61bcb14afd34e",
       "complete_reachability_checkpoint_tree": "dd8e82e4b34337a208110929e3f5f8079d1e0a18",
-      "integrated_verification": "PASS:176-release+integrity+package+adapter-tests+4-platform-skips;PASS:ruff+format;PASS:strict-mypy-windows-176-files;SUBAGENT_PASS:strict-mypy-linux-176-files;PACKAGE_ONLY_STATIC_PASS:86-reachable+0-findings+full-public-not-assessed",
+      "exact_snapshot_hardening_commit": "c318f8f1a80b6b501aad13610cdaad905d3835a0",
+      "exact_snapshot_hardening_tree": "fabd0d6a0b7023f72dc4d075dc459c32e0036328",
+      "integrated_verification": "PASS:212-release+integrity+package-tests+15-platform-skips+144.10s-clean-detached;PASS:ruff+format;PASS:strict-mypy-179-source-files;INDEPENDENT_AUDIT:0-P0+0-P1;PACKAGE_ONLY_STATIC_PASS:86-reachable+0-findings+full-public-not-assessed",
+      "local_checkout_verification": "FAILED_INFRASTRUCTURE:onedrive-descriptor-metadata-race:1-failed+211-passed+15-skipped-twice;RESOLVED_EXECUTION_PATH:clean-detached-212-passed+15-skipped",
+      "manual_guard_attempts": "NO_PASS:first-invalid-basetemp-parent+zero-attempt-receipt;second-interrupted-after-ordinary-test-failures+no-receipt",
       "exact_source_ci": "FAILED_INFRASTRUCTURE:run-32616456163-linux-interpreter-origin;FAILED_MECHANISM:run-32616456163-windows-receipt-not-uploaded;FAILED_TESTS:windows-10-failed+1074-passed-linux-pass",
       "os_containment": "ABSENT",
       "python_boundary_scope": "Python audit hooks plus guarded selected in-process tests; not OS filesystem/network/process-tree containment",
@@ -649,19 +689,35 @@
       "path": "docs/reports/001-08-two-speed-controller.md",
       "sha256": "e6aae8fbf30df955770587c4962b5630b0a2a72f950b4bc5a290d48bb9758f03"
     },
+    "stage_09_predeclaration": {
+      "path": "docs/evidence/001-09-development-recovery-predeclaration.json",
+      "sha256": "dce14e30d47aff7ac99551ad462c9202113dcd44c591dacd410b86363ddad348"
+    },
+    "stage_09_predeclaration_amendment": {
+      "path": "docs/evidence/001-09-development-recovery-predeclaration-amendment-v0.1.json",
+      "sha256": "137532b196ffcbd6bbeb07c8ca5ef716c0987f04467663efb6ce1da8508d3084"
+    },
+    "stage_09_runtime_binding": {
+      "path": "docs/evidence/001-09-runtime-binding.json",
+      "sha256": "6f9230ae8b3560cddbf605814985bf404d6d2cdea83dbdfc44b30c2cc6a476f1"
+    },
+    "stage_09_production_package_integrity_receipt": {
+      "path": "C:/a/arc3-b001/artifacts/stage09/policy-integrity-d6d4bac-package-only.json",
+      "sha256": "173c0a6c3aee154df67920227e3b5303c59682186a2254a220e24dd5589269fe"
+    },
     "stage_10_predeclaration": {
       "path": "docs/evidence/001-10-robustness-regression-predeclaration.json",
       "sha256": "02ad73f25cd6c21459cf425a29de0b830fa27bd660c58777b272ac57116d26e3"
     }
   },
   "blocked_items": [
-    "B-001-0051: Stage 09 accounting repairs passed integrated tests and independent review; exact final-harness preflight remains required",
-    "B-001-0052: Stage 10 and holdout authority repairs passed integrated tests and independent review; exact final-harness preflight remains required",
-    "B-001-0054: literal-head Linux/Windows package runs preserved transitive guard-boundary failures, and nested first-party ZIP scanning remains under audited repair",
+    "B-001-0051: Stage 09 accounting repairs and exact harness source passed integrated review; exact detached non-playing preflight remains required",
+    "B-001-0052: Stage 10 and holdout authority repairs passed integrated review; exact Stage 09 terminal and Stage 10 execution remain required",
+    "B-001-0054: exact-snapshot nested-package repair passed locally; literal-head Linux/Windows package workflows remain required",
     "B-001-0055: package evidence is Python-audit scoped and lacks OS process-tree containment",
-    "B-001-0056: complete policy reachability invalidated the 2e78c25 wrapper integrity authority; premeasurement source amendment required"
+    "B-001-0056: repaired production policy, package-only receipt, and amendment are complete; exact H/P Stage 09 preflight remains required"
   ],
-  "next_action": "Integrate the independently audited exact-snapshot package repair, freeze the final harness source commit, then execute Stage 09 from one clean detached checkout without holdout access.",
+  "next_action": "Run and independently validate the exact detached Stage 09 READY_NOT_EXECUTED preflight for H=c318f8f and P=d6d4bac with zero attempt/work/exposure paths, then launch the sole predeclared 96-cell attempt without holdout access.",
   "notes": [
     "Build 000 ledgers and reports are immutable historical evidence and are not overwritten by Build 001.",
     "The owner explicitly approved MIT-0 for ARC3 first-party source in the active Build 001 instruction.",

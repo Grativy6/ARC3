@@ -1506,3 +1506,27 @@ does not erase earlier uncertainty or failed mechanisms.
 - Residual: final H is not frozen until the independent package repair lands. The exact clean
   detached preflight, one-shot Stage 09 terminal, and local-host trust boundary remain under
   B-001-0051; this repair is not gameplay evidence or OS containment.
+
+## B-001-0060 — Manual guard attempts and OneDrive metadata churn produced no package PASS
+
+- Status: RESOLVED as a Stage 09 source-freeze blocker; prior failures remain evidence.
+- Stage: 09, 13
+- Opened: 2026-08-23
+- Resolved: 2026-08-23
+- Owner: Codex
+- Burden: the first manual package guard attempt was invalid infrastructure because its declared
+  basetemp parent did not exist. Receipt
+  `C:\a\arc3-guard-out-ddf03ebe35314febb5f9bfadc7e950b6\package-only-test-guard.json`
+  is `FAILED_BOUNDARY`, pytest exit 1, attempt count 0, file SHA-256
+  `5b465f2ac23b7f209eedb074cc4a1eef8a3836249c5a63bdcdfdacf7279965b6`, receipt SHA-256
+  `2a3bd0104e008211a09a073ceb0d1d4c2dcf2ed0e9020ffefe33649103605759`. The corrected
+  manual attempt was interrupted after ordinary test failures and produced no receipt or PASS. In
+  the OneDrive checkout, the full package suite twice returned `1 failed, 211 passed, 15 skipped`
+  from `candidate-mutated-during-scan`; integrity-only and standalone scans passed.
+- Resolving evidence: the identical source and suite in clean detached
+  `C:\a\arc3-stage09-harness-c318f8f` returned `212 passed, 15 skipped`, exit 0, in 144.10
+  seconds. The OneDrive result is therefore retained as `FAILED_INFRASTRUCTURE`, consistent with
+  descriptor-metadata churn, and the detached exact-source checkout is the accepted execution path.
+- Residual: the detached pass does not retroactively validate either manual attempt, prove which
+  external actor changed metadata, establish OS containment, or replace fresh hosted Linux/Windows
+  Stage 13 evidence. Those limits remain under B-001-0054 and B-001-0055.
