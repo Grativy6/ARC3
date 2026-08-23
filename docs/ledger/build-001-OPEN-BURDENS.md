@@ -963,7 +963,12 @@ does not erase earlier uncertainty or failed mechanisms.
 - Resolution receipt: commit `7f994fc`; 21 focused legacy/controller checkpoint replay tests,
   Ruff, format, and strict mypy pass. A copied real `df961c7` artifact preserved the known trace,
   checkpoint-file, and envelope hashes while migrating once and then restoring normally; its final
-  clean-commit receipt remains part of the Stage 08 premeasurement audit.
+  clean-commit receipt is `docs/evidence/001-08-premeasurement-audit.json`. The first final auditor
+  attempt is retained as `FAILED_INFRASTRUCTURE`: its audit code referenced a nonexistent snapshot
+  attribute after migration and normal restore had already passed. The second attempt from a fresh
+  pristine copy passed under commit `2e78c258cfbee8be62462f61ed08ad04c00a8934`, preserved the
+  29,970-byte legacy trace prefix and 14,433-byte checkpoint, emitted exactly one current-identity
+  activation, blocked resubmission, applied one consequence, and restored the continued checkpoint.
 
 ## B-001-0046 — Stage 08 cadence integration regressed broad checkpoint boundaries
 

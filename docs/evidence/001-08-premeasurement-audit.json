@@ -1,0 +1,141 @@
+{
+  "schema": "arc3.build-001.stage-08-premeasurement-audit.v0.1",
+  "recorded_at": "2026-08-23T00:19:21.3870822Z",
+  "status": "READY_NOT_EXECUTED_PENDING_EXACT_SOURCE_CI_AND_LOCAL_FULL_SUITE",
+  "execution_started": false,
+  "verification_label": "synthetic",
+  "public_gameplay_result": null,
+  "source_identity": {
+    "execution_commit": "2e78c258cfbee8be62462f61ed08ad04c00a8934",
+    "execution_tree": "4145356c116944bbd7c0c412771de9179ba22efe",
+    "execution_root": "C:/a/arc3-stage08-build001-2e78c25",
+    "clean_detached_worktree": true,
+    "process_harness_code_commit": "795c731fe5425c9b661160336b80112c38a7594f",
+    "build_000_commit": "90ecf7267d5bb23d751d6f7ce3e8aa75f2f1a130",
+    "build_000_tree": "0cf6e00b2fcc399e7a99a62c20e91bb84d485f13",
+    "build_000_root": "C:/a/arc3-stage08-build000-90ecf72",
+    "build_000_clean_detached_worktree": true
+  },
+  "frozen_contract": {
+    "predeclaration_path": "docs/evidence/001-08-two-speed-predeclaration.json",
+    "predeclaration_sha256": "sha256:3342b6e2635c0606391c9aea02b2fec0cf4c5642a3d38b95768a1b77b4520878",
+    "matrix_sha256": "sha256:ca507ee6e539e0544647aac792417b276806a848e656f2b7b4f1a368ba6b63a1",
+    "plan_sha256": "sha256:b42326c4de76786982c07a18be2fcd73afe4583bdb11100e9cb6147b6c8e582c",
+    "cell_count": 20,
+    "repetitions_per_variant": 5,
+    "development_game_id": "ar25-0c556536",
+    "seed": 7,
+    "max_actions": 8,
+    "max_resets": 8,
+    "worker_wall_seconds": 120.0,
+    "overall_wall_seconds": 2700.0,
+    "maximum_median_paired_ratio": 0.75,
+    "minimum_paired_cell_nonregression_fraction": 0.7,
+    "public_holdout_allowed": false
+  },
+  "non_playing_preflight": {
+    "command": [
+      "C:/a/arc3-b001-28c7a00/Scripts/python.exe",
+      "scripts/measure_two_speed_controller.py"
+    ],
+    "working_directory": "C:/a/arc3-stage08-build001-2e78c25",
+    "environment": {
+      "PYTHONPATH": "C:/a/arc3-stage08-build001-2e78c25/src"
+    },
+    "exit_code": 0,
+    "status": "READY_NOT_EXECUTED",
+    "preflight_hash": "sha256:f5b445550b4af0a0e59474b9235a1f869b41a7e938ac07b69155c086c1e5539c",
+    "execution_started": false,
+    "all_predicates_true": true,
+    "contract_sha256": "sha256:d3ee67c9238dbda905045edef91de1a59d764169f4eb85dec19aa89a147b7300",
+    "worker_sha256": "sha256:2bc77bdf3280dd8c216094f7363f4ef1e2106342150969f182461b0b80a94dcb",
+    "supervisor_sha256": "sha256:903d6ab2f6e86fcdd33b353ee30c8d7692c35846e464538e8236c0a51b7fad00",
+    "development_asset_aggregate_sha256": "sha256:e796e615d2e10c93b849f9bf150308fbf84d624725deaf995d7ec2d1c2f86b22",
+    "development_asset_file_count": 2,
+    "development_source_semantically_inspected": false,
+    "arc_agi_version": "0.9.9",
+    "arcengine_version": "0.9.3",
+    "python": "3.12.14",
+    "platform": "Windows-10-10.0.19045-SP0",
+    "cpu": "AMD64 Family 23 Model 8 Stepping 2, AuthenticAMD",
+    "cpu_count": 12,
+    "official_paths_absent_before_preflight": true
+  },
+  "holdout": {
+    "status": "SEALED_UNCONSUMED",
+    "public_holdout_game_ids_selected": 0,
+    "public_holdout_gameplay_events": 0,
+    "stage_08_exposure_events": 0,
+    "manifest_loaded_as_gameplay_metadata": false,
+    "manifest_sha256": "sha256:682d5891c2aface54803d9bd1173c55ed21e89856e13b8a478fb9276ee963f2f",
+    "inherited_exposure_receipts_verified": true
+  },
+  "process_harness_verification": {
+    "focused_tests": "PASS:111/111 in 15.75s",
+    "ruff_check": "PASS",
+    "ruff_format_check": "PASS",
+    "mypy_windows": "PASS:161 source files",
+    "mypy_explicit_linux_target": "PASS:161 source files",
+    "secret_scan": "PASS:9 tests+0 findings",
+    "adversarial_review": "PASS:targeted final review cleared interim-integrity stop and immutable returned-consequence binding"
+  },
+  "legacy_checkpoint_migration": {
+    "label": "synthetic",
+    "legacy_commit": "df961c7acd67cbe382e5a56a44d6e1358c61278d",
+    "pristine_root": "C:/a/arc3-stage08-legacy-artifact-df961c7",
+    "pristine_trace_bytes": 29970,
+    "pristine_trace_sha256": "sha256:b3878c197f25693ab64893a1c2a774dba89264cde8c63d719ca3b94fe33e8aca",
+    "pristine_checkpoint_bytes": 14433,
+    "pristine_checkpoint_file_sha256": "sha256:f0eb87b174443acb9c805c0e3c4ca4b8c52c65a689769fb9c2c8d462bc67597f",
+    "pristine_checkpoint_envelope_hash": "sha256:7e96ceddd19c4d078b8a172a45e02987e7bfc3f43107b03ed54cc8308bb654d7",
+    "failed_auditor_attempt": {
+      "artifact_root": "C:/a/arc3-stage08-legacy-migration-final-2e78c25",
+      "status": "FAILED_INFRASTRUCTURE",
+      "failure": "audit script referenced absent ControllerSnapshot.latest_observation after migration and normal restore had passed",
+      "trace_bytes_at_failure": 40534,
+      "trace_sha256_at_failure": "sha256:65876b93f8c098e5dbfb8e0654d16382d2ff92123518934c13abd904aedd4608"
+    },
+    "final_attempt": {
+      "artifact_root": "C:/a/arc3-stage08-legacy-migration-final-2e78c25-attempt-02",
+      "status": "PASS",
+      "source_commit": "2e78c258cfbee8be62462f61ed08ad04c00a8934",
+      "trace_prefix_preserved": true,
+      "checkpoint_bytes_preserved": true,
+      "cadence_activation_count": 1,
+      "activation_current_identity": true,
+      "pending_action_preserved": true,
+      "resubmission_blocked": true,
+      "normal_restore_passed": true,
+      "continued_consequence_passed": true,
+      "continued_checkpoint_restore_passed": true,
+      "migration_checkpoint_hash": "sha256:6a78a931869d62819abf292bc69f6120e73a906fc11375a8ae36ada0f0a7e956",
+      "continued_checkpoint_hash": "sha256:a466464d91e8057e9f4d9f94c32eed9af70021868a752056e6a54a8becf63abb",
+      "final_event_count": 44,
+      "final_trace_bytes": 124432,
+      "final_trace_sha256": "sha256:f6b8be2e8116d88551032e681631ec186c84425c3a3f5596a7786b5ee2985351"
+    }
+  },
+  "preserved_failures": [
+    {
+      "status": "FAILED_INFRASTRUCTURE",
+      "runs": [
+        32607075312,
+        32607073797
+      ],
+      "summary": "first harness push failed Ubuntu strict mypy on a directly referenced Windows-only subprocess attribute; no public cell opened"
+    },
+    {
+      "status": "FAILED_INFRASTRUCTURE",
+      "summary": "first detached local full suite mixed clean tests with the dirty editable source and produced 863 passes plus 22 constructor failures"
+    }
+  ],
+  "pending_gates": {
+    "exact_source_ci_runs": [
+      32607267169,
+      32607264914
+    ],
+    "exact_source_ci_status": "IN_PROGRESS",
+    "correctly_source_bound_local_full_suite": "IN_PROGRESS",
+    "new_public_launch_allowed": false
+  }
+}

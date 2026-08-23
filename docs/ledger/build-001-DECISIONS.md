@@ -636,6 +636,11 @@ independent authorities.
   and strict mypy pass. The copied real `df961c7` artifact retained trace SHA-256
   `b3878c197f25693ab64893a1c2a774dba89264cde8c63d719ca3b94fe33e8aca` and checkpoint-file
   SHA-256 `f0eb87b174443acb9c805c0e3c4ca4b8c52c65a689769fb9c2c8d462bc67597f`.
+  Final clean-source validation at commit `2e78c258cfbee8be62462f61ed08ad04c00a8934`
+  preserved both byte sequences, emitted exactly one current-identity cadence activation, blocked
+  pending-action resubmission, applied the returned consequence once, and restored the continued
+  checkpoint. Its 44-event trace SHA-256 is
+  `f6b8be2e8116d88551032e681631ec186c84425c3a3f5596a7786b5ee2985351`.
 - Boundary: migration never resubmits a pending action and never rewrites or relabels the legacy
   prefix. It does not relax cadence-bearing or ordinary restore.
 - Reopening condition: any caller can migrate with a partial or wrong identity, legacy bytes change,
