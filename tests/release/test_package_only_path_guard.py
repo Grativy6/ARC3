@@ -143,15 +143,26 @@ def test_package_only_pytest_denies_transitive_posix_clone_events(
         fake_root=fake_root,
         tmp_path=tmp_path,
         test_source=(
-            "from process_clone_probe import attempt_clone\n"
+            "import os\n"
             f"OPERATION = {operation!r}\n"
             "def test_clone_event():\n"
             "    try:\n"
-            "        attempt_clone(OPERATION)\n"
+            "        result = getattr(os, OPERATION)()\n"
             "    except PermissionError as error:\n"
             "        assert str(error) == "
             "f'package-only test guard denied os.{OPERATION}'\n"
             "        return\n"
+            "    if OPERATION == 'fork':\n"
+            "        process_id = result\n"
+            "        if process_id == 0:\n"
+            "            os._exit(97)\n"
+            "        os.waitpid(process_id, 0)\n"
+            "    else:\n"
+            "        process_id, descriptor = result\n"
+            "        if process_id == 0:\n"
+            "            os._exit(97)\n"
+            "        os.close(descriptor)\n"
+            "        os.waitpid(process_id, 0)\n"
             "    raise AssertionError(f'guard did not deny os.{OPERATION}')\n"
         ),
     )
