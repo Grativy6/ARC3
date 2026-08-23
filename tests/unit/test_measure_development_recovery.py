@@ -51,6 +51,76 @@ def _execution_identity() -> dict[str, object]:
     return _boundaries()
 
 
+def _frozen_build_000_findings() -> list[dict[str, object]]:
+    authority = cast(dict[str, object], _boundaries()["prior_authority"])["before"]
+    integrity = cast(dict[str, object], cast(dict[str, object], authority)["integrity"])
+    scans = cast(dict[str, object], integrity["development_scans"])
+    scan = cast(dict[str, object], scans["build_000"])
+    return copy.deepcopy(cast(list[dict[str, object]], scan["findings"]))
+
+
+def test_frozen_build_000_official_sdk_findings_are_retained_not_suppressed() -> None:
+    rows = _frozen_build_000_findings()
+
+    historical, blocking, complete = harness._classify_development_findings(
+        rows,
+        allowed_signatures=harness.FROZEN_BUILD_000_OFFICIAL_SDK_LIMITATION_SIGNATURES,
+    )
+
+    assert historical == rows
+    assert blocking == []
+    assert complete is True
+
+
+def test_frozen_build_000_profile_does_not_allow_added_hosted_client() -> None:
+    rows = _frozen_build_000_findings()
+    hosted = {
+        "category": "forbidden_network_client",
+        "evidence_sha256": "sha256:" + "f" * 64,
+        "line": 9,
+        "message": "production policy imports a forbidden network or hosted client",
+        "path": "agent/hosted.py",
+        "rule_id": "forbidden-import",
+        "severity": "error",
+    }
+    rows.append(hosted)
+
+    historical, blocking, complete = harness._classify_development_findings(
+        rows,
+        allowed_signatures=harness.FROZEN_BUILD_000_OFFICIAL_SDK_LIMITATION_SIGNATURES,
+    )
+
+    assert len(historical) == 3
+    assert blocking == [hosted]
+    assert complete is True
+
+
+def test_frozen_build_000_profile_does_not_allow_moved_sdk_finding() -> None:
+    rows = _frozen_build_000_findings()
+    rows[0]["line"] = 19
+
+    historical, blocking, complete = harness._classify_development_findings(
+        rows,
+        allowed_signatures=harness.FROZEN_BUILD_000_OFFICIAL_SDK_LIMITATION_SIGNATURES,
+    )
+
+    assert len(historical) == 2
+    assert blocking == [rows[0]]
+    assert complete is False
+
+
+def test_production_profile_allows_no_frozen_comparator_finding() -> None:
+    rows = _frozen_build_000_findings()
+
+    historical, blocking, complete = harness._classify_development_findings(
+        rows, allowed_signatures=()
+    )
+
+    assert historical == []
+    assert blocking == rows
+    assert complete is True
+
+
 def test_integrity_authority_uses_the_integrity_receipt_hash_contract(tmp_path: Path) -> None:
     commit = "a" * 40
     body: dict[str, Any] = {
@@ -2910,8 +2980,16 @@ def test_complete_terminal_verifier_returns_hash_bound_authority(
     }
     assert set(cast(dict[str, object], authority["development_scans"])) == {
         "build_000_finding_count",
+        "build_000_blocking_finding_count",
+        "build_000_historical_limitation_count",
+        "build_000_historical_limitation_profile",
+        "build_000_historical_limitation_profile_sha256",
         "build_000_passed",
         "build_001_finding_count",
+        "build_001_blocking_finding_count",
+        "build_001_historical_limitation_count",
+        "build_001_historical_limitation_profile",
+        "build_001_historical_limitation_profile_sha256",
         "build_001_passed",
         "development_identity_count",
         "identifier_list_hash",

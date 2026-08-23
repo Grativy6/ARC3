@@ -19,17 +19,29 @@ from arc3.evaluation.development_recovery import (
     BUILD_001_PACKAGE_INTEGRITY_RECEIPT_SHA256,
     CELL_RECEIPT_SCHEMA,
     DEVELOPMENT_GAMES,
+    DEVELOPMENT_SCAN_LIMITATION,
     ENVIRONMENT_CACHE_SCHEMA,
     EXPECTED_CELL_COUNT,
+    FROZEN_BUILD_000_COMMIT,
+    FROZEN_BUILD_000_OFFICIAL_SDK_LIMITATION_PROFILE,
+    FROZEN_BUILD_000_OFFICIAL_SDK_LIMITATION_PROFILE_SHA256,
+    FROZEN_BUILD_000_OFFICIAL_SDK_LIMITATION_SIGNATURES,
+    FROZEN_BUILD_000_SOURCE_SHA256,
+    FROZEN_BUILD_000_TREE,
     FROZEN_BUILD_001_COMMIT,
+    FROZEN_BUILD_001_SOURCE_SHA256,
+    FROZEN_BUILD_001_TREE,
     HARNESS_SOURCE_BINDING_SCHEMA,
     HARNESS_SOURCE_OBSERVATION_SCHEMA,
     HARNESS_SOURCE_PATHS,
     HOLDOUT_NONCONSUMPTION_FILE_SHA256,
+    NO_HISTORICAL_LIMITATION_PROFILE,
+    NO_HISTORICAL_LIMITATION_PROFILE_SHA256,
     NORMAL_TERMINATION_DEFINITION,
     OVERALL_ACTIVE_WALL_SECONDS,
     PREDECLARATION_AMENDMENT_FILE_SHA256,
     PREDECLARATION_FILE_SHA256,
+    PRIOR_AUTHORITY_ASSURANCE_LIMITATION,
     PRIOR_AUTHORITY_SCHEMA,
     PUBLIC_PARTITION_MANIFEST_SHA256,
     RUNTIME_ENVIRONMENT_OBSERVATION_SCHEMA,
@@ -54,6 +66,43 @@ PREDECLARATION = ROOT / "docs/evidence/001-09-development-recovery-predeclaratio
 PREDECLARATION_AMENDMENT = (
     ROOT / "docs/evidence/001-09-development-recovery-predeclaration-amendment-v0.1.json"
 )
+
+
+def _finding(signature: tuple[str, int, str, str, str, str, str]) -> dict[str, object]:
+    path, line, category, rule_id, severity, evidence_sha256, message = signature
+    return {
+        "category": category,
+        "evidence_sha256": evidence_sha256,
+        "line": line,
+        "message": message,
+        "path": path,
+        "rule_id": rule_id,
+        "severity": severity,
+    }
+
+
+def _development_source_identity(
+    *, commit: str, tree: str, source: str, root: str
+) -> dict[str, object]:
+    return {
+        "branch": "",
+        "dirty_worktree": False,
+        "first_party_source_sha256": source,
+        "git_commit": commit,
+        "git_tree": tree,
+        "passed": True,
+        "predicates": {
+            "clean": True,
+            "commit": True,
+            "detached": True,
+            "import_root": True,
+            "source_bytes": True,
+            "tree": True,
+        },
+        "probe_returncode": 0,
+        "probe_stderr_sha256": "sha256:" + "0" * 64,
+        "root": root,
+    }
 
 
 def _boundaries() -> dict[str, object]:
@@ -212,10 +261,7 @@ def _boundaries() -> dict[str, object]:
             "assurance_scope": {
                 "build_000": "historic-full-public-integrity-receipt",
                 "build_001": "package-only-plus-frozen-development-identifiers",
-                "limitations": (
-                    "Static-only composite; runtime dynamic-import and native-extension "
-                    "containment are not proven."
-                ),
+                "limitations": PRIOR_AUTHORITY_ASSURANCE_LIMITATION,
             },
             "full_public_integrity_status": ("NOT_EVALUATED_BUILD_001_PUBLIC_IDENTIFIERS"),
             "holdout": {
@@ -266,25 +312,60 @@ def _boundaries() -> dict[str, object]:
                 },
                 "development_scans": {
                     "build_000": {
-                        "finding_count": 0,
-                        "findings": [],
+                        "blocking_finding_count": 0,
+                        "blocking_findings": [],
+                        "finding_count": 3,
+                        "findings": [
+                            _finding(signature)
+                            for signature in FROZEN_BUILD_000_OFFICIAL_SDK_LIMITATION_SIGNATURES
+                        ],
+                        "historical_limitation_count": 3,
+                        "historical_limitation_profile": (
+                            FROZEN_BUILD_000_OFFICIAL_SDK_LIMITATION_PROFILE
+                        ),
+                        "historical_limitation_profile_complete": True,
+                        "historical_limitation_profile_sha256": (
+                            FROZEN_BUILD_000_OFFICIAL_SDK_LIMITATION_PROFILE_SHA256
+                        ),
+                        "historical_limitations": [
+                            _finding(signature)
+                            for signature in FROZEN_BUILD_000_OFFICIAL_SDK_LIMITATION_SIGNATURES
+                        ],
                         "passed": True,
                         "policy_file_count": 10,
+                        "source_identity": _development_source_identity(
+                            commit=FROZEN_BUILD_000_COMMIT,
+                            tree=FROZEN_BUILD_000_TREE,
+                            source=FROZEN_BUILD_000_SOURCE_SHA256,
+                            root="C:/authority/build-000",
+                        ),
                     },
                     "build_001": {
+                        "blocking_finding_count": 0,
+                        "blocking_findings": [],
                         "finding_count": 0,
                         "findings": [],
+                        "historical_limitation_count": 0,
+                        "historical_limitation_profile": NO_HISTORICAL_LIMITATION_PROFILE,
+                        "historical_limitation_profile_complete": True,
+                        "historical_limitation_profile_sha256": (
+                            NO_HISTORICAL_LIMITATION_PROFILE_SHA256
+                        ),
+                        "historical_limitations": [],
                         "passed": True,
                         "policy_file_count": 10,
+                        "source_identity": _development_source_identity(
+                            commit=FROZEN_BUILD_001_COMMIT,
+                            tree=FROZEN_BUILD_001_TREE,
+                            source=FROZEN_BUILD_001_SOURCE_SHA256,
+                            root="C:/authority/build-001",
+                        ),
                     },
                     "development_identity_count": len(DEVELOPMENT_GAMES),
                     "identifier_list_hash": development_identifier_list_hash(),
                     "identifier_string_count": len(DEVELOPMENT_GAMES) * 2,
                     "identity_values_disclosed": False,
-                    "limitations": (
-                        "Direct static scan only; dynamic-import and native-extension behavior "
-                        "is not proven."
-                    ),
+                    "limitations": DEVELOPMENT_SCAN_LIMITATION,
                     "scope": "frozen-exposed-development-game-id-and-stable-name-pairs",
                 },
             },
@@ -711,6 +792,37 @@ def test_rehashed_passing_prior_integrity_receipt_drift_is_rejected() -> None:
     tampered = seal_object(observation, hash_field="authority_hash")
 
     with pytest.raises(EvaluationError, match="prior integrity receipt identity changed"):
+        validate_prior_authority_observation(tampered)
+
+
+def test_rehashed_prior_authority_cannot_hide_added_hosted_client_finding() -> None:
+    boundaries = _boundaries()
+    prior = copy.deepcopy(boundaries["prior_authority"])
+    assert isinstance(prior, dict)
+    observation = prior["before"]
+    assert isinstance(observation, dict)
+    integrity = observation["integrity"]
+    assert isinstance(integrity, dict)
+    scans = integrity["development_scans"]
+    assert isinstance(scans, dict)
+    build_000 = scans["build_000"]
+    assert isinstance(build_000, dict)
+    hosted = {
+        "category": "forbidden_network_client",
+        "evidence_sha256": "sha256:" + "f" * 64,
+        "line": 9,
+        "message": "production policy imports a forbidden network or hosted client",
+        "path": "agent/hosted.py",
+        "rule_id": "forbidden-import",
+        "severity": "error",
+    }
+    cast(list[object], build_000["findings"]).append(hosted)
+    cast(list[object], build_000["blocking_findings"]).append(hosted)
+    build_000["finding_count"] = 4
+    build_000["blocking_finding_count"] = 1
+    tampered = seal_object(observation, hash_field="authority_hash")
+
+    with pytest.raises(EvaluationError, match="development integrity profile changed"):
         validate_prior_authority_observation(tampered)
 
 

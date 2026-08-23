@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import math
+from collections import Counter
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from enum import StrEnum
@@ -31,7 +32,7 @@ RUNTIME_ENVIRONMENT_SCHEMA = "arc3.build-001.stage-09-runtime-environment.v0.2"
 RUNTIME_ENVIRONMENT_OBSERVATION_SCHEMA = (
     "arc3.build-001.stage-09-runtime-environment-observation.v0.2"
 )
-PRIOR_AUTHORITY_SCHEMA = "arc3.build-001.stage-09-prior-authority.v0.2"
+PRIOR_AUTHORITY_SCHEMA = "arc3.build-001.stage-09-prior-authority.v0.3"
 ENVIRONMENT_CACHE_SCHEMA = "arc3.build-001.stage-09-environment-cache.v0.1"
 HARNESS_SOURCE_PATHS = (
     "scripts/_stage09_supervisor_bootstrap.py",
@@ -72,6 +73,62 @@ FROZEN_BUILD_000_COMMIT = "90ecf7267d5bb23d751d6f7ce3e8aa75f2f1a130"
 FROZEN_BUILD_000_TREE = "0cf6e00b2fcc399e7a99a62c20e91bb84d485f13"
 FROZEN_BUILD_000_SOURCE_SHA256 = (
     "sha256:2112c390ac62432270a98fdcf6067b02c968b4139d3ee17c68bcd1d21842109c"
+)
+FROZEN_BUILD_000_OFFICIAL_SDK_LIMITATION_PROFILE = "frozen-build-000-official-sdk-boundary-v0.1"
+NO_HISTORICAL_LIMITATION_PROFILE = "none"
+INTEGRITY_FINDING_SIGNATURE_FIELDS = (
+    "path",
+    "line",
+    "category",
+    "rule_id",
+    "severity",
+    "evidence_sha256",
+    "message",
+)
+FROZEN_BUILD_000_OFFICIAL_SDK_LIMITATION_SIGNATURES = (
+    (
+        "agent/my_agent.py",
+        18,
+        "forbidden_network_client",
+        "forbidden-from-import",
+        "error",
+        "sha256:0d8f6ca1a2bbb972df2c0d36b4d0f28dac66d919b39691f3a56abbbf055fa152",
+        "production policy imports a forbidden network or hosted client",
+    ),
+    (
+        "agent/my_agent.py",
+        18,
+        "forbidden_network_client",
+        "forbidden-from-import",
+        "error",
+        "sha256:44aa228e7e77d100d268be584192bb138cce07f657174b45b49c1f18151252ec",
+        "production policy imports a forbidden network or hosted client",
+    ),
+    (
+        "src/arc3/adapters/arc_agi.py",
+        151,
+        "forbidden_network_client",
+        "forbidden-dynamic-import",
+        "error",
+        "sha256:e62af61565e3840bafcfe9ac3b8ec3cd2e1edb87e34f69be8602579daa6d2528",
+        "production policy dynamically imports a forbidden client",
+    ),
+)
+FROZEN_BUILD_000_OFFICIAL_SDK_LIMITATION_PROFILE_SHA256 = sha256_bytes(
+    canonical_json_bytes(FROZEN_BUILD_000_OFFICIAL_SDK_LIMITATION_SIGNATURES)
+)
+NO_HISTORICAL_LIMITATION_PROFILE_SHA256 = sha256_bytes(canonical_json_bytes(()))
+PRIOR_AUTHORITY_ASSURANCE_LIMITATION = (
+    "Static-only composite. The frozen Build 000 comparator retains exactly three pinned "
+    "official offline ARC SDK adapter findings as historical limitations; Build 001 "
+    "production permits none. Runtime dynamic-import and native-extension containment "
+    "are not proven."
+)
+DEVELOPMENT_SCAN_LIMITATION = (
+    "Direct static scan of frozen development identifiers. Exactly three pinned Build 000 "
+    "official offline SDK adapter findings are retained as comparator-only historical "
+    "limitations; Build 001 and all other findings must be zero. Runtime dynamic-import "
+    "and native-extension behavior is not proven."
 )
 PUBLIC_PARTITION_MANIFEST_SHA256 = (
     "sha256:682d5891c2aface54803d9bd1173c55ed21e89856e13b8a478fb9276ee963f2f"
@@ -117,6 +174,38 @@ def _is_git_oid(value: object) -> bool:
         isinstance(value, str)
         and len(value) == 40
         and all(character in "0123456789abcdef" for character in value)
+    )
+
+
+IntegrityFindingSignature = tuple[str, int, str, str, str, str, str]
+
+
+def integrity_finding_signature(value: Mapping[str, object]) -> IntegrityFindingSignature:
+    """Return the complete typed signature of one redacted integrity finding."""
+
+    finding = dict(value)
+    if set(finding) != set(INTEGRITY_FINDING_SIGNATURE_FIELDS):
+        raise EvaluationError("Stage 09 integrity finding fields changed")
+    line = finding.get("line")
+    strings = tuple(
+        finding.get(field) for field in INTEGRITY_FINDING_SIGNATURE_FIELDS if field != "line"
+    )
+    if (
+        isinstance(line, bool)
+        or not isinstance(line, int)
+        or line <= 0
+        or any(not isinstance(item, str) or not item for item in strings)
+        or not _is_sha256(finding.get("evidence_sha256"))
+    ):
+        raise EvaluationError("Stage 09 integrity finding is malformed")
+    return (
+        cast(str, finding["path"]),
+        line,
+        cast(str, finding["category"]),
+        cast(str, finding["rule_id"]),
+        cast(str, finding["severity"]),
+        cast(str, finding["evidence_sha256"]),
+        cast(str, finding["message"]),
     )
 
 
@@ -603,10 +692,7 @@ def validate_prior_authority_observation(value: Mapping[str, object]) -> dict[st
     if assurance != {
         "build_000": "historic-full-public-integrity-receipt",
         "build_001": "package-only-plus-frozen-development-identifiers",
-        "limitations": (
-            "Static-only composite; runtime dynamic-import and native-extension "
-            "containment are not proven."
-        ),
+        "limitations": PRIOR_AUTHORITY_ASSURANCE_LIMITATION,
     } or observation.get("full_public_integrity_status") != (
         "NOT_EVALUATED_BUILD_001_PUBLIC_IDENTIFIERS"
     ):
@@ -687,28 +773,146 @@ def validate_prior_authority_observation(value: Mapping[str, object]) -> dict[st
         raise EvaluationError("Stage 09 development integrity projection changed")
     for name in ("build_000", "build_001"):
         scan = scans.get(name)
+        scan_fields = {
+            "blocking_finding_count",
+            "blocking_findings",
+            "finding_count",
+            "findings",
+            "historical_limitation_count",
+            "historical_limitation_profile",
+            "historical_limitation_profile_complete",
+            "historical_limitation_profile_sha256",
+            "historical_limitations",
+            "passed",
+            "policy_file_count",
+            "source_identity",
+        }
         if (
             not isinstance(scan, dict)
-            or set(scan) != {"finding_count", "findings", "passed", "policy_file_count"}
+            or set(scan) != scan_fields
             or isinstance(scan.get("finding_count"), bool)
             or not isinstance(scan.get("finding_count"), int)
             or cast(int, scan.get("finding_count")) < 0
             or not isinstance(scan.get("findings"), list)
             or len(cast(list[object], scan.get("findings"))) != scan.get("finding_count")
-            or scan.get("passed") is not (scan.get("finding_count") == 0)
+            or isinstance(scan.get("blocking_finding_count"), bool)
+            or not isinstance(scan.get("blocking_finding_count"), int)
+            or cast(int, scan.get("blocking_finding_count")) < 0
+            or not isinstance(scan.get("blocking_findings"), list)
+            or len(cast(list[object], scan.get("blocking_findings")))
+            != scan.get("blocking_finding_count")
+            or isinstance(scan.get("historical_limitation_count"), bool)
+            or not isinstance(scan.get("historical_limitation_count"), int)
+            or cast(int, scan.get("historical_limitation_count")) < 0
+            or not isinstance(scan.get("historical_limitations"), list)
+            or len(cast(list[object], scan.get("historical_limitations")))
+            != scan.get("historical_limitation_count")
+            or not isinstance(scan.get("historical_limitation_profile"), str)
+            or not _is_sha256(scan.get("historical_limitation_profile_sha256"))
+            or not isinstance(scan.get("historical_limitation_profile_complete"), bool)
             or isinstance(scan.get("policy_file_count"), bool)
             or not isinstance(scan.get("policy_file_count"), int)
             or cast(int, scan.get("policy_file_count")) <= 0
         ):
             raise EvaluationError("Stage 09 development integrity scan is malformed")
+        raw_rows = cast(list[object], scan["findings"])
+        historical_rows = cast(list[object], scan["historical_limitations"])
+        blocking_rows = cast(list[object], scan["blocking_findings"])
+        if any(not isinstance(row, dict) for row in raw_rows + historical_rows + blocking_rows):
+            raise EvaluationError("Stage 09 development integrity finding is malformed")
+        raw_signatures = [
+            integrity_finding_signature(cast(dict[str, object], row)) for row in raw_rows
+        ]
+        historical_signatures = [
+            integrity_finding_signature(cast(dict[str, object], row)) for row in historical_rows
+        ]
+        blocking_signatures = [
+            integrity_finding_signature(cast(dict[str, object], row)) for row in blocking_rows
+        ]
+        if Counter(raw_signatures) != Counter(historical_signatures + blocking_signatures):
+            raise EvaluationError("Stage 09 development integrity partition changed")
+        source = scan.get("source_identity")
+        source_predicates = source.get("predicates") if isinstance(source, dict) else None
+        if (
+            not isinstance(source, dict)
+            or set(source)
+            != {
+                "branch",
+                "dirty_worktree",
+                "first_party_source_sha256",
+                "git_commit",
+                "git_tree",
+                "passed",
+                "predicates",
+                "probe_returncode",
+                "probe_stderr_sha256",
+                "root",
+            }
+            or not isinstance(source_predicates, dict)
+            or set(source_predicates)
+            != {"clean", "commit", "detached", "import_root", "source_bytes", "tree"}
+            or any(not isinstance(item, bool) for item in source_predicates.values())
+            or source.get("passed") is not all(source_predicates.values())
+            or not isinstance(source.get("branch"), str)
+            or not isinstance(source.get("dirty_worktree"), bool)
+            or source.get("dirty_worktree") is source_predicates.get("clean")
+            or (source.get("branch") == "") is not source_predicates.get("detached")
+            or not isinstance(source.get("root"), str)
+            or isinstance(source.get("probe_returncode"), bool)
+            or not isinstance(source.get("probe_returncode"), int)
+            or not _is_sha256(source.get("probe_stderr_sha256"))
+        ):
+            raise EvaluationError("Stage 09 development source identity is malformed")
+        expected_signatures: Sequence[IntegrityFindingSignature]
+        if name == "build_000":
+            expected_profile = FROZEN_BUILD_000_OFFICIAL_SDK_LIMITATION_PROFILE
+            expected_profile_hash = FROZEN_BUILD_000_OFFICIAL_SDK_LIMITATION_PROFILE_SHA256
+            expected_signatures = FROZEN_BUILD_000_OFFICIAL_SDK_LIMITATION_SIGNATURES
+            expected_identity = (
+                FROZEN_BUILD_000_COMMIT,
+                FROZEN_BUILD_000_TREE,
+                FROZEN_BUILD_000_SOURCE_SHA256,
+            )
+        else:
+            expected_profile = NO_HISTORICAL_LIMITATION_PROFILE
+            expected_profile_hash = NO_HISTORICAL_LIMITATION_PROFILE_SHA256
+            expected_signatures = ()
+            expected_identity = (
+                FROZEN_BUILD_001_COMMIT,
+                FROZEN_BUILD_001_TREE,
+                FROZEN_BUILD_001_SOURCE_SHA256,
+            )
+        profile_complete = bool(
+            source.get("passed") is True
+            and Counter(historical_signatures) == Counter(expected_signatures)
+        )
+        expected_pass = bool(
+            source.get("passed") is True
+            and not blocking_signatures
+            and profile_complete
+            and cast(int, scan["policy_file_count"]) > 0
+        )
+        if (
+            scan.get("historical_limitation_profile") != expected_profile
+            or scan.get("historical_limitation_profile_sha256") != expected_profile_hash
+            or scan.get("historical_limitation_profile_complete") is not profile_complete
+            or scan.get("passed") is not expected_pass
+            or (source.get("passed") is True and source.get("probe_returncode") != 0)
+            or (
+                source.get("git_commit"),
+                source.get("git_tree"),
+                source.get("first_party_source_sha256"),
+            )
+            != expected_identity
+        ):
+            raise EvaluationError("Stage 09 development integrity profile changed")
     if (
         scans.get("development_identity_count") != len(DEVELOPMENT_GAMES)
         or scans.get("identifier_string_count") != len(DEVELOPMENT_GAMES) * 2
         or scans.get("identifier_list_hash") != development_identifier_list_hash()
         or scans.get("identity_values_disclosed") is not False
         or scans.get("scope") != "frozen-exposed-development-game-id-and-stable-name-pairs"
-        or scans.get("limitations")
-        != "Direct static scan only; dynamic-import and native-extension behavior is not proven."
+        or scans.get("limitations") != DEVELOPMENT_SCAN_LIMITATION
     ):
         raise EvaluationError("Stage 09 development identifier authority changed")
     holdout = observation.get("holdout")
@@ -1659,9 +1863,13 @@ __all__ = [
     "CELL_FINALIZATION_SCHEMA",
     "CELL_RECEIPT_SCHEMA",
     "DEVELOPMENT_GAMES",
+    "DEVELOPMENT_SCAN_LIMITATION",
     "ENVIRONMENT_CACHE_SCHEMA",
     "EXPECTED_CELL_COUNT",
     "FROZEN_BUILD_000_COMMIT",
+    "FROZEN_BUILD_000_OFFICIAL_SDK_LIMITATION_PROFILE",
+    "FROZEN_BUILD_000_OFFICIAL_SDK_LIMITATION_PROFILE_SHA256",
+    "FROZEN_BUILD_000_OFFICIAL_SDK_LIMITATION_SIGNATURES",
     "FROZEN_BUILD_000_SOURCE_SHA256",
     "FROZEN_BUILD_000_TREE",
     "FROZEN_BUILD_001_COMMIT",
@@ -1677,6 +1885,8 @@ __all__ = [
     "MAX_RESETS",
     "MECHANISM_PROVENANCE_SCHEMA",
     "NORMAL_TERMINATION_DEFINITION",
+    "NO_HISTORICAL_LIMITATION_PROFILE",
+    "NO_HISTORICAL_LIMITATION_PROFILE_SHA256",
     "OVERALL_ACTIVE_WALL_SECONDS",
     "PREDECLARATION_AMENDMENT_CORE_HASH",
     "PREDECLARATION_AMENDMENT_FILE_SHA256",
@@ -1684,6 +1894,7 @@ __all__ = [
     "PREDECLARATION_CORE_HASH",
     "PREDECLARATION_FILE_SHA256",
     "PREFLIGHT_SCHEMA",
+    "PRIOR_AUTHORITY_ASSURANCE_LIMITATION",
     "PRIOR_AUTHORITY_SCHEMA",
     "PUBLIC_PARTITION_MANIFEST_SHA256",
     "RUNTIME_ENVIRONMENT_OBSERVATION_SCHEMA",
@@ -1706,6 +1917,7 @@ __all__ = [
     "development_partition_hash",
     "environment_cache_stable",
     "harness_source_stable",
+    "integrity_finding_signature",
     "matrix_hash",
     "prior_authority_stable",
     "runtime_environment_stable",

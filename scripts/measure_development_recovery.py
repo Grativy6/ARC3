@@ -81,9 +81,13 @@ from arc3.evaluation.development_recovery import (  # noqa: E402
     CELL_FINALIZATION_SCHEMA,
     CELL_RECEIPT_SCHEMA,
     DEVELOPMENT_GAMES,
+    DEVELOPMENT_SCAN_LIMITATION,
     ENVIRONMENT_CACHE_SCHEMA,
     EXPECTED_CELL_COUNT,
     FROZEN_BUILD_000_COMMIT,
+    FROZEN_BUILD_000_OFFICIAL_SDK_LIMITATION_PROFILE,
+    FROZEN_BUILD_000_OFFICIAL_SDK_LIMITATION_PROFILE_SHA256,
+    FROZEN_BUILD_000_OFFICIAL_SDK_LIMITATION_SIGNATURES,
     FROZEN_BUILD_000_SOURCE_SHA256,
     FROZEN_BUILD_000_TREE,
     FROZEN_BUILD_001_COMMIT,
@@ -96,6 +100,8 @@ from arc3.evaluation.development_recovery import (  # noqa: E402
     HARNESS_SOURCE_PREFIXES,
     MAX_ACTIONS,
     MAX_RESETS,
+    NO_HISTORICAL_LIMITATION_PROFILE,
+    NO_HISTORICAL_LIMITATION_PROFILE_SHA256,
     NORMAL_TERMINATION_DEFINITION,
     OVERALL_ACTIVE_WALL_SECONDS,
     PREDECLARATION_AMENDMENT_CORE_HASH,
@@ -103,6 +109,7 @@ from arc3.evaluation.development_recovery import (  # noqa: E402
     PREDECLARATION_CORE_HASH,
     PREDECLARATION_FILE_SHA256,
     PREFLIGHT_SCHEMA,
+    PRIOR_AUTHORITY_ASSURANCE_LIMITATION,
     PRIOR_AUTHORITY_SCHEMA,
     PUBLIC_PARTITION_MANIFEST_SHA256,
     RUNTIME_ENVIRONMENT_OBSERVATION_SCHEMA,
@@ -121,6 +128,7 @@ from arc3.evaluation.development_recovery import (  # noqa: E402
     development_identifier_list_hash,
     environment_cache_stable,
     harness_source_stable,
+    integrity_finding_signature,
     matrix_hash,
     prior_authority_stable,
     runtime_environment_stable,
@@ -1526,8 +1534,22 @@ def _prior_authority(
         expected_self_hash=BUILD_000_INTEGRITY_SELF_HASH,
         expected_commit=FROZEN_BUILD_000_COMMIT,
     )
-    development_000 = _development_integrity(build_000_root)
-    development_001 = _development_integrity(build_001_root)
+    development_000 = _development_integrity(
+        build_000_root,
+        expected_commit=FROZEN_BUILD_000_COMMIT,
+        expected_tree=FROZEN_BUILD_000_TREE,
+        expected_source=FROZEN_BUILD_000_SOURCE_SHA256,
+        historical_limitation_profile=FROZEN_BUILD_000_OFFICIAL_SDK_LIMITATION_PROFILE,
+        historical_limitation_signatures=(FROZEN_BUILD_000_OFFICIAL_SDK_LIMITATION_SIGNATURES),
+    )
+    development_001 = _development_integrity(
+        build_001_root,
+        expected_commit=FROZEN_BUILD_001_COMMIT,
+        expected_tree=FROZEN_BUILD_001_TREE,
+        expected_source=FROZEN_BUILD_001_SOURCE_SHA256,
+        historical_limitation_profile=NO_HISTORICAL_LIMITATION_PROFILE,
+        historical_limitation_signatures=(),
+    )
     development_identity = {
         "build_000": development_000,
         "build_001": development_001,
@@ -1535,9 +1557,7 @@ def _prior_authority(
         "identifier_list_hash": development_identifier_list_hash(),
         "identifier_string_count": len(DEVELOPMENT_GAMES) * 2,
         "identity_values_disclosed": False,
-        "limitations": (
-            "Direct static scan only; dynamic-import and native-extension behavior is not proven."
-        ),
+        "limitations": DEVELOPMENT_SCAN_LIMITATION,
         "scope": "frozen-exposed-development-game-id-and-stable-name-pairs",
     }
     holdout_hash = sha256_file(holdout_receipt) if holdout_receipt.is_file() else None
@@ -1568,10 +1588,7 @@ def _prior_authority(
                 "assurance_scope": {
                     "build_000": "historic-full-public-integrity-receipt",
                     "build_001": "package-only-plus-frozen-development-identifiers",
-                    "limitations": (
-                        "Static-only composite; runtime dynamic-import and native-extension "
-                        "containment are not proven."
-                    ),
+                    "limitations": PRIOR_AUTHORITY_ASSURANCE_LIMITATION,
                 },
                 "full_public_integrity_status": ("NOT_EVALUATED_BUILD_001_PUBLIC_IDENTIFIERS"),
                 "holdout": {
@@ -1896,18 +1913,83 @@ def _all_assets(root: Path) -> dict[str, object]:
     }
 
 
-def _development_integrity(root: Path) -> dict[str, object]:
+def _classify_development_findings(
+    rows: Sequence[dict[str, object]],
+    *,
+    allowed_signatures: Sequence[tuple[str, int, str, str, str, str, str]],
+) -> tuple[list[dict[str, object]], list[dict[str, object]], bool]:
+    """Partition exact comparator limitations without weakening the scanner."""
+
+    remaining = list(allowed_signatures)
+    historical: list[dict[str, object]] = []
+    blocking: list[dict[str, object]] = []
+    for row in rows:
+        signature = integrity_finding_signature(row)
+        if signature in remaining:
+            historical.append(row)
+            remaining.remove(signature)
+        else:
+            blocking.append(row)
+    return historical, blocking, not remaining
+
+
+def _development_integrity(
+    root: Path,
+    *,
+    expected_commit: str,
+    expected_tree: str,
+    expected_source: str,
+    historical_limitation_profile: str,
+    historical_limitation_signatures: Sequence[tuple[str, int, str, str, str, str, str]],
+) -> dict[str, object]:
+    if historical_limitation_profile == FROZEN_BUILD_000_OFFICIAL_SDK_LIMITATION_PROFILE:
+        if (expected_commit, expected_tree, expected_source) != (
+            FROZEN_BUILD_000_COMMIT,
+            FROZEN_BUILD_000_TREE,
+            FROZEN_BUILD_000_SOURCE_SHA256,
+        ) or tuple(
+            historical_limitation_signatures
+        ) != FROZEN_BUILD_000_OFFICIAL_SDK_LIMITATION_SIGNATURES:
+            raise EvaluationError("Stage 09 frozen Build 000 limitation profile changed")
+        profile_hash = FROZEN_BUILD_000_OFFICIAL_SDK_LIMITATION_PROFILE_SHA256
+    elif historical_limitation_profile == NO_HISTORICAL_LIMITATION_PROFILE:
+        if historical_limitation_signatures:
+            raise EvaluationError("Stage 09 production scan cannot allow historical findings")
+        profile_hash = NO_HISTORICAL_LIMITATION_PROFILE_SHA256
+    else:
+        raise EvaluationError("Stage 09 development limitation profile is unknown")
+    source_identity = _source_identity(
+        root,
+        expected_commit=expected_commit,
+        expected_tree=expected_tree,
+        expected_source=expected_source,
+    )
     identifiers = tuple(
         sorted({item for game in DEVELOPMENT_GAMES for item in (game.game_id, game.stable_name)})
     )
     files = discover_policy_files(root.resolve())
     findings = scan_policy_files(root=root.resolve(), files=files, public_identifiers=identifiers)
-    rows = [finding.to_dict() for finding in findings]
+    rows = [cast(dict[str, object], finding.to_dict()) for finding in findings]
+    enabled_signatures = (
+        historical_limitation_signatures if source_identity["passed"] is True else ()
+    )
+    historical, blocking, signatures_complete = _classify_development_findings(
+        rows, allowed_signatures=enabled_signatures
+    )
+    profile_complete = bool(source_identity["passed"] is True and signatures_complete)
     return {
+        "blocking_finding_count": len(blocking),
+        "blocking_findings": blocking,
         "finding_count": len(rows),
         "findings": rows,
-        "passed": bool(files) and not rows,
+        "historical_limitation_count": len(historical),
+        "historical_limitation_profile": historical_limitation_profile,
+        "historical_limitation_profile_complete": profile_complete,
+        "historical_limitation_profile_sha256": profile_hash,
+        "historical_limitations": historical,
+        "passed": bool(files) and not blocking and profile_complete,
         "policy_file_count": len(files),
+        "source_identity": source_identity,
     }
 
 
@@ -2943,7 +3025,23 @@ def _terminal_evidence_authority(check: Mapping[str, object]) -> dict[str, objec
             "identifier_string_count": scans["identifier_string_count"],
             "identity_values_disclosed": scans["identity_values_disclosed"],
             "build_000_finding_count": build_000_scan["finding_count"],
+            "build_000_blocking_finding_count": build_000_scan["blocking_finding_count"],
+            "build_000_historical_limitation_count": build_000_scan["historical_limitation_count"],
+            "build_000_historical_limitation_profile": build_000_scan[
+                "historical_limitation_profile"
+            ],
+            "build_000_historical_limitation_profile_sha256": build_000_scan[
+                "historical_limitation_profile_sha256"
+            ],
             "build_001_finding_count": build_001_scan["finding_count"],
+            "build_001_blocking_finding_count": build_001_scan["blocking_finding_count"],
+            "build_001_historical_limitation_count": build_001_scan["historical_limitation_count"],
+            "build_001_historical_limitation_profile": build_001_scan[
+                "historical_limitation_profile"
+            ],
+            "build_001_historical_limitation_profile_sha256": build_001_scan[
+                "historical_limitation_profile_sha256"
+            ],
             "build_000_passed": build_000_scan["passed"],
             "build_001_passed": build_001_scan["passed"],
         },
@@ -2955,10 +3053,7 @@ def _terminal_evidence_authority(check: Mapping[str, object]) -> dict[str, objec
             "public_holdout_gameplay_events": holdout["public_holdout_gameplay_events"],
             "status": holdout["status"],
         },
-        "assurance_limitation": (
-            "Package and development scans are static; dynamic-import and native-extension "
-            "containment are not proven; Build 001 public identifiers were not fully evaluated."
-        ),
+        "assurance_limitation": PRIOR_AUTHORITY_ASSURANCE_LIMITATION,
     }
     package_projection = cast(dict[str, object], projection["build_001_package_only"])
     scans_projection = cast(dict[str, object], projection["development_scans"])
@@ -2980,8 +3075,20 @@ def _terminal_evidence_authority(check: Mapping[str, object]) -> dict[str, objec
         or scans_projection["development_identity_count"] != len(DEVELOPMENT_GAMES)
         or scans_projection["identifier_string_count"] != len(DEVELOPMENT_GAMES) * 2
         or scans_projection["identity_values_disclosed"] is not False
-        or scans_projection["build_000_finding_count"] != 0
+        or scans_projection["build_000_finding_count"] != 3
+        or scans_projection["build_000_blocking_finding_count"] != 0
+        or scans_projection["build_000_historical_limitation_count"] != 3
+        or scans_projection["build_000_historical_limitation_profile"]
+        != FROZEN_BUILD_000_OFFICIAL_SDK_LIMITATION_PROFILE
+        or scans_projection["build_000_historical_limitation_profile_sha256"]
+        != FROZEN_BUILD_000_OFFICIAL_SDK_LIMITATION_PROFILE_SHA256
         or scans_projection["build_001_finding_count"] != 0
+        or scans_projection["build_001_blocking_finding_count"] != 0
+        or scans_projection["build_001_historical_limitation_count"] != 0
+        or scans_projection["build_001_historical_limitation_profile"]
+        != NO_HISTORICAL_LIMITATION_PROFILE
+        or scans_projection["build_001_historical_limitation_profile_sha256"]
+        != NO_HISTORICAL_LIMITATION_PROFILE_SHA256
         or scans_projection["build_000_passed"] is not True
         or scans_projection["build_001_passed"] is not True
         or holdout_projection["file_sha256"] != HOLDOUT_NONCONSUMPTION_RECEIPT_SHA256
