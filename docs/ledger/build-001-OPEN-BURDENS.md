@@ -1035,3 +1035,27 @@ does not erase earlier uncertainty or failed mechanisms.
   mismatch and proved that explicit detached `PYTHONPATH` selects the intended source. The first
   863-pass/22-failure run is retained; a correctly source-bound rerun uses a distinct short
   `--basetemp` and does not overwrite it.
+
+## B-001-0047 — Stage 08 supervisor used a Windows-only subprocess attribute directly
+
+- Status: OPEN
+- Stage: 08
+- Opened: 2026-08-23
+- Burden: the first push of the sealed process harness passed Ruff but failed strict mypy on both
+  Ubuntu jobs before tests because Linux's typed `subprocess` module has no
+  `CREATE_NEW_PROCESS_GROUP` attribute. The Windows-only execution branch had passed strict mypy
+  locally on Windows, so the platform-specific type defect escaped the focused checkpoint.
+- Why it matters: Stage 08 cannot open the public matrix from a source whose cross-platform strict
+  type gate fails, even though the affected flag is only evaluated on Windows.
+- Current evidence: GitHub Actions runs `32607075312` and `32607073797`; Ubuntu job IDs
+  `97113626818` and `97113622798` failed at
+  `scripts/measure_two_speed_controller.py:1089` with `[attr-defined]`. Ruff lint and format passed;
+  the test and doctor steps were correctly skipped after the type failure. No Stage 08 public cell
+  was exposed or launched.
+- Repair under verification: resolve the platform constant through typed `getattr` at module load,
+  preserving the exact Windows flag when present and zero only on platforms where the Windows
+  launch branch is unreachable.
+- Resolution condition: strict mypy passes under both Windows and an explicit Linux target; focused
+  process-tree tests still pass on Windows; pushed Ubuntu and Windows CI pass from the repaired
+  source; the original failed jobs remain cited here.
+- Resolution receipt: none.

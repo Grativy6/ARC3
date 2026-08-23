@@ -407,12 +407,13 @@
       "measurement_contract_audit_verification": "PASS:37-unit+whole-controller-checkpoint-inclusive-timing+exact-behavior-parity+resource-gates+typed-cadence-receipts+ruff+format+mypy-strict",
       "process_harness_checkpoint_commit": "5b6643f3e9330b12740f8b24f4b8f12bb3a024c3",
       "process_harness_checkpoint_tree": "e9103914bc58de5c934134ed753c7523b9ca8d89",
-      "process_harness_verification": "PASS:111-contract+worker+parent-supervisor+exact-live-cadence-binding+immutable-returned-consequence-binding+prefix-wide-resume-validation+process-tree-timeout+instrumentation-exclusion+parent-domain-recomputation+interim-integrity-stop+ruff+format+mypy-strict;no-public-environment-opened",
+      "process_harness_verification": "PASS:111-contract+worker+parent-supervisor+exact-live-cadence-binding+immutable-returned-consequence-binding+prefix-wide-resume-validation+process-tree-timeout+instrumentation-exclusion+parent-domain-recomputation+interim-integrity-stop+ruff+format+windows-and-linux-target-mypy-strict-161-files;no-public-environment-opened",
       "process_harness_secret_scan": "PASS:9-tests+0-findings",
+      "process_harness_remote_ci": "FAILED_INFRASTRUCTURE:32607075312+32607073797:ubuntu-strict-mypy-subprocess.CREATE_NEW_PROCESS_GROUP-attr-defined;windows-pending;no-public-cell-opened",
       "process_harness_source_sha256": {
         "typed_contract": "sha256:d3ee67c9238dbda905045edef91de1a59d764169f4eb85dec19aa89a147b7300",
         "worker": "sha256:2bc77bdf3280dd8c216094f7363f4ef1e2106342150969f182461b0b80a94dcb",
-        "supervisor": "sha256:64b660acffa5dfa9f2f2cc3697537dd8caae2d101a3781e7e9d039fbf59e54db"
+        "supervisor": "sha256:903d6ab2f6e86fcdd33b353ee30c8d7692c35846e464538e8236c0a51b7fad00"
       },
       "process_harness_test_sha256": {
         "typed_contract": "sha256:a56ec084cd511fe635fb8145bb08759b67eb079e8e3eab1d58fa588ff7aa2a3c",
@@ -429,7 +430,8 @@
         "B-001-0039",
         "B-001-0040",
         "B-001-0042",
-        "B-001-0046"
+        "B-001-0046",
+        "B-001-0047"
       ],
       "public_holdout_consumed": false
     }

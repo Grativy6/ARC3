@@ -90,6 +90,7 @@ STAGE07_ACCEPTANCE_PATH = ROOT / "docs/evidence/001-07-retrodiction-decision.jso
 EXPECTED_BRANCH = "build/001-local-public-recovery"
 WORKER_WALL_SECONDS = 120.0
 OVERALL_WALL_SECONDS = 2700.0
+WINDOWS_CREATE_NEW_PROCESS_GROUP = int(getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0))
 WORKER_SPEC_SCHEMA = "arc3.build-001.stage-08-worker-spec.v0.3"
 WORKER_RESULT_SCHEMA = "arc3.build-001.stage-08-worker-result.v0.3"
 PARENT_RECEIPT_SCHEMA = "arc3.build-001.stage-08-parent-cell-receipt.v0.3"
@@ -1086,7 +1087,7 @@ def _supervise_worker(
                 stdin=subprocess.DEVNULL,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
-                creationflags=subprocess.CREATE_NEW_PROCESS_GROUP,
+                creationflags=WINDOWS_CREATE_NEW_PROCESS_GROUP,
             )
         else:
             process = subprocess.Popen(

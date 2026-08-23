@@ -671,8 +671,9 @@ independent authorities.
   preserved but is classified as interrupted `FAILED_INFRASTRUCTURE`; if the orchestrator crash
   makes elapsed wall time incomplete, stop the attempt and report only an observed lower bound.
 - Evidence: 111/111 Stage 08 contract, worker, and parent-supervisor tests passed under an isolated
-  short Windows base-temp path in 17.02 seconds; Ruff check, Ruff format check, and strict mypy
-  across the three Stage 08 source files passed. The tests cover timeout termination, byte-exact
+  short Windows base-temp path in 15.75 seconds; Ruff check, Ruff format check, and strict mypy
+  across all 161 first-party source files under both Windows and an explicit Linux target passed.
+  The tests cover timeout termination, byte-exact
   streams, exposure binding, interruption refusal, exact action/consequence/trace/score binding,
   nullable resource evidence, fixed paths, source/package/adapter preflight, parent-classification
   recomputation, full surviving-cell resume revalidation, stop-after-infrastructure behavior, and
@@ -691,7 +692,7 @@ independent authorities.
   hashes are
   `d3ee67c9238dbda905045edef91de1a59d764169f4eb85dec19aa89a147b7300`,
   `2bc77bdf3280dd8c216094f7363f4ef1e2106342150969f182461b0b80a94dcb`, and
-  `64b660acffa5dfa9f2f2cc3697537dd8caae2d101a3781e7e9d039fbf59e54db` for the
+  `903d6ab2f6e86fcdd33b353ee30c8d7692c35846e464538e8236c0a51b7fad00` for the
   typed contract, worker, and supervisor respectively. No public environment was opened by these
   tests.
 - Boundary: a valid controller worker timeout is resource/mechanism evidence; launch, missing-result,
