@@ -8,9 +8,11 @@ revalidate an earned receipt before it may parse the manifest.
 
 from __future__ import annotations
 
+import importlib
 import json
 import os
 import subprocess
+import sys
 from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -28,20 +30,26 @@ from arc3.evaluation.artifacts import (
     verify_object_hash,
 )
 from arc3.evaluation.development_recovery import AGGREGATE_SCHEMA as STAGE09_SCHEMA
+from arc3.evaluation.integrity_authority import (
+    COMPOSITE_INTEGRITY_HASH_FIELD,
+    COMPOSITE_INTEGRITY_SCHEMA,
+    validate_composite_integrity_authority,
+)
 from arc3.evaluation.stage10_regression import (
     PREDECLARATION_SHA256 as STAGE10_PREDECLARATION_SHA256,
 )
 from arc3.evaluation.stage10_regression import STAGE10_RESULT_SCHEMA, SuiteDisposition
-from arc3.integrity import INTEGRITY_SCHEMA, IntegrityReceipt, discover_policy_files
+from arc3.integrity import discover_policy_files
 from arc3.types import JSONValue
 
-STAGE11_GATE_SCHEMA = "arc3.build-001.stage-11-holdout-gate.v0.1"
+STAGE11_GATE_SCHEMA = "arc3.build-001.stage-11-holdout-gate.v0.2"
 STAGE12_NONCONSUMPTION_SCHEMA = "arc3.build-001.stage-12-nonconsumption.v0.1"
 STAGE11_WORKFLOW_PATH = "docs/workflows/001-local-public-failure-recovery.md"
 COMPETITION_CONFIG_PATH = "src/arc3/competition-runtime.v0.1.json"
 DEPENDENCY_LOCK_PATH = "uv.lock"
 OPAQUE_HOLDOUT_COUNT = 10
 STAGE12_MILESTONE_ID = "build-001-stage12-v0.1"
+STAGE09_TERMINAL_VERIFICATION_SCHEMA = "arc3.build-001.stage-09-terminal-verification.v0.2"
 
 _SOURCE_SUFFIXES = frozenset({".json", ".py", ".toml", ".yaml", ".yml"})
 _STAGE10_SUITES = frozenset(
@@ -67,6 +75,25 @@ _CRITERIA = (
 _CLAIM_BOUNDARY = (
     "mechanical holdout-opening decision only; no gameplay, score, or hidden-game claim"
 )
+_STAGE09_TERMINAL_VERIFICATION_FIELDS = {
+    "attempt_root",
+    "competition_integrity",
+    "evidence_integrity",
+    "execution_complete",
+    "exposure",
+    "gate",
+    "output",
+    "passed",
+    "prior_authority",
+    "schema",
+    "source_end",
+    "source_root",
+    "source_stable",
+    "status",
+    "terminal_finalization",
+    "verification_hash",
+    "work_authority",
+}
 
 
 class HoldoutDecision(StrEnum):
@@ -332,10 +359,14 @@ def _load_bound_artifact(
 
 
 def _git(root: Path, *arguments: str) -> str:
+    environment = {
+        key: value for key, value in os.environ.items() if not key.upper().startswith("GIT_")
+    }
     try:
         completed = subprocess.run(
             ("git", *arguments),
             cwd=root,
+            env=environment,
             check=True,
             capture_output=True,
             text=True,
@@ -395,6 +426,8 @@ def source_identity(root: Path) -> SourceIdentity:
     """Measure a repository source identity without importing code from it."""
 
     repository = root.resolve()
+    if Path(_git(repository, "rev-parse", "--show-toplevel")).resolve() != repository:
+        raise EvaluationError("source Git root differs from the requested repository")
     commit = _git(repository, "rev-parse", "HEAD")
     tree = _git(repository, "rev-parse", "HEAD^{tree}")
     status = _git(repository, "status", "--porcelain=v1", "--untracked-files=all")
@@ -491,8 +524,10 @@ def _stage09_holdout_sealed(document: Mapping[str, object]) -> bool:
     holdout = document.get("holdout")
     return bool(
         isinstance(holdout, Mapping)
+        and not isinstance(holdout.get("identities_loaded"), bool)
         and holdout.get("identities_loaded") == 0
         and holdout.get("manifest_loaded_as_metadata") is False
+        and not isinstance(holdout.get("public_holdout_gameplay_events"), bool)
         and holdout.get("public_holdout_gameplay_events") == 0
     )
 
@@ -545,7 +580,11 @@ def _stage10_pass(document: Mapping[str, object], *, expected_source: SourceIden
     )
 
 
-def _stage10_integrity_clear(document: Mapping[str, object]) -> bool:
+def _stage10_integrity_clear(
+    document: Mapping[str, object],
+    *,
+    expected_composite: Mapping[str, object],
+) -> bool:
     validations = document.get("suite_validations")
     if not isinstance(validations, list):
         return False
@@ -554,73 +593,213 @@ def _stage10_integrity_clear(document: Mapping[str, object]) -> bool:
         for value in validations
         if isinstance(value, Mapping) and value.get("suite_id") == "competition-integrity"
     ]
+    if len(matches) != 1:
+        return False
+    measurements = matches[0].get("measurements")
     return bool(
-        len(matches) == 1
-        and matches[0].get("disposition") == SuiteDisposition.PASS.value
+        matches[0].get("disposition") == SuiteDisposition.PASS.value
         and matches[0].get("artifact_valid") is True
         and matches[0].get("errors") == []
+        and isinstance(measurements, Mapping)
+        and measurements.get("composite_integrity_schema") == expected_composite.get("schema")
+        and measurements.get("composite_integrity_file_sha256")
+        == expected_composite.get("file_sha256")
+        and measurements.get("composite_integrity_core_hash")
+        == expected_composite.get("artifact_core_hash")
     )
 
 
-def _integrity_clear(
-    raw: bytes,
+def _stage10_graph_clear(
     *,
-    expected_file_sha256: str,
-    expected_receipt_sha256: str,
-    expected_source: SourceIdentity,
-    expected_manifest_sha256: str,
-) -> tuple[IntegrityReceipt, bool]:
-    _validate_sha256(expected_file_sha256, field="integrity file hash")
-    _validate_sha256(expected_receipt_sha256, field="integrity receipt hash")
-    if sha256_bytes(raw) != expected_file_sha256:
-        raise EvaluationError("competition-integrity artifact file hash changed")
+    source_root: Path,
+    attempt_root: Path,
+    output: Path,
+    frozen_commit: str,
+) -> bool:
+    """Reconstruct the persisted Stage 10 graph without launching a suite."""
+
     try:
-        receipt = IntegrityReceipt.from_bytes(raw)
-    except (UnicodeDecodeError, json.JSONDecodeError, ValueError) as error:
-        raise EvaluationError(
-            "competition-integrity artifact is not canonical and self-hashed"
-        ) from error
-    if receipt.receipt_sha256 != expected_receipt_sha256:
-        raise EvaluationError("competition-integrity receipt authority changed")
-    body = receipt.body
-    counts = body.get("finding_counts")
-    checks = body.get("checks")
-    inputs = body.get("inputs")
-    git = body.get("git")
-    assurance = body.get("assurance_scope")
-    source_hashes = body.get("source_hashes")
-    required_checks = {
-        "archive_static",
-        "policy_static",
-        "secret_scan",
-        "source_identity",
-        "supply_chain",
-    }
-    clear = bool(
-        body.get("schema") == INTEGRITY_SCHEMA
-        and receipt.passed
-        and isinstance(counts, Mapping)
-        and counts.get("blocking") == 0
-        and counts.get("total") == 0
-        and isinstance(checks, Mapping)
-        and set(checks) == required_checks
-        and all(
-            isinstance(value, Mapping) and value.get("passed") is True for value in checks.values()
+        from scripts.measure_stage10_regression import verify_terminal_evidence
+
+        if (
+            Path(verify_terminal_evidence.__code__.co_filename).resolve()
+            != source_root.resolve() / "scripts/measure_stage10_regression.py"
+        ):
+            return False
+        return verify_terminal_evidence(
+            source_root=source_root.resolve(),
+            attempt_root=attempt_root.resolve(),
+            output=output.resolve(),
+            frozen_commit=frozen_commit,
         )
-        and isinstance(inputs, Mapping)
-        and inputs.get("manifest_sha256") == expected_manifest_sha256
-        and isinstance(git, Mapping)
-        and git.get("commit") == expected_source.commit
-        and git.get("dirty_worktree") is False
-        and isinstance(assurance, Mapping)
-        and assurance.get("kind") == "static-only"
-        and assurance.get("scanner_network_mode") == "offline-by-construction"
-        and isinstance(source_hashes, Mapping)
-        and source_hashes.get(DEPENDENCY_LOCK_PATH) == expected_source.dependency_lock_sha256
-        and source_hashes.get(COMPETITION_CONFIG_PATH)
-        == expected_source.competition_config_file_sha256
+    except (
+        ImportError,
+        KeyError,
+        OSError,
+        RuntimeError,
+        TypeError,
+        ValueError,
+        EvaluationError,
+        subprocess.SubprocessError,
+    ):
+        return False
+
+
+def _valid_stage09_terminal_verification(value: object) -> bool:
+    return bool(
+        isinstance(value, Mapping)
+        and set(value) == _STAGE09_TERMINAL_VERIFICATION_FIELDS
+        and value.get("schema") == STAGE09_TERMINAL_VERIFICATION_SCHEMA
+        and value.get("passed") is True
+        and value.get("status") in {"PASS", "FAILED_MECHANISM"}
+        and value.get("execution_complete") is True
+        and value.get("evidence_integrity") is True
+        and value.get("competition_integrity") is True
+        and value.get("source_stable") is True
+        and verify_object_hash(dict(value), hash_field="verification_hash")
     )
-    return receipt, clear
+
+
+def _stage09_graph_verification(
+    *,
+    source_root: Path,
+    attempt_root: Path,
+    output: Path,
+    exposure: Path,
+    expected_output_sha256: str,
+    expected_artifact_core_hash: str,
+    expected_terminal_finalization_sha256: str,
+    expected_terminal_finalization_hash: str,
+) -> dict[str, object] | None:
+    """Reconstruct the complete Stage 09 graph without opening an environment."""
+
+    try:
+        module = importlib.import_module("scripts.measure_development_recovery")
+        verifier = module.verify_complete_terminal
+        code = getattr(verifier, "__code__", None)
+        if (
+            code is None
+            or Path(code.co_filename).resolve()
+            != source_root.resolve() / "scripts/measure_development_recovery.py"
+        ):
+            return None
+        value: object = verifier(
+            source_root=source_root.resolve(),
+            attempt_root=attempt_root.resolve(),
+            output=output.resolve(),
+            exposure=exposure.resolve(),
+            expected_output_sha256=expected_output_sha256,
+            expected_artifact_core_hash=expected_artifact_core_hash,
+            expected_terminal_finalization_sha256=expected_terminal_finalization_sha256,
+            expected_terminal_finalization_hash=expected_terminal_finalization_hash,
+        )
+    except (
+        AttributeError,
+        ImportError,
+        OSError,
+        RuntimeError,
+        TypeError,
+        ValueError,
+        EvaluationError,
+        subprocess.SubprocessError,
+    ):
+        return None
+    if not _valid_stage09_terminal_verification(value):
+        return None
+    return dict(cast(Mapping[str, object], value))
+
+
+def _require_runtime_import_origin(source_root: Path) -> None:
+    """Reject any mixed-tree first-party validation closure.
+
+    Stage 11 is an authority boundary, so checking only this module is not
+    sufficient: an already-loaded scanner or canonical-artifact helper from a
+    different checkout could otherwise validate bytes in the declared source
+    tree.  Every loaded ``arc3`` module must map to its canonical module or
+    package path beneath the explicit execution root.  Critical imported
+    callables are checked as well so a rebound helper cannot escape the module
+    inventory check.
+    """
+
+    root = source_root.resolve()
+    source = (root / "src").resolve()
+    observed_modules: dict[str, Path] = {}
+    for name, module in sorted(sys.modules.items()):
+        if name != "arc3" and not name.startswith("arc3."):
+            continue
+        origin_value = getattr(module, "__file__", None)
+        if not isinstance(origin_value, str):
+            raise EvaluationError(f"Stage 11 first-party module has no file origin: {name}")
+        origin = Path(origin_value).resolve()
+        components = name.split(".")
+        module_path = source.joinpath(*components).with_suffix(".py").resolve()
+        package_path = source.joinpath(*components, "__init__.py").resolve()
+        if origin not in {module_path, package_path} or not origin.is_file():
+            raise EvaluationError(
+                f"Stage 11 first-party module origin is outside the execution source: {name}"
+            )
+        observed_modules[name] = origin
+
+    required_modules = {
+        "arc3": source / "arc3/__init__.py",
+        "arc3.competition_runtime": source / "arc3/competition_runtime.py",
+        "arc3.errors": source / "arc3/errors.py",
+        "arc3.evaluation": source / "arc3/evaluation/__init__.py",
+        "arc3.evaluation.artifacts": source / "arc3/evaluation/artifacts.py",
+        "arc3.evaluation.development_recovery": (
+            source / "arc3/evaluation/development_recovery.py"
+        ),
+        "arc3.evaluation.holdout_gate": source / "arc3/evaluation/holdout_gate.py",
+        "arc3.evaluation.integrity_authority": (source / "arc3/evaluation/integrity_authority.py"),
+        "arc3.evaluation.stage10_regression": (source / "arc3/evaluation/stage10_regression.py"),
+        "arc3.integrity": source / "arc3/integrity/__init__.py",
+        "arc3.integrity.models": source / "arc3/integrity/models.py",
+        "arc3.integrity.scanner": source / "arc3/integrity/scanner.py",
+        "arc3.types": source / "arc3/types.py",
+    }
+    if any(
+        observed_modules.get(name) != expected.resolve()
+        for name, expected in required_modules.items()
+    ):
+        raise EvaluationError("Stage 11 runtime import closure is not the execution source root")
+
+    callable_origins = {
+        canonical_json_bytes: source / "arc3/evaluation/artifacts.py",
+        seal_object: source / "arc3/evaluation/artifacts.py",
+        sha256_bytes: source / "arc3/evaluation/artifacts.py",
+        sha256_file: source / "arc3/evaluation/artifacts.py",
+        verify_object_hash: source / "arc3/evaluation/artifacts.py",
+        discover_policy_files: source / "arc3/integrity/scanner.py",
+        validate_composite_integrity_authority: (source / "arc3/evaluation/integrity_authority.py"),
+    }
+    if any(
+        Path(function.__code__.co_filename).resolve() != expected.resolve()
+        for function, expected in callable_origins.items()
+    ):
+        raise EvaluationError("Stage 11 authority callable origin is not the execution source root")
+
+
+def _stage10_ledger_binding(
+    document: Mapping[str, object], *, attempt_root: Path
+) -> dict[str, object]:
+    ledger = _mapping(document.get("invocation_ledger"), field="Stage 10 invocation ledger")
+    _exact_keys(
+        ledger,
+        {"byte_length", "path", "sha256"},
+        field="Stage 10 invocation ledger",
+    )
+    byte_length = ledger.get("byte_length")
+    ledger_path = _string(ledger.get("path"), field="Stage 10 invocation ledger path")
+    ledger_sha256 = _string(ledger.get("sha256"), field="Stage 10 invocation ledger hash")
+    _validate_sha256(ledger_sha256, field="Stage 10 invocation ledger hash")
+    if (
+        isinstance(byte_length, bool)
+        or not isinstance(byte_length, int)
+        or byte_length <= 0
+        or Path(ledger_path).resolve() != (attempt_root.resolve() / "invocations.jsonl").resolve()
+    ):
+        raise EvaluationError("Stage 10 invocation ledger binding is invalid")
+    return dict(ledger)
 
 
 def _source_matches_stage09(source: SourceIdentity, document: Mapping[str, object]) -> bool:
@@ -680,26 +859,44 @@ def _utc_timestamp(value: str | None) -> str:
 def create_holdout_gate_receipt(
     *,
     stage09_path: Path,
+    stage09_attempt_root: Path,
+    stage09_exposure_path: Path,
     stage09_file_sha256: str,
     stage09_core_hash: str,
+    stage09_terminal_finalization_sha256: str,
+    stage09_terminal_finalization_hash: str,
     stage10_path: Path,
+    stage10_attempt_root: Path,
     stage10_file_sha256: str,
     stage10_core_hash: str,
     integrity_path: Path,
     integrity_file_sha256: str,
-    integrity_receipt_sha256: str,
+    integrity_core_hash: str,
     development_source_root: Path,
     execution_source_root: Path,
     expected_execution_commit: str,
-    manifest_path: Path,
     expected_manifest_sha256: str,
     evaluation: HoldoutEvaluationDeclaration,
     generated_at: str | None = None,
 ) -> dict[str, Any]:
-    """Evaluate the five frozen criteria without opening the sealed manifest."""
+    """Evaluate the five frozen criteria without touching the sealed manifest.
+
+    Stage 11 binds the opaque manifest identity already carried by the sealed
+    Stage 09 authority.  The manifest itself is first opened only on an earned
+    Stage 12 execution path, immediately before public-manifest parsing.
+    """
 
     _validate_git_hash(expected_execution_commit, field="expected execution commit")
     _validate_sha256(expected_manifest_sha256, field="sealed manifest hash")
+    _validate_sha256(
+        stage09_terminal_finalization_sha256,
+        field="Stage 09 terminal finalization file hash",
+    )
+    _validate_sha256(
+        stage09_terminal_finalization_hash,
+        field="Stage 09 terminal finalization core hash",
+    )
+    _require_runtime_import_origin(execution_source_root)
     stage09 = _load_bound_artifact(
         stage09_path,
         expected_file_sha256=stage09_file_sha256,
@@ -716,39 +913,82 @@ def create_holdout_gate_receipt(
         hash_field="artifact_core_hash",
         field="Stage 10",
     )
+    stage10_ledger = _stage10_ledger_binding(stage10, attempt_root=stage10_attempt_root)
     development_source = source_identity(development_source_root)
     execution_source = source_identity(execution_source_root)
     if execution_source.commit != expected_execution_commit or not execution_source.clean_worktree:
         raise EvaluationError("Stage 11 execution source is not the exact clean frozen commit")
     try:
-        manifest_sha256 = sha256_file(manifest_path.resolve())
         workflow_sha256 = sha256_file(execution_source_root.resolve() / STAGE11_WORKFLOW_PATH)
-        integrity_raw = integrity_path.resolve().read_bytes()
     except OSError as error:
         raise EvaluationError("Stage 11 authority input is unreadable") from error
-    _, integrity_clear = _integrity_clear(
-        integrity_raw,
+    composite = validate_composite_integrity_authority(
+        integrity_path,
         expected_file_sha256=integrity_file_sha256,
-        expected_receipt_sha256=integrity_receipt_sha256,
-        expected_source=execution_source,
-        expected_manifest_sha256=expected_manifest_sha256,
+        expected_core_hash=integrity_core_hash,
+        source_root=execution_source_root,
     )
+    integrity_clear = bool(
+        composite.get("status") == "PASS"
+        and composite.get("claim") == "BOUNDED_STATIC_COMPETITION_INTEGRITY_WITH_OPAQUE_HOLDOUT"
+        and composite.get("full_public_integrity_status")
+        == "NOT_EVALUATED_BUILD_001_PUBLIC_IDENTIFIERS"
+        and composite.get("assurance_limitation")
+        == (
+            "Package and development scans are static; dynamic-import and native-extension "
+            "containment are not proven; Build 001 public identifiers were not fully evaluated."
+        )
+        and composite.get("semantic_public_manifest_access") is False
+        and composite.get("opaque_public_manifest_sha256") == expected_manifest_sha256
+    )
+    composite_binding = {
+        "artifact_core_hash": integrity_core_hash,
+        "file_sha256": integrity_file_sha256,
+        "schema": COMPOSITE_INTEGRITY_SCHEMA,
+    }
     source_unchanged = bool(
         _source_matches_stage09(development_source, stage09)
         and _policy_unchanged(development_source, execution_source)
     )
+    stage09_verification = _stage09_graph_verification(
+        source_root=execution_source_root,
+        attempt_root=stage09_attempt_root,
+        output=stage09_path,
+        exposure=stage09_exposure_path,
+        expected_output_sha256=stage09_file_sha256,
+        expected_artifact_core_hash=stage09_core_hash,
+        expected_terminal_finalization_sha256=stage09_terminal_finalization_sha256,
+        expected_terminal_finalization_hash=stage09_terminal_finalization_hash,
+    )
+    stage10_graph_clear = _stage10_graph_clear(
+        source_root=execution_source_root,
+        attempt_root=stage10_attempt_root,
+        output=stage10_path,
+        frozen_commit=expected_execution_commit,
+    )
+    # The graph verifiers can import additional first-party validation modules.
+    # Bind that expanded closure before it contributes to the gate decision.
+    _require_runtime_import_origin(execution_source_root)
     criteria = {
-        "stage09_pass": _stage09_pass(stage09),
-        "stage10_pass": _stage10_pass(stage10, expected_source=execution_source),
+        "stage09_pass": bool(
+            stage09_verification is not None
+            and stage09_verification.get("status") == "PASS"
+            and _stage09_pass(stage09)
+        ),
+        "stage10_pass": bool(
+            stage10_graph_clear and _stage10_pass(stage10, expected_source=execution_source)
+        ),
         "competition_integrity_clear": bool(
             integrity_clear
             and _stage09_integrity_clear(stage09)
-            and _stage10_integrity_clear(stage10)
+            and _stage10_integrity_clear(
+                stage10,
+                expected_composite=composite_binding,
+            )
         ),
         "production_source_unchanged": source_unchanged,
         "sealed_holdout_identity_matches": bool(
-            manifest_sha256 == expected_manifest_sha256
-            and _stage09_holdout_sealed(stage09)
+            _stage09_holdout_sealed(stage09)
             and _stage09_manifest_bound(stage09, expected_manifest_sha256)
             and OPAQUE_HOLDOUT_COUNT == 10
         ),
@@ -773,18 +1013,21 @@ def create_holdout_gate_receipt(
         "holdout": {
             "identities_loaded": 0,
             "manifest_parsed": False,
-            "manifest_sha256": manifest_sha256,
+            "manifest_sha256": expected_manifest_sha256,
             "opaque_partition_count": OPAQUE_HOLDOUT_COUNT,
         },
         "holdout_evaluation": evaluation.to_dict(),
         "integrity_authority": {
+            "artifact_core_hash": integrity_core_hash,
             "file_sha256": integrity_file_sha256,
-            "receipt_sha256": integrity_receipt_sha256,
-            "schema": INTEGRITY_SCHEMA,
+            "path": integrity_path.resolve().as_posix(),
+            "schema": COMPOSITE_INTEGRITY_SCHEMA,
         },
         "production_source": {
             "development": development_source.to_dict(),
+            "development_root": development_source_root.resolve().as_posix(),
             "execution": execution_source.to_dict(),
+            "execution_root": execution_source_root.resolve().as_posix(),
         },
         "production_config": {
             "configuration_sha256": execution_source.competition_config_sha256,
@@ -794,13 +1037,27 @@ def create_holdout_gate_receipt(
         "schema": STAGE11_GATE_SCHEMA,
         "stage09": {
             "artifact_core_hash": stage09_core_hash,
+            "attempt_root": stage09_attempt_root.resolve().as_posix(),
+            "exposure_path": stage09_exposure_path.resolve().as_posix(),
             "file_sha256": stage09_file_sha256,
+            "path": stage09_path.resolve().as_posix(),
             "schema": STAGE09_SCHEMA,
             "status": stage09_status,
+            "terminal_finalization_hash": stage09_terminal_finalization_hash,
+            "terminal_finalization_sha256": stage09_terminal_finalization_sha256,
+            "terminal_verification": stage09_verification,
         },
         "stage10": {
             "artifact_core_hash": stage10_core_hash,
+            "attempt_root": stage10_attempt_root.resolve().as_posix(),
             "file_sha256": stage10_file_sha256,
+            "invocation_ledger": stage10_ledger,
+            "path": stage10_path.resolve().as_posix(),
+            "plan_hash": _string(stage10.get("plan_hash"), field="Stage 10 plan hash"),
+            "predeclaration_sha256": _string(
+                stage10.get("predeclaration_sha256"),
+                field="Stage 10 predeclaration hash",
+            ),
             "schema": STAGE10_RESULT_SCHEMA,
             "status": stage10_status,
         },
@@ -852,7 +1109,13 @@ def validate_holdout_gate_receipt(document: Mapping[str, Any]) -> ValidatedHoldo
     if document.get("decision") != expected_decision.value:
         raise EvaluationError("Stage 11 decision does not follow the frozen rule")
     source = _mapping(document.get("production_source"), field="production_source")
-    _exact_keys(source, {"development", "execution"}, field="production_source")
+    _exact_keys(
+        source,
+        {"development", "development_root", "execution", "execution_root"},
+        field="production_source",
+    )
+    _string(source.get("development_root"), field="development source root")
+    _string(source.get("execution_root"), field="execution source root")
     development = SourceIdentity.from_mapping(source["development"], field="development source")
     execution = SourceIdentity.from_mapping(source["execution"], field="execution source")
     dependency = _mapping(document.get("dependency_lock"), field="dependency_lock")
@@ -893,9 +1156,31 @@ def validate_holdout_gate_receipt(document: Mapping[str, Any]) -> ValidatedHoldo
         raise EvaluationError("Stage 11 workflow rule changed")
     for name, schema in (("stage09", STAGE09_SCHEMA), ("stage10", STAGE10_RESULT_SCHEMA)):
         binding = _mapping(document.get(name), field=name)
+        expected_binding_fields = {"artifact_core_hash", "file_sha256", "schema", "status"}
+        if name == "stage09":
+            expected_binding_fields.update(
+                {
+                    "attempt_root",
+                    "exposure_path",
+                    "path",
+                    "terminal_finalization_hash",
+                    "terminal_finalization_sha256",
+                    "terminal_verification",
+                }
+            )
+        else:
+            expected_binding_fields.update(
+                {
+                    "attempt_root",
+                    "invocation_ledger",
+                    "path",
+                    "plan_hash",
+                    "predeclaration_sha256",
+                }
+            )
         _exact_keys(
             binding,
-            {"artifact_core_hash", "file_sha256", "schema", "status"},
+            expected_binding_fields,
             field=name,
         )
         if binding.get("schema") != schema:
@@ -906,15 +1191,43 @@ def validate_holdout_gate_receipt(document: Mapping[str, Any]) -> ValidatedHoldo
                 field=f"{name}.{hash_name}",
             )
         _string(binding.get("status"), field=f"{name}.status")
+        _string(binding.get("path"), field=f"{name}.path")
+        if name == "stage09":
+            _string(binding.get("attempt_root"), field="stage09.attempt_root")
+            _string(binding.get("exposure_path"), field="stage09.exposure_path")
+            for hash_name in (
+                "terminal_finalization_hash",
+                "terminal_finalization_sha256",
+            ):
+                _validate_sha256(
+                    _string(binding.get(hash_name), field=f"stage09.{hash_name}"),
+                    field=f"stage09.{hash_name}",
+                )
+            verification = binding.get("terminal_verification")
+            if verification is not None and not _valid_stage09_terminal_verification(verification):
+                raise EvaluationError("stage09 terminal verification binding is invalid")
+            if criteria["stage09_pass"] and verification is None:
+                raise EvaluationError("stage09 criterion disagrees with terminal verification")
+        else:
+            attempt_root = Path(_string(binding.get("attempt_root"), field="stage10.attempt_root"))
+            _stage10_ledger_binding(
+                {"invocation_ledger": binding.get("invocation_ledger")},
+                attempt_root=attempt_root,
+            )
+            plan_hash = _string(binding.get("plan_hash"), field="stage10.plan_hash")
+            _validate_sha256(plan_hash, field="stage10.plan_hash")
+            if binding.get("predeclaration_sha256") != STAGE10_PREDECLARATION_SHA256:
+                raise EvaluationError("stage10 predeclaration binding changed")
     integrity = _mapping(document.get("integrity_authority"), field="integrity_authority")
     _exact_keys(
         integrity,
-        {"file_sha256", "receipt_sha256", "schema"},
+        {"artifact_core_hash", "file_sha256", "path", "schema"},
         field="integrity_authority",
     )
-    if integrity.get("schema") != INTEGRITY_SCHEMA:
+    if integrity.get("schema") != COMPOSITE_INTEGRITY_SCHEMA:
         raise EvaluationError("integrity authority schema changed")
-    for hash_name in ("file_sha256", "receipt_sha256"):
+    _string(integrity.get("path"), field="integrity authority path")
+    for hash_name in ("artifact_core_hash", "file_sha256"):
         _validate_sha256(
             _string(integrity.get(hash_name), field=f"integrity_authority.{hash_name}"),
             field=f"integrity_authority.{hash_name}",
@@ -971,9 +1284,18 @@ def revalidate_earned_holdout_gate(
     )
     if gate.decision is not HoldoutDecision.EARNED:
         raise EvaluationError("public holdout was not earned by the frozen Stage 11 rule")
+    _require_runtime_import_origin(source_root)
     stage09_binding = _mapping(gate.receipt["stage09"], field="stage09")
     stage10_binding = _mapping(gate.receipt["stage10"], field="stage10")
     integrity_binding = _mapping(gate.receipt["integrity_authority"], field="integrity")
+    production_source = _mapping(gate.receipt["production_source"], field="production_source")
+    if (
+        source_root.resolve().as_posix() != production_source.get("execution_root")
+        or stage09_path.resolve().as_posix() != stage09_binding.get("path")
+        or stage10_path.resolve().as_posix() != stage10_binding.get("path")
+        or integrity_path.resolve().as_posix() != integrity_binding.get("path")
+    ):
+        raise EvaluationError("Stage 11 execution/evidence paths changed")
     stage09 = _load_bound_artifact(
         stage09_path,
         expected_file_sha256=cast(str, stage09_binding["file_sha256"]),
@@ -990,29 +1312,80 @@ def revalidate_earned_holdout_gate(
         hash_field="artifact_core_hash",
         field="Stage 10",
     )
+    stage10_attempt_root = Path(
+        _string(stage10_binding.get("attempt_root"), field="Stage 10 attempt root")
+    )
+    stage09_verification = _stage09_graph_verification(
+        source_root=source_root,
+        attempt_root=Path(
+            _string(stage09_binding.get("attempt_root"), field="Stage 09 attempt root")
+        ),
+        output=stage09_path,
+        exposure=Path(
+            _string(stage09_binding.get("exposure_path"), field="Stage 09 exposure path")
+        ),
+        expected_output_sha256=cast(str, stage09_binding["file_sha256"]),
+        expected_artifact_core_hash=cast(str, stage09_binding["artifact_core_hash"]),
+        expected_terminal_finalization_sha256=_string(
+            stage09_binding.get("terminal_finalization_sha256"),
+            field="Stage 09 terminal finalization file hash",
+        ),
+        expected_terminal_finalization_hash=_string(
+            stage09_binding.get("terminal_finalization_hash"),
+            field="Stage 09 terminal finalization core hash",
+        ),
+    )
+    if stage09_verification != stage09_binding.get("terminal_verification"):
+        raise EvaluationError("Stage 09 complete terminal graph no longer revalidates")
+    if (
+        stage10.get("invocation_ledger") != stage10_binding.get("invocation_ledger")
+        or stage10.get("plan_hash") != stage10_binding.get("plan_hash")
+        or stage10.get("predeclaration_sha256") != stage10_binding.get("predeclaration_sha256")
+    ):
+        raise EvaluationError("Stage 10 projected evidence changed after the Stage 11 receipt")
     current_source = source_identity(source_root)
     if current_source != gate.execution_source or not current_source.clean_worktree:
         raise EvaluationError("production source changed after the Stage 11 receipt")
     workflow = _mapping(gate.receipt["workflow_rule"], field="workflow_rule")
     if sha256_file(source_root.resolve() / STAGE11_WORKFLOW_PATH) != workflow["workflow_sha256"]:
         raise EvaluationError("Stage 11 controlling workflow changed")
-    if sha256_file(manifest_path.resolve()) != gate.manifest_sha256:
-        raise EvaluationError("sealed holdout manifest bytes changed")
-    integrity_raw = integrity_path.resolve().read_bytes()
-    _, integrity_clear = _integrity_clear(
-        integrity_raw,
+    composite = validate_composite_integrity_authority(
+        integrity_path,
         expected_file_sha256=cast(str, integrity_binding["file_sha256"]),
-        expected_receipt_sha256=cast(str, integrity_binding["receipt_sha256"]),
-        expected_source=current_source,
-        expected_manifest_sha256=gate.manifest_sha256,
+        expected_core_hash=cast(str, integrity_binding[COMPOSITE_INTEGRITY_HASH_FIELD]),
+        source_root=source_root,
+    )
+    integrity_clear = bool(
+        composite.get("status") == "PASS"
+        and composite.get("claim") == "BOUNDED_STATIC_COMPETITION_INTEGRITY_WITH_OPAQUE_HOLDOUT"
+        and composite.get("full_public_integrity_status")
+        == "NOT_EVALUATED_BUILD_001_PUBLIC_IDENTIFIERS"
+        and composite.get("assurance_limitation")
+        == (
+            "Package and development scans are static; dynamic-import and native-extension "
+            "containment are not proven; Build 001 public identifiers were not fully evaluated."
+        )
+        and composite.get("semantic_public_manifest_access") is False
+        and composite.get("opaque_public_manifest_sha256") == gate.manifest_sha256
+    )
+    stage10_graph_clear = _stage10_graph_clear(
+        source_root=source_root,
+        attempt_root=stage10_attempt_root,
+        output=stage10_path,
+        frozen_commit=current_source.commit,
     )
     recomputed = {
-        "stage09_pass": _stage09_pass(stage09),
-        "stage10_pass": _stage10_pass(stage10, expected_source=current_source),
+        "stage09_pass": bool(stage09_verification is not None and _stage09_pass(stage09)),
+        "stage10_pass": bool(
+            stage10_graph_clear and _stage10_pass(stage10, expected_source=current_source)
+        ),
         "competition_integrity_clear": bool(
             integrity_clear
             and _stage09_integrity_clear(stage09)
-            and _stage10_integrity_clear(stage10)
+            and _stage10_integrity_clear(
+                stage10,
+                expected_composite=integrity_binding,
+            )
         ),
         "production_source_unchanged": bool(
             _source_matches_stage09(gate.development_source, stage09)
@@ -1021,12 +1394,17 @@ def revalidate_earned_holdout_gate(
         "sealed_holdout_identity_matches": bool(
             _stage09_holdout_sealed(stage09)
             and _stage09_manifest_bound(stage09, gate.manifest_sha256)
-            and sha256_file(manifest_path.resolve()) == gate.manifest_sha256
             and gate.opaque_count == OPAQUE_HOLDOUT_COUNT
         ),
     }
     if recomputed != dict(gate.criteria) or not all(recomputed.values()):
         raise EvaluationError("Stage 11 criteria no longer revalidate from bound evidence")
+    # Recheck after both terminal verifiers and composite reconstruction.  No
+    # mixed-tree helper loaded by those operations may reach manifest bytes.
+    _require_runtime_import_origin(source_root)
+    # The manifest stays opaque until every non-manifest authority has passed.
+    if sha256_file(manifest_path.resolve()) != gate.manifest_sha256:
+        raise EvaluationError("sealed holdout manifest bytes changed")
     return gate
 
 
@@ -1035,7 +1413,6 @@ def create_nonconsumption_receipt(
     gate_path: Path,
     gate_file_sha256: str,
     gate_core_hash: str,
-    manifest_path: Path,
     generated_at: str | None = None,
 ) -> dict[str, Any]:
     """Create the only Stage 12 result reachable from a not-earned gate."""
@@ -1047,8 +1424,6 @@ def create_nonconsumption_receipt(
     )
     if gate.decision is not HoldoutDecision.NOT_EARNED:
         raise EvaluationError("nonconsumption receipt is reachable only for HOLDOUT_NOT_EARNED")
-    if sha256_file(manifest_path.resolve()) != gate.manifest_sha256:
-        raise EvaluationError("sealed manifest changed before nonconsumption receipt")
     payload: dict[str, Any] = {
         "claim_boundary": "nonconsumption only; no public-holdout result or score exists",
         "decision": HoldoutDecision.NOT_EARNED.value,
@@ -1077,9 +1452,8 @@ def validate_nonconsumption_receipt(
     document: Mapping[str, Any],
     *,
     gate_path: Path,
-    manifest_path: Path,
 ) -> None:
-    """Validate a Stage 12 receipt and its exact Stage 11/manifest anchors."""
+    """Validate Stage 12 solely from its exact Stage 11 opaque authority."""
 
     expected = {
         "artifact_core_hash",
@@ -1127,8 +1501,6 @@ def validate_nonconsumption_receipt(
         "opaque_partition_count": gate.opaque_count,
     }:
         raise EvaluationError("Stage 12 holdout nonconsumption binding changed")
-    if sha256_file(manifest_path.resolve()) != gate.manifest_sha256:
-        raise EvaluationError("sealed manifest changed after nonconsumption")
 
 
 def write_canonical_once(path: Path, document: Mapping[str, object]) -> None:

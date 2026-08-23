@@ -76,9 +76,27 @@ def build_parser() -> argparse.ArgumentParser:
 def package_only_candidate_files(root: Path) -> tuple[Path, ...]:
     """Return tracked package/source surfaces while excluding all evaluation ledgers."""
 
+    repository = root.resolve()
+    environment = {
+        key: value for key, value in os.environ.items() if not key.upper().startswith("GIT_")
+    }
+    top_level = subprocess.run(
+        ("git", "rev-parse", "--show-toplevel"),
+        cwd=repository,
+        env=environment,
+        check=False,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        timeout=30,
+    )
+    if top_level.returncode != 0 or Path(top_level.stdout.strip()).resolve() != repository:
+        raise ValueError("package-only integrity requires the exact repository Git root")
     completed = subprocess.run(
         ("git", "ls-files", "-z"),
-        cwd=root,
+        cwd=repository,
+        env=environment,
         check=False,
         capture_output=True,
         timeout=30,
@@ -94,9 +112,9 @@ def package_only_candidate_files(root: Path) -> tuple[Path, ...]:
     for name in names:
         normalized = Path(name).as_posix()
         if normalized in _PACKAGE_ONLY_ROOT_FILES or normalized.startswith(_PACKAGE_ONLY_PREFIXES):
-            path = (root / normalized).resolve()
+            path = (repository / normalized).resolve()
             try:
-                path.relative_to(root.resolve())
+                path.relative_to(repository)
             except ValueError as error:
                 raise ValueError("package-only candidate path escapes the repository") from error
             selected.append(path)

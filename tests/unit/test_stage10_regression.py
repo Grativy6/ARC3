@@ -8,7 +8,6 @@ from pathlib import Path
 from arc3.evaluation.artifacts import atomic_write_json, seal_object
 from arc3.evaluation.stage10_regression import (
     PREDECLARATION_PATH,
-    PUBLIC_PARTITION_MANIFEST_SHA256,
     STAGE10_CHECKPOINT_SCHEMA,
     STAGE14_PROTOCOL_SHA256,
     Stage10Status,
@@ -31,6 +30,52 @@ from arc3.trace import sha256_json
 
 ROOT = Path(__file__).resolve().parents[2]
 COMMIT = "a" * 40
+ACTION_ACCEPTANCE = {
+    name: True
+    for name in (
+        "aggregate_runtime_integrity",
+        "causal_controls",
+        "checkpoint_resume",
+        "historical_regressions",
+        "holdout_integrity",
+        "procedural_pairs",
+        "registry_bounds",
+        "resource_limits",
+        "source_clean",
+        "static_action_semantics",
+    )
+}
+PALETTE_ACCEPTANCE = {
+    **{
+        name: True
+        for name in (
+            "causal_controls",
+            "checkpoint_resume",
+            "historical_regressions",
+            "procedural_pairs",
+            "source_clean",
+            "within_600_second_wall_limit",
+        )
+    },
+    "registry_max_entries": 16,
+}
+RULE_ACCEPTANCE = {
+    name: True
+    for name in (
+        "aggregate_trace_replay_and_immutability",
+        "checkpoint_resume_pairs",
+        "competition_integrity_delegated_to_stage10_parent",
+        "holdout_integrity",
+        "intervention_cases",
+        "noise_controls",
+        "resource_limits",
+        "socket_deny_guard",
+        "source_clean",
+        "source_stable",
+        "static_action_semantics",
+        "verification_receipts",
+    )
+}
 
 
 def _validation(suite_id: str, disposition: SuiteDisposition) -> SuiteValidation:
@@ -81,6 +126,14 @@ def test_predeclaration_bytes_and_non_playing_plan_are_frozen(tmp_path: Path) ->
     assert "evaluate-public" not in " ".join(item for suite in plan for item in suite.command)
     assert all("_stage10_offline_child.py" in suite.command[1] for suite in plan)
     assert all(suite.network_guard_path is not None for suite in plan)
+    integrity = plan[0]
+    assert "--package-only" in integrity.command
+    assert "--manifest" not in integrity.command
+    assert "--run-state" not in integrity.command
+    assert "--expected-manifest-sha256" not in integrity.command
+    assert integrity.authority_path is None
+    assert integrity.integrity_composite_path is not None
+    assert all(suite.authority_path is not None for suite in plan[1:])
 
 
 def test_fail_closed_classification_preserves_mechanism_failure() -> None:
@@ -112,7 +165,7 @@ def test_action_floor_uses_exact_528_numerator_and_denominator(tmp_path: Path) -
         "post_calibration_inverse_request_numerator": 528,
     }
     report = {
-        "acceptance": {"all": True},
+        "acceptance": dict(ACTION_ACCEPTANCE),
         "checkpoint_resume_suite": {"case_count": 16, "passed_cases": 16},
         "procedural_paired_suite": procedural,
         "schema": "arc3.build-001.stage-05-action-equivariance.v0.1",
@@ -139,11 +192,7 @@ def test_rule_exit_one_is_valid_evidence_when_frozen_floor_passes(tmp_path: Path
     ]
     cases.extend({"case": {"family": "traversability"}, "case_passed": False} for _ in range(32))
     report = {
-        "acceptance": {
-            "aggregate_trace_replay_and_immutability": True,
-            "competition_integrity": True,
-            "holdout_integrity": True,
-        },
+        "acceptance": dict(RULE_ACCEPTANCE),
         "decision_rule": {"infrastructure_failure_count": 0},
         "intervention_suite": {
             "case_count": 64,
@@ -219,7 +268,7 @@ def test_structural_tamper_is_infrastructure_across_self_hashed_validators(
     tmp_path: Path,
 ) -> None:
     action = {
-        "acceptance": {"all": True},
+        "acceptance": dict(ACTION_ACCEPTANCE),
         "checkpoint_resume_suite": {"case_count": 16, "passed_cases": 16},
         "procedural_paired_suite": {
             "pair_count": 128,
@@ -232,7 +281,7 @@ def test_structural_tamper_is_infrastructure_across_self_hashed_validators(
         "status": "PASS",
     }
     palette = {
-        "acceptance": {"all": True},
+        "acceptance": dict(PALETTE_ACCEPTANCE),
         "checkpoint_resume_suite": {"case_count": 16, "passed_cases": 16},
         "procedural_paired_suite": {"pair_count": 256, "passed_pairs": 256},
         "schema": "arc3.build-001.stage-04-palette-equivariance.v0.1",
@@ -246,11 +295,7 @@ def test_structural_tamper_is_infrastructure_across_self_hashed_validators(
         {"case": {"family": "traversability"}, "case_passed": False} for _ in range(32)
     )
     rule = {
-        "acceptance": {
-            "aggregate_trace_replay_and_immutability": True,
-            "competition_integrity": True,
-            "holdout_integrity": True,
-        },
+        "acceptance": dict(RULE_ACCEPTANCE),
         "decision_rule": {"infrastructure_failure_count": 0},
         "intervention_suite": {
             "case_count": 64,
@@ -318,25 +363,64 @@ def test_structural_tamper_is_infrastructure_across_self_hashed_validators(
             "supply_chain",
         )
     }
-    integrity = {
+    checks["supply_chain"]["status"] = "PASS"
+    integrity: dict[str, object] = {
         "assurance_scope": {
             "kind": "static-only",
+            "public_identifier_scan": ("NOT_EVALUATED_PACKAGE_ONLY_NO_SEMANTIC_MANIFEST_ACCESS"),
             "scanner_network_mode": "offline-by-construction",
         },
         "checks": checks,
-        "finding_counts": {"blocking": 0, "total": 0},
+        "finding_counts": {"blocking": 0, "total": 0, "warnings": 0},
+        "full_competition_integrity_status": "NOT_EVALUATED_PUBLIC_IDENTIFIERS",
         "git": {"commit": COMMIT, "dirty_worktree": False},
-        "inputs": {"manifest_sha256": PUBLIC_PARTITION_MANIFEST_SHA256},
-        "passed": True,
+        "inputs": {
+            "entry_points": ["agent/my_agent.py"],
+            "manifest": None,
+            "manifest_binding": {
+                "declaration": "disabled-package-only",
+                "expected_sha256": None,
+                "issue": "semantic public-manifest access is prohibited in this profile",
+            },
+            "manifest_sha256": None,
+            "public_identifier_count": 0,
+            "public_identifier_mode": "disabled-package-only",
+            "reachable_policy_paths": ["agent/my_agent.py"],
+            "run_state": None,
+        },
+        "integrity_scope": "package-only-no-public-identifiers",
+        "license_summary": {
+            "first_party_license_status": "MIT-0",
+            "installed_version_mismatch_count": 0,
+            "not_evaluated_count": 0,
+            "status": "PASS",
+            "unknown_or_missing_metadata_count": 0,
+        },
+        "package_only_passed": True,
+        "passed": False,
+        "production_policy_static_coverage": {
+            "algorithm": "static-first-party-import-closure-v0.1",
+            "entry_points": ["agent/my_agent.py"],
+            "entry_points_reached": ["agent/my_agent.py"],
+            "limitations": (
+                "Static first-party import reachability does not prove runtime dynamic-import "
+                "or native-extension containment."
+            ),
+            "policy_scan_covers_reachable_paths": True,
+            "reachable_file_count": 1,
+            "reachable_paths_hashed": True,
+            "status": "PASS",
+        },
+        "reachable_policy_source_hashes": {"agent/my_agent.py": "sha256:" + "1" * 64},
         "schema": "arc3.integrity.receipt.v0.2",
     }
 
     def integrity_metric_miss(report: dict[str, object]) -> None:
-        report["passed"] = False
+        report["package_only_passed"] = False
         cast_checks = report["checks"]
         assert isinstance(cast_checks, dict)
         cast_checks["policy_static"] = {"passed": False}
-        report["finding_counts"] = {"blocking": 1, "total": 1}
+        report["finding_counts"] = {"blocking": 1, "total": 1, "warnings": 0}
 
     cases = (
         (

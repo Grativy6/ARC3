@@ -127,7 +127,7 @@ def test_runtime_launcher_gateway_import_exception_is_exact_and_path_scoped(
 
 
 @pytest.mark.competition
-def test_pure_normalization_boundary_import_is_allowed(
+def test_environment_adapter_normalization_import_is_not_exempt(
     integrity_repo: tuple[Path, str, str],
 ) -> None:
     root, _, _ = integrity_repo

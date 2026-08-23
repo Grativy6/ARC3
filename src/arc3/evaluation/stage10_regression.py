@@ -10,6 +10,8 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
+import os
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from enum import StrEnum
@@ -37,7 +39,12 @@ STAGE10_PREFLIGHT_SCHEMA = "arc3.build-001.stage-10-preflight.v0.2"
 STAGE10_PARENT_RECEIPT_SCHEMA = "arc3.build-001.stage-10-parent-receipt.v0.2"
 STAGE10_RESULT_SCHEMA = "arc3.build-001.stage-10-robustness-regression.v0.2"
 STAGE10_CHECKPOINT_SCHEMA = "arc3.build-001.stage-10-checkpoint-replay.v0.1"
-STAGE10_SOCKET_DENIAL_SCHEMA = "arc3.build-001.stage-10-socket-denial.v0.1"
+STAGE10_SOCKET_DENIAL_SCHEMA = "arc3.build-001.stage-10-socket-denial.v0.3"
+STAGE10_CHILD_AUTHORITY_SCHEMA = "arc3.build-001.stage-10-child-authority.v0.2"
+STAGE10_PROCESS_LAUNCH_SCHEMA = "arc3.build-001.stage-10-process-launch.v0.1"
+STAGE10_LAUNCH_AUTHORIZATION_SCHEMA = "arc3.build-001.stage-10-launch-authorization.v0.1"
+STAGE10_WORKER_ABORT_SCHEMA = "arc3.build-001.stage-10-worker-abort.v0.1"
+STAGE10_PROCESS_CLEANUP_SCHEMA = "arc3.build-001.stage-10-process-cleanup.v0.1"
 UV_LOCK_SHA256 = "sha256:3bf42dcbe45720f71b7433584f56a5d5982ec1c687c341ad2626222fa5de285b"
 
 MAX_PEAK_RSS_BYTES = 2_147_483_648
@@ -71,6 +78,15 @@ class SuiteSpec:
     allowed_returncodes: tuple[int, ...]
     artifact_path: Path | None
     network_guard_path: Path | None = None
+    authority_path: Path | None = None
+    prior_integrity_path: Path | None = None
+    integrity_composite_path: Path | None = None
+    launch_path: Path | None = None
+    authorization_path: Path | None = None
+    abort_path: Path | None = None
+    cleanup_path: Path | None = None
+    launch_token: str | None = None
+    integrity_inputs_hash: str | None = None
 
     def to_dict(self) -> dict[str, JSONValue]:
         return {
@@ -78,10 +94,41 @@ class SuiteSpec:
             "artifact_path": (
                 self.artifact_path.resolve().as_posix() if self.artifact_path is not None else None
             ),
+            "abort_path": (
+                self.abort_path.resolve().as_posix() if self.abort_path is not None else None
+            ),
+            "authorization_path": (
+                self.authorization_path.resolve().as_posix()
+                if self.authorization_path is not None
+                else None
+            ),
+            "authority_path": (
+                self.authority_path.resolve().as_posix()
+                if self.authority_path is not None
+                else None
+            ),
             "command": list(self.command),
+            "cleanup_path": (
+                self.cleanup_path.resolve().as_posix() if self.cleanup_path is not None else None
+            ),
+            "integrity_composite_path": (
+                self.integrity_composite_path.resolve().as_posix()
+                if self.integrity_composite_path is not None
+                else None
+            ),
+            "integrity_inputs_hash": self.integrity_inputs_hash,
             "network_guard_path": (
                 self.network_guard_path.resolve().as_posix()
                 if self.network_guard_path is not None
+                else None
+            ),
+            "launch_path": (
+                self.launch_path.resolve().as_posix() if self.launch_path is not None else None
+            ),
+            "launch_token": self.launch_token,
+            "prior_integrity_path": (
+                self.prior_integrity_path.resolve().as_posix()
+                if self.prior_integrity_path is not None
                 else None
             ),
             "suite_id": self.suite_id,
@@ -164,6 +211,28 @@ def _boolean_acceptance_is_typed(value: object) -> bool:
     return bool(fields) and all(isinstance(item, bool) for item in fields.values())
 
 
+def _exact_field_types(
+    value: object,
+    *,
+    booleans: frozenset[str] = frozenset(),
+    integers: frozenset[str] = frozenset(),
+    numbers: frozenset[str] = frozenset(),
+) -> bool:
+    """Validate the exact structural proof surface before applying any floor."""
+
+    fields = _object(value)
+    if set(fields) != set(booleans | integers | numbers):
+        return False
+    return bool(
+        all(isinstance(fields[name], bool) for name in booleans)
+        and all(_is_int(fields[name]) for name in integers)
+        and all(
+            _is_number(fields[name]) and math.isfinite(float(cast(int | float, fields[name])))
+            for name in numbers
+        )
+    )
+
+
 def _load_json_object(path: Path) -> dict[str, object]:
     value: object = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(value, dict):
@@ -216,10 +285,12 @@ def build_suite_plan(
     source_root: Path,
     attempt_root: Path,
     frozen_commit: str,
+    prior_integrity_path: Path | None = None,
+    integrity_inputs_hash: str | None = None,
 ) -> tuple[SuiteSpec, ...]:
     """Build the exact serial plan; this function never launches a child."""
 
-    executable = str(python.resolve())
+    executable = str(Path(os.path.abspath(python)))
     root = source_root.resolve()
     attempt = attempt_root.resolve()
     short = frozen_commit[:7]
@@ -227,6 +298,8 @@ def build_suite_plan(
     evaluation_root = attempt / "stage13"
     evaluation_dir = evaluation_root / evaluation_id
     wrapper = root / "scripts/_stage10_offline_child.py"
+    child_authority = attempt / "authorities" / "no-semantic-surface.json"
+    integrity_composite = attempt / "integrity-composite.json"
 
     def guarded_spec(
         *,
@@ -237,20 +310,57 @@ def build_suite_plan(
         timeout_seconds: float,
         allowed_returncodes: tuple[int, ...],
         artifact_path: Path | None,
+        requires_parent_authority: bool = True,
+        prior_integrity_authority: Path | None = None,
+        integrity_composite_output: Path | None = None,
     ) -> SuiteSpec:
         guard_path = attempt / "network" / f"{suite_id}.json"
+        launch_path = attempt / "process" / f"{suite_id}.launch.json"
+        authorization_path = attempt / "process" / f"{suite_id}.authorization.json"
+        abort_path = attempt / "process" / f"{suite_id}.abort.json"
+        cleanup_path = attempt / "process" / f"{suite_id}.cleanup.json"
         selector = "--module" if target_kind == "module" else "--script"
+        target_command = (
+            executable,
+            str(wrapper),
+            "--receipt",
+            str(guard_path),
+            "--suite-id",
+            suite_id,
+            "--frozen-commit",
+            frozen_commit,
+            *(("--authority", str(child_authority)) if requires_parent_authority else ()),
+            "--launch-receipt",
+            str(launch_path),
+            "--authorization",
+            str(authorization_path),
+            "--abort-receipt",
+            str(abort_path),
+        )
+        launch_token = (
+            "sha256:"
+            + hashlib.sha256(
+                json.dumps(
+                    {
+                        "attempt_root": attempt.as_posix(),
+                        "frozen_commit": frozen_commit,
+                        "predeclaration_sha256": PREDECLARATION_SHA256,
+                        "suite_id": suite_id,
+                        "target": [target_kind, target, *arguments],
+                    },
+                    allow_nan=False,
+                    ensure_ascii=False,
+                    separators=(",", ":"),
+                    sort_keys=True,
+                ).encode("utf-8")
+            ).hexdigest()
+        )
         return SuiteSpec(
             suite_id=suite_id,
             command=(
-                executable,
-                str(wrapper),
-                "--receipt",
-                str(guard_path),
-                "--suite-id",
-                suite_id,
-                "--frozen-commit",
-                frozen_commit,
+                *target_command,
+                "--launch-token",
+                launch_token,
                 selector,
                 target,
                 "--",
@@ -260,6 +370,15 @@ def build_suite_plan(
             allowed_returncodes=allowed_returncodes,
             artifact_path=artifact_path,
             network_guard_path=guard_path,
+            authority_path=child_authority if requires_parent_authority else None,
+            prior_integrity_path=prior_integrity_authority,
+            integrity_composite_path=integrity_composite_output,
+            integrity_inputs_hash=integrity_inputs_hash,
+            launch_path=launch_path,
+            authorization_path=authorization_path,
+            abort_path=abort_path,
+            cleanup_path=cleanup_path,
+            launch_token=launch_token,
         )
 
     return (
@@ -270,20 +389,16 @@ def build_suite_plan(
             arguments=(
                 "--root",
                 str(root),
-                "--manifest",
-                str(root / "docs/evaluation/public-game-partitions.v0.1.json"),
-                "--lock",
-                str(root / "uv.lock"),
-                "--run-state",
-                str(root / "docs/ledger/build-001-run-state.json"),
-                "--expected-manifest-sha256",
-                PUBLIC_PARTITION_MANIFEST_SHA256,
+                "--package-only",
                 "--output",
                 str(attempt / "integrity.json"),
             ),
             timeout_seconds=600.0,
             allowed_returncodes=(0, 1),
             artifact_path=attempt / "integrity.json",
+            requires_parent_authority=False,
+            prior_integrity_authority=prior_integrity_path,
+            integrity_composite_output=integrity_composite,
         ),
         guarded_spec(
             suite_id="stage13-evaluate",
@@ -502,6 +617,20 @@ def validate_stage13(
         summary = {}
         results = []
     full = [item for item in results if item.get("agent") == "full"]
+    result_structure_typed = bool(results) and all(
+        isinstance(item.get("agent"), str)
+        and _is_int(item.get("seed"))
+        and isinstance(item.get("status"), str)
+        and _is_mapping(item.get("identity"))
+        and _is_mapping(item.get("metrics"))
+        and _is_nonnegative_int(_object(item.get("metrics")).get("environment_actions"))
+        and _is_mapping(item.get("score"))
+        and isinstance(_object(item.get("score")).get("completed"), bool)
+        and isinstance(_object(item.get("score")).get("verified"), bool)
+        and _is_mapping(item.get("trace"))
+        and isinstance(_object(item.get("trace")).get("replay_verified"), bool)
+        for item in results
+    )
     full_actions = sum(
         _integer(_object(item.get("metrics")).get("environment_actions"), default=10**9)
         for item in full
@@ -533,8 +662,11 @@ def validate_stage13(
         "exact_full_rows": len(full) == 2
         and {_integer(item.get("seed")) for item in full} == {7, 11},
         "exact_result_rows": len(results) == 10,
+        "result_proofs_are_typed": result_structure_typed,
         "source_clean_and_exact": source_bound,
         "summary_schema": summary.get("schema") == "arc3.evaluation.summary.v0.1",
+        "summary_status_is_typed": isinstance(summary.get("status"), str)
+        and _is_nonnegative_int(summary.get("failure_count")),
         "trace_and_scores_verified": traces_verified,
     }
     metric_predicates = {
@@ -606,7 +738,16 @@ def validate_ablations(path: Path, *, frozen_commit: str) -> SuiteValidation:
     full_actions = _integer(full.get("total_actions"))
     a4_completed = _integer(a4.get("completed"))
     a5_completed = _integer(a5.get("completed"))
+    aggregate_structure_typed = bool(
+        set(variants) == {"FULL", "A4", "A5"}
+        and all(_is_mapping(variants.get(name)) for name in ("FULL", "A4", "A5"))
+        and _is_nonnegative_int(full.get("completed"))
+        and _is_nonnegative_int(full.get("total_actions"))
+        and _is_nonnegative_int(a4.get("completed"))
+        and _is_nonnegative_int(a5.get("completed"))
+    )
     infrastructure_predicates = {
+        "aggregate_proofs_are_typed": aggregate_structure_typed,
         "artifact_self_hash": _verify_hash_without_newline(report, hash_field="artifact_core_hash"),
         "exact_protocol": report.get("protocol_manifest_hash") == STAGE14_PROTOCOL_SHA256
         and report.get("protocol_manifest_matches_run") is True,
@@ -648,7 +789,29 @@ def validate_palette(path: Path, *, frozen_commit: str) -> SuiteValidation:
     checkpoint = _object(report.get("checkpoint_resume_suite"))
     infrastructure_predicates = {
         "artifact_self_hash": verify_object_hash(report, hash_field="artifact_core_hash"),
-        "acceptance_is_typed": _boolean_acceptance_is_typed(report.get("acceptance")),
+        "acceptance_is_typed": _exact_field_types(
+            report.get("acceptance"),
+            booleans=frozenset(
+                {
+                    "causal_controls",
+                    "checkpoint_resume",
+                    "historical_regressions",
+                    "procedural_pairs",
+                    "source_clean",
+                    "within_600_second_wall_limit",
+                }
+            ),
+            integers=frozenset({"registry_max_entries"}),
+        ),
+        "measurement_proofs_are_typed": all(
+            _is_nonnegative_int(value)
+            for value in (
+                checkpoint.get("case_count"),
+                checkpoint.get("passed_cases"),
+                procedural.get("pair_count"),
+                procedural.get("passed_pairs"),
+            )
+        ),
         "schema": report.get("schema") == "arc3.build-001.stage-04-palette-equivariance.v0.1",
         "source_clean_and_exact": _source_commit(report) == frozen_commit
         and _object(report.get("source_identity")).get("dirty_worktree") is False,
@@ -687,7 +850,34 @@ def validate_action(path: Path, *, frozen_commit: str) -> SuiteValidation:
     inverse_pass = _integer(procedural.get("post_calibration_inverse_request_numerator"))
     infrastructure_predicates = {
         "artifact_self_hash": verify_object_hash(report, hash_field="artifact_core_hash"),
-        "acceptance_is_typed": _boolean_acceptance_is_typed(report.get("acceptance")),
+        "acceptance_is_typed": _exact_field_types(
+            report.get("acceptance"),
+            booleans=frozenset(
+                {
+                    "aggregate_runtime_integrity",
+                    "causal_controls",
+                    "checkpoint_resume",
+                    "historical_regressions",
+                    "holdout_integrity",
+                    "procedural_pairs",
+                    "registry_bounds",
+                    "resource_limits",
+                    "source_clean",
+                    "static_action_semantics",
+                }
+            ),
+        ),
+        "measurement_proofs_are_typed": all(
+            _is_nonnegative_int(value)
+            for value in (
+                checkpoint.get("case_count"),
+                checkpoint.get("passed_cases"),
+                procedural.get("pair_count"),
+                procedural.get("passed_pairs"),
+                procedural.get("post_calibration_inverse_request_denominator"),
+                procedural.get("post_calibration_inverse_request_numerator"),
+            )
+        ),
         "schema": report.get("schema") == "arc3.build-001.stage-05-action-equivariance.v0.1",
         "source_clean_and_exact": _source_commit(report) == frozen_commit
         and _object(report.get("source_identity")).get("dirty_worktree") is False,
@@ -739,11 +929,50 @@ def validate_rule_change(
         if _object(row.get("case")).get("family") == "action_effect_rotation"
     ]
     action_passed = sum(row.get("case_passed") is True for row in action_rows)
+    intervention_cases = _array(intervention.get("cases"))
+    case_proofs_typed = len(intervention_cases) == 64 and all(
+        _is_mapping(raw)
+        and _is_mapping(_object(raw).get("case"))
+        and isinstance(_object(_object(raw).get("case")).get("family"), str)
+        and isinstance(_object(raw).get("case_passed"), bool)
+        for raw in intervention_cases
+    )
     if returncode not in {0, 1}:
         errors.append(f"invalid-rule-child-returncode:{returncode}")
     infrastructure_predicates = {
         "artifact_self_hash": verify_object_hash(report, hash_field="artifact_core_hash"),
-        "acceptance_is_typed": _boolean_acceptance_is_typed(report.get("acceptance")),
+        "acceptance_is_typed": _exact_field_types(
+            report.get("acceptance"),
+            booleans=frozenset(
+                {
+                    "aggregate_trace_replay_and_immutability",
+                    "checkpoint_resume_pairs",
+                    "competition_integrity_delegated_to_stage10_parent",
+                    "holdout_integrity",
+                    "intervention_cases",
+                    "noise_controls",
+                    "resource_limits",
+                    "socket_deny_guard",
+                    "source_clean",
+                    "source_stable",
+                    "static_action_semantics",
+                    "verification_receipts",
+                }
+            ),
+        ),
+        "case_proofs_are_typed": case_proofs_typed,
+        "measurement_proofs_are_typed": all(
+            _is_nonnegative_int(value)
+            for value in (
+                intervention.get("case_count"),
+                intervention.get("exercised_cases"),
+                intervention.get("passed_cases"),
+                noise.get("case_count"),
+                noise.get("passed_cases"),
+                noise.get("resolved_as_noise"),
+                decision.get("infrastructure_failure_count"),
+            )
+        ),
         "no_infrastructure_failure": decision.get("infrastructure_failure_count") == 0,
         "nonzero_child_is_typed": returncode in {0, 1}
         and report.get("status") in {"PASS", "FAILED_MECHANISM"},
@@ -755,7 +984,10 @@ def validate_rule_change(
             "aggregate_trace_replay_and_immutability"
         )
         is True
-        and _object(report.get("acceptance")).get("competition_integrity") is True
+        and _object(report.get("acceptance")).get(
+            "competition_integrity_delegated_to_stage10_parent"
+        )
+        is True
         and _object(report.get("acceptance")).get("holdout_integrity") is True,
     }
     metric_predicates = {
@@ -796,7 +1028,19 @@ def validate_checkpoint_replay(path: Path, *, frozen_commit: str) -> SuiteValida
     acceptance = _object(report.get("acceptance"))
     infrastructure_predicates = {
         "artifact_self_hash": verify_object_hash(report, hash_field="artifact_core_hash"),
-        "acceptance_is_typed": _boolean_acceptance_is_typed(report.get("acceptance")),
+        "acceptance_is_typed": _exact_field_types(
+            report.get("acceptance"),
+            booleans=frozenset(
+                {
+                    "checkpoint_tamper_rejected",
+                    "deep_exact_continuation",
+                    "deterministic_seed_repeatability",
+                    "fast_exact_continuation",
+                    "trace_replay",
+                    "trace_tamper_rejected",
+                }
+            ),
+        ),
         "schema": report.get("schema") == STAGE10_CHECKPOINT_SCHEMA,
         "source_clean_and_exact": _object(report.get("source_identity")).get("git_commit")
         == frozen_commit
@@ -839,10 +1083,18 @@ def validate_resource_profile(
     receipt_hash = report.get("receipt_sha256")
     if returncode not in {0, 1}:
         errors.append(f"invalid-resource-child-returncode:{returncode}")
+    peak_value = _object(profile.get("kernel_memory_after")).get("peak_rss_bytes")
+    working_set_value = _object(profile.get("kernel_memory_after")).get("working_set_peak_bytes")
+    peak_typed = _is_nonnegative_int(peak_value) or _is_nonnegative_int(working_set_value)
     infrastructure_predicates = {
         "artifact_self_hash": isinstance(receipt_hash, str)
         and _verify_hash_without_newline(report, hash_field="receipt_sha256"),
         "profile_valid": profile.get("verified") is True,
+        "measurement_proofs_are_typed": _is_number(decision.get("maximum"))
+        and math.isfinite(float(cast(int | float, decision.get("maximum"))))
+        and float(cast(int | float, decision.get("maximum"))) >= 0.0
+        and peak_typed
+        and _is_nonnegative_int(profile.get("trace_bytes")),
         "schema": report.get("schema") == "arc3.stage16.profile.v0.1",
         "source_clean_and_exact": report.get("git_commit") == frozen_commit
         and _object(report.get("source_identity")).get("verified") is True,
@@ -891,7 +1143,12 @@ def validate_integrity(path: Path, *, frozen_commit: str) -> SuiteValidation:
     checks = _object(report.get("checks"))
     inputs = _object(report.get("inputs"))
     assurance = _object(report.get("assurance_scope"))
+    license_summary = _object(report.get("license_summary"))
     git = _object(report.get("git"))
+    reachable_paths = report.get("inputs")
+    reachable_paths = _object(reachable_paths).get("reachable_policy_paths")
+    reachable_hashes = report.get("reachable_policy_source_hashes")
+    coverage = _object(report.get("production_policy_static_coverage"))
     expected_checks = (
         "archive_static",
         "policy_static",
@@ -899,24 +1156,104 @@ def validate_integrity(path: Path, *, frozen_commit: str) -> SuiteValidation:
         "source_identity",
         "supply_chain",
     )
-    checks_typed = all(
+    checks_typed = set(checks) == set(expected_checks) and all(
         isinstance(checks.get(name), Mapping)
         and isinstance(_object(checks.get(name)).get("passed"), bool)
         for name in expected_checks
+    )
+    reachable_proofs_typed = (
+        _is_list(reachable_paths)
+        and all(isinstance(item, str) and item for item in reachable_paths)
+        and list(cast(list[str], reachable_paths)) == sorted(set(cast(list[str], reachable_paths)))
+        and _is_mapping(reachable_hashes)
+        and set(reachable_hashes) == set(reachable_paths)
+        and all(
+            isinstance(value, str) and value.startswith("sha256:") and len(value) == 71
+            for value in reachable_hashes.values()
+        )
     )
     infrastructure_predicates = {
         "artifact_self_hash": isinstance(receipt_hash, str)
         and _verify_hash_without_newline(report, hash_field="receipt_sha256"),
         "checks_are_typed": checks_typed,
-        "manifest_hash_bound": inputs.get("manifest_sha256") == PUBLIC_PARTITION_MANIFEST_SHA256,
+        "finding_counts_are_typed": isinstance(counts := finding_counts, Mapping)
+        and set(counts) == {"blocking", "total", "warnings"}
+        and _is_nonnegative_int(counts.get("blocking"))
+        and _is_nonnegative_int(counts.get("total"))
+        and _is_nonnegative_int(counts.get("warnings"))
+        and isinstance(report.get("passed"), bool),
+        "package_only_inputs": set(inputs)
+        >= {
+            "manifest",
+            "manifest_binding",
+            "manifest_sha256",
+            "public_identifier_count",
+            "public_identifier_mode",
+            "run_state",
+        }
+        and inputs.get("manifest") is None
+        and inputs.get("manifest_sha256") is None
+        and inputs.get("run_state") is None
+        and inputs.get("public_identifier_count") == 0
+        and not isinstance(inputs.get("public_identifier_count"), bool)
+        and inputs.get("public_identifier_mode") == "disabled-package-only"
+        and _object(inputs.get("manifest_binding"))
+        == {
+            "declaration": "disabled-package-only",
+            "expected_sha256": None,
+            "issue": "semantic public-manifest access is prohibited in this profile",
+        },
+        "package_only_scope_exact": report.get("passed") is False
+        and report.get("full_competition_integrity_status") == "NOT_EVALUATED_PUBLIC_IDENTIFIERS"
+        and report.get("integrity_scope") == "package-only-no-public-identifiers"
+        and isinstance(report.get("package_only_passed"), bool),
+        "reachable_policy_proofs_are_typed": reachable_proofs_typed,
+        "static_policy_coverage_exact": set(coverage)
+        == {
+            "algorithm",
+            "entry_points",
+            "entry_points_reached",
+            "limitations",
+            "policy_scan_covers_reachable_paths",
+            "reachable_file_count",
+            "reachable_paths_hashed",
+            "status",
+        }
+        and coverage.get("algorithm") == "static-first-party-import-closure-v0.1"
+        and inputs.get("entry_points") == ["agent/my_agent.py"]
+        and coverage.get("entry_points") == ["agent/my_agent.py"]
+        and coverage.get("entry_points_reached") == coverage.get("entry_points")
+        and coverage.get("limitations")
+        == (
+            "Static first-party import reachability does not prove runtime dynamic-import "
+            "or native-extension containment."
+        )
+        and coverage.get("policy_scan_covers_reachable_paths") is True
+        and coverage.get("reachable_paths_hashed") is True
+        and _is_list(reachable_paths)
+        and coverage.get("reachable_file_count") == len(reachable_paths)
+        and not isinstance(coverage.get("reachable_file_count"), bool)
+        and coverage.get("status") == "PASS",
         "offline_scanner_contract": assurance.get("kind") == "static-only"
-        and assurance.get("scanner_network_mode") == "offline-by-construction",
+        and assurance.get("scanner_network_mode") == "offline-by-construction"
+        and assurance.get("public_identifier_scan")
+        == "NOT_EVALUATED_PACKAGE_ONLY_NO_SEMANTIC_MANIFEST_ACCESS",
         "schema": report.get("schema") == "arc3.integrity.receipt.v0.2",
+        "supply_chain_license_exact": license_summary.get("first_party_license_status") == "MIT-0"
+        and license_summary.get("status") == "PASS"
+        and all(
+            _is_nonnegative_int(license_summary.get(name)) and license_summary.get(name) == 0
+            for name in (
+                "installed_version_mismatch_count",
+                "not_evaluated_count",
+                "unknown_or_missing_metadata_count",
+            )
+        ),
         "source_clean_and_exact": git.get("commit") == frozen_commit
         and git.get("dirty_worktree") is False,
     }
     metric_predicates = {
-        "offline_policy": report.get("passed") is True
+        "package_only_checks_pass": report.get("package_only_passed") is True
         and all(_object(checks.get(name)).get("passed") is True for name in expected_checks),
         "zero_blocking_findings": finding_counts.get("blocking") == 0,
         "zero_total_findings": finding_counts.get("total") == 0,
@@ -945,6 +1282,7 @@ __all__ = [
     "SOURCE_FLOOR_COMMIT",
     "SOURCE_FLOOR_TREE",
     "STAGE10_CHECKPOINT_SCHEMA",
+    "STAGE10_CHILD_AUTHORITY_SCHEMA",
     "STAGE10_PARENT_RECEIPT_SCHEMA",
     "STAGE10_PREFLIGHT_SCHEMA",
     "STAGE10_RESULT_SCHEMA",

@@ -194,6 +194,39 @@ def test_release_validator_recomputes_reachable_policy_hashes(
 
 
 @pytest.mark.competition
+def test_package_only_static_coverage_requires_reachable_policy_scan_coverage(
+    integrity_repo: tuple[Path, str, str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root, _, _ = integrity_repo
+    entry = root / "agent" / "my_agent.py"
+    helper = root / "helpers" / "runtime.py"
+    helper.parent.mkdir()
+    entry.write_text("from helpers.runtime import VALUE\n", encoding="utf-8")
+    helper.write_text("VALUE = 1\n", encoding="utf-8")
+    monkeypatch.setattr(
+        scanner,
+        "discover_policy_files",
+        lambda *_args, **_kwargs: (entry,),
+    )
+
+    receipt = build_integrity_receipt(
+        root,
+        policy_paths=("agent",),
+        candidate_files=(entry, helper),
+        include_installed_metadata=False,
+        semantic_public_manifest_access=False,
+    )
+
+    coverage = receipt.body["production_policy_static_coverage"]
+    assert isinstance(coverage, dict)
+    assert coverage["entry_points_reached"] == ["agent/my_agent.py"]
+    assert coverage["policy_scan_covers_reachable_paths"] is False
+    assert coverage["status"] == "FAIL"
+    assert receipt.body["package_only_passed"] is False
+
+
+@pytest.mark.competition
 def test_package_only_receipt_rejects_manifest_identity_inputs(
     integrity_repo: tuple[Path, str, str],
 ) -> None:

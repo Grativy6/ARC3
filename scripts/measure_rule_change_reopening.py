@@ -42,7 +42,6 @@ from arc3.integrity.hashes import (  # noqa: E402
     sha256_bytes,
     sha256_file,
 )
-from arc3.integrity.scanner import build_integrity_receipt  # noqa: E402
 from arc3.lab.rule_change import (  # noqa: E402
     RULE_CHANGE_ACTIONS,
     RULE_CHANGE_GAME_ID,
@@ -5307,7 +5306,7 @@ def _classify_stage_status(
         return "FAILED_INFRASTRUCTURE"
     if any(failed_mechanism_predicates.values()):
         return "FAILED_MECHANISM"
-    return "PASS" if acceptance_passed else "PARTIAL"
+    return "PASS" if acceptance_passed else "FAILED_MECHANISM"
 
 
 def _run_verification_command(
@@ -5462,24 +5461,6 @@ def _verification_pytest_basetemp(
     return (Path(gettempdir()) / "arc3-stage06-verification").resolve()
 
 
-def _competition_integrity_binding(output_root: Path) -> dict[str, object]:
-    """Write and bind the broad production competition-integrity receipt."""
-
-    output_root.mkdir(parents=True, exist_ok=True)
-    path = output_root / "competition-integrity.json"
-    receipt = build_integrity_receipt(ROOT, receipt_output_path=path)
-    value = receipt.to_dict()
-    atomic_write_json(path, value)
-    return {
-        "artifact_path": str(path.resolve()),
-        "artifact_sha256": sha256_file(path),
-        "finding_counts": value.get("finding_counts"),
-        "passed": receipt.passed,
-        "receipt_sha256": receipt.receipt_sha256,
-        "schema": value.get("schema"),
-    }
-
-
 def _action_semantics_binding(output_root: Path) -> dict[str, object]:
     """Write and bind the dedicated raw-action/game-table static receipt."""
 
@@ -5524,7 +5505,13 @@ def measure_rule_change_reopening(
     cpu_started_ns = time.process_time_ns()
     verification = _verification_receipts(work_root / "verification")
     static_scan = _action_semantics_binding(work_root / "verification")
-    competition_integrity = _competition_integrity_binding(work_root / "verification")
+    competition_integrity = {
+        "authority": "required-and-validated-by-stage10-parent",
+        "manifest_bytes_accessed": False,
+        "manifest_paths_derived": 0,
+        "passed": None,
+        "public_identifiers_loaded": 0,
+    }
     with patch(
         "socket.socket",
         side_effect=RuntimeError("Stage 06 competition-mode socket access denied"),
@@ -5596,9 +5583,8 @@ def measure_rule_change_reopening(
         and aggregate["invalid_request_count"] == 0
     )
     integrity_pass = holdout["status"] == "SEALED_UNCONSUMED"
-    competition_integrity_pass = competition_integrity["passed"] is True
     verification_pass = verification["passed"] is True
-    static_pass = static_scan["passed"] is True and competition_integrity_pass
+    static_pass = static_scan["passed"] is True
     socket_pass = socket_guard["passed"] is True
     acceptance_passed = all(
         (
@@ -5606,7 +5592,6 @@ def measure_rule_change_reopening(
             noise_pass,
             checkpoint_pass,
             aggregate_pass,
-            competition_integrity_pass,
             integrity_pass,
             resource_pass,
             source_identity_pass,
@@ -5657,7 +5642,7 @@ def measure_rule_change_reopening(
         "acceptance": {
             "aggregate_trace_replay_and_immutability": aggregate_pass,
             "checkpoint_resume_pairs": checkpoint_pass,
-            "competition_integrity": competition_integrity_pass,
+            "competition_integrity_delegated_to_stage10_parent": True,
             "holdout_integrity": integrity_pass,
             "intervention_cases": intervention_pass,
             "noise_controls": noise_pass,

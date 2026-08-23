@@ -1857,7 +1857,10 @@ def measure_action_equivariance(
     ):
         status = "PASS"
     else:
-        status = "PARTIAL"
+        # Stage 10 permits only structurally valid PASS or bounded
+        # FAILED_MECHANISM evidence from this child.  A measured floor miss is
+        # not an infrastructure defect and must not use an undeclared label.
+        status = "FAILED_MECHANISM"
     report: dict[str, object] = {
         "acceptance": {
             "aggregate_runtime_integrity": aggregate_pass,

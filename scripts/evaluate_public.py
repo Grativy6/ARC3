@@ -8,16 +8,9 @@ import subprocess
 from collections.abc import Sequence
 from pathlib import Path
 
-from arc3.adapters.arc_agi import ArcAGIAdapter
-from arc3.config import ARC3Config
-from arc3.errors import ARC3Error
-from arc3.evaluation.public import (
-    PublicEvaluationConfig,
-    PublicPartitionManifest,
-    inventory_local_assets,
-)
-from arc3.evaluation.public_runner import run_public_evaluation, verify_public_evaluation
-from arc3.types import EnvironmentMode
+from arc3.errors import ARC3Error, EvaluationError
+
+ROOT = Path(__file__).resolve().parents[1]
 
 
 def _csv_strings(value: str) -> tuple[str, ...]:
@@ -116,6 +109,11 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def _inventory(args: argparse.Namespace) -> dict[str, object]:
+    from arc3.adapters.arc_agi import ArcAGIAdapter
+    from arc3.config import ARC3Config
+    from arc3.evaluation.public import PublicPartitionManifest, inventory_local_assets
+    from arc3.types import EnvironmentMode
+
     manifest = PublicPartitionManifest.load(args.manifest)
     local = inventory_local_assets(manifest, args.environments_dir)
     discovery: dict[str, object] | None = None
@@ -139,20 +137,98 @@ def _inventory(args: argparse.Namespace) -> dict[str, object]:
     }
 
 
+def _preauthorize_holdout(args: argparse.Namespace) -> None:
+    """Fail closed before importing any public adapter, manifest, or inventory code."""
+
+    from arc3.evaluation.holdout_gate import HoldoutDecision, revalidate_earned_holdout_gate
+
+    if not args.allow_public_holdout:
+        raise EvaluationError(
+            "public holdout is closed; explicit intent and an earned Stage 11 receipt are required"
+        )
+    required = {
+        "Stage 11 gate": args.holdout_gate_receipt,
+        "Stage 09 result": args.stage09_result,
+        "Stage 10 result": args.stage10_result,
+        "competition-integrity receipt": args.competition_integrity_receipt,
+    }
+    missing = [name for name, path in required.items() if path is None]
+    if missing:
+        raise EvaluationError("public holdout authorization is incomplete: " + ", ".join(missing))
+    if args.holdout_gate_file_sha256 is None or args.holdout_gate_core_hash is None:
+        raise EvaluationError(
+            "public holdout requires external Stage 11 file and core hash anchors"
+        )
+    gate = revalidate_earned_holdout_gate(
+        gate_path=args.holdout_gate_receipt,
+        gate_file_sha256=args.holdout_gate_file_sha256,
+        gate_core_hash=args.holdout_gate_core_hash,
+        stage09_path=args.stage09_result,
+        stage10_path=args.stage10_result,
+        integrity_path=args.competition_integrity_receipt,
+        manifest_path=args.manifest,
+        source_root=ROOT,
+    )
+    if gate.decision is not HoldoutDecision.EARNED:
+        raise EvaluationError("public holdout was not earned by the frozen Stage 11 rule")
+    expected = gate.evaluation
+    actual = {
+        "agents": tuple(args.agents),
+        "automatic_checkpointing": args.automatic_checkpointing,
+        "evaluation_id": args.evaluation_id,
+        "game_subset": args.game_ids,
+        "hot_path_profile": args.hot_path_profile,
+        "max_actions": args.max_actions,
+        "max_resets": args.max_resets,
+        "milestone_id": args.milestone_id,
+        "partition": args.partition,
+        "python_allocation_tracing": args.python_allocation_tracing,
+        "seeds": tuple(args.seeds),
+        "timeout_seconds": args.timeout_seconds,
+    }
+    required_declaration = {
+        "agents": expected.agents,
+        "automatic_checkpointing": True,
+        "evaluation_id": expected.evaluation_id,
+        "game_subset": None,
+        "hot_path_profile": False,
+        "max_actions": expected.max_actions,
+        "max_resets": expected.max_resets,
+        "milestone_id": expected.milestone_id,
+        "partition": "public-holdout",
+        "python_allocation_tracing": True,
+        "seeds": expected.seeds,
+        "timeout_seconds": expected.timeout_seconds,
+    }
+    if actual != required_declaration or args.frozen_commit != gate.execution_source.commit:
+        raise EvaluationError("public holdout declaration differs from the earned Stage 11 receipt")
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
     try:
         if args.verify is not None:
+            from arc3.evaluation.public_runner import verify_public_evaluation
+
             verification = verify_public_evaluation(args.verify)
             print(json.dumps(verification, sort_keys=True, separators=(",", ":")))
             return 0 if verification["verified"] else 1
         if args.inventory_only:
+            if args.partition == "public-holdout":
+                raise EvaluationError(
+                    "sealed public holdout inventory is not an authorized operation"
+                )
             print(json.dumps(_inventory(args), sort_keys=True, separators=(",", ":")))
             return 0
         frozen_commit = args.frozen_commit
         if frozen_commit is None:
             parser.error("--frozen-commit is required for gameplay evaluation")
+        if args.partition == "public-holdout":
+            _preauthorize_holdout(args)
+        from arc3.evaluation.public import PublicEvaluationConfig
+        from arc3.evaluation.public_runner import run_public_evaluation
+
         outcome = run_public_evaluation(
             PublicEvaluationConfig(
                 partition=args.partition,

@@ -17,26 +17,16 @@ import os
 import platform
 import subprocess
 import time
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Protocol, cast
 
 if TYPE_CHECKING:
+    from arc3.adapters import EnvironmentDescriptor, EnvironmentSession, ScoreSummary
     from arc3.profiling.hot_path import HotPathProfiler
 
-from arc3.adapters import (
-    EnvironmentDescriptor,
-    EnvironmentSession,
-    ScoreSummary,
-)
-from arc3.adapters.arc_agi import (
-    ARC_AGI_VERSION,
-    ARCENGINE_VERSION,
-    DEFAULT_BASE_URL,
-    ArcAGIAdapter,
-)
 from arc3.competition_runtime import FROZEN_COMPETITION_RUNTIME
 from arc3.config import ARC3Config, BudgetConfig
 from arc3.errors import AdapterError, EvaluationError
@@ -282,6 +272,11 @@ def inventory_local_assets(
     environments_dir: str | Path,
 ) -> dict[str, LocalAssetIdentity]:
     """Return only validated manifest entries currently cached for local execution."""
+
+    # Environment bindings are imported only after the caller has crossed its
+    # authorization gate.  Importing the sealed-gate/config surface itself is
+    # deliberately adapter-free.
+    from arc3.adapters.arc_agi import ArcAGIAdapter
 
     adapter = ArcAGIAdapter(
         ARC3Config.for_mode(EnvironmentMode.LOCAL, seed=0, network_enabled=False),
@@ -717,7 +712,7 @@ def acquire_local_public_asset(
     seed: int,
     environments_dir: str | Path,
     recordings_dir: str | Path,
-    base_url: str = DEFAULT_BASE_URL,
+    base_url: str | None = None,
 ) -> None:
     """Use the pinned official NORMAL path to cache and initialize one declared game.
 
@@ -727,6 +722,12 @@ def acquire_local_public_asset(
     """
 
     try:
+        from arc3.adapters.arc_agi import (
+            ARC_AGI_VERSION,
+            ARCENGINE_VERSION,
+            DEFAULT_BASE_URL,
+        )
+
         if importlib.metadata.version("arc-agi") != ARC_AGI_VERSION:
             raise EvaluationError("arc-agi version changed before public acquisition")
         if importlib.metadata.version("arcengine") != ARCENGINE_VERSION:
@@ -745,7 +746,7 @@ def acquire_local_public_asset(
             _ArcadeLike,
             arcade_type(
                 arc_api_key=os.environ.get("ARC_API_KEY", ""),
-                arc_base_url=base_url,
+                arc_base_url=base_url or DEFAULT_BASE_URL,
                 operation_mode=normal_mode,
                 environments_dir=str(Path(environments_dir).resolve()),
                 recordings_dir=str(Path(recordings_dir).resolve()),
@@ -962,6 +963,7 @@ def run_public_episode(
     max_resets: int,
     trace_sink: BaselineTraceSink | None = None,
     hot_path_profiler: HotPathProfiler | None = None,
+    pre_action_authorization: Callable[[], None] | None = None,
 ) -> tuple[ScoreSummary | None, dict[str, object]]:
     """Execute one normalized official session with no game-specific behavior."""
 
@@ -997,6 +999,11 @@ def run_public_episode(
         if trace_sink is not None:
             trace_sink.record_submitted(before, action)
         try:
+            # The authorization check is deliberately after policy selection
+            # and directly adjacent to the only environment-action boundary.
+            # RESET uses this same typed step path and is therefore covered.
+            if pre_action_authorization is not None:
+                pre_action_authorization()
             if hot_path_profiler is not None and hot_path_profiler.enabled:
                 with hot_path_profiler.span("environment_step"):
                     observation = session.step(

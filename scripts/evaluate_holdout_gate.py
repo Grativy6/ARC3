@@ -22,7 +22,6 @@ from arc3.evaluation.holdout_gate import (
 )
 
 ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_MANIFEST = ROOT / "docs/evaluation/public-game-partitions.v0.1.json"
 
 
 def _csv_ints(value: str) -> tuple[int, ...]:
@@ -47,18 +46,22 @@ def _parser() -> argparse.ArgumentParser:
 
     gate = commands.add_parser("gate", help="evaluate the five frozen Stage 11 criteria")
     gate.add_argument("--stage09", type=Path, required=True)
+    gate.add_argument("--stage09-attempt-root", type=Path, required=True)
+    gate.add_argument("--stage09-exposure", type=Path, required=True)
     gate.add_argument("--stage09-file-sha256", required=True)
     gate.add_argument("--stage09-core-hash", required=True)
+    gate.add_argument("--stage09-finalization-file-sha256", required=True)
+    gate.add_argument("--stage09-finalization-hash", required=True)
     gate.add_argument("--stage10", type=Path, required=True)
+    gate.add_argument("--stage10-attempt-root", type=Path, required=True)
     gate.add_argument("--stage10-file-sha256", required=True)
     gate.add_argument("--stage10-core-hash", required=True)
     gate.add_argument("--integrity", type=Path, required=True)
     gate.add_argument("--integrity-file-sha256", required=True)
-    gate.add_argument("--integrity-receipt-sha256", required=True)
+    gate.add_argument("--integrity-core-hash", required=True)
     gate.add_argument("--development-source-root", type=Path, required=True)
-    gate.add_argument("--execution-source-root", type=Path, default=ROOT)
+    gate.add_argument("--execution-source-root", type=Path, required=True)
     gate.add_argument("--frozen-commit", required=True)
-    gate.add_argument("--manifest", type=Path, default=DEFAULT_MANIFEST)
     gate.add_argument("--manifest-sha256", required=True)
     gate.add_argument("--evaluation-id", required=True)
     gate.add_argument("--seeds", type=_csv_ints, default=(7, 11))
@@ -81,7 +84,6 @@ def _parser() -> argparse.ArgumentParser:
         "nonconsume", help="create Stage 12 nonconsumption from a not-earned gate"
     )
     _binding_arguments(nonconsume)
-    nonconsume.add_argument("--manifest", type=Path, default=DEFAULT_MANIFEST)
     nonconsume.add_argument("--generated-at")
     nonconsume.add_argument("--output", type=Path, required=True)
 
@@ -90,7 +92,6 @@ def _parser() -> argparse.ArgumentParser:
     )
     verify_nonconsume.add_argument("--receipt", type=Path, required=True)
     verify_nonconsume.add_argument("--gate", type=Path, required=True)
-    verify_nonconsume.add_argument("--manifest", type=Path, default=DEFAULT_MANIFEST)
     return parser
 
 
@@ -105,18 +106,22 @@ def _gate(args: argparse.Namespace) -> dict[str, object]:
     )
     receipt = create_holdout_gate_receipt(
         stage09_path=args.stage09,
+        stage09_attempt_root=args.stage09_attempt_root,
+        stage09_exposure_path=args.stage09_exposure,
         stage09_file_sha256=args.stage09_file_sha256,
         stage09_core_hash=args.stage09_core_hash,
+        stage09_terminal_finalization_sha256=args.stage09_finalization_file_sha256,
+        stage09_terminal_finalization_hash=args.stage09_finalization_hash,
         stage10_path=args.stage10,
+        stage10_attempt_root=args.stage10_attempt_root,
         stage10_file_sha256=args.stage10_file_sha256,
         stage10_core_hash=args.stage10_core_hash,
         integrity_path=args.integrity,
         integrity_file_sha256=args.integrity_file_sha256,
-        integrity_receipt_sha256=args.integrity_receipt_sha256,
+        integrity_core_hash=args.integrity_core_hash,
         development_source_root=args.development_source_root,
         execution_source_root=args.execution_source_root,
         expected_execution_commit=args.frozen_commit,
-        manifest_path=args.manifest,
         expected_manifest_sha256=args.manifest_sha256,
         evaluation=evaluation,
         generated_at=args.generated_at,
@@ -130,7 +135,6 @@ def _gate(args: argparse.Namespace) -> dict[str, object]:
             gate_path=args.output,
             gate_file_sha256=gate_file_sha256,
             gate_core_hash=gate_core_hash,
-            manifest_path=args.manifest,
             generated_at=args.generated_at,
         )
         write_canonical_once(args.nonconsumption_output, stage12)
@@ -169,7 +173,6 @@ def _nonconsume(args: argparse.Namespace) -> dict[str, object]:
         gate_path=args.gate,
         gate_file_sha256=args.gate_file_sha256,
         gate_core_hash=args.gate_core_hash,
-        manifest_path=args.manifest,
         generated_at=args.generated_at,
     )
     write_canonical_once(args.output, receipt)
@@ -186,7 +189,6 @@ def _verify_nonconsumption(args: argparse.Namespace) -> dict[str, object]:
     validate_nonconsumption_receipt(
         receipt,
         gate_path=args.gate,
-        manifest_path=args.manifest,
     )
     return {
         "schema": "arc3.build-001.holdout-nonconsumption.verification.v0.1",

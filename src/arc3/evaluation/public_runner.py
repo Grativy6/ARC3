@@ -17,7 +17,6 @@ from contextlib import nullcontext
 from pathlib import Path
 from typing import Any, cast
 
-from arc3.adapters.arc_agi import ARC_AGI_VERSION, ARCENGINE_VERSION, ArcAGIAdapter
 from arc3.config import ARC3Config
 from arc3.errors import EvaluationError, TraceError
 from arc3.profiling.runtime import process_memory_sample
@@ -36,6 +35,7 @@ from .artifacts import (
     verify_object_hash,
 )
 from .baselines import baseline_descriptor, make_evaluation_policy
+from .holdout_gate import HoldoutDecision, revalidate_earned_holdout_gate
 from .models import EvaluationOutcome
 from .public import (
     PUBLIC_EVALUATION_SCHEMA,
@@ -65,6 +65,24 @@ _TERMINAL_STATUSES = frozenset({"PASS", "PARTIAL", "FAILED_INFRASTRUCTURE"})
 _PUBLIC_SUMMARY_SCHEMA = "arc3.public-evaluation.summary.v0.2"
 _LEGACY_PUBLIC_SUMMARY_SCHEMA = "arc3.public-evaluation.summary.v0.1"
 
+# Kept as an injectable test seam without importing the environment adapter at
+# module import time.  Earned holdout workers resolve it only after their first
+# complete gate revalidation.
+ArcAGIAdapter: type[Any] | None = None
+
+
+def _arc_agi_runtime() -> tuple[type[Any], str, str]:
+    from arc3.adapters.arc_agi import (
+        ARC_AGI_VERSION,
+        ARCENGINE_VERSION,
+    )
+    from arc3.adapters.arc_agi import (
+        ArcAGIAdapter as RuntimeAdapter,
+    )
+
+    adapter = ArcAGIAdapter if ArcAGIAdapter is not None else RuntimeAdapter
+    return adapter, ARC_AGI_VERSION, ARCENGINE_VERSION
+
 
 def _as_int(value: object, *, field: str) -> int:
     if isinstance(value, bool) or not isinstance(value, int):
@@ -91,6 +109,7 @@ def _identity(
     manifest: PublicPartitionManifest,
     assets: dict[str, LocalAssetIdentity],
 ) -> dict[str, object]:
+    _adapter, arc_agi_version, arcengine_version = _arc_agi_runtime()
     root = Path(__file__).resolve().parents[3]
     lock = root / "upstream.lock.json"
     selected = config.selected_games(manifest)
@@ -120,9 +139,9 @@ def _identity(
         "policy_network_mode": "offline",
         "asset_identities": {game_id: assets[game_id].to_dict() for game_id in sorted(assets)},
         "scorer_source_version": (
-            f"arc-agi=={ARC_AGI_VERSION} "
+            f"arc-agi=={arc_agi_version} "
             f"{'ONLINE scorecard' if config.surface == 'online-public' else 'local ScorecardManager'}; "
-            f"arcengine=={ARCENGINE_VERSION}"
+            f"arcengine=={arcengine_version}"
         ),
     }
     identity["identity_hash"] = sha256_bytes(canonical_json_bytes(identity))
@@ -441,6 +460,62 @@ def _worker(spec: dict[str, Any], receipt_path: str) -> None:
         network_guard.restore()
 
 
+def _worker_holdout_authorization(spec: dict[str, Any], specification: dict[str, object]) -> None:
+    """Revalidate the complete earned authority inside the action process."""
+
+    if specification.get("partition") != "public-holdout":
+        if specification.get("surface") == "online-public":
+            raise EvaluationError("online-public worker is not a declared holdout run")
+        return
+    if specification.get("surface") != "online-public":
+        raise EvaluationError("public holdout worker surface is not online-public")
+    raw = spec.get("holdout_authority")
+    expected_fields = {
+        "gate_core_hash",
+        "gate_file_sha256",
+        "gate_path",
+        "integrity_path",
+        "manifest_path",
+        "milestone_id",
+        "stage09_path",
+        "stage10_path",
+    }
+    if (
+        not isinstance(raw, dict)
+        or set(raw) != expected_fields
+        or any(not isinstance(value, str) or not value for value in raw.values())
+    ):
+        raise EvaluationError("holdout worker has no exact Stage 11 authority")
+    authority = cast(dict[str, str], raw)
+    gate = revalidate_earned_holdout_gate(
+        gate_path=Path(authority["gate_path"]),
+        gate_file_sha256=authority["gate_file_sha256"],
+        gate_core_hash=authority["gate_core_hash"],
+        stage09_path=Path(authority["stage09_path"]),
+        stage10_path=Path(authority["stage10_path"]),
+        integrity_path=Path(authority["integrity_path"]),
+        manifest_path=Path(authority["manifest_path"]),
+        source_root=Path(__file__).resolve().parents[3],
+    )
+    expected = gate.evaluation
+    if (
+        gate.decision is not HoldoutDecision.EARNED
+        or specification.get("partition") != "public-holdout"
+        or specification.get("agent") != "full"
+        or specification.get("evaluation_id") != expected.evaluation_id
+        or specification.get("seed") not in expected.seeds
+        or specification.get("max_actions") != expected.max_actions
+        or specification.get("max_resets") != expected.max_resets
+        or specification.get("timeout_seconds") != expected.timeout_seconds
+        or specification.get("hot_path_profile") is not False
+        or specification.get("python_allocation_tracing") is not True
+        or specification.get("automatic_checkpointing") is not True
+        or authority["milestone_id"] != expected.milestone_id
+        or spec.get("git_commit") != gate.execution_source.commit
+    ):
+        raise EvaluationError("holdout worker declaration differs from Stage 11 authority")
+
+
 def _worker_body(
     spec: dict[str, Any],
     receipt_path: str,
@@ -452,6 +527,9 @@ def _worker_body(
     cpu_started = time.process_time()
     memory_before = process_memory_sample()
     specification = cast(dict[str, object], spec["specification"])
+    # This occurs in the spawned action process before adapter construction,
+    # environment opening, policy selection, or an exposure-causing action.
+    _worker_holdout_authorization(spec, specification)
     identity = cast(dict[str, object], spec["identity"])
     run_id = str(specification["run_id"])
     trace_path = Path(str(spec["trace_path"]))
@@ -486,7 +564,8 @@ def _worker_body(
             hot_path_profiler.span("startup") if hot_path_profiler is not None else nullcontext()
         )
         with startup_span:
-            adapter = ArcAGIAdapter(
+            adapter_type, arc_agi_version, _arcengine_version = _arc_agi_runtime()
+            adapter = adapter_type(
                 ARC3Config.for_mode(
                     EnvironmentMode.ONLINE if online_one_shot else EnvironmentMode.LOCAL,
                     seed=_as_int(specification["seed"], field="seed"),
@@ -525,7 +604,7 @@ def _worker_body(
                 episode_id=f"episode:{run_id}",
                 source=SourceIdentity(
                     f"arc_agi_{source_surface}",
-                    f"arc-agi=={ARC_AGI_VERSION}",
+                    f"arc-agi=={arc_agi_version}",
                     {
                         "baseline_id": str(specification["baseline_id"]),
                         "network_mode": str(specification["network_mode"]),
@@ -537,6 +616,9 @@ def _worker_body(
                     {"first_party_source_hash": str(identity["first_party_source_hash"])},
                 ),
             )
+        # Recheck after environment initialization and immediately before the
+        # first policy selection/action.  Any authority drift fails closed.
+        _worker_holdout_authorization(spec, specification)
         scorecard, metrics = run_public_episode(
             session,
             policy,
@@ -544,6 +626,7 @@ def _worker_body(
             max_resets=_as_int(specification["max_resets"], field="max_resets"),
             trace_sink=sink,
             hot_path_profiler=hot_path_profiler,
+            pre_action_authorization=(lambda: _worker_holdout_authorization(spec, specification)),
         )
     except Exception as error:
         caught = error
@@ -1717,7 +1800,7 @@ def run_public_evaluation(config: PublicEvaluationConfig) -> EvaluationOutcome:
 
     # This must precede manifest parsing, asset inventory, and every environment
     # operation.  A bare allow_public_holdout flag has no authority.
-    validate_holdout_authorization(config)
+    authorization = validate_holdout_authorization(config)
     manifest = PublicPartitionManifest.load(config.manifest_path)
     ledger = PublicExposureLedger(config.exposure_ledger)
     started_at = _utc_now()
@@ -1748,6 +1831,10 @@ def run_public_evaluation(config: PublicEvaluationConfig) -> EvaluationOutcome:
         ledger,
         resume_evaluation_id=evaluation_id if previous is not None else None,
     )
+    if config.partition == "public-holdout":
+        authorization = validate_holdout_authorization(config)
+        if authorization is None:
+            raise EvaluationError("public holdout has no earned Stage 11 authorization")
     directory.mkdir(parents=True, exist_ok=True)
     assets = inventory_local_assets(manifest, config.environments_dir)
     selected_ids = {entry.game_id for entry in config.selected_games(manifest)}
@@ -1904,6 +1991,12 @@ def run_public_evaluation(config: PublicEvaluationConfig) -> EvaluationOutcome:
             trace_path.replace(failures / f"trace-{storage_key}-{uuid.uuid4().hex}")
         if checkpoint_path.exists():
             checkpoint_path.replace(failures / f"checkpoint-{storage_key}-{uuid.uuid4().hex}")
+        if config.partition == "public-holdout":
+            # Bind the last parent-side state immediately before recording an
+            # exposure and spawning the independently revalidating worker.
+            authorization = validate_holdout_authorization(config)
+            if authorization is None:
+                raise EvaluationError("public holdout authority disappeared before action")
         ledger.append(
             "game.evaluation_started",
             {
@@ -1934,6 +2027,27 @@ def run_public_evaluation(config: PublicEvaluationConfig) -> EvaluationOutcome:
             "game_id": specification["game_id"],
             "git_commit": config.frozen_commit,
         }
+        if config.partition == "public-holdout":
+            if (
+                config.holdout_gate_receipt is None
+                or config.holdout_gate_file_sha256 is None
+                or config.holdout_gate_core_hash is None
+                or config.stage09_result is None
+                or config.stage10_result is None
+                or config.competition_integrity_receipt is None
+                or authorization is None
+            ):
+                raise EvaluationError("public holdout worker authority is incomplete")
+            worker_spec["holdout_authority"] = {
+                "gate_core_hash": config.holdout_gate_core_hash,
+                "gate_file_sha256": config.holdout_gate_file_sha256,
+                "gate_path": config.holdout_gate_receipt.resolve().as_posix(),
+                "integrity_path": config.competition_integrity_receipt.resolve().as_posix(),
+                "manifest_path": config.manifest_path.resolve().as_posix(),
+                "milestone_id": authorization.evaluation.milestone_id,
+                "stage09_path": config.stage09_result.resolve().as_posix(),
+                "stage10_path": config.stage10_result.resolve().as_posix(),
+            }
         launched = _utc_now()
         timer = time.perf_counter()
         process = context.Process(target=_worker, args=(worker_spec, str(receipt_path)))

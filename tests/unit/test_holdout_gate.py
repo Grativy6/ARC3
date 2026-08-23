@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import json
 import subprocess
+import sys
 from copy import deepcopy
 from pathlib import Path
 from typing import Any, cast
@@ -8,6 +10,7 @@ from typing import Any, cast
 import pytest
 
 from arc3.errors import EvaluationError
+from arc3.evaluation import holdout_gate as holdout_gate_module
 from arc3.evaluation.artifacts import canonical_json_bytes, seal_object, sha256_bytes, sha256_file
 from arc3.evaluation.development_recovery import AGGREGATE_SCHEMA as STAGE09_SCHEMA
 from arc3.evaluation.holdout_gate import (
@@ -23,11 +26,10 @@ from arc3.evaluation.holdout_gate import (
     source_identity,
     validate_nonconsumption_receipt,
 )
+from arc3.evaluation.integrity_authority import COMPOSITE_INTEGRITY_SCHEMA
 from arc3.evaluation.public import PublicEvaluationConfig
-from arc3.evaluation.public_runner import run_public_evaluation
+from arc3.evaluation.public_runner import _worker_holdout_authorization, run_public_evaluation
 from arc3.evaluation.stage10_regression import PREDECLARATION_SHA256, STAGE10_RESULT_SCHEMA
-from arc3.integrity import INTEGRITY_SCHEMA, IntegrityReceipt
-from arc3.types import JSONValue
 
 ROOT = Path(__file__).resolve().parents[2]
 MANIFEST_BYTES = b"opaque-sealed-manifest\n"
@@ -141,7 +143,14 @@ def _stage09(
     return seal_object(payload, hash_field="artifact_core_hash")
 
 
-def _stage10(identity: SourceIdentity, *, status: str = "PASS") -> dict[str, Any]:
+def _stage10(
+    identity: SourceIdentity,
+    *,
+    composite_file_sha256: str,
+    composite_core_hash: str,
+    invocation_ledger: dict[str, object],
+    status: str = "PASS",
+) -> dict[str, Any]:
     disposition = "PASS" if status == "PASS" else "FAILED_MECHANISM"
     source = {
         "clean_worktree": True,
@@ -154,6 +163,8 @@ def _stage10(identity: SourceIdentity, *, status: str = "PASS") -> dict[str, Any
         "claim": "NO_GENERALIZATION_CLAIM",
         "evidence_label": "synthetic",
         "infrastructure_failure": None,
+        "invocation_ledger": invocation_ledger,
+        "plan_hash": sha256_bytes(b"synthetic-stage10-plan"),
         "predeclaration_sha256": PREDECLARATION_SHA256,
         "schema": STAGE10_RESULT_SCHEMA,
         "source_identity_end": source,
@@ -164,7 +175,15 @@ def _stage10(identity: SourceIdentity, *, status: str = "PASS") -> dict[str, Any
                 "artifact_valid": True,
                 "disposition": disposition,
                 "errors": [],
-                "measurements": {},
+                "measurements": (
+                    {
+                        "composite_integrity_core_hash": composite_core_hash,
+                        "composite_integrity_file_sha256": composite_file_sha256,
+                        "composite_integrity_schema": COMPOSITE_INTEGRITY_SCHEMA,
+                    }
+                    if suite == "competition-integrity"
+                    else {}
+                ),
                 "predicates": {"accepted": status == "PASS"},
                 "suite_id": suite,
             }
@@ -172,38 +191,6 @@ def _stage10(identity: SourceIdentity, *, status: str = "PASS") -> dict[str, Any
         ],
     }
     return seal_object(payload, hash_field="artifact_core_hash")
-
-
-def _integrity(identity: SourceIdentity, manifest_sha256: str) -> IntegrityReceipt:
-    checks: dict[str, JSONValue] = {
-        name: {"passed": True}
-        for name in (
-            "archive_static",
-            "policy_static",
-            "secret_scan",
-            "source_identity",
-            "supply_chain",
-        )
-    }
-    checks["supply_chain"] = {"passed": True, "status": "PASS"}
-    body: dict[str, JSONValue] = {
-        "assurance_scope": {
-            "kind": "static-only",
-            "runtime_socket_denial": "OUT_OF_SCOPE",
-            "scanner_network_mode": "offline-by-construction",
-        },
-        "checks": checks,
-        "finding_counts": {"blocking": 0, "total": 0, "warnings": 0},
-        "git": {"commit": identity.commit, "dirty_worktree": False},
-        "inputs": {"manifest_sha256": manifest_sha256},
-        "passed": True,
-        "schema": INTEGRITY_SCHEMA,
-        "source_hashes": {
-            COMPETITION_CONFIG_PATH: identity.competition_config_file_sha256,
-            "uv.lock": identity.dependency_lock_sha256,
-        },
-    }
-    return IntegrityReceipt(body=body)
 
 
 def _artifact(path: Path, document: dict[str, Any]) -> tuple[str, str]:
@@ -225,17 +212,49 @@ class Evidence:
         _write(self.manifest, MANIFEST_BYTES)
         self.manifest_sha256 = sha256_bytes(MANIFEST_BYTES)
         self.stage09 = root / "stage09.json"
+        self.stage09_attempt_root = root / "stage09-attempt"
+        self.stage09_exposure = root / "stage09-exposure.jsonl"
+        self.stage09_finalization_file = "sha256:" + "a" * 64
+        self.stage09_finalization_core = "sha256:" + "b" * 64
         self.stage10 = root / "stage10.json"
+        self.stage10_attempt_root = root / "stage10-attempt"
+        ledger_path = self.stage10_attempt_root / "invocations.jsonl"
+        _write(ledger_path, b"{}\n")
+        self.stage10_ledger: dict[str, object] = {
+            "byte_length": ledger_path.stat().st_size,
+            "path": ledger_path.resolve().as_posix(),
+            "sha256": sha256_file(ledger_path),
+        }
         self.integrity = root / "integrity.json"
         self.stage09_file, self.stage09_core = _artifact(
             self.stage09,
             _stage09(self.development, manifest_sha256=self.manifest_sha256),
         )
-        self.stage10_file, self.stage10_core = _artifact(self.stage10, _stage10(self.execution))
-        integrity = _integrity(self.execution, self.manifest_sha256)
-        _write(self.integrity, integrity.canonical_bytes())
-        self.integrity_file = sha256_file(self.integrity)
-        self.integrity_core = integrity.receipt_sha256
+        integrity = seal_object(
+            {
+                "assurance_limitation": (
+                    "Package and development scans are static; dynamic-import and native-extension "
+                    "containment are not proven; Build 001 public identifiers were not fully evaluated."
+                ),
+                "claim": "BOUNDED_STATIC_COMPETITION_INTEGRITY_WITH_OPAQUE_HOLDOUT",
+                "full_public_integrity_status": ("NOT_EVALUATED_BUILD_001_PUBLIC_IDENTIFIERS"),
+                "opaque_public_manifest_sha256": self.manifest_sha256,
+                "schema": COMPOSITE_INTEGRITY_SCHEMA,
+                "semantic_public_manifest_access": False,
+                "status": "PASS",
+            },
+            hash_field="artifact_core_hash",
+        )
+        self.integrity_file, self.integrity_core = _artifact(self.integrity, integrity)
+        self.stage10_file, self.stage10_core = _artifact(
+            self.stage10,
+            _stage10(
+                self.execution,
+                composite_file_sha256=self.integrity_file,
+                composite_core_hash=self.integrity_core,
+                invocation_ledger=self.stage10_ledger,
+            ),
+        )
         self.evaluation = HoldoutEvaluationDeclaration(
             evaluation_id="build001-stage12-sealed",
             agents=("full",),
@@ -248,18 +267,22 @@ class Evidence:
     def gate(self, **overrides: object) -> dict[str, Any]:
         arguments: dict[str, object] = {
             "stage09_path": self.stage09,
+            "stage09_attempt_root": self.stage09_attempt_root,
+            "stage09_exposure_path": self.stage09_exposure,
             "stage09_file_sha256": self.stage09_file,
             "stage09_core_hash": self.stage09_core,
+            "stage09_terminal_finalization_sha256": self.stage09_finalization_file,
+            "stage09_terminal_finalization_hash": self.stage09_finalization_core,
             "stage10_path": self.stage10,
+            "stage10_attempt_root": self.stage10_attempt_root,
             "stage10_file_sha256": self.stage10_file,
             "stage10_core_hash": self.stage10_core,
             "integrity_path": self.integrity,
             "integrity_file_sha256": self.integrity_file,
-            "integrity_receipt_sha256": self.integrity_core,
+            "integrity_core_hash": self.integrity_core,
             "development_source_root": self.development_root,
             "execution_source_root": self.execution_root,
             "expected_execution_commit": self.execution.commit,
-            "manifest_path": self.manifest,
             "expected_manifest_sha256": self.manifest_sha256,
             "evaluation": self.evaluation,
             "generated_at": NOW,
@@ -269,8 +292,66 @@ class Evidence:
 
 
 @pytest.fixture
-def evidence(tmp_path: Path) -> Evidence:
-    return Evidence(tmp_path)
+def evidence(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Evidence:
+    result = Evidence(tmp_path)
+
+    def validate_composite(
+        path: Path,
+        *,
+        expected_file_sha256: str,
+        expected_core_hash: str,
+        source_root: Path,
+    ) -> dict[str, Any]:
+        raw = path.read_bytes()
+        document = cast(dict[str, Any], json.loads(raw))
+        if sha256_bytes(raw) != expected_file_sha256:
+            raise EvaluationError("composite integrity artifact file hash changed")
+        if document.get("artifact_core_hash") != expected_core_hash:
+            raise EvaluationError("composite integrity artifact core hash changed")
+        if source_identity(source_root).clean_worktree is not True:
+            raise EvaluationError("composite integrity source changed")
+        return document
+
+    monkeypatch.setattr(
+        holdout_gate_module,
+        "validate_composite_integrity_authority",
+        validate_composite,
+    )
+    monkeypatch.setattr(holdout_gate_module, "_require_runtime_import_origin", lambda _root: None)
+
+    def verify_stage09(**arguments: object) -> dict[str, Any]:
+        return seal_object(
+            {
+                "attempt_root": Path(cast(Path, arguments["attempt_root"])).resolve().as_posix(),
+                "competition_integrity": True,
+                "evidence_integrity": True,
+                "execution_complete": True,
+                "exposure": {"path": Path(cast(Path, arguments["exposure"])).resolve().as_posix()},
+                "gate": {"passed": True},
+                "output": {
+                    "artifact_core_hash": arguments["expected_artifact_core_hash"],
+                    "file_sha256": arguments["expected_output_sha256"],
+                    "path": Path(cast(Path, arguments["output"])).resolve().as_posix(),
+                },
+                "passed": True,
+                "prior_authority": {},
+                "schema": "arc3.build-001.stage-09-terminal-verification.v0.2",
+                "source_end": {"passed": True},
+                "source_root": Path(cast(Path, arguments["source_root"])).resolve().as_posix(),
+                "source_stable": True,
+                "status": "PASS",
+                "terminal_finalization": {
+                    "artifact_core_hash": arguments["expected_terminal_finalization_hash"],
+                    "file_sha256": arguments["expected_terminal_finalization_sha256"],
+                },
+                "work_authority": {"passed": True},
+            },
+            hash_field="verification_hash",
+        )
+
+    monkeypatch.setattr(holdout_gate_module, "_stage09_graph_verification", verify_stage09)
+    monkeypatch.setattr(holdout_gate_module, "_stage10_graph_clear", lambda **_kwargs: True)
+    return result
 
 
 def _written_gate(root: Path, document: dict[str, Any]) -> tuple[Path, str, str]:
@@ -329,6 +410,89 @@ def test_all_five_criteria_are_required_and_revalidate(evidence: Evidence) -> No
     }
 
 
+def test_stage10_terminal_graph_failure_cannot_earn_holdout(
+    evidence: Evidence, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(holdout_gate_module, "_stage10_graph_clear", lambda **_kwargs: False)
+    document = evidence.gate()
+    assert document["decision"] == HoldoutDecision.NOT_EARNED.value
+    assert cast(dict[str, bool], document["criteria"])["stage10_pass"] is False
+
+
+def test_stage09_terminal_graph_failure_cannot_earn_holdout(
+    evidence: Evidence, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(holdout_gate_module, "_stage09_graph_verification", lambda **_kwargs: None)
+    document = evidence.gate()
+    assert document["decision"] == HoldoutDecision.NOT_EARNED.value
+    assert cast(dict[str, bool], document["criteria"])["stage09_pass"] is False
+
+
+def test_earned_revalidation_rechecks_stage09_graph_before_manifest(
+    evidence: Evidence, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    original = holdout_gate_module._stage09_graph_verification
+    calls = 0
+
+    def graph(**arguments: object) -> dict[str, object] | None:
+        nonlocal calls
+        calls += 1
+        return original(**arguments) if calls == 1 else None
+
+    monkeypatch.setattr(holdout_gate_module, "_stage09_graph_verification", graph)
+    gate = _written_gate(evidence.manifest.parent, evidence.gate())
+    evidence.manifest.unlink()
+    with pytest.raises(EvaluationError, match="Stage 09 complete terminal graph"):
+        revalidate_earned_holdout_gate(
+            gate_path=gate[0],
+            gate_file_sha256=gate[1],
+            gate_core_hash=gate[2],
+            stage09_path=evidence.stage09,
+            stage10_path=evidence.stage10,
+            integrity_path=evidence.integrity,
+            manifest_path=evidence.manifest,
+            source_root=evidence.execution_root,
+        )
+    assert calls == 2
+
+
+def test_earned_revalidation_rechecks_stage10_graph_before_manifest(
+    evidence: Evidence, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    calls = 0
+
+    def graph_clear(**_kwargs: object) -> bool:
+        nonlocal calls
+        calls += 1
+        return calls == 1
+
+    monkeypatch.setattr(holdout_gate_module, "_stage10_graph_clear", graph_clear)
+    gate = _written_gate(evidence.manifest.parent, evidence.gate())
+    evidence.manifest.unlink()
+    with pytest.raises(EvaluationError, match="criteria no longer revalidate"):
+        revalidate_earned_holdout_gate(
+            gate_path=gate[0],
+            gate_file_sha256=gate[1],
+            gate_core_hash=gate[2],
+            stage09_path=evidence.stage09,
+            stage10_path=evidence.stage10,
+            integrity_path=evidence.integrity,
+            manifest_path=evidence.manifest,
+            source_root=evidence.execution_root,
+        )
+    assert calls == 2
+
+
+def test_stage10_ledger_path_cannot_be_resigned_into_gate(evidence: Evidence) -> None:
+    stage10 = cast(dict[str, Any], json.loads(evidence.stage10.read_bytes()))
+    ledger = cast(dict[str, object], stage10["invocation_ledger"])
+    ledger["path"] = (evidence.stage10_attempt_root / "other.jsonl").resolve().as_posix()
+    stage10 = seal_object(stage10, hash_field="artifact_core_hash")
+    file_sha, core = _artifact(evidence.stage10, stage10)
+    with pytest.raises(EvaluationError, match="ledger binding is invalid"):
+        evidence.gate(stage10_file_sha256=file_sha, stage10_core_hash=core)
+
+
 def test_stage09_schema_drift_is_rejected_even_when_resigned(evidence: Evidence) -> None:
     drifted = _stage09(evidence.development, manifest_sha256=evidence.manifest_sha256)
     drifted["schema"] = "arc3.build-001.stage-09-aggregate.v9"
@@ -356,16 +520,21 @@ def test_bound_stage09_and_integrity_resigning_cannot_replace_authority(
         _stage09(evidence.development, manifest_sha256=evidence.manifest_sha256),
     )
     original_integrity_file = evidence.integrity_file
-    receipt = _integrity(evidence.execution, evidence.manifest_sha256)
-    body = dict(receipt.body)
+    body = cast(dict[str, Any], json.loads(evidence.integrity.read_bytes()))
     body["generated_at"] = NOW
-    _write(evidence.integrity, IntegrityReceipt(body=body).canonical_bytes())
+    _artifact(evidence.integrity, seal_object(body, hash_field="artifact_core_hash"))
     with pytest.raises(EvaluationError, match="file hash changed"):
         evidence.gate(integrity_file_sha256=original_integrity_file)
 
 
 def test_stage10_failed_result_yields_not_earned_and_nonconsumption(evidence: Evidence) -> None:
-    stage10 = _stage10(evidence.execution, status="FAILED_MECHANISM")
+    stage10 = _stage10(
+        evidence.execution,
+        composite_file_sha256=evidence.integrity_file,
+        composite_core_hash=evidence.integrity_core,
+        invocation_ledger=evidence.stage10_ledger,
+        status="FAILED_MECHANISM",
+    )
     evidence.stage10_file, evidence.stage10_core = _artifact(evidence.stage10, stage10)
     document = evidence.gate()
     assert document["decision"] == HoldoutDecision.NOT_EARNED.value
@@ -376,13 +545,11 @@ def test_stage10_failed_result_yields_not_earned_and_nonconsumption(evidence: Ev
         gate_path=gate[0],
         gate_file_sha256=gate[1],
         gate_core_hash=gate[2],
-        manifest_path=evidence.manifest,
         generated_at=NOW,
     )
     validate_nonconsumption_receipt(
         receipt,
         gate_path=gate[0],
-        manifest_path=evidence.manifest,
     )
     assert receipt["gameplay_opened"] is False
     assert receipt["environment_adapter_loaded"] is False
@@ -396,7 +563,6 @@ def test_nonconsumption_is_unreachable_for_an_earned_gate(evidence: Evidence) ->
             gate_path=gate[0],
             gate_file_sha256=gate[1],
             gate_core_hash=gate[2],
-            manifest_path=evidence.manifest,
             generated_at=NOW,
         )
 
@@ -481,7 +647,13 @@ def test_not_earned_runner_cannot_load_manifest_or_inventory_assets(
 ) -> None:
     from arc3.evaluation import public, public_runner
 
-    stage10 = _stage10(evidence.execution, status="FAILED_MECHANISM")
+    stage10 = _stage10(
+        evidence.execution,
+        composite_file_sha256=evidence.integrity_file,
+        composite_core_hash=evidence.integrity_core,
+        invocation_ledger=evidence.stage10_ledger,
+        status="FAILED_MECHANISM",
+    )
     evidence.stage10_file, evidence.stage10_core = _artifact(evidence.stage10, stage10)
     gate = _written_gate(evidence.manifest.parent, evidence.gate())
     config = _public_config(evidence, gate)
@@ -497,7 +669,7 @@ def test_not_earned_runner_cannot_load_manifest_or_inventory_assets(
 
     monkeypatch.setattr(public, "_repository_root", lambda: evidence.execution_root)
     monkeypatch.setattr(
-        public_runner.PublicPartitionManifest,
+        public.PublicPartitionManifest,
         "load",
         staticmethod(forbidden_manifest),
     )
@@ -509,14 +681,19 @@ def test_not_earned_runner_cannot_load_manifest_or_inventory_assets(
 
 
 def test_nonconsumption_tamper_is_detected(evidence: Evidence) -> None:
-    stage10 = _stage10(evidence.execution, status="FAILED_MECHANISM")
+    stage10 = _stage10(
+        evidence.execution,
+        composite_file_sha256=evidence.integrity_file,
+        composite_core_hash=evidence.integrity_core,
+        invocation_ledger=evidence.stage10_ledger,
+        status="FAILED_MECHANISM",
+    )
     evidence.stage10_file, evidence.stage10_core = _artifact(evidence.stage10, stage10)
     gate = _written_gate(evidence.manifest.parent, evidence.gate())
     receipt = create_nonconsumption_receipt(
         gate_path=gate[0],
         gate_file_sha256=gate[1],
         gate_core_hash=gate[2],
-        manifest_path=evidence.manifest,
         generated_at=NOW,
     )
     receipt["gameplay_opened"] = True
@@ -524,5 +701,82 @@ def test_nonconsumption_tamper_is_detected(evidence: Evidence) -> None:
         validate_nonconsumption_receipt(
             receipt,
             gate_path=gate[0],
-            manifest_path=evidence.manifest,
         )
+
+
+def test_not_earned_nonconsumption_never_needs_manifest_bytes(evidence: Evidence) -> None:
+    stage10 = _stage10(
+        evidence.execution,
+        composite_file_sha256=evidence.integrity_file,
+        composite_core_hash=evidence.integrity_core,
+        invocation_ledger=evidence.stage10_ledger,
+        status="FAILED_MECHANISM",
+    )
+    evidence.stage10_file, evidence.stage10_core = _artifact(evidence.stage10, stage10)
+    gate = _written_gate(evidence.manifest.parent, evidence.gate())
+    evidence.manifest.unlink()
+
+    receipt = create_nonconsumption_receipt(
+        gate_path=gate[0],
+        gate_file_sha256=gate[1],
+        gate_core_hash=gate[2],
+        generated_at=NOW,
+    )
+    validate_nonconsumption_receipt(receipt, gate_path=gate[0])
+    assert receipt["environment_actions"] == 0
+    assert receipt["holdout"]["manifest_parsed"] is False
+
+
+def test_holdout_worker_cannot_skip_authorization_by_changing_surface() -> None:
+    with pytest.raises(EvaluationError, match="surface is not online-public"):
+        _worker_holdout_authorization(
+            {},
+            {"partition": "public-holdout", "surface": "local-public"},
+        )
+
+
+def test_gate_and_runner_imports_do_not_import_environment_adapter() -> None:
+    code = (
+        "import sys;from pathlib import Path;"
+        "sys.path.insert(0,str(Path(sys.argv[1]).resolve()/'src'));"
+        "import arc3.evaluation.holdout_gate,arc3.evaluation.public,"
+        "arc3.evaluation.public_runner;"
+        "assert 'arc3.adapters.arc_agi' not in sys.modules"
+    )
+    completed = subprocess.run(
+        (sys.executable, "-I", "-c", code, str(ROOT)),
+        cwd=ROOT,
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert completed.returncode == 0, completed.stderr
+
+
+def test_runtime_import_origin_must_match_explicit_source_root(tmp_path: Path) -> None:
+    holdout_gate_module._require_runtime_import_origin(ROOT)
+
+    with pytest.raises(EvaluationError, match="execution source"):
+        holdout_gate_module._require_runtime_import_origin(tmp_path)
+
+
+@pytest.mark.parametrize(
+    "module_name",
+    ("arc3.integrity.scanner", "arc3.evaluation.artifacts"),
+)
+def test_runtime_import_closure_rejects_mixed_validator_module(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    module_name: str,
+) -> None:
+    module = sys.modules[module_name]
+    mixed_origin = tmp_path / module_name.replace(".", "/").replace(
+        "/scanner", "/scanner.py"
+    ).replace("/artifacts", "/artifacts.py")
+    mixed_origin.parent.mkdir(parents=True, exist_ok=True)
+    mixed_origin.write_text("# mixed validation tree\n", encoding="utf-8")
+    monkeypatch.setattr(module, "__file__", str(mixed_origin))
+
+    with pytest.raises(EvaluationError, match="outside the execution source"):
+        holdout_gate_module._require_runtime_import_origin(ROOT)

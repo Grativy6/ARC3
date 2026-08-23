@@ -342,10 +342,26 @@ def discover_policy_files(
 
 
 def _candidate_from_git(root: Path) -> tuple[Path, ...] | None:
+    environment = {
+        key: value for key, value in os.environ.items() if not key.upper().startswith("GIT_")
+    }
     try:
+        top_level = subprocess.run(
+            ["git", "rev-parse", "--show-toplevel"],
+            cwd=root,
+            env=environment,
+            check=False,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+        )
+        if top_level.returncode != 0 or Path(top_level.stdout.strip()).resolve() != root.resolve():
+            return None
         completed = subprocess.run(
             ["git", "ls-files", "-z", "--cached", "--others", "--exclude-standard"],
             cwd=root,
+            env=environment,
             check=False,
             capture_output=True,
         )
@@ -1245,10 +1261,24 @@ def _git_identity(
         ".",
     ]
     status_command.extend(f":(exclude){_relative_path(root, path)}" for path in excluded_paths)
+    environment = {
+        key: value for key, value in os.environ.items() if not key.upper().startswith("GIT_")
+    }
     try:
+        top_level = subprocess.run(
+            ["git", "rev-parse", "--show-toplevel"],
+            cwd=root,
+            env=environment,
+            check=False,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+        )
         commit = subprocess.run(
             ["git", "rev-parse", "HEAD"],
             cwd=root,
+            env=environment,
             check=False,
             capture_output=True,
             text=True,
@@ -1256,13 +1286,19 @@ def _git_identity(
         status = subprocess.run(
             status_command,
             cwd=root,
+            env=environment,
             check=False,
             capture_output=True,
             text=True,
         )
     except OSError:
         return None, None
-    if commit.returncode != 0 or status.returncode != 0:
+    if (
+        top_level.returncode != 0
+        or Path(top_level.stdout.strip()).resolve() != root.resolve()
+        or commit.returncode != 0
+        or status.returncode != 0
+    ):
         return None, None
     return commit.stdout.strip(), bool(status.stdout)
 

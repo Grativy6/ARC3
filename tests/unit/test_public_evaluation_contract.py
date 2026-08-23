@@ -41,6 +41,7 @@ from arc3.evaluation.public import (
     PublicPartitionManifest,
     _run_context,
     local_asset_identity,
+    run_public_episode,
     validate_frozen_source,
     validate_public_gate,
 )
@@ -72,6 +73,72 @@ from arc3.types import (
 ROOT = Path(__file__).resolve().parents[2]
 MANIFEST = ROOT / "docs" / "evaluation" / "public-game-partitions.v0.1.json"
 FROZEN = "a" * 40
+
+
+def test_pre_action_authority_drift_blocks_the_next_environment_step() -> None:
+    """Every step/RESET gets a fresh fail-closed authorization callback."""
+
+    def observation(value: int) -> Observation:
+        return Observation(
+            game_id=GameId("opaque-per-action-fixture"),
+            frames=(GridFrame(((value,),)),),
+            state=GameStateName.NOT_FINISHED,
+            levels_completed=0,
+            win_levels=1,
+            available_actions=(ActionName.ACTION1, ActionName.RESET),
+        )
+
+    class Session:
+        def __init__(self) -> None:
+            self._observation = observation(0)
+            self.steps = 0
+
+        @property
+        def observation(self) -> Observation:
+            return self._observation
+
+        def step(
+            self,
+            action: ActionRequest,
+            *,
+            reasoning: Mapping[str, JSONValue] | None = None,
+        ) -> Observation:
+            assert reasoning is not None
+            self.steps += 1
+            self._observation = observation(self.steps)
+            return self._observation
+
+        def close(self) -> None:
+            return None
+
+    class Policy:
+        manages_trace = False
+
+        def select(self, _current: Observation) -> ActionRequest:
+            return ActionRequest(ActionName.ACTION1)
+
+        def accept_consequence(self, _returned: Observation) -> None:
+            return None
+
+    session = Session()
+    checks = 0
+
+    def authorize() -> None:
+        nonlocal checks
+        checks += 1
+        if checks == 2:
+            raise EvaluationError("injected mid-episode authority drift")
+
+    with pytest.raises(EvaluationError, match="mid-episode authority drift"):
+        run_public_episode(
+            cast(Any, session),
+            cast(Any, Policy()),
+            max_actions=3,
+            max_resets=1,
+            pre_action_authorization=authorize,
+        )
+    assert checks == 2
+    assert session.steps == 1
 
 
 def test_frozen_manifest_recomputes_all_assignments_and_exposures() -> None:
