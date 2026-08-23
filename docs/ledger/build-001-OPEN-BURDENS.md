@@ -1530,3 +1530,68 @@ does not erase earlier uncertainty or failed mechanisms.
 - Residual: the detached pass does not retroactively validate either manual attempt, prove which
   external actor changed metadata, establish OS containment, or replace fresh hosted Linux/Windows
   Stage 13 evidence. Those limits remain under B-001-0054 and B-001-0055.
+
+## B-001-0061 — The first frozen H could not authorize its immutable Build 000 comparator
+
+- Status: RESOLVED before decisive execution; failed preflight remains evidence.
+- Stage: 09
+- Opened: 2026-08-23
+- Resolved: 2026-08-23
+- Owner: Codex
+- Burden: at `H=c318f8f`, the non-playing prior-authority graph failed solely because the complete
+  current scanner reported three official ARC SDK adapter findings in immutable Build 000. All
+  other seven prior-authority predicates passed; all four Stage 09 mutable paths were absent; no
+  gameplay or holdout semantic access occurred. Launching despite that contradiction was forbidden.
+- Resolving evidence: commit `10c2c7878a0a13ee6c7eb3c0c9aa36fc98fedefb` binds those three
+  findings to the exact Build 000 source identity and complete typed signatures as historical
+  limitations, partitions every other finding as blocking, and retains zero findings for `P`.
+  Adversarial hosted-client, moved-signature, duplicate, wrong-source, and production-reuse tests
+  pass. The exact detached v0.5 preflight now passes all 14 predicates with hash
+  `sha256:442b9a1f7d2d751bb3d72f7e9367550fcac2fc90b866ad5bbeb3a8270db1ef5f`.
+- Residual: the comparator's three static findings remain explicit limitations and do not prove
+  runtime dynamic-import or native-extension containment. They cannot be generalized into a
+  production exception or an offline/private-platform result.
+
+## B-001-0062 — Rendered package plans rejected their own exact candidate commit
+
+- Status: RESOLVED locally; hosted terminal evidence pending.
+- Stage: 13
+- Opened: 2026-08-23
+- Resolved locally: 2026-08-23
+- Owner: Codex
+- Burden: exact-head hosted package-only runs at `c318f8f` and `bb8f5ea` stopped before producing a
+  receipt because the static plan validator accepted only the pre-render placeholder, then rejected
+  the literal candidate SHA it had just rendered. The verifier exited 2 with
+  `package-only package-integrity argv shape is not the frozen static gate`; this was not a package
+  PASS or a private-surface boundary result.
+- Resolving evidence: commit `6f38ea19e0b253826d487b3c359cfa07503a4dcc` accepts either the
+  exact placeholder or a lowercase forty-hex literal in that one position and requires the guarded
+  tests and integrity scan to bind the same literal. A clean detached suite passed 16 tests plus
+  Ruff and strict mypy; mismatch and extra-argument regressions remain fail-closed.
+- Residual: exact-head hosted Linux and Windows runs must reach authenticated terminal receipts.
+  Until then B-001-0054 remains open and no cross-platform package result is claimed.
+
+### B-001-0056 — Repaired policy authority is exact and preflight-validated
+
+- Status update: RESOLVED before decisive execution.
+- Last updated: 2026-08-23T08:41:29.6191207Z
+- Resolving evidence: `P=d6d4bac` remains exact at tree `dd8e82e` and first-party source hash
+  `sha256:8f0de1a9c2c88761951ba2bcd69f2612bedfa0cc4226f44f1ed272b54b9023a8`;
+  its package-only receipt and before-results amendment verify. The detached `H=10c2c78` v0.5
+  preflight independently recomputed `P` as 111 policy files with zero findings, validated the
+  package receipt, and passed all 14 predicates with hash
+  `sha256:442b9a1f7d2d751bb3d72f7e9367550fcac2fc90b866ad5bbeb3a8270db1ef5f`.
+- Residual: package-only authority still does not evaluate public identifiers or prove native/OS
+  containment. Decisive Stage 09 and Stage 10 terminals remain under B-001-0051/B-001-0052.
+
+### B-001-0051 — Exact final-harness preflight is complete
+
+- Status update: NARROWED, not resolved.
+- Last updated: 2026-08-23T08:41:29.6191207Z
+- Current evidence: `H=10c2c78`, tree `18a44bfb`, is detached and clean; its complete executable
+  source mapping, runtime binding, comparator and production authority, assets, predecessor,
+  inherited exposures, environment cache, and opaque holdout projection passed. All four official
+  Stage 09 mutable paths remained absent and exposure/gameplay counts were zero.
+- Remaining burden: execute the one authorized 96-cell matrix exactly once, preserve every exposed
+  cell and interruption, and authenticate the complete terminal graph before assigning PASS,
+  FAILED_MECHANISM, or FAILED_INFRASTRUCTURE.

@@ -1145,3 +1145,41 @@ independent authorities.
 - Reopening condition: any live harness byte differs from the exact Git tree; the `P`/`H`
   distinction is lost; package reachability, nested archive, selected-test, or sealed-output
   bindings fail; or a later production-policy byte changes after decisive evaluation.
+
+## D-001-0058 — Validate one literal commit across the rendered package-only plan
+
+- Recorded: 2026-08-23T08:39:51.1944578Z
+- Status: accepted.
+- Decision: after replacing the package plan's `{CANDIDATE_COMMIT}` placeholder, permit the exact
+  lowercase forty-hex literal in the frozen static-gate shape and require both the guarded test
+  runner and package-integrity scanner to bind the same value. Continue rejecting extra scanner
+  switches, direct pytest, semantic public inputs, or mismatched commits.
+- Evidence: commit `6f38ea19e0b253826d487b3c359cfa07503a4dcc`; clean detached verification
+  passed 16 focused tests, Ruff check/format, and strict mypy. Hosted runs at the repaired exact
+  head were started and remain separately tracked as Stage 13 evidence.
+- Boundary: this repairs verifier plan rendering only. It does not establish a package PASS,
+  private-platform compatibility, OS containment, gameplay result, or holdout authority.
+- Reopening condition: a rendered literal commit is rejected, two package checks can bind
+  different commits, or an unpinned/extra integrity invocation is accepted.
+
+## D-001-0059 — Supersede the c318 harness with an exact comparator-limitation authority profile
+
+- Recorded: 2026-08-23T08:39:51.1944578Z
+- Status: accepted before decisive execution; supersedes D-001-0057's `H` identity only.
+- Decision: freeze `H` at commit `10c2c7878a0a13ee6c7eb3c0c9aa36fc98fedefb`, tree
+  `18a44bfb068f98fcfb9c0b674cc9c8824fc240cd`. Preserve `P` unchanged at `d6d4bac`. Treat
+  exactly three current-scanner findings in the immutable Build 000 comparator as a typed
+  historical official-offline-SDK limitation only when its commit, tree, source hash, paths,
+  lines, categories, rule IDs, severities, messages, and redacted evidence hashes all match. Build
+  001 production and every other comparator finding remain zero-tolerance.
+- Evidence: `docs/evidence/001-09-final-harness-preflight.json`; integrated detached verification
+  passed 168 tests with one environment-only symlink skip; the exact non-playing preflight returned
+  `READY_NOT_EXECUTED`, hash
+  `sha256:442b9a1f7d2d751bb3d72f7e9367550fcac2fc90b866ad5bbeb3a8270db1ef5f`,
+  with all 14 predicates true, zero Stage 09 exposures, no gameplay, and a sealed zero-event holdout
+  projection.
+- Boundary: the three findings remain findings and limitations; they are not relabeled as absent.
+  This exception cannot authorize Build 001 production, a changed comparator, a hosted client, or
+  any game-specific logic, and it supplies no performance or generalization result.
+- Reopening condition: any limitation signature or comparator identity changes, production has any
+  finding, the preflight graph fails, a mutable attempt path exists before launch, or `P` changes.
