@@ -44,6 +44,26 @@ def _runtime() -> dict[str, object]:
     return {"runtime_identity_sha256": "sha256:" + "c" * 64, "verified": True}
 
 
+def _bound_runtime(launcher: Path, actual_executable: Path) -> dict[str, object]:
+    return seal_object(
+        {
+            "actual_process_executable_path": str(actual_executable.resolve()),
+            "actual_process_executable_sha256": sha256_file(actual_executable),
+            "launcher_path": str(Path(os.path.abspath(launcher))),
+            "launcher_sha256": sha256_file(launcher),
+            "predicates": {"synthetic_binding": True},
+            "process_launch_strategy": (
+                harness._WINDOWS_PROCESS_LAUNCH_STRATEGY
+                if os.name == "nt"
+                else harness._POSIX_PROCESS_LAUNCH_STRATEGY
+            ),
+            "schema": harness._RUNTIME_IDENTITY_SCHEMA,
+            "verified": True,
+        },
+        hash_field="runtime_identity_sha256",
+    )
+
+
 def _supervisor() -> dict[str, object]:
     return {
         "supervisor_import_identity_sha256": "sha256:" + "d" * 64,
@@ -77,10 +97,12 @@ def test_stage10_child_environment_disables_replacement_objects(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("GIT_DIR", "redirected.git")
+    monkeypatch.setenv("__PYVENV_LAUNCHER__", "stale-launcher")
     environment = harness._safe_environment(ROOT)
 
     assert environment["GIT_NO_REPLACE_OBJECTS"] == "1"
     assert "GIT_DIR" not in environment
+    assert "__PYVENV_LAUNCHER__" not in environment
 
 
 def _integrity_inputs(tmp_path: Path) -> Path:
@@ -309,6 +331,7 @@ def test_parent_receipt_revalidation_detects_artifact_drift(
         validation=validation,
         integrity_inputs_path=integrity_inputs,
     )
+    assert receipt["predeclaration_amendment_sha256"] == harness.PREDECLARATION_AMENDMENT_SHA256
     receipt_path = attempt / "receipt.json"
     atomic_write_json(receipt_path, receipt)
     monkeypatch.setattr(harness, "_validate_suite", lambda *_args, **_kwargs: validation)
@@ -638,7 +661,7 @@ def test_unavailable_creation_token_is_contained_and_receipted(
         windows_handle = 123
         monkeypatch.setattr(harness, "_close_windows_handle", lambda _handle: None)
     else:
-        monkeypatch.setattr(harness.os, "killpg", lambda _pid, _signal: None)
+        monkeypatch.setattr(os, "killpg", lambda _pid, _signal: None)
     launch_error = "ValueError: Stage 10 spawned process creation identity is unavailable"
     reason = f"child-failed-before-authorized-start:unidentified-preauthorization:{launch_error}"
     receipt = harness._cleanup_unidentified_spawn(
@@ -749,7 +772,8 @@ def test_parent_child_authority_integrity_hash_contract(
             "integrity_inputs_hash": inputs_hash,
             "integrity_parent_receipt_sha256": parent_hash,
             "plan_hash": "sha256:" + "6" * 64,
-            "predeclaration_sha256": "sha256:" + "7" * 64,
+            "predeclaration_amendment_sha256": child.PREDECLARATION_AMENDMENT_SHA256,
+            "predeclaration_sha256": child.PREDECLARATION_SHA256,
             "profile": {
                 "authorized_surface": "synthetic-no-semantic-public-manifest",
                 "public_identifier_values_available": 0,
@@ -791,6 +815,25 @@ def test_parent_child_authority_integrity_hash_contract(
             expected_integrity_inputs_hash="sha256:" + "0" * 64,
         )
 
+    drifted = seal_object(
+        {key: value for key, value in authority_document.items() if key != "authority_sha256"}
+        | {"predeclaration_amendment_sha256": "sha256:" + "0" * 64},
+        hash_field="authority_sha256",
+    )
+    atomic_write_json(path, drifted)
+    monkeypatch.setenv(
+        "ARC3_STAGE10_EXPECTED_AUTHORITY_SHA256",
+        cast(str, drifted["authority_sha256"]),
+    )
+    monkeypatch.setenv("ARC3_STAGE10_EXPECTED_AUTHORITY_FILE_SHA256", sha256_file(path))
+    with pytest.raises(ValueError, match="failed closed validation"):
+        child._load_authority(
+            path,
+            suite_id="action-equivariance",
+            frozen_commit=COMMIT,
+            expected_integrity_inputs_hash=inputs_hash,
+        )
+
 
 @pytest.mark.skipif(os.name == "nt", reason="POSIX venv launchers are symlinks")
 def test_runtime_identity_preserves_lexical_symlink_launcher(tmp_path: Path) -> None:
@@ -803,3 +846,124 @@ def test_runtime_identity_preserves_lexical_symlink_launcher(tmp_path: Path) -> 
     assert identity["launcher_path"] == str(launcher)
     assert identity["launcher_is_symlink"] is True
     assert identity["resolved_executable_path"] == str(Path(sys.executable).resolve())
+
+
+def test_bound_process_executable_rejects_hash_drift(tmp_path: Path) -> None:
+    launcher = tmp_path / "venv" / ("Scripts" if os.name == "nt" else "bin") / "python"
+    launcher.parent.mkdir(parents=True)
+    launcher.write_bytes(b"synthetic-launcher")
+    actual_executable = tmp_path / "runtime" / "python"
+    actual_executable.parent.mkdir(parents=True)
+    actual_executable.write_bytes(b"synthetic-runtime")
+    runtime_identity = _bound_runtime(launcher, actual_executable)
+
+    assert (
+        harness._bound_process_executable(
+            runtime_identity,
+            lexical_launcher=str(launcher),
+        )
+        == actual_executable.resolve()
+    )
+
+    actual_executable.write_bytes(b"changed-runtime")
+    with pytest.raises(ValueError, match="process executable changed"):
+        harness._bound_process_executable(
+            runtime_identity,
+            lexical_launcher=str(launcher),
+        )
+
+    actual_executable.write_bytes(b"synthetic-runtime")
+    launcher.write_bytes(b"changed-launcher")
+    with pytest.raises(ValueError, match="process launcher changed"):
+        harness._bound_process_executable(
+            runtime_identity,
+            lexical_launcher=str(launcher),
+        )
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows launcher topology regression")
+def test_windows_direct_base_spawn_preserves_venv_identity_and_pid() -> None:
+    if sys.prefix == sys.base_prefix:
+        pytest.skip("test interpreter is not running from a virtual environment")
+    launcher = Path(os.path.abspath(sys.executable))
+    runtime_identity = harness._runtime_identity(ROOT, launcher)
+    assert runtime_identity["verified"] is True
+    actual_executable = harness._bound_process_executable(
+        runtime_identity,
+        lexical_launcher=str(launcher),
+    )
+    environment = harness._safe_environment(ROOT)
+    environment["__PYVENV_LAUNCHER__"] = str(launcher)
+    code = (
+        "import json,os,sys;"
+        "print(json.dumps({'pid':os.getpid(),'executable':os.path.abspath(sys.executable),"
+        "'prefix':os.path.abspath(sys.prefix)}))"
+    )
+    process = subprocess.Popen(
+        (str(launcher), "-I", "-c", code),
+        executable=str(actual_executable),
+        cwd=ROOT,
+        env=environment,
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    stdout, stderr = process.communicate(timeout=20)
+
+    assert process.returncode == 0, stderr
+    observation = json.loads(stdout)
+    assert observation == {
+        "pid": process.pid,
+        "executable": str(launcher),
+        "prefix": os.path.abspath(sys.prefix),
+    }
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows Popen executable override")
+def test_run_child_uses_bound_process_executable_on_windows(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    launcher = tmp_path / "venv" / "Scripts" / "python.exe"
+    launcher.parent.mkdir(parents=True)
+    launcher.write_bytes(b"synthetic-launcher")
+    actual_executable = tmp_path / "runtime" / "python.exe"
+    actual_executable.parent.mkdir(parents=True)
+    actual_executable.write_bytes(b"synthetic-runtime")
+    runtime_identity = _bound_runtime(launcher, actual_executable)
+    suite = SuiteSpec(
+        suite_id="synthetic-launch",
+        command=(str(launcher), "worker.py"),
+        timeout_seconds=1.0,
+        allowed_returncodes=(0,),
+        artifact_path=None,
+    )
+    captured: dict[str, object] = {}
+
+    def fail_popen(*args: object, **kwargs: object) -> subprocess.Popen[bytes]:
+        captured["command"] = args[0]
+        captured["kwargs"] = kwargs
+        raise OSError("synthetic launch stop")
+
+    monkeypatch.setattr(subprocess, "Popen", fail_popen)
+    result = harness._run_child(
+        suite,
+        source_root=ROOT,
+        stdout_path=tmp_path / "stdout.log",
+        stderr_path=tmp_path / "stderr.log",
+        ledger_path=tmp_path / "invocations.jsonl",
+        records=[],
+        plan_hash="sha256:" + "a" * 64,
+        source_identity=_identity(),
+        runtime_identity=runtime_identity,
+        supervisor_import_identity=_supervisor(),
+    )
+
+    assert result[2] == "OSError: synthetic launch stop"
+    assert captured["command"] == suite.command
+    kwargs = cast(dict[str, object], captured["kwargs"])
+    assert kwargs["executable"] == str(actual_executable.resolve())
+    environment = cast(dict[str, str], kwargs["env"])
+    assert environment["ARC3_STAGE10_LEXICAL_LAUNCHER"] == str(launcher)
+    assert environment["__PYVENV_LAUNCHER__"] == str(launcher)

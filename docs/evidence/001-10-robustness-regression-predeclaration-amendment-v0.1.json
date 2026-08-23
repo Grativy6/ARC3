@@ -1,0 +1,70 @@
+{
+  "authority_adaptation": {
+    "accepted_incomplete_predecessor": "Only the exact canonical arc3.build-001.stage-09-development-recovery-acceptance.v0.1 receipt may stand in for the absent complete-terminal verification. Its live raw aggregate, terminal finalization, exact detached H/P/Build-000 roots, hashes, zero environment-open count, zero gameplay-action count, sealed-holdout projection, and no-rerun decision must all verify.",
+    "composite_pass_meaning": "Evidence-integrity authority for independent synthetic Stage 10 execution only. It does not change Stage 09 FAILED_INFRASTRUCTURE, create development-performance evidence, or satisfy the Stage 11 Stage-09-PASS predicate.",
+    "complete_predecessor_behavior": "The existing exact PASS or FAILED_MECHANISM complete-terminal authority remains accepted without weakening its schema or predicates.",
+    "fail_closed": "Any substituted, resealed, incomplete, source-drifted, raw-drifted, holdout-nonzero, gameplay-nonzero, environment-opened, or rerunnable predecessor evidence is FAILED_INFRASTRUCTURE before a Stage 10 target import.",
+    "reason": "The unique Stage 09 launch ended in an authenticated Windows launcher PID infrastructure abort before environment open. Workflow 001 requires every independent Stage 10 synthetic suite to continue, while the Stage 11 gate must still reject Stage 09.",
+    "stage09_acceptance_evidence_hash": "sha256:29d1961ae7b30e50222806a066b4d1d4a51c7255391a06a0b87ed9d1e8140b23",
+    "stage09_acceptance_file_sha256": "sha256:e44473f2335fee5ccf8bd4f911a0d615caf92f9696375ebe6e57697e5622b3b8",
+    "stage09_acceptance_path": "docs/evidence/001-09-development-recovery.json",
+    "stage09_status_remains": "FAILED_INFRASTRUCTURE"
+  },
+  "boundaries": {
+    "evidence_label": "synthetic",
+    "game_source_available_to_policy": false,
+    "hosted_inference_allowed": false,
+    "network_allowed": false,
+    "public_environment_execution_allowed": false,
+    "public_holdout": "SEALED_UNCONSUMED",
+    "public_holdout_asset_enumeration_allowed": false,
+    "public_holdout_game_id_selection_allowed": false
+  },
+  "claim": "NO_GENERALIZATION_CLAIM",
+  "execution_amendment": {
+    "attempt_limit": 1,
+    "concurrency": 1,
+    "decisive_attempt_started": false,
+    "frozen_source": "A repaired descendant of the source floor must be committed, clean, detached, and bound by exact commit/tree in the final non-playing preflight before --execute.",
+    "launcher_repair": "On Windows, directly spawn the runtime-bound base interpreter while preserving the logical virtual-environment executable and prefix through __PYVENV_LAUNCHER__. Bind both executable paths and byte hashes. Preserve exact parent/worker PID and process-creation-token equality, preauthorization job containment, cleanup, and fail-closed behavior.",
+    "module_invocation": "Invoke the supervisor with python -B -m scripts.measure_stage10_regression so the supervisor import closure is the frozen source tree.",
+    "preflight": "A fresh external authority input and exact clean detached source must produce PASS without creating the attempt root or output. Independent review must confirm the preflight before the sole --execute launch.",
+    "resume": "A STARTED suite without an authenticated COMPLETED receipt is terminal FAILED_INFRASTRUCTURE and is never relaunched. Completed prefixes are reusable only through exact read-only reconstruction.",
+    "runtime_identity": "The logical virtual-environment launcher, actual spawned interpreter, Python 3.12 runtime surface, uv.lock, source imports, and supervisor import closure must remain byte-identical before, during, and after every suite."
+  },
+  "frozen_unchanged": {
+    "child_outcome_contract": true,
+    "evidence_label": "synthetic",
+    "frozen_inputs": true,
+    "frozen_regression_floors": true,
+    "holdout_authority": true,
+    "source_floor_commit": "2e78c258cfbee8be62462f61ed08ad04c00a8934",
+    "source_floor_tree": "4145356c116944bbd7c0c412771de9179ba22efe",
+    "suite_order": [
+      "competition-integrity",
+      "stage13-evaluate",
+      "stage13-verify",
+      "stage14-ablations",
+      "palette-equivariance",
+      "action-equivariance",
+      "rule-change",
+      "checkpoint-replay",
+      "resource-profile"
+    ],
+    "suite_timeouts_and_budgets": true
+  },
+  "recorded_at": "2026-08-23T09:11:37.1339450Z",
+  "schema": "arc3.build-001.stage-10-predeclaration-amendment.v0.1",
+  "stage11_gate_unchanged": {
+    "holdout_opening_requires_stage09_pass": true,
+    "holdout_opening_requires_stage10_pass": true,
+    "known_stage09_predicate_value": false,
+    "required_decision": "HOLDOUT_NOT_EARNED"
+  },
+  "status": "FROZEN_PREMEASUREMENT",
+  "supersedes": null,
+  "supplements": {
+    "path": "docs/evidence/001-10-robustness-regression-predeclaration-v0.2.json",
+    "sha256": "sha256:e056eea0d4a6664996ae9078e15b4cdddb5f6c40d5b770540b8e9068cc224613"
+  }
+}

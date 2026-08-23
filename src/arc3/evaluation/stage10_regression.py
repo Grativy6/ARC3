@@ -25,6 +25,12 @@ PREDECLARATION_PATH = Path("docs/evidence/001-10-robustness-regression-predeclar
 # Updated only when the frozen declaration is first sealed.  Runtime validation
 # refuses any later byte drift.
 PREDECLARATION_SHA256 = "sha256:e056eea0d4a6664996ae9078e15b4cdddb5f6c40d5b770540b8e9068cc224613"
+PREDECLARATION_AMENDMENT_PATH = Path(
+    "docs/evidence/001-10-robustness-regression-predeclaration-amendment-v0.1.json"
+)
+PREDECLARATION_AMENDMENT_SHA256 = (
+    "sha256:6eb1a9f5fba2ce02fbe601ffa123d5f9fb8a9ecc44c0a7db5c91fefdaf5bf2a6"
+)
 SOURCE_FLOOR_COMMIT = "2e78c258cfbee8be62462f61ed08ad04c00a8934"
 SOURCE_FLOOR_TREE = "4145356c116944bbd7c0c412771de9179ba22efe"
 BUILD_000_PRODUCTION_COMMIT = "90ecf7267d5bb23d751d6f7ce3e8aa75f2f1a130"
@@ -35,12 +41,12 @@ PUBLIC_PARTITION_MANIFEST_SHA256 = (
 STAGE13_EVIDENCE_SHA256 = "sha256:ab354deec3ef4f7a84d285a8e7603dbe357afcf6c6bbff7862fe94979b94780e"
 STAGE14_PROTOCOL_SHA256 = "sha256:b00c45337f451ecde9af097ce68c8eb60203a7516bff55d9ed7c40868700b369"
 
-STAGE10_PREFLIGHT_SCHEMA = "arc3.build-001.stage-10-preflight.v0.2"
-STAGE10_PARENT_RECEIPT_SCHEMA = "arc3.build-001.stage-10-parent-receipt.v0.2"
-STAGE10_RESULT_SCHEMA = "arc3.build-001.stage-10-robustness-regression.v0.2"
+STAGE10_PREFLIGHT_SCHEMA = "arc3.build-001.stage-10-preflight.v0.3"
+STAGE10_PARENT_RECEIPT_SCHEMA = "arc3.build-001.stage-10-parent-receipt.v0.3"
+STAGE10_RESULT_SCHEMA = "arc3.build-001.stage-10-robustness-regression.v0.3"
 STAGE10_CHECKPOINT_SCHEMA = "arc3.build-001.stage-10-checkpoint-replay.v0.1"
 STAGE10_SOCKET_DENIAL_SCHEMA = "arc3.build-001.stage-10-socket-denial.v0.3"
-STAGE10_CHILD_AUTHORITY_SCHEMA = "arc3.build-001.stage-10-child-authority.v0.2"
+STAGE10_CHILD_AUTHORITY_SCHEMA = "arc3.build-001.stage-10-child-authority.v0.3"
 STAGE10_PROCESS_LAUNCH_SCHEMA = "arc3.build-001.stage-10-process-launch.v0.1"
 STAGE10_LAUNCH_AUTHORIZATION_SCHEMA = "arc3.build-001.stage-10-launch-authorization.v0.1"
 STAGE10_WORKER_ABORT_SCHEMA = "arc3.build-001.stage-10-worker-abort.v0.1"
@@ -279,6 +285,34 @@ def validate_predeclaration_bytes(content: bytes) -> dict[str, object]:
     return declaration
 
 
+def validate_predeclaration_amendment_bytes(content: bytes) -> dict[str, object]:
+    """Validate the frozen pre-execution Stage 09 infrastructure amendment."""
+
+    actual = f"sha256:{hashlib.sha256(content).hexdigest()}"
+    try:
+        value: object = json.loads(content)
+    except json.JSONDecodeError as error:
+        raise ValueError("Stage 10 predeclaration amendment is invalid JSON") from error
+    if not isinstance(value, dict):
+        raise ValueError("Stage 10 predeclaration amendment must be an object")
+    amendment = cast(dict[str, object], value)
+    supplement = amendment.get("supplements")
+    if actual != PREDECLARATION_AMENDMENT_SHA256:
+        raise ValueError("Stage 10 predeclaration amendment bytes do not match the frozen hash")
+    if amendment.get("schema") != "arc3.build-001.stage-10-predeclaration-amendment.v0.1":
+        raise ValueError("Stage 10 predeclaration amendment schema is not frozen v0.1")
+    if amendment.get("status") != "FROZEN_PREMEASUREMENT":
+        raise ValueError("Stage 10 predeclaration amendment is not frozen")
+    if amendment.get("supersedes") is not None:
+        raise ValueError("Stage 10 predeclaration amendment may not supersede frozen v0.2")
+    if not isinstance(supplement, Mapping) or dict(supplement) != {
+        "path": PREDECLARATION_PATH.as_posix(),
+        "sha256": PREDECLARATION_SHA256,
+    }:
+        raise ValueError("Stage 10 predeclaration amendment does not bind frozen v0.2")
+    return amendment
+
+
 def build_suite_plan(
     *,
     python: Path,
@@ -344,6 +378,7 @@ def build_suite_plan(
                     {
                         "attempt_root": attempt.as_posix(),
                         "frozen_commit": frozen_commit,
+                        "predeclaration_amendment_sha256": (PREDECLARATION_AMENDMENT_SHA256),
                         "predeclaration_sha256": PREDECLARATION_SHA256,
                         "suite_id": suite_id,
                         "target": [target_kind, target, *arguments],
@@ -1276,6 +1311,8 @@ __all__ = [
     "MAX_DECISION_SECONDS",
     "MAX_PEAK_RSS_BYTES",
     "MAX_TRACE_BYTES_PER_RUN",
+    "PREDECLARATION_AMENDMENT_PATH",
+    "PREDECLARATION_AMENDMENT_SHA256",
     "PREDECLARATION_PATH",
     "PREDECLARATION_SHA256",
     "PUBLIC_PARTITION_MANIFEST_SHA256",
@@ -1302,6 +1339,7 @@ __all__ = [
     "validate_checkpoint_replay",
     "validate_integrity",
     "validate_palette",
+    "validate_predeclaration_amendment_bytes",
     "validate_predeclaration_bytes",
     "validate_resource_profile",
     "validate_rule_change",

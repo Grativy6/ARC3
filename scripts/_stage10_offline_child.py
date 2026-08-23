@@ -18,7 +18,11 @@ from pathlib import Path
 from typing import Any, NoReturn, cast
 
 SCHEMA = "arc3.build-001.stage-10-socket-denial.v0.3"
-AUTHORITY_SCHEMA = "arc3.build-001.stage-10-child-authority.v0.2"
+AUTHORITY_SCHEMA = "arc3.build-001.stage-10-child-authority.v0.3"
+PREDECLARATION_SHA256 = "sha256:e056eea0d4a6664996ae9078e15b4cdddb5f6c40d5b770540b8e9068cc224613"
+PREDECLARATION_AMENDMENT_SHA256 = (
+    "sha256:6eb1a9f5fba2ce02fbe601ffa123d5f9fb8a9ecc44c0a7db5c91fefdaf5bf2a6"
+)
 COMPOSITE_INTEGRITY_SCHEMA = "arc3.build-001.competition-integrity-composite.v0.1"
 LAUNCH_SCHEMA = "arc3.build-001.stage-10-process-launch.v0.1"
 AUTHORIZATION_SCHEMA = "arc3.build-001.stage-10-launch-authorization.v0.1"
@@ -127,6 +131,7 @@ def _load_authority(
         "integrity_composition",
         "integrity_parent_receipt_sha256",
         "plan_hash",
+        "predeclaration_amendment_sha256",
         "predeclaration_sha256",
         "profile",
         "runtime_identity_sha256",
@@ -152,6 +157,8 @@ def _load_authority(
         or authority.get("source_commit") != frozen_commit
         or authority.get("authorized_suites") != list(_AUTHORIZED_SUITES)
         or suite_id not in _AUTHORIZED_SUITES
+        or authority.get("predeclaration_sha256") != PREDECLARATION_SHA256
+        or authority.get("predeclaration_amendment_sha256") != PREDECLARATION_AMENDMENT_SHA256
         or profile
         != {
             "authorized_surface": "synthetic-no-semantic-public-manifest",

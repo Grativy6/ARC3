@@ -7,6 +7,7 @@ from pathlib import Path
 
 from arc3.evaluation.artifacts import atomic_write_json, seal_object
 from arc3.evaluation.stage10_regression import (
+    PREDECLARATION_AMENDMENT_PATH,
     PREDECLARATION_PATH,
     STAGE10_CHECKPOINT_SCHEMA,
     STAGE14_PROTOCOL_SHA256,
@@ -20,6 +21,7 @@ from arc3.evaluation.stage10_regression import (
     validate_checkpoint_replay,
     validate_integrity,
     validate_palette,
+    validate_predeclaration_amendment_bytes,
     validate_predeclaration_bytes,
     validate_resource_profile,
     validate_rule_change,
@@ -89,7 +91,12 @@ def _validation(suite_id: str, disposition: SuiteDisposition) -> SuiteValidation
 
 def test_predeclaration_bytes_and_non_playing_plan_are_frozen(tmp_path: Path) -> None:
     declaration = validate_predeclaration_bytes((ROOT / PREDECLARATION_PATH).read_bytes())
+    amendment = validate_predeclaration_amendment_bytes(
+        (ROOT / PREDECLARATION_AMENDMENT_PATH).read_bytes()
+    )
     assert declaration["status"] == "FROZEN_PREMEASUREMENT"
+    assert amendment["status"] == "FROZEN_PREMEASUREMENT"
+    assert amendment["supersedes"] is None
     original = ROOT / "docs/evidence/001-10-robustness-regression-predeclaration.json"
     original_hash = f"sha256:{hashlib.sha256(original.read_bytes()).hexdigest()}"
     assert original_hash == (

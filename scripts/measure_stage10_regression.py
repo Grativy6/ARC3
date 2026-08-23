@@ -32,6 +32,8 @@ from arc3.evaluation.integrity_authority import (
     validate_composite_integrity_authority,
 )
 from arc3.evaluation.stage10_regression import (
+    PREDECLARATION_AMENDMENT_PATH,
+    PREDECLARATION_AMENDMENT_SHA256,
     PREDECLARATION_PATH,
     PREDECLARATION_SHA256,
     PUBLIC_PARTITION_MANIFEST_SHA256,
@@ -59,6 +61,7 @@ from arc3.evaluation.stage10_regression import (
     validate_checkpoint_replay,
     validate_integrity,
     validate_palette,
+    validate_predeclaration_amendment_bytes,
     validate_predeclaration_bytes,
     validate_resource_profile,
     validate_rule_change,
@@ -70,6 +73,9 @@ from arc3.types import JSONValue
 _LEDGER_SCHEMA = "arc3.build-001.stage-10-invocation.v0.1"
 _INTEGRITY_INPUTS_SCHEMA = "arc3.build-001.stage-10-integrity-authority-inputs.v0.1"
 _PREAUTH_FAILURE_SCHEMA = "arc3.build-001.stage-10-preauthorization-failure.v0.1"
+_RUNTIME_IDENTITY_SCHEMA = "arc3.build-001.stage-10-runtime-identity.v0.2"
+_WINDOWS_PROCESS_LAUNCH_STRATEGY = "direct-base-with-pyvenv-launcher"
+_POSIX_PROCESS_LAUNCH_STRATEGY = "lexical-launcher"
 _WINDOWS_CREATE_NEW_PROCESS_GROUP = int(getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0))
 _SENSITIVE_ENV_MARKERS = (
     "API_KEY",
@@ -99,6 +105,12 @@ print(json.dumps({
     "implementation": platform.python_implementation(),
     "machine": platform.machine(),
     "platform": platform.platform(),
+    "python_base_executable_lexical": os.path.abspath(
+        getattr(sys, "_base_executable", sys.executable)
+    ),
+    "python_base_executable_resolved": str(
+        Path(getattr(sys, "_base_executable", sys.executable)).resolve()
+    ),
     "python_executable_lexical": os.path.abspath(sys.executable),
     "python_executable_resolved": str(Path(sys.executable).resolve()),
     "python_version": list(sys.version_info[:3]),
@@ -330,7 +342,9 @@ def _runtime_identity(source_root: Path, python: Path) -> dict[str, object]:
     resolved_executable = launcher.resolve()
     expected_arc3 = (source_root / "src/arc3/__init__.py").resolve()
     expected_stage10 = (source_root / "src/arc3/evaluation/stage10_regression.py").resolve()
+    launcher_observed: dict[str, object] = {}
     observed: dict[str, object] = {}
+    actual_process_executable = resolved_executable
     error: str | None = None
     try:
         completed = subprocess.run(
@@ -350,13 +364,55 @@ def _runtime_identity(source_root: Path, python: Path) -> dict[str, object]:
         value: object = json.loads(completed.stdout)
         if not isinstance(value, dict):
             raise ValueError("runtime probe did not return an object")
-        observed = cast(dict[str, object], value)
+        launcher_observed = cast(dict[str, object], value)
+        if os.name == "nt":
+            base_executable_value = launcher_observed.get("python_base_executable_resolved")
+            if not isinstance(base_executable_value, str):
+                raise ValueError("runtime probe did not report the base executable")
+            actual_process_executable = Path(base_executable_value).resolve()
+            direct_environment = {
+                key: item
+                for key, item in os.environ.items()
+                if key.upper() != "__PYVENV_LAUNCHER__"
+            }
+            direct_environment["__PYVENV_LAUNCHER__"] = str(launcher)
+            completed = subprocess.run(
+                (
+                    str(launcher),
+                    "-I",
+                    "-c",
+                    _RUNTIME_PROBE,
+                    str((source_root / "src").resolve()),
+                ),
+                executable=str(actual_process_executable),
+                cwd=source_root,
+                env=direct_environment,
+                check=False,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=30,
+            )
+            if completed.returncode != 0:
+                raise RuntimeError(
+                    f"direct runtime probe exited {completed.returncode}: {completed.stderr[:200]}"
+                )
+            direct_value: object = json.loads(completed.stdout)
+            if not isinstance(direct_value, dict):
+                raise ValueError("direct runtime probe did not return an object")
+            observed = cast(dict[str, object], direct_value)
+        else:
+            observed = launcher_observed
     except (OSError, RuntimeError, ValueError, json.JSONDecodeError) as caught:
         error = f"{type(caught).__name__}:{caught}"
     lock_path = source_root / "uv.lock"
     launcher_hash = sha256_file(launcher) if launcher.is_file() else None
     resolved_executable_hash = (
         sha256_file(resolved_executable) if resolved_executable.is_file() else None
+    )
+    actual_process_executable_hash = (
+        sha256_file(actual_process_executable) if actual_process_executable.is_file() else None
     )
     lock_hash = sha256_file(lock_path) if lock_path.is_file() else None
     version_value = observed.get("python_version")
@@ -367,8 +423,30 @@ def _runtime_identity(source_root: Path, python: Path) -> dict[str, object]:
         and version_value[:2] == [3, 12]
         and all(isinstance(item, int) and not isinstance(item, bool) for item in version_value)
     )
+    probe_comparison_keys = set(launcher_observed) - {
+        "python_base_executable_lexical",
+        "python_base_executable_resolved",
+    }
     predicates = {
         "arc3_import_origin_exact": observed.get("arc3_origin") == str(expected_arc3),
+        "actual_process_executable_exists": actual_process_executable.is_file(),
+        "actual_process_executable_reported_exact": (
+            launcher_observed.get("python_base_executable_resolved")
+            == str(actual_process_executable)
+            if os.name == "nt"
+            else launcher_observed.get("python_executable_resolved")
+            == str(actual_process_executable)
+        ),
+        "direct_process_probe_exact": all(
+            observed.get(name) == launcher_observed.get(name) for name in probe_comparison_keys
+        )
+        and set(observed) == set(launcher_observed),
+        "direct_process_pyvenv_launcher_exact": (
+            observed.get("python_base_executable_lexical") == str(launcher)
+            and observed.get("python_base_executable_resolved") == str(resolved_executable)
+            if os.name == "nt"
+            else True
+        ),
         "launcher_exists": launcher.is_file(),
         "launcher_reported_lexically": observed.get("python_executable_lexical") == str(launcher),
         "resolved_executable_exact": observed.get("python_executable_resolved")
@@ -382,20 +460,71 @@ def _runtime_identity(source_root: Path, python: Path) -> dict[str, object]:
         "uv_lock_exact": lock_hash == UV_LOCK_SHA256,
     }
     report: dict[str, object] = {
+        "actual_process_executable_path": str(actual_process_executable),
+        "actual_process_executable_sha256": actual_process_executable_hash,
         "error": error,
         "launcher_is_symlink": launcher.is_symlink(),
         "launcher_link_target": os.readlink(launcher) if launcher.is_symlink() else None,
         "launcher_path": str(launcher),
         "launcher_sha256": launcher_hash,
+        "launcher_observed": launcher_observed,
         "observed": observed,
         "predicates": predicates,
+        "process_launch_strategy": (
+            _WINDOWS_PROCESS_LAUNCH_STRATEGY if os.name == "nt" else _POSIX_PROCESS_LAUNCH_STRATEGY
+        ),
         "resolved_executable_path": str(resolved_executable),
         "resolved_executable_sha256": resolved_executable_hash,
-        "schema": "arc3.build-001.stage-10-runtime-identity.v0.1",
+        "schema": _RUNTIME_IDENTITY_SCHEMA,
         "uv_lock_sha256": lock_hash,
         "verified": error is None and all(predicates.values()),
     }
     return seal_object(report, hash_field="runtime_identity_sha256")
+
+
+def _bound_process_executable(
+    runtime_identity: Mapping[str, object],
+    *,
+    lexical_launcher: str,
+) -> Path:
+    """Return the hash-bound executable used to create the worker process."""
+
+    expected_launcher = str(Path(os.path.abspath(lexical_launcher)))
+    predicates = runtime_identity.get("predicates")
+    expected_strategy = (
+        _WINDOWS_PROCESS_LAUNCH_STRATEGY if os.name == "nt" else _POSIX_PROCESS_LAUNCH_STRATEGY
+    )
+    if (
+        runtime_identity.get("schema") != _RUNTIME_IDENTITY_SCHEMA
+        or runtime_identity.get("verified") is not True
+        or not verify_object_hash(dict(runtime_identity), hash_field="runtime_identity_sha256")
+        or runtime_identity.get("launcher_path") != expected_launcher
+        or runtime_identity.get("process_launch_strategy") != expected_strategy
+        or not isinstance(predicates, Mapping)
+        or not predicates
+        or not all(value is True for value in predicates.values())
+    ):
+        raise ValueError("Stage 10 runtime process binding is invalid")
+    executable_value = runtime_identity.get("actual_process_executable_path")
+    executable_hash = runtime_identity.get("actual_process_executable_sha256")
+    launcher_hash = runtime_identity.get("launcher_sha256")
+    launcher = Path(expected_launcher)
+    if (
+        not isinstance(launcher_hash, str)
+        or not launcher.is_file()
+        or sha256_file(launcher) != launcher_hash
+    ):
+        raise ValueError("Stage 10 runtime process launcher changed")
+    if not isinstance(executable_value, str) or not isinstance(executable_hash, str):
+        raise ValueError("Stage 10 runtime process executable binding is absent")
+    executable = Path(executable_value)
+    if (
+        not executable.is_absolute()
+        or not executable.is_file()
+        or sha256_file(executable) != executable_hash
+    ):
+        raise ValueError("Stage 10 runtime process executable changed")
+    return executable
 
 
 def _load_integrity_inputs(path: Path) -> dict[str, object]:
@@ -514,6 +643,8 @@ def build_preflight(
     _require_supervisor_import_origin(source_root)
     declaration_path = source_root / PREDECLARATION_PATH
     declaration = validate_predeclaration_bytes(declaration_path.read_bytes())
+    amendment_path = source_root / PREDECLARATION_AMENDMENT_PATH
+    amendment = validate_predeclaration_amendment_bytes(amendment_path.read_bytes())
     identity = _source_identity(source_root, frozen_commit)
     runtime_identity = _runtime_identity(source_root, python)
     try:
@@ -545,6 +676,7 @@ def build_preflight(
         for path in (
             python,
             integrity_inputs_path,
+            amendment_path,
             source_root / "uv.lock",
             source_root / "docs/ledger/build-001-run-state.json",
             source_root / "scripts/measure_ablations.py",
@@ -564,6 +696,7 @@ def build_preflight(
     )
     predicates = {
         "attempt_root_external": _outside_source(source_root, attempt_root),
+        "frozen_amendment": amendment.get("status") == "FROZEN_PREMEASUREMENT",
         "frozen_declaration": declaration.get("status") == "FROZEN_PREMEASUREMENT",
         "manifest_hash_exact": isinstance(frozen_inputs, Mapping)
         and frozen_inputs.get("public_partition_manifest_sha256")
@@ -606,6 +739,7 @@ def build_preflight(
         "mode": "NON_PLAYING_PREFLIGHT",
         "plan": [item.to_dict() for item in plan],
         "plan_hash": suite_plan_hash(plan),
+        "predeclaration_amendment_sha256": PREDECLARATION_AMENDMENT_SHA256,
         "predeclaration_sha256": PREDECLARATION_SHA256,
         "current_integrity_authority_inputs": integrity_inputs,
         "predicates": predicates,
@@ -624,6 +758,7 @@ def _safe_environment(source_root: Path) -> dict[str, str]:
         for key, value in os.environ.items()
         if not any(marker in key.upper() for marker in _SENSITIVE_ENV_MARKERS)
         and not key.upper().startswith("GIT_")
+        and key.upper() != "__PYVENV_LAUNCHER__"
     }
     environment.update(
         {
@@ -1633,6 +1768,19 @@ def _run_child(
         stdout_path.touch(exist_ok=True)
         stderr_path.touch(exist_ok=True)
         return None, False, "raw/process receipt path already exists", 0, False
+    try:
+        bound_process_executable = _bound_process_executable(
+            runtime_identity,
+            lexical_launcher=suite.command[0],
+        )
+    except (OSError, ValueError) as error:
+        return (
+            None,
+            False,
+            f"{type(error).__name__}: {error}",
+            0,
+            False,
+        )
     stdout_path.parent.mkdir(parents=True, exist_ok=True)
     if guard_path is not None:
         guard_path.parent.mkdir(parents=True, exist_ok=True)
@@ -1640,6 +1788,8 @@ def _run_child(
     creationflags = _WINDOWS_CREATE_NEW_PROCESS_GROUP if os.name == "nt" else 0
     environment = _safe_environment(source_root)
     environment["ARC3_STAGE10_LEXICAL_LAUNCHER"] = suite.command[0]
+    if os.name == "nt":
+        environment["__PYVENV_LAUNCHER__"] = suite.command[0]
     if expected_authority is not None:
         parent_hash = expected_authority.get("integrity_parent_receipt_sha256")
         authority_hash = expected_authority.get("authority_sha256")
@@ -1665,6 +1815,7 @@ def _run_child(
         with stdout_path.open("xb") as stdout, stderr_path.open("xb") as stderr:
             process = subprocess.Popen(
                 suite.command,
+                executable=(str(bound_process_executable) if os.name == "nt" else None),
                 cwd=source_root,
                 env=environment,
                 stdin=subprocess.DEVNULL,
@@ -2420,6 +2571,7 @@ def _ensure_child_authority(
             "dynamic_or_native_containment": "NOT_PROVEN_BY_STATIC_IMPORT_REACHABILITY",
         },
         "plan_hash": plan_hash,
+        "predeclaration_amendment_sha256": PREDECLARATION_AMENDMENT_SHA256,
         "predeclaration_sha256": PREDECLARATION_SHA256,
         "profile": {
             "authorized_surface": "synthetic-no-semantic-public-manifest",
@@ -2515,6 +2667,7 @@ def _parent_receipt(
             else None
         ),
         "plan_hash": plan_hash,
+        "predeclaration_amendment_sha256": PREDECLARATION_AMENDMENT_SHA256,
         "predeclaration_sha256": PREDECLARATION_SHA256,
         "returncode": returncode,
         "runtime_identity": dict(runtime_identity),
@@ -2677,6 +2830,7 @@ def _resume_receipt(
         "launch_receipt",
         "network_guard",
         "plan_hash",
+        "predeclaration_amendment_sha256",
         "predeclaration_sha256",
         "receipt_sha256",
         "returncode",
@@ -2699,6 +2853,7 @@ def _resume_receipt(
         or receipt.get("suite_id") != suite.suite_id
         or receipt.get("command") != list(suite.command)
         or receipt.get("plan_hash") != plan_hash
+        or receipt.get("predeclaration_amendment_sha256") != PREDECLARATION_AMENDMENT_SHA256
         or receipt.get("predeclaration_sha256") != PREDECLARATION_SHA256
         or receipt.get("source_identity") != dict(source_identity)
         or receipt.get("runtime_identity") != dict(runtime_identity)
@@ -2854,6 +3009,7 @@ def _resume_terminal_result(
         "integrity_authority_inputs",
         "invocation_ledger",
         "plan_hash",
+        "predeclaration_amendment_sha256",
         "predeclaration_sha256",
         "preauthorization_failure",
         "process_cleanup_receipts",
@@ -2873,6 +3029,7 @@ def _resume_terminal_result(
         or result.get("schema") != STAGE10_RESULT_SCHEMA
         or result.get("claim") != "NO_GENERALIZATION_CLAIM"
         or result.get("evidence_label") != "synthetic"
+        or result.get("predeclaration_amendment_sha256") != PREDECLARATION_AMENDMENT_SHA256
         or result.get("predeclaration_sha256") != PREDECLARATION_SHA256
         or result.get("plan_hash") != preflight.get("plan_hash")
         or not verify_object_hash(result, hash_field="artifact_core_hash")
@@ -2996,6 +3153,7 @@ def _resume_terminal_result(
             "integrity_authority_inputs": _file_receipt(integrity_inputs_path),
             "invocation_ledger": _file_receipt(ledger_path),
             "plan_hash": plan_hash,
+            "predeclaration_amendment_sha256": PREDECLARATION_AMENDMENT_SHA256,
             "predeclaration_sha256": PREDECLARATION_SHA256,
             "preauthorization_failure": preauthorization_failure,
             "process_cleanup_receipts": [
@@ -3283,6 +3441,7 @@ def _execute(
             if suite.cleanup_path is not None and suite.cleanup_path.is_file()
         ],
         "plan_hash": plan_hash,
+        "predeclaration_amendment_sha256": PREDECLARATION_AMENDMENT_SHA256,
         "predeclaration_sha256": PREDECLARATION_SHA256,
         "preauthorization_failure": preauthorization_failure,
         "schema": STAGE10_RESULT_SCHEMA,
