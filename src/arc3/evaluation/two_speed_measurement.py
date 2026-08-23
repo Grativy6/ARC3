@@ -54,8 +54,8 @@ MEASUREMENT_PLAN_SHA256 = "sha256:b42326c4de76786982c07a18be2fcd73afe4583bdb1110
 
 _PLAN_SCHEMA = "arc3.build-001.stage-08.measurement-plan.v0.1"
 _CELL_SCHEMA = "arc3.build-001.stage-08.measurement-cell.v0.1"
-_RESULT_SCHEMA = "arc3.build-001.stage-08.cell-result.v0.2"
-_GATE_SCHEMA = "arc3.build-001.stage-08.materiality-gate.v0.2"
+_RESULT_SCHEMA = "arc3.build-001.stage-08.cell-result.v0.3"
+_GATE_SCHEMA = "arc3.build-001.stage-08.materiality-gate.v0.3"
 _SCORE_SCOPE_SUCCESS = "terminal-success-receipts"
 _SCORE_SCOPE_RECOVERED_FAILURE = "verified-scorecards-on-failed-receipts"
 
@@ -93,6 +93,21 @@ class CellStatus(StrEnum):
     TIMEOUT = "timeout"
     INTERRUPTED = "interrupted"
     CRASH = "crash"
+
+
+class EvidenceAvailability(StrEnum):
+    """Whether a terminal cell retains exact typed measurement evidence."""
+
+    EXACT = "exact"
+    UNAVAILABLE = "unavailable"
+
+
+class FailureDomain(StrEnum):
+    """Typed Stage 08 terminal-failure ownership used by the aggregate status."""
+
+    MECHANISM = "MECHANISM"
+    RESOURCE = "RESOURCE"
+    INFRASTRUCTURE = "INFRASTRUCTURE"
 
 
 class WorkAvailability(StrEnum):
@@ -139,6 +154,51 @@ class ReasoningTerminalKind(StrEnum):
 
     DELIBERATION_COMPLETED = "reasoning.deliberation_completed"
     FALLBACK_USED = "reasoning.fallback_used"
+
+
+@dataclass(frozen=True, slots=True)
+class BoundaryCounts:
+    """Monotone phase counts for one kind of submitted environment boundary.
+
+    A worker can fail before it has an action identity, after submission, after
+    the environment returned, or while the controller acknowledges the return.
+    Keeping those phases separate prevents a partial boundary from being
+    reported as a completed environment action.
+    """
+
+    attempted: int
+    submitted: int
+    returned: int
+    acknowledged: int
+
+    def __post_init__(self) -> None:
+        values = (
+            ("attempted", self.attempted),
+            ("submitted", self.submitted),
+            ("returned", self.returned),
+            ("acknowledged", self.acknowledged),
+        )
+        for field_name, value in values:
+            _require_nonnegative_int(value, field=f"boundary {field_name} count")
+        if not self.attempted >= self.submitted >= self.returned >= self.acknowledged:
+            raise EvaluationError(
+                "boundary counts must satisfy attempted >= submitted >= returned >= acknowledged"
+            )
+
+    @classmethod
+    def completed(cls, count: int) -> BoundaryCounts:
+        """Construct exact counts for wholly acknowledged boundaries."""
+
+        _require_nonnegative_int(count, field="completed boundary count")
+        return cls(attempted=count, submitted=count, returned=count, acknowledged=count)
+
+    def to_dict(self) -> dict[str, JSONValue]:
+        return {
+            "acknowledged": self.acknowledged,
+            "attempted": self.attempted,
+            "returned": self.returned,
+            "submitted": self.submitted,
+        }
 
 
 @dataclass(frozen=True, slots=True)
@@ -505,9 +565,15 @@ class ReasoningTerminalMeasurement:
 
 @dataclass(frozen=True, slots=True)
 class ActionMeasurement:
-    """One whole-controller action timing and its deterministic work projection."""
+    """One submitted boundary timing and its deterministic work projection.
+
+    ``action_ordinal`` is local to its non-reset or reset collection, while
+    ``submission_ordinal`` preserves the exact position in the combined stream
+    sent to the environment.
+    """
 
     action_ordinal: int
+    submission_ordinal: int
     environment_action_identity: str
     boundary_status: BoundaryStatus
     choose_wall_ns: int | None
@@ -525,6 +591,7 @@ class ActionMeasurement:
 
     def __post_init__(self) -> None:
         _require_nonnegative_int(self.action_ordinal, field="action_ordinal")
+        _require_nonnegative_int(self.submission_ordinal, field="submission_ordinal")
         _require_str(self.environment_action_identity, field="environment_action_identity")
         if not isinstance(self.boundary_status, BoundaryStatus):
             raise EvaluationError("boundary status must be typed")
@@ -616,6 +683,7 @@ class ActionMeasurement:
             "reasoning_terminal_receipt": (
                 None if self.reasoning_terminal is None else self.reasoning_terminal.to_dict()
             ),
+            "submission_ordinal": self.submission_ordinal,
             "work": self.work.to_dict(),
         }
 
@@ -668,46 +736,84 @@ class CellResult:
     cell: MeasurementCell
     status: CellStatus
     actions: tuple[ActionMeasurement, ...]
+    reset_boundaries: tuple[ActionMeasurement, ...]
     score: ScoreMeasurement
-    environment_actions: int
-    resets: int
-    peak_rss_bytes: int
-    trace_bytes: int
-    checkpoint_bytes: int
+    action_counts: BoundaryCounts | None
+    reset_counts: BoundaryCounts | None
+    evidence_availability: EvidenceAvailability
+    peak_rss_bytes: int | None
+    memory_measurement_valid: bool
+    memory_measurement_source: str | None
+    trace_bytes: int | None
+    checkpoint_bytes: int | None
     terminal_state: str | None
-    controller_faults: int
+    controller_faults: int | None
     controller_fault_identities: tuple[str, ...]
     source_identity_valid: bool = True
     receipt_integrity_valid: bool = True
     replay_valid: bool = True
     checkpoint_valid: bool = True
-    network_attempt_count: int = 0
+    network_attempt_count: int | None = 0
     holdout_exposure_count: int = 0
     failure_kind: str | None = None
+    failure_domain: FailureDomain | None = None
+    failure_phase: str | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.status, CellStatus):
             raise EvaluationError("cell status must be typed")
+        if not isinstance(self.evidence_availability, EvidenceAvailability):
+            raise EvaluationError("cell evidence availability must be typed")
         boolean_fields = (
             self.source_identity_valid,
             self.receipt_integrity_valid,
             self.replay_valid,
             self.checkpoint_valid,
+            self.memory_measurement_valid,
         )
         if any(not isinstance(value, bool) for value in boolean_fields):
             raise EvaluationError("cell integrity fields must be boolean")
-        counts = (
-            ("environment_actions", self.environment_actions),
-            ("resets", self.resets),
-            ("peak_rss_bytes", self.peak_rss_bytes),
-            ("trace_bytes", self.trace_bytes),
-            ("checkpoint_bytes", self.checkpoint_bytes),
-            ("controller_faults", self.controller_faults),
-            ("network_attempt_count", self.network_attempt_count),
-            ("holdout_exposure_count", self.holdout_exposure_count),
-        )
+        counts = (("holdout_exposure_count", self.holdout_exposure_count),)
         for field_name, value in counts:
             _require_nonnegative_int(value, field=field_name)
+        if self.evidence_availability is EvidenceAvailability.EXACT:
+            if not isinstance(self.action_counts, BoundaryCounts) or not isinstance(
+                self.reset_counts, BoundaryCounts
+            ):
+                raise EvaluationError("exact cell boundary counts must be typed")
+            for optional_field_name, optional_value in (
+                ("trace_bytes", self.trace_bytes),
+                ("checkpoint_bytes", self.checkpoint_bytes),
+                ("controller_faults", self.controller_faults),
+                ("network_attempt_count", self.network_attempt_count),
+            ):
+                _require_nonnegative_int(optional_value, field=optional_field_name)
+        elif any(
+            value is not None
+            for value in (
+                self.action_counts,
+                self.reset_counts,
+                self.trace_bytes,
+                self.checkpoint_bytes,
+                self.controller_faults,
+                self.network_attempt_count,
+            )
+        ):
+            raise EvaluationError("unavailable cell evidence values must be null")
+        if self.evidence_availability is EvidenceAvailability.UNAVAILABLE and (
+            self.actions or self.reset_boundaries or self.controller_fault_identities
+        ):
+            raise EvaluationError("unavailable cell evidence cannot carry derived measurements")
+        if self.peak_rss_bytes is not None:
+            _require_nonnegative_int(self.peak_rss_bytes, field="peak_rss_bytes")
+        if self.memory_measurement_source is not None:
+            _require_str(self.memory_measurement_source, field="memory_measurement_source")
+        if self.memory_measurement_valid and (
+            self.peak_rss_bytes is None or self.memory_measurement_source is None
+        ):
+            raise EvaluationError(
+                "valid Stage 08 memory measurement requires RSS and a measurement source"
+            )
         if any(
             not isinstance(identity, str) or not identity
             for identity in self.controller_fault_identities
@@ -715,29 +821,68 @@ class CellResult:
             raise EvaluationError("controller fault identities must be non-empty strings")
         if len(set(self.controller_fault_identities)) != len(self.controller_fault_identities):
             raise EvaluationError("controller fault identities must be unique")
-        if self.controller_faults != len(self.controller_fault_identities):
+        if (
+            self.evidence_availability is EvidenceAvailability.EXACT
+            and self.controller_faults != len(self.controller_fault_identities)
+        ):
             raise EvaluationError("controller fault count and identities disagree")
-        if self.environment_actions > MAX_ACTIONS or self.resets > MAX_RESETS:
+        if self.action_counts is not None and self.action_counts.submitted > MAX_ACTIONS:
+            raise EvaluationError("Stage 08 action budget was exceeded")
+        if self.reset_counts is not None and self.reset_counts.submitted > MAX_RESETS:
             raise EvaluationError("Stage 08 action or reset budget was exceeded")
-        if self.environment_actions != len(self.actions):
-            raise EvaluationError("every environment action must retain one action measurement")
+        if self.action_counts is not None and self.action_counts.submitted != len(self.actions):
+            raise EvaluationError("every submitted non-reset action must retain one measurement")
+        if self.reset_counts is not None and self.reset_counts.submitted != len(
+            self.reset_boundaries
+        ):
+            raise EvaluationError("every submitted reset must retain one measurement")
         if tuple(action.action_ordinal for action in self.actions) != tuple(
             range(len(self.actions))
         ):
-            raise EvaluationError("action measurements must be contiguous and ordered from zero")
+            raise EvaluationError("non-reset measurements must be contiguous and ordered from zero")
+        if tuple(boundary.action_ordinal for boundary in self.reset_boundaries) != tuple(
+            range(len(self.reset_boundaries))
+        ):
+            raise EvaluationError("reset measurements must be contiguous and ordered from zero")
+        submitted_positions = sorted(
+            boundary.submission_ordinal for boundary in self.submitted_boundaries
+        )
+        if submitted_positions != list(range(len(self.submitted_boundaries))):
+            raise EvaluationError(
+                "submitted action and reset positions must be exact, unique, and contiguous"
+            )
         if self.status is CellStatus.SUCCESS:
-            if self.failure_kind is not None:
-                raise EvaluationError("successful Stage 08 cells cannot carry a failure kind")
+            if any(
+                value is not None
+                for value in (self.failure_kind, self.failure_domain, self.failure_phase)
+            ):
+                raise EvaluationError("successful Stage 08 cells cannot carry failure metadata")
+            if self.evidence_availability is not EvidenceAvailability.EXACT:
+                raise EvaluationError("successful Stage 08 cells require exact evidence")
             if not self.score.verified:
                 raise EvaluationError("successful Stage 08 cells require a verified score")
             if self.terminal_state is None:
                 raise EvaluationError("successful Stage 08 cells require a terminal state")
-        elif not self.failure_kind:
-            raise EvaluationError("failed Stage 08 cells require a failure kind")
+            if self.action_counts != BoundaryCounts.completed(len(self.actions)):
+                raise EvaluationError(
+                    "successful Stage 08 action phase counts must be exactly consistent"
+                )
+            if self.reset_counts != BoundaryCounts.completed(len(self.reset_boundaries)):
+                raise EvaluationError(
+                    "successful Stage 08 reset phase counts must be exactly consistent"
+                )
+        else:
+            if not self.failure_kind:
+                raise EvaluationError("failed Stage 08 cells require a failure kind")
+            if not isinstance(self.failure_domain, FailureDomain):
+                raise EvaluationError("failed Stage 08 cells require a typed failure domain")
+            if self.failure_phase is None:
+                raise EvaluationError("failed Stage 08 cells require a failure phase")
+            _require_str(self.failure_phase, field="failure_phase")
         if self.terminal_state is not None:
             _require_str(self.terminal_state, field="terminal_state")
         frozen_source = self.cell.variant is MeasurementVariant.FROZEN_BUILD_000_FULL
-        for action in self.actions:
+        for action in self.submitted_boundaries:
             if frozen_source and (
                 action.work.availability is not WorkAvailability.UNAVAILABLE_AT_FROZEN_SOURCE
             ):
@@ -752,12 +897,46 @@ class CellResult:
                 raise EvaluationError("Build 000 reasoning telemetry must be null")
 
     @property
+    def submitted_boundaries(self) -> tuple[ActionMeasurement, ...]:
+        """Return all submitted boundaries in exact environment submission order."""
+
+        return tuple(
+            sorted(
+                (*self.actions, *self.reset_boundaries),
+                key=lambda boundary: boundary.submission_ordinal,
+            )
+        )
+
+    @property
     def behavior_signature(self) -> tuple[object, ...]:
         """Exact observable outcome used for cross-variant behavior parity."""
 
+        submitted_sequence = tuple(
+            sorted(
+                (
+                    *(
+                        (
+                            boundary.submission_ordinal,
+                            "non-reset",
+                            boundary.environment_action_identity,
+                        )
+                        for boundary in self.actions
+                    ),
+                    *(
+                        (
+                            boundary.submission_ordinal,
+                            "reset",
+                            boundary.environment_action_identity,
+                        )
+                        for boundary in self.reset_boundaries
+                    ),
+                )
+            )
+        )
         return (
-            tuple(action.environment_action_identity for action in self.actions),
-            self.resets,
+            submitted_sequence,
+            self.action_counts,
+            self.reset_counts,
             self.terminal_state,
             self.score,
             self.controller_faults,
@@ -769,11 +948,15 @@ class CellResult:
         """Apply the frozen per-cell RSS, trace, and per-decision wall limits."""
 
         return (
-            self.peak_rss_bytes <= MAX_PEAK_RSS_BYTES
+            self.evidence_availability is EvidenceAvailability.EXACT
+            and self.memory_measurement_valid
+            and self.peak_rss_bytes is not None
+            and self.peak_rss_bytes <= MAX_PEAK_RSS_BYTES
+            and self.trace_bytes is not None
             and self.trace_bytes <= MAX_TRACE_BYTES_PER_RUN
             and all(
                 action.choose_wall_ns is not None and action.choose_wall_ns <= MAX_DECISION_WALL_NS
-                for action in self.actions
+                for action in self.submitted_boundaries
             )
         )
 
@@ -787,12 +970,12 @@ class CellResult:
                 action.reasoning_path is None
                 and not action.deep_triggers
                 and action.reasoning_terminal is None
-                for action in self.actions
+                for action in self.submitted_boundaries
             )
         if self.cell.variant is MeasurementVariant.BUILD_001_LEGACY_ALWAYS_DEEP:
             return all(
                 action.reasoning_path is ReasoningPath.DEEP and action.reasoning_receipt_complete
-                for action in self.actions
+                for action in self.submitted_boundaries
             )
         return all(
             action.reasoning_receipt_complete
@@ -800,13 +983,14 @@ class CellResult:
                 (action.reasoning_path is ReasoningPath.FAST and not action.deep_triggers)
                 or (action.reasoning_path is ReasoningPath.DEEP and bool(action.deep_triggers))
             )
-            for action in self.actions
+            for action in self.submitted_boundaries
         )
 
     @property
     def integrity_valid(self) -> bool:
         return (
             self.source_identity_valid
+            and self.evidence_availability is EvidenceAvailability.EXACT
             and self.receipt_integrity_valid
             and self.replay_valid
             and self.checkpoint_valid
@@ -820,20 +1004,26 @@ class CellResult:
 
     def to_dict(self) -> dict[str, JSONValue]:
         return {
+            "action_counts": None if self.action_counts is None else self.action_counts.to_dict(),
             "actions": [action.to_dict() for action in self.actions],
             "cell": self.cell.to_dict(),
             "checkpoint_bytes": self.checkpoint_bytes,
             "checkpoint_valid": self.checkpoint_valid,
             "controller_fault_identities": list(self.controller_fault_identities),
             "controller_faults": self.controller_faults,
-            "environment_actions": self.environment_actions,
+            "evidence_availability": self.evidence_availability.value,
+            "failure_domain": None if self.failure_domain is None else self.failure_domain.value,
             "failure_kind": self.failure_kind,
+            "failure_phase": self.failure_phase,
             "holdout_exposure_count": self.holdout_exposure_count,
+            "memory_measurement_source": self.memory_measurement_source,
+            "memory_measurement_valid": self.memory_measurement_valid,
             "network_attempt_count": self.network_attempt_count,
             "peak_rss_bytes": self.peak_rss_bytes,
             "receipt_integrity_valid": self.receipt_integrity_valid,
             "replay_valid": self.replay_valid,
-            "resets": self.resets,
+            "reset_boundaries": [boundary.to_dict() for boundary in self.reset_boundaries],
+            "reset_counts": None if self.reset_counts is None else self.reset_counts.to_dict(),
             "schema": _RESULT_SCHEMA,
             "score": self.score.to_dict(),
             "source_identity_valid": self.source_identity_valid,
@@ -960,6 +1150,8 @@ class ComparatorGate:
             "nonregression_passed": self.nonregression_passed,
             "paired_action_count": self.paired_action_count,
             "passed": self.passed,
+            "primary_timing_scope": "normally-returned-non-reset-boundaries-only",
+            "reset_boundaries_excluded_from_primary_median": True,
             "valid_cell_pairs": self.valid_cell_pairs,
         }
 
@@ -973,6 +1165,7 @@ class Stage08GateResult:
     missing_cell_count: int
     terminal_failure_count: int
     censored_action_count: int
+    censored_reset_count: int
     integrity_failure_count: int
     behavior_parity_failure_count: int
     resource_failure_count: int
@@ -985,6 +1178,7 @@ class Stage08GateResult:
         return {
             "behavior_parity_failure_count": self.behavior_parity_failure_count,
             "censored_action_count": self.censored_action_count,
+            "censored_reset_count": self.censored_reset_count,
             "comparisons": [comparison.to_dict() for comparison in self.comparisons],
             "complete_matrix": self.complete_matrix,
             "integrity_failure_count": self.integrity_failure_count,
@@ -1022,6 +1216,11 @@ def evaluate_materiality_gates(results: Sequence[CellResult]) -> Stage08GateResu
         for result in by_id.values()
         for action in result.actions
     )
+    censored_reset_count = sum(
+        boundary.boundary_status is not BoundaryStatus.NORMAL
+        for result in by_id.values()
+        for boundary in result.reset_boundaries
+    )
     integrity_failure_count = sum(not result.integrity_valid for result in by_id.values())
     behavior_parity_failure_count = _behavior_parity_failure_count(expected, by_id)
     resource_failure_count = sum(not result.resources_valid for result in by_id.values())
@@ -1041,6 +1240,7 @@ def evaluate_materiality_gates(results: Sequence[CellResult]) -> Stage08GateResu
         complete_matrix
         and terminal_failure_count == 0
         and censored_action_count == 0
+        and censored_reset_count == 0
         and integrity_failure_count == 0
         and behavior_parity_failure_count == 0
         and resource_failure_count == 0
@@ -1053,6 +1253,7 @@ def evaluate_materiality_gates(results: Sequence[CellResult]) -> Stage08GateResu
         missing_cell_count=missing_cell_count,
         terminal_failure_count=terminal_failure_count,
         censored_action_count=censored_action_count,
+        censored_reset_count=censored_reset_count,
         integrity_failure_count=integrity_failure_count,
         behavior_parity_failure_count=behavior_parity_failure_count,
         resource_failure_count=resource_failure_count,
@@ -1269,6 +1470,7 @@ __all__ = [
     "PUBLIC_PARTITION_MANIFEST_SHA256",
     "VARIANT_ORDER",
     "ActionMeasurement",
+    "BoundaryCounts",
     "BoundaryStatus",
     "CellResult",
     "CellStatus",
@@ -1277,6 +1479,8 @@ __all__ = [
     "DeepTriggerMeasurement",
     "DeliberationStatus",
     "DevelopmentIdentity",
+    "EvidenceAvailability",
+    "FailureDomain",
     "MeasurementCell",
     "MeasurementVariant",
     "ReasoningPath",

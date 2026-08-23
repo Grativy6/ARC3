@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import replace
+from typing import Any, cast
 
 import pytest
 
@@ -20,6 +21,7 @@ from arc3.evaluation.two_speed_measurement import (
     PREDECLARATION_SHA256,
     VARIANT_ORDER,
     ActionMeasurement,
+    BoundaryCounts,
     BoundaryStatus,
     CellResult,
     CellStatus,
@@ -27,6 +29,8 @@ from arc3.evaluation.two_speed_measurement import (
     DeepTriggerMeasurement,
     DeliberationStatus,
     DevelopmentIdentity,
+    EvidenceAvailability,
+    FailureDomain,
     MeasurementCell,
     MeasurementVariant,
     ReasoningPath,
@@ -66,11 +70,13 @@ def _action(
     *,
     boundary_status: BoundaryStatus = BoundaryStatus.NORMAL,
     action_ordinal: int = 0,
+    submission_ordinal: int | None = None,
     environment_action_identity: str = "canonical-action-1",
     reasoning_path: ReasoningPath | None = None,
     deep_triggers: tuple[DeepTriggerMeasurement, ...] = (),
     reasoning_terminal: ReasoningTerminalMeasurement | None = None,
 ) -> ActionMeasurement:
+    submitted_at = action_ordinal if submission_ordinal is None else submission_ordinal
     if variant is MeasurementVariant.FROZEN_BUILD_000_FULL:
         selected_path = None
         terminal = None
@@ -90,6 +96,7 @@ def _action(
     if boundary_status is not BoundaryStatus.NORMAL:
         return ActionMeasurement(
             action_ordinal=action_ordinal,
+            submission_ordinal=submitted_at,
             environment_action_identity=environment_action_identity,
             boundary_status=boundary_status,
             choose_wall_ns=None,
@@ -114,6 +121,7 @@ def _action(
     checkpoint_cpu_ns = checkpoint_wall_ns * 2
     return ActionMeasurement(
         action_ordinal=action_ordinal,
+        submission_ordinal=submitted_at,
         environment_action_identity=environment_action_identity,
         boundary_status=boundary_status,
         choose_wall_ns=choose_wall_ns,
@@ -142,15 +150,31 @@ def _result(
     terminal_state: str | None = "NOT_FINISHED",
     controller_faults: int = 0,
     controller_fault_identities: tuple[str, ...] = (),
+    actions: tuple[ActionMeasurement, ...] | None = None,
+    reset_boundaries: tuple[ActionMeasurement, ...] = (),
+    action_counts: BoundaryCounts | None = None,
+    reset_counts: BoundaryCounts | None = None,
+    peak_rss_bytes: int | None = 1_000,
+    memory_measurement_valid: bool = True,
+    memory_measurement_source: str | None = "psutil.Process.memory_info.rss",
 ) -> CellResult:
+    measured_actions = (
+        (_action(cell.variant, total_wall_ns, boundary_status=boundary_status),)
+        if actions is None
+        else actions
+    )
     return CellResult(
         cell=cell,
         status=status,
-        actions=(_action(cell.variant, total_wall_ns, boundary_status=boundary_status),),
+        actions=measured_actions,
+        reset_boundaries=reset_boundaries,
         score=score or ScoreMeasurement(True, 0.25, 0, False),
-        environment_actions=1,
-        resets=0,
-        peak_rss_bytes=1_000,
+        action_counts=action_counts or BoundaryCounts.completed(len(measured_actions)),
+        reset_counts=reset_counts or BoundaryCounts.completed(len(reset_boundaries)),
+        evidence_availability=EvidenceAvailability.EXACT,
+        peak_rss_bytes=peak_rss_bytes,
+        memory_measurement_valid=memory_measurement_valid,
+        memory_measurement_source=memory_measurement_source,
         trace_bytes=2_000,
         checkpoint_bytes=3_000,
         terminal_state=terminal_state,
@@ -158,6 +182,8 @@ def _result(
         controller_fault_identities=controller_fault_identities,
         source_identity_valid=integrity_valid,
         failure_kind=None if status is CellStatus.SUCCESS else "fixture-failure",
+        failure_domain=None if status is CellStatus.SUCCESS else FailureDomain.MECHANISM,
+        failure_phase=None if status is CellStatus.SUCCESS else "fixture",
     )
 
 
@@ -189,6 +215,21 @@ def _replace_result(
         if result.cell.variant is variant and result.cell.repetition == repetition
     )
     values[index] = replacement
+
+
+def _with_completed_reset(result: CellResult) -> CellResult:
+    reset = _action(
+        result.cell.variant,
+        10,
+        action_ordinal=0,
+        submission_ordinal=len(result.actions),
+        environment_action_identity="RESET",
+    )
+    return replace(
+        result,
+        reset_boundaries=(reset,),
+        reset_counts=BoundaryCounts.completed(1),
+    )
 
 
 def test_predeclaration_bytes_and_canonical_plan_are_frozen() -> None:
@@ -262,7 +303,7 @@ def test_exact_twenty_cell_balanced_rotation() -> None:
 )
 def test_development_identity_rejects_every_frozen_field_drift(field: str, value: object) -> None:
     with pytest.raises(EvaluationError, match="exact frozen development identity"):
-        replace(DevelopmentIdentity(), **{field: value})
+        replace(DevelopmentIdentity(), **cast(Any, {field: value}))
 
 
 def test_development_identity_mapping_is_exact_and_does_not_accept_asset_paths() -> None:
@@ -324,6 +365,12 @@ def test_frozen_build_work_is_null_not_zero_and_build001_work_is_required() -> N
 
 def test_action_measurement_requires_complete_consistent_normal_boundary() -> None:
     action = _action(MeasurementVariant.BUILD_001_TWO_SPEED, 75)
+    assert action.choose_wall_ns is not None
+    assert action.consequence_wall_ns is not None
+    assert action.checkpoint_wall_ns is not None
+    assert action.choose_cpu_ns is not None
+    assert action.consequence_cpu_ns is not None
+    assert action.checkpoint_cpu_ns is not None
     assert action.controller_total_wall_ns == (
         action.choose_wall_ns + action.consequence_wall_ns + action.checkpoint_wall_ns
     )
@@ -357,7 +404,18 @@ def test_gate_fails_closed_on_exact_paired_behavior_mismatch(mismatch: str) -> N
             actions=(replace(target.actions[0], environment_action_identity="different-action"),),
         )
     elif mismatch == "resets":
-        replacement = replace(target, resets=1)
+        reset = _action(
+            target.cell.variant,
+            10,
+            action_ordinal=0,
+            submission_ordinal=1,
+            environment_action_identity="RESET",
+        )
+        replacement = replace(
+            target,
+            reset_boundaries=(reset,),
+            reset_counts=BoundaryCounts.completed(1),
+        )
     elif mismatch == "terminal_state":
         replacement = replace(target, terminal_state="WIN")
     elif mismatch == "score":
@@ -395,7 +453,7 @@ def test_behavior_signature_preserves_exact_environment_action_order() -> None:
     forward = replace(
         _result(cell, 75),
         actions=(first, second),
-        environment_actions=2,
+        action_counts=BoundaryCounts.completed(2),
     )
     reverse = replace(
         forward,
@@ -405,6 +463,242 @@ def test_behavior_signature_preserves_exact_environment_action_order() -> None:
         ),
     )
     assert forward.behavior_signature != reverse.behavior_signature
+
+
+def test_behavior_parity_preserves_reset_boundaries_and_full_submission_positions() -> None:
+    values = [_with_completed_reset(result) for result in _complete_results()]
+    target = next(
+        result
+        for result in values
+        if result.cell.variant is MeasurementVariant.BUILD_001_TWO_SPEED
+        and result.cell.repetition == 0
+    )
+    swapped = replace(
+        target,
+        actions=(replace(target.actions[0], submission_ordinal=1),),
+        reset_boundaries=(replace(target.reset_boundaries[0], submission_ordinal=0),),
+    )
+    _replace_result(values, MeasurementVariant.BUILD_001_TWO_SPEED, 0, swapped)
+
+    gate = evaluate_materiality_gates(values)
+    assert gate.behavior_parity_failure_count == 1
+    assert not gate.passed
+
+
+def test_reset_boundaries_participate_in_resource_and_reasoning_receipt_gates() -> None:
+    resource_values = [_with_completed_reset(result) for result in _complete_results()]
+    resource_target = next(
+        result
+        for result in resource_values
+        if result.cell.variant is MeasurementVariant.BUILD_001_TWO_SPEED
+        and result.cell.repetition == 0
+    )
+    reset = resource_target.reset_boundaries[0]
+    assert reset.consequence_wall_ns is not None
+    assert reset.checkpoint_wall_ns is not None
+    slow_reset = replace(
+        reset,
+        choose_wall_ns=MAX_DECISION_WALL_NS + 1,
+        controller_total_wall_ns=(
+            MAX_DECISION_WALL_NS + 1 + reset.consequence_wall_ns + reset.checkpoint_wall_ns
+        ),
+    )
+    _replace_result(
+        resource_values,
+        MeasurementVariant.BUILD_001_TWO_SPEED,
+        0,
+        replace(resource_target, reset_boundaries=(slow_reset,)),
+    )
+    resource_gate = evaluate_materiality_gates(resource_values)
+    assert resource_gate.resource_failure_count == 1
+    assert not resource_gate.passed
+
+    receipt_values = [_with_completed_reset(result) for result in _complete_results()]
+    receipt_target = next(
+        result
+        for result in receipt_values
+        if result.cell.variant is MeasurementVariant.BUILD_001_TWO_SPEED
+        and result.cell.repetition == 0
+    )
+    incomplete_reset = replace(receipt_target.reset_boundaries[0], reasoning_terminal=None)
+    _replace_result(
+        receipt_values,
+        MeasurementVariant.BUILD_001_TWO_SPEED,
+        0,
+        replace(receipt_target, reset_boundaries=(incomplete_reset,)),
+    )
+    receipt_gate = evaluate_materiality_gates(receipt_values)
+    assert receipt_gate.reasoning_receipt_failure_count == 1
+    assert not receipt_gate.passed
+
+
+def test_reset_timings_are_explicitly_excluded_from_primary_materiality_median() -> None:
+    values = [_with_completed_reset(result) for result in _complete_results()]
+    target = next(
+        result
+        for result in values
+        if result.cell.variant is MeasurementVariant.BUILD_001_TWO_SPEED
+        and result.cell.repetition == 0
+    )
+    slow_but_in_budget_reset = _action(
+        target.cell.variant,
+        1_000_000,
+        action_ordinal=0,
+        submission_ordinal=1,
+        environment_action_identity="RESET",
+    )
+    _replace_result(
+        values,
+        MeasurementVariant.BUILD_001_TWO_SPEED,
+        0,
+        replace(target, reset_boundaries=(slow_but_in_budget_reset,)),
+    )
+
+    gate = evaluate_materiality_gates(values)
+    assert gate.passed
+    for comparison in gate.comparisons:
+        assert comparison.paired_action_count == 5
+        assert comparison.median_paired_wall_ratio == pytest.approx(0.75)
+        assert (
+            comparison.to_dict()["primary_timing_scope"]
+            == "normally-returned-non-reset-boundaries-only"
+        )
+        assert comparison.to_dict()["reset_boundaries_excluded_from_primary_median"] is True
+
+
+def test_failed_cell_preserves_partial_boundary_phase_counts_without_inflation() -> None:
+    cell = next(
+        cell
+        for cell in build_measurement_matrix()
+        if cell.variant is MeasurementVariant.BUILD_001_TWO_SPEED
+    )
+    submitted_but_unacknowledged = _action(
+        cell.variant,
+        1,
+        boundary_status=BoundaryStatus.FAILED,
+    )
+    after_return_failure = _result(
+        cell,
+        1,
+        status=CellStatus.FAILURE,
+        actions=(submitted_but_unacknowledged,),
+        action_counts=BoundaryCounts(
+            attempted=2,
+            submitted=1,
+            returned=1,
+            acknowledged=0,
+        ),
+    )
+    assert after_return_failure.action_counts is not None
+    assert after_return_failure.action_counts.returned == 1
+    assert after_return_failure.action_counts.acknowledged == 0
+    assert after_return_failure.to_dict()["action_counts"] == {
+        "acknowledged": 0,
+        "attempted": 2,
+        "returned": 1,
+        "submitted": 1,
+    }
+
+    before_submission_failure = _result(
+        cell,
+        1,
+        status=CellStatus.FAILURE,
+        actions=(),
+        action_counts=BoundaryCounts(
+            attempted=1,
+            submitted=0,
+            returned=0,
+            acknowledged=0,
+        ),
+    )
+    assert before_submission_failure.action_counts is not None
+    assert before_submission_failure.actions == ()
+    assert before_submission_failure.action_counts.attempted == 1
+
+
+@pytest.mark.parametrize(
+    "counts",
+    [
+        BoundaryCounts(attempted=2, submitted=1, returned=1, acknowledged=1),
+        BoundaryCounts(attempted=1, submitted=1, returned=1, acknowledged=0),
+        BoundaryCounts(attempted=1, submitted=1, returned=0, acknowledged=0),
+    ],
+)
+def test_successful_cell_requires_exact_consistent_phase_counts(counts: BoundaryCounts) -> None:
+    cell = next(
+        cell
+        for cell in build_measurement_matrix()
+        if cell.variant is MeasurementVariant.BUILD_001_TWO_SPEED
+    )
+    with pytest.raises(EvaluationError, match="phase counts must be exactly consistent"):
+        _result(cell, 75, action_counts=counts)
+
+
+def test_unavailable_rss_is_typed_and_fails_closed() -> None:
+    values = _complete_results()
+    target = next(
+        result
+        for result in values
+        if result.cell.variant is MeasurementVariant.BUILD_001_TWO_SPEED
+        and result.cell.repetition == 0
+    )
+    unavailable = replace(
+        target,
+        peak_rss_bytes=None,
+        memory_measurement_valid=False,
+        memory_measurement_source=None,
+    )
+    assert not unavailable.resources_valid
+    assert unavailable.to_dict()["memory_measurement_valid"] is False
+    _replace_result(values, MeasurementVariant.BUILD_001_TWO_SPEED, 0, unavailable)
+    gate = evaluate_materiality_gates(values)
+    assert gate.resource_failure_count == 1
+    assert not gate.passed
+
+    with pytest.raises(EvaluationError, match="requires RSS and a measurement source"):
+        replace(target, peak_rss_bytes=None)
+
+
+def test_unknown_timeout_or_crash_evidence_is_nullable_and_cannot_be_false_zero() -> None:
+    exact = _result(build_measurement_matrix()[0], 100)
+    unavailable = replace(
+        exact,
+        status=CellStatus.CRASH,
+        actions=(),
+        reset_boundaries=(),
+        score=ScoreMeasurement.unverified(),
+        action_counts=None,
+        reset_counts=None,
+        evidence_availability=EvidenceAvailability.UNAVAILABLE,
+        peak_rss_bytes=None,
+        memory_measurement_valid=False,
+        memory_measurement_source=None,
+        trace_bytes=None,
+        checkpoint_bytes=None,
+        terminal_state=None,
+        controller_faults=None,
+        controller_fault_identities=(),
+        source_identity_valid=False,
+        receipt_integrity_valid=False,
+        replay_valid=False,
+        checkpoint_valid=False,
+        network_attempt_count=None,
+        failure_kind="SupervisorCrash",
+        failure_domain=FailureDomain.INFRASTRUCTURE,
+        failure_phase="supervisor-crash",
+    )
+
+    projection = unavailable.to_dict()
+    assert projection["evidence_availability"] == EvidenceAvailability.UNAVAILABLE.value
+    assert projection["action_counts"] is None
+    assert projection["reset_counts"] is None
+    assert projection["trace_bytes"] is None
+    assert projection["controller_faults"] is None
+    assert not unavailable.integrity_valid
+    assert not unavailable.resources_valid
+
+    with pytest.raises(EvaluationError, match="unavailable cell evidence values must be null"):
+        replace(unavailable, action_counts=BoundaryCounts.completed(0))
 
 
 def test_gate_compares_controller_fault_identity_at_equal_count() -> None:

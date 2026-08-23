@@ -658,3 +658,70 @@ independent authorities.
 - Reopening condition: the process harness can serialize an invalid cell into a passing typed result,
   whole-controller accounting excludes an authority checkpoint, or exact paired behavior can drift
   without blocking materiality.
+
+## D-001-0036 — Supervise every Stage 08 public cell as an immutable process boundary
+
+- Recorded: 2026-08-22T22:43:59.8449697Z
+- Status: accepted
+- Decision: Run the frozen Stage 08 matrix only through a serial parent supervisor whose default
+  mode is non-playing preflight and whose playing mode requires an explicit `--execute`. Append an
+  exact cell/spec exposure event before launch, preserve exact stdout and stderr bytes, cap each
+  worker at the lesser of 120 seconds and the remaining 2,700-second attempt envelope, and never
+  rerun an exposed cell. A durable raw result without its parent supervisor receipt remains
+  preserved but is classified as interrupted `FAILED_INFRASTRUCTURE`; if the orchestrator crash
+  makes elapsed wall time incomplete, stop the attempt and report only an observed lower bound.
+- Evidence: 111/111 Stage 08 contract, worker, and parent-supervisor tests passed under an isolated
+  short Windows base-temp path in 17.02 seconds; Ruff check, Ruff format check, and strict mypy
+  across the three Stage 08 source files passed. The tests cover timeout termination, byte-exact
+  streams, exposure binding, interruption refusal, exact action/consequence/trace/score binding,
+  nullable resource evidence, fixed paths, source/package/adapter preflight, parent-classification
+  recomputation, full surviving-cell resume revalidation, stop-after-infrastructure behavior, and
+  incomplete wall accounting. Adversarial review further required exact prefix-wide exposure and
+  receipt validation before launch; exact isolated imports from both measured source roots; an
+  executing-checkout/source-identity match; raw-result precedence over supervisor timeout claims;
+  whole-process-tree termination; exact exposure persistence immediately before supervision; and
+  independent live-controller recomputation of cadence budget, cache, registry, work, and artifact
+  identities. Binding instrumentation is excluded from candidate/control timings; failed tree
+  termination is infrastructure evidence that stops the matrix; and the parent independently
+  recomputes worker failure domains from their sealed phase and exception kind. The final targeted
+  adversarial review confirmed that false or missing interim asset, holdout, or source-integrity
+  evidence stops all later launches, and that initial and returned immutable observation receipts
+  bind frame, game, state, action-space, returned action, full-reset, completed-level, and won-level
+  consequences. The measured source
+  hashes are
+  `d3ee67c9238dbda905045edef91de1a59d764169f4eb85dec19aa89a147b7300`,
+  `2bc77bdf3280dd8c216094f7363f4ef1e2106342150969f182461b0b80a94dcb`, and
+  `64b660acffa5dfa9f2f2cc3697537dd8caae2d101a3781e7e9d039fbf59e54db` for the
+  typed contract, worker, and supervisor respectively. No public environment was opened by these
+  tests.
+- Boundary: a valid controller worker timeout is resource/mechanism evidence; launch, missing-result,
+  interrupted, parser, source, asset, exposure, or receipt faults are infrastructure failures. The
+  Python socket guard is not an OS network namespace. The frozen 20-cell matrix has not yet run,
+  and this decision makes no throughput or public-performance claim.
+- Reopening condition: any cell can run without a prior matching exposure event, an exposed cell can
+  be rerun, exact stream/result bytes can disappear, incomplete wall accounting can claim a passing
+  limit, a malformed raw result can enter the typed gate, or a holdout identity can reach a worker.
+
+## D-001-0037 — Abort unacted cadence work without changing policy authority
+
+- Recorded: 2026-08-22T23:15:54.0238006Z
+- Status: accepted
+- Decision: Treat budget exhaustion, explicit TRACE/BASELINE checkpoints, controller close, and
+  other pre-action terminal boundaries as aborted deliberations that preserve their immutable
+  terminal receipts but do not advance FAST streaks or other cadence inputs. FULL may return the
+  exact prior automatic fold checkpoint only when its content-addressed hash reloads, it has no
+  pending action, and every later receipt is on the closed revisable-interruption allowlist.
+  Restore diagnostics must select the content-addressed envelope named by the immutable commitment,
+  never the replaceable `latest.json` pointer; strict source and commitment validation remains the
+  final restore authority.
+- Evidence: commit `7c4ea86fda1fc5900b3c37b204e8c60c476cbab8`; 44/44 complete
+  controller/cadence contract tests; 5/5 adversarial automatic-fold, TRACE abort, pending-FAST close,
+  malformed-latest, and runtime-mismatched orphan-latest tests; Ruff, format, and strict mypy pass.
+  The exact 18 non-subprocess regressions from the failed remote suite passed in 65.11 seconds, and
+  the nineteenth Stage 16 fresh-process profile test passed from the clean detached checkout
+  `C:/a/arc3-ci-7c4ea86` in 52.01 seconds.
+- Boundary: the remote Linux/Windows full suites for this repair remain pending. This is restart
+  and authority evidence, not a Stage 08 performance result, and no public environment was opened.
+- Reopening condition: checkpoint frequency changes a selected path or trigger; an unacted terminal
+  advances cadence; a raw/external receipt enters an abandoned suffix; an orphan latest pointer
+  influences restore; or strict source/commitment validation can be bypassed.

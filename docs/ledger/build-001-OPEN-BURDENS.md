@@ -964,3 +964,74 @@ does not erase earlier uncertainty or failed mechanisms.
   Ruff, format, and strict mypy pass. A copied real `df961c7` artifact preserved the known trace,
   checkpoint-file, and envelope hashes while migrating once and then restoring normally; its final
   clean-commit receipt remains part of the Stage 08 premeasurement audit.
+
+## B-001-0046 — Stage 08 cadence integration regressed broad checkpoint boundaries
+
+- Status: OPEN
+- Stage: 08
+- Opened: 2026-08-22
+- Burden: remote CI at pushed commit `aecde0cb9969270bfe7b7eb24744ef6efbb16fe7`
+  reported 19 failures and 863 passes on both Ubuntu and Windows. A reasoning selection begun from
+  an observation remained in progress until action construction, so explicit checkpoints after an
+  observation, budget-fault checkpoints, close after malformed input, Stage 07 adapter restores,
+  and several frozen equivariance restores either refused to checkpoint or lost their current
+  commitment. Intentional cadence/config mismatch tests also surfaced low-level commitment-source
+  errors before their typed policy rejection.
+- Why it matters: Stage 08 cannot be measured from a source that fails established checkpoint,
+  replay, malformed-input, and restart contracts. A narrow integration suite passing did not prove
+  broad compatibility.
+- Current evidence: GitHub Actions runs `32601337309` and `32601335338`; each completed Linux and
+  Windows test job reported the same 19 named failures with 863 passes. Lint, formatting, and strict
+  mypy passed before the test failures. No public Stage 08 worker was started.
+- Next discriminating action: terminalize or safely abort only the current revisable reasoning fold
+  before an external checkpoint/fault, without checkpointing mid-deliberation or letting checkpoint
+  frequency change cadence counters; preserve raw authority receipts and strict source identity;
+  then rerun all 19 regressions plus the focused cadence/replay/checkpoint suites.
+- Resolution condition: the exact 19 remote failures pass locally on the repaired source, cadence
+  terminal/commitment adjacency and checkpoint/no-checkpoint policy parity are covered, the full
+  local suite and new remote Linux/Windows CI pass, and the failure remains preserved here.
+- Resolution receipt: none.
+
+- Status update: NARROWED_PENDING_FULL_AND_REMOTE_VERIFICATION at commit
+  `7c4ea86fda1fc5900b3c37b204e8c60c476cbab8`. The complete controller/cadence files pass 44/44;
+  five adversarial restart cases pass; Ruff, format, and strict mypy pass. The exact 18 local
+  regressions pass in 65.11 seconds, and the nineteenth Stage 16 fresh-process profile test passes
+  from clean detached source in 52.01 seconds. Review found and repaired two additional precommit
+  gaps: replaceable orphan `latest.json` influence and close-before-action cadence advancement. No
+  public Stage 08 worker was started.
+- Remaining resolution evidence: finish the full local suite and pushed Linux/Windows CI. Preserve
+  the original 19-failure receipt even if all pass.
+
+- Remote verification update: the push and draft-PR ARC3 CI runs `32604662810` and `32604664455`
+  completed successfully at commit `7c4ea86fda1fc5900b3c37b204e8c60c476cbab8`. The draft-PR run
+  passed lint, format, strict mypy, runtime doctor, and 885 tests on both Ubuntu (920.86 seconds)
+  and Windows (1,569.18 seconds).
+- Local verification infrastructure update: the first detached local full suite reported 863 passes
+  and 22 Stage 08 contract-test failures in 1,868.09 seconds. Every failure was a missing
+  `submission_ordinal` constructor argument because the pinned virtual environment's editable
+  install imported
+  `C:/Users/cdpan/OneDrive/Documents/ARC3/src/arc3/evaluation/two_speed_measurement.py` from the
+  current dirty workspace while pytest collected tests from clean detached commit `7c4ea86`.
+  Setting `PYTHONPATH=C:/a/arc3-ci-7c4ea86/src` changed the imported module path to the exact
+  detached source. A second full local suite is running with that explicit source binding. Preserve
+  the 22-failure receipt as `FAILED_INFRASTRUCTURE`; it is not evidence of a repaired-source
+  mechanism regression.
+
+## 2026-08-22 Stage 08 process-supervisor infrastructure update
+
+### B-001-0009 — Isolated Windows pytest parent recurred under parallel workers
+
+- Status update: RESOLVED recurrence.
+- Current evidence: the first Stage 08 parent-supervisor test command passed four tests and raised
+  eight setup errors when concurrent workers collided with the shared Windows pytest temporary
+  parent (`WinError 5`). No assertion failed. The unchanged 12-test suite passed under explicit
+  isolated `--basetemp=C:\a\arc3-b001\pytest-stage08-parent-agent-20260822-02 --no-cov`, and an
+  independent rerun passed 12/12 under a second isolated short base-temp path.
+- Resolution receipt: the Stage 08 parent-supervisor checkpoint retains the isolated commands and
+  passing verification; this is infrastructure evidence, not policy evidence.
+
+- Second recurrence: a clean detached full-suite command used the pinned environment's editable
+  installation from the dirty primary workspace. The exact import-path probes above reproduced the
+  mismatch and proved that explicit detached `PYTHONPATH` selects the intended source. The first
+  863-pass/22-failure run is retained; a correctly source-bound rerun uses a distinct short
+  `--basetemp` and does not overwrite it.
