@@ -527,6 +527,16 @@ class _WindowsJobAccounting(ctypes.Structure):
     ]
 
 
+def _windows_library(name: str) -> Any:
+    """Load one Windows DLL without exposing platform-only ctypes attributes to mypy."""
+
+    loader = getattr(ctypes, "windll", None)
+    library = getattr(loader, name, None)
+    if os.name != "nt" or library is None:
+        raise OSError(f"Windows {name} is unavailable through ctypes")
+    return library
+
+
 def _is_mapping(value: object) -> TypeGuard[Mapping[str, object]]:
     return isinstance(value, Mapping) and all(isinstance(key, str) for key in value)
 
@@ -2120,7 +2130,7 @@ def preflight(
 def _windows_job_for_suspended_process(process: subprocess.Popen[bytes]) -> int:
     if os.name != "nt":
         raise OSError("Windows Job Objects are unavailable")
-    kernel32 = ctypes.windll.kernel32
+    kernel32 = _windows_library("kernel32")
     kernel32.CreateJobObjectW.restype = ctypes.c_void_p
     job = kernel32.CreateJobObjectW(None, None)
     if not job:
@@ -2139,7 +2149,7 @@ def _windows_job_for_suspended_process(process: subprocess.Popen[bytes]) -> int:
         process_handle = ctypes.c_void_p(int(cast(Any, process)._handle))
         if not kernel32.AssignProcessToJobObject(ctypes.c_void_p(handle), process_handle):
             raise OSError("AssignProcessToJobObject failed")
-        ntdll = ctypes.windll.ntdll
+        ntdll = _windows_library("ntdll")
         status = int(ntdll.NtResumeProcess(process_handle))
         if status != 0:
             raise OSError(f"NtResumeProcess failed with NTSTATUS {status:#x}")
@@ -2154,7 +2164,7 @@ def _windows_job_for_suspended_process(process: subprocess.Popen[bytes]) -> int:
 
 def _windows_job_active_processes(handle: int) -> int:
     accounting = _WindowsJobAccounting()
-    if not ctypes.windll.kernel32.QueryInformationJobObject(
+    if not _windows_library("kernel32").QueryInformationJobObject(
         ctypes.c_void_p(handle),
         1,
         ctypes.byref(accounting),
@@ -2191,7 +2201,7 @@ def _checked_windows_close_handle(close_handle: Any, handle: int) -> None:
 def _close_windows_handle(handle: int) -> None:
     if os.name != "nt":
         raise OSError("Windows HANDLE close is unavailable")
-    _checked_windows_close_handle(ctypes.windll.kernel32.CloseHandle, handle)
+    _checked_windows_close_handle(_windows_library("kernel32").CloseHandle, handle)
 
 
 def _cleanup_assigned_containment(
@@ -2231,7 +2241,7 @@ def _cleanup_assigned_containment(
         if termination_attempted:
             try:
                 succeeded = bool(
-                    ctypes.windll.kernel32.TerminateJobObject(
+                    _windows_library("kernel32").TerminateJobObject(
                         ctypes.c_void_p(windows_job_handle), 1
                     )
                 )
@@ -2359,7 +2369,7 @@ def _terminate_tree(
     returncode: int | None = None
     try:
         if os.name == "nt" and windows_job_handle is not None:
-            if not ctypes.windll.kernel32.TerminateJobObject(
+            if not _windows_library("kernel32").TerminateJobObject(
                 ctypes.c_void_p(windows_job_handle), 1
             ):
                 raise OSError("TerminateJobObject failed")
