@@ -1028,3 +1028,24 @@ independent authorities.
   unsafe nested members normalize into accepted paths; outer-package identity is not bound to the
   scanned projection; the effective selection cannot be reproduced exactly; or ordinary CI drops
   coverage for an excluded test.
+
+## D-001-0052 — Carry one integrity-input hash through every Stage 10 action boundary
+
+- Recorded: 2026-08-23T05:56:01.5753579Z
+- Status: accepted.
+- Decision: Stage 10 may launch a target import only when the same preflight-bound integrity-input
+  hash is rederived from live files and appears identically in the suite plan, parent measurement,
+  child authority top level, nested composite projection, launch authorization, child pre-import
+  check, and returned receipt. A validly resealed replacement document is still drift and must fail
+  infrastructure. The denied Stage 11/12 path may consume only opaque manifest hashes and strict
+  zero/nonconsumption projections; semantic manifest parsing remains reserved for an earned gate.
+- Evidence: integrated commit `da6ba4ca4846e16867b6b2dbf9ad7c950ffc5629`; independent static
+  reviewer re-audit found no remaining blocker in the hash chain; combined root verification passed
+  221 tests with three bounded host-symlink skips, Ruff check/format, and strict mypy on host and
+  Linux targets.
+- Boundary: these are evidence-authority and process-supervision controls, not mechanism or
+  performance evidence. They do not authorize Stage 09 before its exact clean preflight, do not
+  turn static reachability into native containment, and do not open the holdout.
+- Reopening condition: any producer/consumer omits the hash, accepts a different valid hash, imports
+  target code before equality is established, derives authority from a redirected Git root, or a
+  denied holdout path reads semantic identity/path/asset data.

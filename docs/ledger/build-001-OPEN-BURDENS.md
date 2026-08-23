@@ -1405,3 +1405,35 @@ does not erase earlier uncertainty or failed mechanisms.
   evidence. Static Python/AST evidence remains narrower than OS or native containment.
 - Resolution receipt: pending the audited repair commit and clean exact-head cross-platform PASS at
   the declared `BLOCKED_EXTERNAL` private-surface boundary.
+
+### B-001-0051 — Accounting repair is integrated; exact frozen-harness validation remains
+
+- Status update: NARROWED, not resolved.
+- Last updated: 2026-08-23T05:56:01.5753579Z
+- Current evidence: integrated commit `da6ba4ca4846e16867b6b2dbf9ad7c950ffc5629` retains the
+  Stage 09 v0.2 complete-terminal verifier and the earlier charged timeout/recovery repairs while
+  adding Linux-portable Windows containment typing from
+  `f4e00ccfbcc5bfccf8765cae96e3c089973df7c3`. The combined root suite passed 221 tests with
+  three bounded host-symlink skips; Ruff check/format and strict mypy passed on both host and Linux
+  targets. Independent review found no remaining Stage 09/10 launch blocker in the repaired hash
+  and terminal graph.
+- Remaining burden: bind the final harness commit/tree/file hashes after the package repair lands,
+  run a fresh clean detached non-playing preflight with zero attempt/work/exposure paths, and
+  independently validate every preflight predicate before the one authorized Stage 09 launch.
+- Resolution receipt: pending exact final-harness `READY_NOT_EXECUTED` evidence.
+
+### B-001-0052 — Authority chain is integrated; final composite preflight remains
+
+- Status update: NARROWED, not resolved.
+- Last updated: 2026-08-23T05:56:01.5753579Z
+- Current evidence: commit `da6ba4ca4846e16867b6b2dbf9ad7c950ffc5629` closes the exact
+  frozen-suite -> live integrity-input -> parent measurement -> child-authority top/nested ->
+  launch-authorization -> child pre-import -> projected-receipt equality chain. Negative
+  reseal/substitution tests are present, source-root Git commands strip inherited `GIT_*`
+  redirection, and denied holdout paths consume only opaque hashes and strict zero/nonconsumption
+  projections. The integrated focused result is 221 passed with three bounded host-symlink skips;
+  strict typing and Ruff pass on Windows and Linux targets.
+- Remaining burden: generate the fresh exact-harness package-only receipt, run Stage 09 to an
+  independently verified terminal, then run the one-shot Stage 10 supervisor and mechanically
+  evaluate Stage 11. No holdout gate predicate is yet earned.
+- Resolution receipt: pending the exact Stage 10 terminal and Stage 11 decision receipts.
