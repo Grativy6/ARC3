@@ -1049,3 +1049,21 @@ independent authorities.
 - Reopening condition: any producer/consumer omits the hash, accepts a different valid hash, imports
   target code before equality is established, derives authority from a redirected Git root, or a
   denied holdout path reads semantic identity/path/asset data.
+
+## D-001-0053 — Read decisive Stage 09 identity from the immutable Git tree
+
+- Recorded: 2026-08-23T06:07:17.2199438Z
+- Status: accepted.
+- Decision: strip every inherited `GIT_*` variable and disable replacement objects for Stage 09
+  bootstrap, supervisor, and worker identity commands; remove Git redirection variables from the
+  launched worker environment; and derive the package-integrity candidate membership from the
+  exact committed tree rather than the mutable index. Keep live byte/hash comparison so index
+  flags cannot hide a changed executable file.
+- Evidence: commit `79fb54bb1f7598786fc4a6af76099f25cbf231bf`; 96 focused no-gameplay
+  tests passed with one bounded host-symlink skip, including redirected-environment, child-
+  environment, and index-only member regressions; Ruff check/format and strict mypy passed.
+- Boundary: this changes only premeasurement evidence authority. It does not change the frozen
+  policy, partitions, matrix, seeds, budgets, PASS rule, holdout gate, or any gameplay result.
+- Reopening condition: any decisive Git read accepts caller redirection or replacement objects;
+  candidate membership comes from the index/worktree instead of the exact tree; live policy bytes
+  are not compared with the sealed receipt; or a Stage 09 child inherits Git redirection state.

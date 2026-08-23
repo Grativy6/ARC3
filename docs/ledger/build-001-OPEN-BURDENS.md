@@ -1437,3 +1437,23 @@ does not erase earlier uncertainty or failed mechanisms.
   independently verified terminal, then run the one-shot Stage 10 supervisor and mechanically
   evaluate Stage 11. No holdout gate predicate is yet earned.
 - Resolution receipt: pending the exact Stage 10 terminal and Stage 11 decision receipts.
+
+## B-001-0057 — Stage 09 Git identity initially trusted caller state and the mutable index
+
+- Status: RESOLVED for the Stage 09 decisive harness.
+- Stage: 09
+- Opened: 2026-08-23
+- Resolved: 2026-08-23
+- Owner: Codex
+- Burden: the prefreeze bootstrap, supervisor, and worker Git commands initially inherited caller
+  `GIT_*` redirection, and the package-integrity candidate enumerator used `git ls-files`. A
+  redirected index or index-only/skip-worktree state could therefore undermine a clean-source or
+  exact-candidate claim even though the named critical files were separately hashed.
+- Resolving evidence: commit `79fb54bb1f7598786fc4a6af76099f25cbf231bf` strips Git
+  redirection, sets `GIT_NO_REPLACE_OBJECTS=1`, strips Git state from the worker environment, and
+  enumerates exact `HEAD` tree members. The focused suite passed 96 tests with one bounded host-
+  symlink skip; redirect, child-environment, and mutable-index regressions pass; Ruff and strict
+  typing pass.
+- Residual: Git and Python executable provenance remains bounded by the frozen runtime/environment
+  receipt and local host trust; these controls are evidence-integrity checks, not an adversarial OS
+  containment claim. Final exact detached preflight is still required under B-001-0051.
