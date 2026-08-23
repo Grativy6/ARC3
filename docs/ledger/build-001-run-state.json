@@ -6,13 +6,13 @@
   "owner": "Christopher D. Pang",
   "build_status": "IN_PROGRESS",
   "status": "IN_PROGRESS",
-  "current_stage": "09",
-  "current_task": "Launch the sole predeclared 96-cell Stage 09 development-recovery attempt from the exact detached H/P sources, then authenticate its complete terminal graph",
+  "current_stage": "10",
+  "current_task": "Validate Stage 10's exact terminal authority against the authenticated Stage 09 infrastructure terminal, then execute every permitted frozen robustness and regression suite once",
   "implementation_branch": "build/001-local-public-recovery",
   "pull_request": "https://github.com/Grativy6/ARC3/pull/5",
   "started_at": "2026-08-21T15:41:02Z",
-  "last_checkpoint_at": "2026-08-23T08:41:29.6191207Z",
-  "last_checkpoint_commit": "10c2c7878a0a13ee6c7eb3c0c9aa36fc98fedefb",
+  "last_checkpoint_at": "2026-08-23T08:52:15.5157754Z",
+  "last_checkpoint_commit": "73f9fefc42b5a31dd1a847f449ae5f31104fb897",
   "base": {
     "main_commit": "28c7a00732ce48e5c231211b01bc6eba7d0d71b4",
     "main_tree": "4586299448e9b1b585a0878674ed5f9afa60c384",
@@ -38,7 +38,8 @@
     "05",
     "06",
     "07",
-    "08"
+    "08",
+    "09"
   ],
   "stage_status": {
     "00": "PASS",
@@ -50,7 +51,7 @@
     "06": "FAILED_MECHANISM",
     "07": "FAILED_INFRASTRUCTURE",
     "08": "FAILED_INFRASTRUCTURE",
-    "09": "PENDING",
+    "09": "FAILED_INFRASTRUCTURE",
     "10": "PENDING",
     "11": "PENDING",
     "12": "PENDING",
@@ -474,7 +475,7 @@
       "public_holdout_consumed": false
     },
     "09": {
-      "status": "PENDING",
+      "status": "FAILED_INFRASTRUCTURE",
       "label": "local-public",
       "claim": "NO_GENERALIZATION_CLAIM",
       "original_predeclaration": "docs/evidence/001-09-development-recovery-predeclaration.json",
@@ -509,10 +510,30 @@
       "preflight_status": "READY_NOT_EXECUTED",
       "preflight_hash": "sha256:442b9a1f7d2d751bb3d72f7e9367550fcac2fc90b866ad5bbeb3a8270db1ef5f",
       "preflight_predicates": "PASS:14/14",
-      "decisive_execution_started": false,
-      "attempt_execution_count": 0,
-      "stage09_exposure_events": 0,
+      "decisive_execution_started": true,
+      "attempt_execution_count": 1,
+      "attempt_execution_complete": false,
+      "attempt_rerun_allowed": false,
+      "attempt_exit_code": 1,
+      "attempt_terminal": "C:/a/arc3-b001/artifacts/stage09/development-recovery-attempt-01.json",
+      "attempt_terminal_file_sha256": "sha256:5bb20928afe32e60449ae3ff6af3538e1a1b2c2722664f1f2dcfe8c1c77136a4",
+      "attempt_terminal_artifact_core_hash": "sha256:9c6eb08c33721b1b611a562e16bed57a8b7f7f5d654e18a7564e8e0efa71a6bd",
+      "attempt_terminal_finalization_sha256": "sha256:6d50afa64110a8ccb350edafcaf5172ea5d4de61442ae2ea7085b26f82e84b4f",
+      "attempt_terminal_finalization_hash": "sha256:4b44eae5243e58de170152144f0625acc6d335930ddbd449fd2bf1e54b5372c6",
+      "attempt_failure_kind": "terminal-cell-infrastructure-failure",
+      "attempt_failure_reason": "launch-authorization-unavailable-or-invalid:authorized-launcher-pid-21056!=worker-interpreter-pid-23936",
+      "official_terminal_reconstruction": "PASS:16-files-byte-identical-before-and-after",
+      "strict_complete_terminal_verifier": "EXPECTED_REFUSAL:execution-incomplete",
+      "stage09_exposure_events": 1,
       "stage09_gameplay_events": 0,
+      "environment_opened_cells": 0,
+      "scheduled_cells_not_started": 95,
+      "development_recovery_gate": "NOT_EVALUATED_DUE_INFRASTRUCTURE_FAILURE",
+      "acceptance_evidence": "docs/evidence/001-09-development-recovery.json",
+      "acceptance_evidence_sha256": "sha256:e44473f2335fee5ccf8bd4f911a0d615caf92f9696375ebe6e57697e5622b3b8",
+      "acceptance_evidence_hash": "sha256:29d1961ae7b30e50222806a066b4d1d4a51c7255391a06a0b87ed9d1e8140b23",
+      "report": "docs/reports/001-09-development-recovery.md",
+      "report_sha256": "sha256:7b8abb0f122a9e95737e6f502a693aa6e73b2fcfb26824b44d93d6cc7de99c2e",
       "public_holdout_consumed": false
     },
     "10": {
@@ -715,18 +736,26 @@
       "path": "docs/evidence/001-09-final-harness-preflight.json",
       "sha256": "e9aa3a19941640255ff0983d81177599f1c2b813854b72c15590e70df26a8f15"
     },
+    "stage_09_acceptance": {
+      "path": "docs/evidence/001-09-development-recovery.json",
+      "sha256": "e44473f2335fee5ccf8bd4f911a0d615caf92f9696375ebe6e57697e5622b3b8"
+    },
+    "stage_09_report": {
+      "path": "docs/reports/001-09-development-recovery.md",
+      "sha256": "7b8abb0f122a9e95737e6f502a693aa6e73b2fcfb26824b44d93d6cc7de99c2e"
+    },
     "stage_10_predeclaration": {
       "path": "docs/evidence/001-10-robustness-regression-predeclaration.json",
       "sha256": "02ad73f25cd6c21459cf425a29de0b830fa27bd660c58777b272ac57116d26e3"
     }
   },
   "blocked_items": [
-    "B-001-0051: exact detached Stage 09 preflight passed; the sole decisive terminal and complete-terminal authentication remain required",
-    "B-001-0052: Stage 10 and holdout authority repairs passed integrated review; exact Stage 09 terminal and Stage 10 execution remain required",
+    "B-001-0052: Stage 09 infrastructure terminal is authenticated; exact Stage 10 execution and Stage 11 mechanical gate decision remain required",
     "B-001-0054: exact-snapshot nested-package repair passed locally; literal-head Linux/Windows package workflows remain required",
-    "B-001-0055: package evidence is Python-audit scoped and lacks OS process-tree containment"
+    "B-001-0055: package evidence is Python-audit scoped and lacks OS process-tree containment",
+    "B-001-0063: Windows virtual-environment launcher PID differs from the worker interpreter PID; Stage 09 failed closed and cannot be rerun"
   ],
-  "next_action": "From detached H=10c2c78, append exactly --execute to the already validated Stage 09 bootstrap arguments once; supervise to an authenticated terminal without holdout access or relaunching any exposed cell.",
+  "next_action": "Validate the frozen Stage 10 protocol against the authenticated Stage 09 FAILED_INFRASTRUCTURE terminal; execute only the independent suites the authority admits, preserve any fail-closed terminal, and do not access the sealed holdout.",
   "notes": [
     "Build 000 ledgers and reports are immutable historical evidence and are not overwritten by Build 001.",
     "The owner explicitly approved MIT-0 for ARC3 first-party source in the active Build 001 instruction.",

@@ -1183,3 +1183,29 @@ independent authorities.
   any game-specific logic, and it supplies no performance or generalization result.
 - Reopening condition: any limitation signature or comparator identity changes, production has any
   finding, the preflight graph fails, a mutable attempt path exists before launch, or `P` changes.
+
+## D-001-0060 — Preserve the unique Stage 09 PID-authorization abort as terminal infrastructure evidence
+
+- Recorded: 2026-08-23T08:52:15.5157754Z
+- Status: accepted after the sole decisive launch.
+- Decision: classify Stage 09 as `FAILED_INFRASTRUCTURE`, consume its single-attempt allowance,
+  and never resume or rerun any of its 96 cells in Build 001. Accept the one-cell aggregate only as
+  fail-closed infrastructure evidence: the development identity was exposed, but the worker
+  aborted before environment open or action submission. Continue every independent Stage 10–14
+  task without promoting this terminal into a policy, recovery, baseline, or action-efficiency
+  result.
+- Evidence: `docs/evidence/001-09-development-recovery.json`; raw aggregate file SHA-256
+  `sha256:5bb20928afe32e60449ae3ff6af3538e1a1b2c2722664f1f2dcfe8c1c77136a4`, artifact-core
+  hash `sha256:9c6eb08c33721b1b611a562e16bed57a8b7f7f5d654e18a7564e8e0efa71a6bd`, terminal
+  finalization file SHA-256
+  `sha256:6d50afa64110a8ccb350edafcaf5172ea5d4de61442ae2ea7085b26f82e84b4f`. The frozen
+  harness reconstructed the entire partial terminal exactly; all 16 evidence-file hashes remained
+  unchanged. Authorization audit passed 17/19 predicates and isolated the two PID-equality checks:
+  authorized launcher PID `21056`, worker interpreter PID `23936`.
+- Boundary: the strict complete-terminal verifier intentionally rejects incomplete execution, so
+  its refusal is not overridden. The recovery-capable official loader supplies exact partial-
+  terminal reconstruction, not complete-matrix authority. No game opened, no Stage 09 action was
+  submitted, no baseline comparison exists, and the holdout remains sealed at zero events.
+- Reopening condition: none for this attempt. A future harness may repair Windows launcher/worker
+  identity binding and test the repair synthetically, but it cannot alter, resume, or supersede the
+  Build 001 Stage 09 terminal.

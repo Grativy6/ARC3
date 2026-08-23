@@ -1595,3 +1595,57 @@ does not erase earlier uncertainty or failed mechanisms.
 - Remaining burden: execute the one authorized 96-cell matrix exactly once, preserve every exposed
   cell and interruption, and authenticate the complete terminal graph before assigning PASS,
   FAILED_MECHANISM, or FAILED_INFRASTRUCTURE.
+
+### B-001-0051 — The unique Stage 09 attempt is terminal and authenticated
+
+- Status update: RESOLVED as an execution requirement; the failed infrastructure remains under
+  B-001-0063.
+- Last updated: 2026-08-23T08:52:15.5157754Z
+- Resolving evidence: the sole launch produced a canonical `FAILED_INFRASTRUCTURE` aggregate after
+  one exposed cell. The frozen harness reconstructed every surviving receipt, finalization,
+  exposure, resource, source, runtime, and authority projection exactly; a 16-file before/after
+  inventory was byte-identical. The raw aggregate is
+  `sha256:5bb20928afe32e60449ae3ff6af3538e1a1b2c2722664f1f2dcfe8c1c77136a4`; the terminal
+  finalization is
+  `sha256:6d50afa64110a8ccb350edafcaf5172ea5d4de61442ae2ea7085b26f82e84b4f`.
+- Residual: `execution_complete=false`, so the strict complete-terminal verifier correctly refuses
+  authority and Stage 09 cannot PASS. This is final for Build 001 and cannot be rerun.
+
+### B-001-0052 — Stage 09 is terminal; Stage 10 remains
+
+- Status update: NARROWED, not resolved.
+- Last updated: 2026-08-23T08:52:15.5157754Z
+- Current evidence: Stage 09 ended `FAILED_INFRASTRUCTURE` with an exact reconstructed terminal,
+  zero environment opens, and zero gameplay actions. Stage 10 may consume this only through its
+  predeclared exact terminal-authority boundary; no complete-matrix or mechanism result may be
+  inferred.
+- Remaining burden: validate the final Stage 10 authority against this exact terminal, execute
+  every permitted frozen synthetic/regression suite once, preserve its terminal, and mechanically
+  deny any Stage 11 predicate that requires Stage 09 `PASS`.
+- Resolution receipt: pending Stage 10 acceptance and Stage 11 gate receipts.
+
+## B-001-0063 — Windows launcher PID binding prevented Stage 09 worker authorization
+
+- Status: OPEN for future harness repair; terminal for the Build 001 Stage 09 experiment.
+- Stage: 09, 13
+- Opened: 2026-08-23
+- Owner: Codex
+- Burden: the Windows supervisor bound both process-launch and worker authorization receipts to
+  PID `21056`, the virtual-environment Python launcher. The isolated interpreter executed as PID
+  `23936`; its self-check therefore rejected exactly `launch_pid_matches_worker` and
+  `authorization_pid_matches_worker`. It wrote
+  `launch-authorization-unavailable-or-invalid`, returned 73, and opened no environment.
+- Why it matters: launcher process identity and interpreter process identity are not equivalent on
+  this host. Any later launcher that assumes `Popen.pid == worker os.getpid()` can fail before its
+  workload. Relaxing PID equality without a descendant/containment-bound handshake would weaken
+  evidence authority, so the repair requires a typed child-identity protocol and adversarial tests.
+- Current evidence: `docs/evidence/001-09-development-recovery.json`; process-launch SHA-256
+  `519b43013da356061be47ab15b7f396d00241a5c01114b51969389d98fb9c064`; authorization
+  SHA-256 `951f14a354a700915b9f979fea4ab65b00cb9c2e0e7a12041f7a512b896d992b`; worker-abort
+  SHA-256 `2856aef677139f69dc7b5b80587643c38f84a0e79c4c594d7dd1b2f24776c57d`.
+- Next discriminating action: after preserving the Stage 09 checkpoint, audit Stage 10 and package
+  launchers for the same assumption; implement a generic parent-verified descendant handshake or
+  exact-interpreter launch where needed, with no Stage 09 rerun and no holdout access.
+- Resolution condition: future launch tests reproduce the launcher/child PID split and prove that
+  the actual contained interpreter, exact command/spec, source, and launch token are authorized
+  without accepting an unrelated process. This cannot change Stage 09's status.
