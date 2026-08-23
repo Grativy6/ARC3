@@ -57,12 +57,22 @@ PREDECLARATION_AMENDMENT = (
 
 
 def _boundaries() -> dict[str, object]:
+    source_projection = {
+        path: {
+            "git_blob": f"{index + 1:x}" * 40,
+            "mode": "100644",
+            "sha256": "sha256:" + "1" * 64,
+        }
+        for index, path in enumerate(HARNESS_SOURCE_PATHS)
+    }
     harness_expected = seal_object(
         {
             "schema": HARNESS_SOURCE_BINDING_SCHEMA,
             "git_commit": "a" * 40,
+            "git_object_format": "sha1",
             "git_tree": "b" * 40,
             "files": {path: "sha256:" + "1" * 64 for path in HARNESS_SOURCE_PATHS},
+            "source_projection": source_projection,
         },
         hash_field="binding_hash",
     )
@@ -70,7 +80,11 @@ def _boundaries() -> dict[str, object]:
         "clean": True,
         "commit": True,
         "detached": True,
+        "extra_files": True,
         "files": True,
+        "index_flags": True,
+        "object_format": True,
+        "projection": True,
         "root": True,
         "tree": True,
     }
@@ -80,12 +94,16 @@ def _boundaries() -> dict[str, object]:
             "binding_hash": harness_expected["binding_hash"],
             "branch": "",
             "dirty_worktree": False,
+            "extra_non_cache_paths": [],
             "files": harness_expected["files"],
             "git_commit": harness_expected["git_commit"],
+            "git_object_format": harness_expected["git_object_format"],
             "git_tree": harness_expected["git_tree"],
+            "index_non_h_paths": [],
             "passed": True,
             "predicates": harness_predicates,
             "root": "C:/frozen-harness",
+            "source_projection": harness_expected["source_projection"],
         },
         hash_field="observation_hash",
     )

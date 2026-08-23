@@ -24,8 +24,9 @@ CELL_RECEIPT_SCHEMA = "arc3.build-001.stage-09-cell-receipt.v0.4"
 CELL_FINALIZATION_SCHEMA = "arc3.build-001.stage-09-cell-finalization.v0.1"
 MECHANISM_PROVENANCE_SCHEMA = "arc3.build-001.stage-09-mechanism-provenance.v0.1"
 AGGREGATE_SCHEMA = "arc3.build-001.stage-09-aggregate.v0.4"
-HARNESS_SOURCE_BINDING_SCHEMA = "arc3.build-001.stage-09-harness-source-binding.v0.1"
-HARNESS_SOURCE_OBSERVATION_SCHEMA = "arc3.build-001.stage-09-harness-source-observation.v0.1"
+HARNESS_SOURCE_BINDING_SCHEMA = "arc3.build-001.stage-09-harness-source-binding.v0.2"
+HARNESS_SOURCE_OBSERVATION_SCHEMA = "arc3.build-001.stage-09-harness-source-observation.v0.2"
+HARNESS_GIT_OBJECT_FORMAT = "sha1"
 RUNTIME_ENVIRONMENT_SCHEMA = "arc3.build-001.stage-09-runtime-environment.v0.2"
 RUNTIME_ENVIRONMENT_OBSERVATION_SCHEMA = (
     "arc3.build-001.stage-09-runtime-environment-observation.v0.2"
@@ -38,6 +39,7 @@ HARNESS_SOURCE_PATHS = (
     "scripts/_stage09_development_worker.py",
     "src/arc3/evaluation/development_recovery.py",
 )
+HARNESS_SOURCE_PREFIXES = ("agent/", "scripts/", "src/arc3/")
 PREDECLARATION_CORE_HASH = "sha256:b32f91fa228a7f1f2c2bbfee23e8fafc3a9affc18f9b0d3cbf9e050b0e498f3c"
 PREDECLARATION_FILE_SHA256 = (
     "sha256:dce14e30d47aff7ac99551ad462c9202113dcd44c591dacd410b86363ddad348"
@@ -122,7 +124,15 @@ def validate_harness_source_binding(value: Mapping[str, object]) -> dict[str, ob
     """Validate the non-circular launch-time identity of the Stage 09 harness."""
 
     binding = dict(value)
-    if set(binding) != {"binding_hash", "files", "git_commit", "git_tree", "schema"}:
+    if set(binding) != {
+        "binding_hash",
+        "files",
+        "git_commit",
+        "git_object_format",
+        "git_tree",
+        "schema",
+        "source_projection",
+    }:
         raise EvaluationError("Stage 09 harness source binding fields changed")
     if binding.get("schema") != HARNESS_SOURCE_BINDING_SCHEMA or not verify_object_hash(
         binding, hash_field="binding_hash"
@@ -130,11 +140,36 @@ def validate_harness_source_binding(value: Mapping[str, object]) -> dict[str, ob
         raise EvaluationError("Stage 09 harness source binding hash/schema is invalid")
     if not _is_git_oid(binding.get("git_commit")) or not _is_git_oid(binding.get("git_tree")):
         raise EvaluationError("Stage 09 harness source Git identity is malformed")
+    if binding.get("git_object_format") != HARNESS_GIT_OBJECT_FORMAT:
+        raise EvaluationError("Stage 09 harness Git object format changed")
     files = binding.get("files")
     if not isinstance(files, dict) or set(files) != set(HARNESS_SOURCE_PATHS):
         raise EvaluationError("Stage 09 harness source file set changed")
     if not all(_is_sha256(files[path]) for path in HARNESS_SOURCE_PATHS):
         raise EvaluationError("Stage 09 harness source file hash is malformed")
+    projection = binding.get("source_projection")
+    if not isinstance(projection, dict) or not projection:
+        raise EvaluationError("Stage 09 harness source projection is absent")
+    for relative, raw_identity in projection.items():
+        if (
+            not isinstance(relative, str)
+            or not relative.startswith(HARNESS_SOURCE_PREFIXES)
+            or relative.startswith("/")
+            or "\\" in relative
+            or any(part in {"", ".", ".."} for part in relative.split("/"))
+            or not isinstance(raw_identity, dict)
+            or set(raw_identity) != {"git_blob", "mode", "sha256"}
+            or not _is_git_oid(raw_identity.get("git_blob"))
+            or raw_identity.get("mode") not in {"100644", "100755"}
+            or not _is_sha256(raw_identity.get("sha256"))
+        ):
+            raise EvaluationError("Stage 09 harness source projection is malformed")
+    if any(
+        path not in projection
+        or cast(dict[str, object], projection[path]).get("sha256") != files[path]
+        for path in HARNESS_SOURCE_PATHS
+    ):
+        raise EvaluationError("Stage 09 harness anchor hashes differ from the full projection")
     return binding
 
 
@@ -149,14 +184,18 @@ def validate_harness_source_observation(
         "binding_hash",
         "branch",
         "dirty_worktree",
+        "extra_non_cache_paths",
         "files",
         "git_commit",
+        "git_object_format",
         "git_tree",
+        "index_non_h_paths",
         "observation_hash",
         "passed",
         "predicates",
         "root",
         "schema",
+        "source_projection",
     }
     if set(observation) != required:
         raise EvaluationError("Stage 09 harness source observation fields changed")
@@ -169,7 +208,11 @@ def validate_harness_source_observation(
         "clean",
         "commit",
         "detached",
+        "extra_files",
         "files",
+        "index_flags",
+        "object_format",
+        "projection",
         "root",
         "tree",
     }:
@@ -180,10 +223,38 @@ def validate_harness_source_observation(
     if (
         observation.get("binding_hash") != binding["binding_hash"]
         or observation.get("git_commit") != binding["git_commit"]
+        or observation.get("git_object_format") != binding["git_object_format"]
         or observation.get("git_tree") != binding["git_tree"]
         or observation.get("files") != binding["files"]
+        or observation.get("source_projection") != binding["source_projection"]
     ) and predicate_pass:
         raise EvaluationError("Stage 09 passing harness source observation changed")
+    for field in ("extra_non_cache_paths", "index_non_h_paths"):
+        paths = observation.get(field)
+        if (
+            not isinstance(paths, list)
+            or any(not isinstance(item, str) or not item for item in paths)
+            or paths != sorted(set(paths))
+        ):
+            raise EvaluationError("Stage 09 harness source path diagnostics changed")
+    if (
+        predicates.get("clean") is not (observation.get("dirty_worktree") is False)
+        or predicates.get("commit") is not (observation.get("git_commit") == binding["git_commit"])
+        or predicates.get("detached") is not (observation.get("branch") == "")
+        or predicates.get("extra_files") is not (observation.get("extra_non_cache_paths") == [])
+        or predicates.get("files") is not (observation.get("files") == binding["files"])
+        or predicates.get("index_flags") is not (observation.get("index_non_h_paths") == [])
+        or predicates.get("object_format")
+        is not (
+            observation.get("git_object_format")
+            == binding["git_object_format"]
+            == HARNESS_GIT_OBJECT_FORMAT
+        )
+        or predicates.get("projection")
+        is not (observation.get("source_projection") == binding["source_projection"])
+        or predicates.get("tree") is not (observation.get("git_tree") == binding["git_tree"])
+    ):
+        raise EvaluationError("Stage 09 harness source predicate detail changed")
     if not isinstance(observation.get("root"), str):
         raise EvaluationError("Stage 09 harness source root is absent")
     return observation
@@ -199,7 +270,19 @@ def harness_source_stable(
 
     left = validate_harness_source_observation(before, expected=expected)
     right = validate_harness_source_observation(after, expected=expected)
-    fields = ("binding_hash", "branch", "dirty_worktree", "files", "git_commit", "git_tree", "root")
+    fields = (
+        "binding_hash",
+        "branch",
+        "dirty_worktree",
+        "extra_non_cache_paths",
+        "files",
+        "git_commit",
+        "git_object_format",
+        "git_tree",
+        "index_non_h_paths",
+        "root",
+        "source_projection",
+    )
     return bool(
         left["passed"] is True
         and right["passed"] is True
@@ -1584,9 +1667,11 @@ __all__ = [
     "FROZEN_BUILD_001_COMMIT",
     "FROZEN_BUILD_001_SOURCE_SHA256",
     "FROZEN_BUILD_001_TREE",
+    "HARNESS_GIT_OBJECT_FORMAT",
     "HARNESS_SOURCE_BINDING_SCHEMA",
     "HARNESS_SOURCE_OBSERVATION_SCHEMA",
     "HARNESS_SOURCE_PATHS",
+    "HARNESS_SOURCE_PREFIXES",
     "HOLDOUT_NONCONSUMPTION_FILE_SHA256",
     "MAX_ACTIONS",
     "MAX_RESETS",

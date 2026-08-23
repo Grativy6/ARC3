@@ -55,10 +55,12 @@ if __name__ == "__main__":
     )
     if (
         _BOOTSTRAP_AUTHORITY.get("schema")
-        != "arc3.build-001.stage-09-supervisor-bootstrap-authority.v0.1"
+        != "arc3.build-001.stage-09-supervisor-bootstrap-authority.v0.2"
         or _BOOTSTRAP_AUTHORITY.get("authority_hash") != _bootstrap_hash
         or _BOOTSTRAP_AUTHORITY.get("socket_audit_denial_installed") is not True
         or not isinstance(_BOOTSTRAP_AUTHORITY.get("runtime_observation_hash"), str)
+        or _BOOTSTRAP_AUTHORITY.get("git_object_format") != "sha1"
+        or not isinstance(_BOOTSTRAP_AUTHORITY.get("source_projection"), dict)
     ):
         raise RuntimeError("Stage 09 supervisor bootstrap authority changed")
 if str(SRC) not in sys.path:
@@ -87,9 +89,11 @@ from arc3.evaluation.development_recovery import (  # noqa: E402
     FROZEN_BUILD_001_COMMIT,
     FROZEN_BUILD_001_SOURCE_SHA256,
     FROZEN_BUILD_001_TREE,
+    HARNESS_GIT_OBJECT_FORMAT,
     HARNESS_SOURCE_BINDING_SCHEMA,
     HARNESS_SOURCE_OBSERVATION_SCHEMA,
     HARNESS_SOURCE_PATHS,
+    HARNESS_SOURCE_PREFIXES,
     MAX_ACTIONS,
     MAX_RESETS,
     NORMAL_TERMINATION_DEFINITION,
@@ -541,24 +545,162 @@ def _is_mapping(value: object) -> TypeGuard[Mapping[str, object]]:
     return isinstance(value, Mapping) and all(isinstance(key, str) for key in value)
 
 
-def _git(root: Path, *arguments: str) -> str:
+_HARNESS_CACHE_DIRECTORIES = frozenset(
+    {".hypothesis", ".mypy_cache", ".pytest_cache", ".ruff_cache", "__pycache__"}
+)
+
+
+def _git_environment() -> dict[str, str]:
     environment = {
         key: value for key, value in os.environ.items() if not key.upper().startswith("GIT_")
     }
     environment["GIT_NO_REPLACE_OBJECTS"] = "1"
+    return environment
+
+
+def _git_bytes(root: Path, *arguments: str) -> bytes:
     result = subprocess.run(
         ["git", "-C", str(root.resolve()), *arguments],
         check=False,
         capture_output=True,
-        env=environment,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
+        env=_git_environment(),
         timeout=15.0,
     )
     if result.returncode:
         raise EvaluationError(f"Stage 09 git {' '.join(arguments)} failed")
-    return result.stdout.strip()
+    return result.stdout
+
+
+def _git(root: Path, *arguments: str) -> str:
+    try:
+        return _git_bytes(root, *arguments).decode("utf-8", errors="strict").strip()
+    except UnicodeDecodeError as error:
+        raise EvaluationError(f"Stage 09 git {' '.join(arguments)} returned non-UTF-8") from error
+
+
+def _harness_source_selected(relative: str) -> bool:
+    return relative.startswith(HARNESS_SOURCE_PREFIXES)
+
+
+def _git_blob_oid(raw: bytes) -> str:
+    header = f"blob {len(raw)}\0".encode("ascii")
+    return hashlib.sha1(header + raw, usedforsecurity=False).hexdigest()
+
+
+def _harness_tree_projection(root: Path, commit: str) -> dict[str, dict[str, str]]:
+    if _git(root, "rev-parse", "--show-object-format") != HARNESS_GIT_OBJECT_FORMAT:
+        raise EvaluationError("Stage 09 harness Git object format changed")
+    projection: dict[str, dict[str, str]] = {}
+    for raw_entry in _git_bytes(root, "ls-tree", "-r", "-z", commit).split(b"\0"):
+        if not raw_entry:
+            continue
+        metadata, separator, raw_path = raw_entry.partition(b"\t")
+        fields = metadata.split()
+        if not separator or len(fields) != 3:
+            raise EvaluationError("Stage 09 harness Git tree entry is malformed")
+        try:
+            mode, object_type, object_id = (field.decode("ascii") for field in fields)
+            relative = raw_path.decode("utf-8", errors="strict")
+        except UnicodeDecodeError as error:
+            raise EvaluationError("Stage 09 harness Git tree path is non-portable") from error
+        if not _harness_source_selected(relative):
+            continue
+        if (
+            object_type != "blob"
+            or mode not in {"100644", "100755"}
+            or len(object_id) != 40
+            or any(character not in "0123456789abcdef" for character in object_id)
+            or relative.startswith("/")
+            or "\\" in relative
+            or any(part in {"", ".", ".."} for part in relative.split("/"))
+            or relative in projection
+        ):
+            raise EvaluationError("Stage 09 harness Git tree contains a non-regular source")
+        projection[relative] = {"git_blob": object_id, "mode": mode}
+    if not projection or any(path not in projection for path in HARNESS_SOURCE_PATHS):
+        raise EvaluationError("Stage 09 harness Git tree projection is incomplete")
+    return dict(sorted(projection.items()))
+
+
+def _path_has_symlink_component(root: Path, relative: str) -> bool:
+    current = root.resolve()
+    for part in relative.split("/"):
+        current /= part
+        if current.is_symlink():
+            return True
+    return False
+
+
+def _live_harness_projection(
+    root: Path, tree_projection: Mapping[str, Mapping[str, str]]
+) -> dict[str, dict[str, object]]:
+    repository = root.resolve()
+    observed: dict[str, dict[str, object]] = {}
+    for relative, identity in tree_projection.items():
+        path = repository / relative
+        raw: bytes | None = None
+        if not _path_has_symlink_component(repository, relative) and path.is_file():
+            try:
+                raw = path.read_bytes()
+            except OSError:
+                raw = None
+        observed[relative] = {
+            "git_blob": _git_blob_oid(raw) if raw is not None else None,
+            "mode": identity["mode"],
+            "sha256": sha256_bytes(raw) if raw is not None else None,
+        }
+    return observed
+
+
+def _live_non_cache_harness_paths(root: Path) -> tuple[str, ...]:
+    repository = root.resolve()
+    found: set[str] = set()
+    for relative_root in ("agent", "scripts", "src/arc3"):
+        base = repository / relative_root
+        if base.is_symlink():
+            found.add(relative_root)
+            continue
+        if not base.is_dir():
+            continue
+        for directory, raw_directories, filenames in os.walk(base, followlinks=False):
+            directory_path = Path(directory)
+            retained: list[str] = []
+            for name in sorted(raw_directories):
+                candidate = directory_path / name
+                if candidate.is_symlink():
+                    found.add(candidate.relative_to(repository).as_posix())
+                elif name not in _HARNESS_CACHE_DIRECTORIES:
+                    retained.append(name)
+            raw_directories[:] = retained
+            for name in sorted(filenames):
+                candidate = directory_path / name
+                found.add(candidate.relative_to(repository).as_posix())
+    return tuple(sorted(found))
+
+
+def _harness_index_non_h_paths(root: Path, expected_paths: Sequence[str]) -> tuple[str, ...]:
+    entries: dict[str, str] = {}
+    anomalies: set[str] = set()
+    raw = _git_bytes(root, "ls-files", "-v", "-z", "--", "agent", "scripts", "src/arc3")
+    for raw_entry in raw.split(b"\0"):
+        if not raw_entry:
+            continue
+        if len(raw_entry) < 3 or raw_entry[1:2] != b" ":
+            raise EvaluationError("Stage 09 harness Git index entry is malformed")
+        try:
+            tag = raw_entry[:1].decode("ascii")
+            relative = raw_entry[2:].decode("utf-8", errors="strict")
+        except UnicodeDecodeError as error:
+            raise EvaluationError("Stage 09 harness Git index path is non-portable") from error
+        if relative in entries:
+            anomalies.add(f"duplicate:{relative}")
+        entries[relative] = tag
+        if tag != "H":
+            anomalies.add(f"{tag}:{relative}")
+    expected = set(expected_paths)
+    anomalies.update(f"missing:{relative}" for relative in expected.difference(entries))
+    anomalies.update(f"extra:{relative}" for relative in set(entries).difference(expected))
+    return tuple(sorted(anomalies))
 
 
 def _runtime_identity() -> dict[str, object]:
@@ -634,35 +776,53 @@ def _runtime_identity() -> dict[str, object]:
 
 
 def _harness_source_binding(
-    *, git_commit: str, git_tree: str, files: Mapping[str, str]
+    *,
+    git_commit: str,
+    git_object_format: str,
+    git_tree: str,
+    files: Mapping[str, str],
+    source_projection: Mapping[str, Mapping[str, object]],
 ) -> dict[str, object]:
     payload = {
         "schema": HARNESS_SOURCE_BINDING_SCHEMA,
         "git_commit": git_commit,
+        "git_object_format": git_object_format,
         "git_tree": git_tree,
         "files": dict(files),
+        "source_projection": {
+            relative: dict(identity) for relative, identity in source_projection.items()
+        },
     }
     binding = cast(dict[str, object], seal_object(payload, hash_field="binding_hash"))
     return validate_harness_source_binding(binding)
 
 
-def _harness_source_identity(expected: Mapping[str, object]) -> dict[str, object]:
+def _observe_harness_source(root: Path, expected: Mapping[str, object]) -> dict[str, object]:
     binding = validate_harness_source_binding(expected)
-    resolved = ROOT.resolve()
+    resolved = root.resolve()
     commit = _git(resolved, "rev-parse", "HEAD")
+    object_format = _git(resolved, "rev-parse", "--show-object-format")
     tree = _git(resolved, "rev-parse", "HEAD^{tree}")
     branch = _git(resolved, "branch", "--show-current")
     status = _git(resolved, "status", "--porcelain=v1", "--untracked-files=all")
     top_level = Path(_git(resolved, "rev-parse", "--show-toplevel")).resolve()
-    observed_files: dict[str, object] = {}
-    for relative in HARNESS_SOURCE_PATHS:
-        path = resolved / relative
-        observed_files[relative] = sha256_file(path) if path.is_file() else None
+    tree_projection = _harness_tree_projection(resolved, commit)
+    observed_projection = _live_harness_projection(resolved, tree_projection)
+    observed_files = {
+        relative: observed_projection[relative]["sha256"] for relative in HARNESS_SOURCE_PATHS
+    }
+    live_paths = set(_live_non_cache_harness_paths(resolved))
+    extra_paths = tuple(sorted(live_paths.difference(tree_projection)))
+    index_non_h_paths = _harness_index_non_h_paths(resolved, tuple(tree_projection))
     predicates = {
         "clean": status == "",
         "commit": commit == binding["git_commit"],
         "detached": branch == "",
+        "extra_files": not extra_paths,
         "files": observed_files == binding["files"],
+        "index_flags": not index_non_h_paths,
+        "object_format": object_format == binding["git_object_format"] == HARNESS_GIT_OBJECT_FORMAT,
+        "projection": observed_projection == binding["source_projection"],
         "root": top_level == resolved,
         "tree": tree == binding["git_tree"],
     }
@@ -674,16 +834,24 @@ def _harness_source_identity(expected: Mapping[str, object]) -> dict[str, object
                 "binding_hash": binding["binding_hash"],
                 "branch": branch,
                 "dirty_worktree": bool(status),
+                "extra_non_cache_paths": list(extra_paths),
                 "files": observed_files,
                 "git_commit": commit,
+                "git_object_format": object_format,
                 "git_tree": tree,
+                "index_non_h_paths": list(index_non_h_paths),
                 "passed": all(predicates.values()),
                 "predicates": predicates,
                 "root": resolved.as_posix(),
+                "source_projection": observed_projection,
             },
             hash_field="observation_hash",
         ),
     )
+
+
+def _harness_source_identity(expected: Mapping[str, object]) -> dict[str, object]:
+    return _observe_harness_source(ROOT, expected)
 
 
 def _canonical_distribution_name(name: str) -> str:
@@ -6370,8 +6538,12 @@ def execute(
         not isinstance(_BOOTSTRAP_AUTHORITY, dict)
         or _BOOTSTRAP_AUTHORITY.get("files")
         != cast(dict[str, object], harness_source_expected).get("files")
+        or _BOOTSTRAP_AUTHORITY.get("source_projection")
+        != cast(dict[str, object], harness_source_expected).get("source_projection")
         or _BOOTSTRAP_AUTHORITY.get("git_commit")
         != cast(dict[str, object], harness_source_expected).get("git_commit")
+        or _BOOTSTRAP_AUTHORITY.get("git_object_format")
+        != cast(dict[str, object], harness_source_expected).get("git_object_format")
         or _BOOTSTRAP_AUTHORITY.get("git_tree")
         != cast(dict[str, object], harness_source_expected).get("git_tree")
         or _BOOTSTRAP_AUTHORITY.get("runtime_binding_hash")
@@ -6870,7 +7042,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     if __name__ == "__main__" and (
         not isinstance(_BOOTSTRAP_AUTHORITY, dict)
         or _BOOTSTRAP_AUTHORITY.get("files") != expected_harness_files
+        or not isinstance(_BOOTSTRAP_AUTHORITY.get("source_projection"), dict)
         or _BOOTSTRAP_AUTHORITY.get("git_commit") != args.expected_harness_commit
+        or _BOOTSTRAP_AUTHORITY.get("git_object_format") != HARNESS_GIT_OBJECT_FORMAT
         or _BOOTSTRAP_AUTHORITY.get("git_tree") != args.expected_harness_tree
         or _BOOTSTRAP_AUTHORITY.get("runtime_binding_hash")
         != EXPECTED_RUNTIME_ENVIRONMENT["runtime_binding_hash"]
@@ -6878,10 +7052,15 @@ def main(argv: Sequence[str] | None = None) -> int:
         != sha256_file(ROOT / "docs/evidence/001-09-runtime-binding.json")
     ):
         raise EvaluationError("Stage 09 supervisor bootstrap authority does not bind this launch")
+    bootstrap_authority = cast(dict[str, object], _BOOTSTRAP_AUTHORITY)
     harness_source_expected = _harness_source_binding(
         git_commit=args.expected_harness_commit,
+        git_object_format=HARNESS_GIT_OBJECT_FORMAT,
         git_tree=args.expected_harness_tree,
         files=expected_harness_files,
+        source_projection=cast(
+            dict[str, dict[str, object]], bootstrap_authority["source_projection"]
+        ),
     )
     keywords = {
         "harness_source_expected": harness_source_expected,

@@ -20,7 +20,12 @@ ROOT = Path(__file__).resolve().parents[1]
 SUPERVISOR = ROOT / "scripts/measure_development_recovery.py"
 WORKER = ROOT / "scripts/_stage09_development_worker.py"
 RUNTIME_BINDING = ROOT / "docs/evidence/001-09-runtime-binding.json"
-AUTHORITY_SCHEMA = "arc3.build-001.stage-09-supervisor-bootstrap-authority.v0.1"
+AUTHORITY_SCHEMA = "arc3.build-001.stage-09-supervisor-bootstrap-authority.v0.2"
+_SOURCE_PREFIXES = ("agent/", "scripts/", "src/arc3/")
+_GIT_OBJECT_FORMAT = "sha1"
+_CACHE_DIRECTORIES = frozenset(
+    {".hypothesis", ".mypy_cache", ".pytest_cache", ".ruff_cache", "__pycache__"}
+)
 
 
 def _canonical_bytes(value: object) -> bytes:
@@ -58,24 +63,218 @@ def _load_canonical(path: Path) -> dict[str, Any]:
     return cast(dict[str, Any], value)
 
 
-def _git(*arguments: str) -> str:
+def _git_environment() -> dict[str, str]:
     environment = {
         key: value for key, value in os.environ.items() if not key.upper().startswith("GIT_")
     }
     environment["GIT_NO_REPLACE_OBJECTS"] = "1"
+    return environment
+
+
+def _git_bytes(root: Path, *arguments: str) -> bytes:
     result = subprocess.run(
-        ["git", "-C", str(ROOT), *arguments],
+        ["git", "-C", str(root.resolve()), *arguments],
         check=False,
         capture_output=True,
-        env=environment,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
+        env=_git_environment(),
         timeout=15.0,
     )
     if result.returncode:
         raise RuntimeError(f"bootstrap git {' '.join(arguments)} failed")
-    return result.stdout.strip()
+    return result.stdout
+
+
+def _git(*arguments: str) -> str:
+    try:
+        return _git_bytes(ROOT, *arguments).decode("utf-8", errors="strict").strip()
+    except UnicodeDecodeError as error:
+        raise RuntimeError(f"bootstrap git {' '.join(arguments)} returned non-UTF-8") from error
+
+
+def _git_blob_oid(raw: bytes) -> str:
+    header = f"blob {len(raw)}\0".encode("ascii")
+    return hashlib.sha1(header + raw, usedforsecurity=False).hexdigest()
+
+
+def _canonical_git_blobs(root: Path, object_ids: Sequence[str]) -> dict[str, bytes]:
+    unique_ids = tuple(dict.fromkeys(object_ids))
+    if not unique_ids:
+        return {}
+    result = subprocess.run(
+        ["git", "-C", str(root.resolve()), "cat-file", "--batch"],
+        check=False,
+        capture_output=True,
+        env=_git_environment(),
+        input="".join(f"{object_id}\n" for object_id in unique_ids).encode("ascii"),
+        timeout=30.0,
+    )
+    if result.returncode or result.stderr:
+        raise RuntimeError("Stage 09 bootstrap cannot read canonical Git blobs")
+    output = result.stdout
+    cursor = 0
+    blobs: dict[str, bytes] = {}
+    for expected_id in unique_ids:
+        header_end = output.find(b"\n", cursor)
+        if header_end < 0:
+            raise RuntimeError("Stage 09 bootstrap Git blob batch is truncated")
+        fields = output[cursor:header_end].split()
+        if len(fields) != 3 or fields[0] != expected_id.encode("ascii") or fields[1] != b"blob":
+            raise RuntimeError("Stage 09 bootstrap Git blob batch identity changed")
+        try:
+            size = int(fields[2].decode("ascii", errors="strict"))
+        except (UnicodeDecodeError, ValueError) as error:
+            raise RuntimeError("Stage 09 bootstrap Git blob size is malformed") from error
+        body_start = header_end + 1
+        body_end = body_start + size
+        if size < 0 or body_end >= len(output) or output[body_end : body_end + 1] != b"\n":
+            raise RuntimeError("Stage 09 bootstrap Git blob body is truncated")
+        blobs[expected_id] = output[body_start:body_end]
+        cursor = body_end + 1
+    if cursor != len(output):
+        raise RuntimeError("Stage 09 bootstrap Git blob batch has trailing bytes")
+    return blobs
+
+
+def _tree_projection(root: Path, commit: str) -> dict[str, dict[str, str]]:
+    try:
+        object_format = (
+            _git_bytes(root, "rev-parse", "--show-object-format")
+            .decode("ascii", errors="strict")
+            .strip()
+        )
+    except UnicodeDecodeError as error:
+        raise RuntimeError("Stage 09 bootstrap Git object format is non-ASCII") from error
+    if object_format != _GIT_OBJECT_FORMAT:
+        raise RuntimeError("Stage 09 bootstrap Git object format changed")
+    projection: dict[str, dict[str, str]] = {}
+    for raw_entry in _git_bytes(root, "ls-tree", "-r", "-z", commit).split(b"\0"):
+        if not raw_entry:
+            continue
+        metadata, separator, raw_path = raw_entry.partition(b"\t")
+        fields = metadata.split()
+        if not separator or len(fields) != 3:
+            raise RuntimeError("Stage 09 bootstrap Git tree entry is malformed")
+        try:
+            mode, object_type, object_id = (field.decode("ascii") for field in fields)
+            relative = raw_path.decode("utf-8", errors="strict")
+        except UnicodeDecodeError as error:
+            raise RuntimeError("Stage 09 bootstrap Git tree path is non-portable") from error
+        if not relative.startswith(_SOURCE_PREFIXES):
+            continue
+        if (
+            object_type != "blob"
+            or mode not in {"100644", "100755"}
+            or len(object_id) != 40
+            or any(character not in "0123456789abcdef" for character in object_id)
+            or relative.startswith("/")
+            or "\\" in relative
+            or any(part in {"", ".", ".."} for part in relative.split("/"))
+            or relative in projection
+        ):
+            raise RuntimeError("Stage 09 bootstrap tree contains a non-regular source")
+        projection[relative] = {"git_blob": object_id, "mode": mode}
+    if not projection or any(
+        relative not in projection
+        for relative in (
+            "scripts/_stage09_supervisor_bootstrap.py",
+            "scripts/measure_development_recovery.py",
+            "scripts/_stage09_development_worker.py",
+            "src/arc3/evaluation/development_recovery.py",
+        )
+    ):
+        raise RuntimeError("Stage 09 bootstrap tree projection is incomplete")
+    return dict(sorted(projection.items()))
+
+
+def _path_has_symlink_component(root: Path, relative: str) -> bool:
+    current = root.resolve()
+    for part in relative.split("/"):
+        current /= part
+        if current.is_symlink():
+            return True
+    return False
+
+
+def _live_non_cache_paths(root: Path) -> tuple[str, ...]:
+    repository = root.resolve()
+    found: set[str] = set()
+    for relative_root in ("agent", "scripts", "src/arc3"):
+        base = repository / relative_root
+        if base.is_symlink():
+            found.add(relative_root)
+            continue
+        if not base.is_dir():
+            continue
+        for directory, raw_directories, filenames in os.walk(base, followlinks=False):
+            directory_path = Path(directory)
+            retained: list[str] = []
+            for name in sorted(raw_directories):
+                candidate = directory_path / name
+                if candidate.is_symlink():
+                    found.add(candidate.relative_to(repository).as_posix())
+                elif name not in _CACHE_DIRECTORIES:
+                    retained.append(name)
+            raw_directories[:] = retained
+            for name in sorted(filenames):
+                found.add((directory_path / name).relative_to(repository).as_posix())
+    return tuple(sorted(found))
+
+
+def _index_non_h_paths(root: Path, expected_paths: Sequence[str]) -> tuple[str, ...]:
+    entries: dict[str, str] = {}
+    anomalies: set[str] = set()
+    raw = _git_bytes(root, "ls-files", "-v", "-z", "--", "agent", "scripts", "src/arc3")
+    for raw_entry in raw.split(b"\0"):
+        if not raw_entry:
+            continue
+        if len(raw_entry) < 3 or raw_entry[1:2] != b" ":
+            raise RuntimeError("Stage 09 bootstrap Git index entry is malformed")
+        try:
+            tag = raw_entry[:1].decode("ascii")
+            relative = raw_entry[2:].decode("utf-8", errors="strict")
+        except UnicodeDecodeError as error:
+            raise RuntimeError("Stage 09 bootstrap Git index path is non-portable") from error
+        if relative in entries:
+            anomalies.add(f"duplicate:{relative}")
+        entries[relative] = tag
+        if tag != "H":
+            anomalies.add(f"{tag}:{relative}")
+    expected = set(expected_paths)
+    anomalies.update(f"missing:{relative}" for relative in expected.difference(entries))
+    anomalies.update(f"extra:{relative}" for relative in set(entries).difference(expected))
+    return tuple(sorted(anomalies))
+
+
+def _verified_source_projection(root: Path, commit: str) -> dict[str, dict[str, str]]:
+    repository = root.resolve()
+    tree_projection = _tree_projection(repository, commit)
+    live_paths = set(_live_non_cache_paths(repository))
+    extra_paths = sorted(live_paths.difference(tree_projection))
+    index_non_h = _index_non_h_paths(repository, tuple(tree_projection))
+    canonical_blobs = _canonical_git_blobs(
+        repository, tuple(identity["git_blob"] for identity in tree_projection.values())
+    )
+    projection: dict[str, dict[str, str]] = {}
+    mismatches: list[str] = []
+    for relative, identity in tree_projection.items():
+        path = repository / relative
+        if _path_has_symlink_component(repository, relative) or not path.is_file():
+            mismatches.append(relative)
+            continue
+        raw = path.read_bytes()
+        live_blob = _git_blob_oid(raw)
+        canonical_sha256 = _sha256_bytes(canonical_blobs[identity["git_blob"]])
+        live_sha256 = _sha256_bytes(raw)
+        if live_blob != identity["git_blob"] or live_sha256 != canonical_sha256:
+            mismatches.append(relative)
+        projection[relative] = {
+            "git_blob": identity["git_blob"],
+            "mode": identity["mode"],
+            "sha256": canonical_sha256,
+        }
+    if extra_paths or index_non_h or mismatches or set(projection) != set(tree_projection):
+        raise RuntimeError("Stage 09 bootstrap complete source projection changed")
+    return projection
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -110,6 +309,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     observed = {relative: _sha256_file(ROOT / relative) for relative in files}
     if (
         Path(_git("rev-parse", "--show-toplevel")).resolve() != ROOT
+        or _git("rev-parse", "--show-object-format") != _GIT_OBJECT_FORMAT
         or _git("rev-parse", "HEAD") != args.expected_harness_commit
         or _git("rev-parse", "HEAD^{tree}") != args.expected_harness_tree
         or _git("branch", "--show-current")
@@ -117,6 +317,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         or observed != files
     ):
         raise RuntimeError("Stage 09 bootstrap source authority changed")
+    source_projection = _verified_source_projection(ROOT, args.expected_harness_commit)
+    if any(source_projection[relative]["sha256"] != digest for relative, digest in files.items()):
+        raise RuntimeError("Stage 09 bootstrap anchor hashes differ from the full projection")
     runtime_bytes = RUNTIME_BINDING.read_bytes()
     runtime = _load_canonical(RUNTIME_BINDING)
     if (
@@ -168,11 +371,13 @@ def main(argv: Sequence[str] | None = None) -> int:
         "schema": AUTHORITY_SCHEMA,
         "files": observed,
         "git_commit": args.expected_harness_commit,
+        "git_object_format": _GIT_OBJECT_FORMAT,
         "git_tree": args.expected_harness_tree,
         "runtime_binding_file_sha256": args.expected_runtime_binding_file_sha256,
         "runtime_binding_hash": runtime["runtime_binding_hash"],
         "runtime_observation_hash": runtime_observation_hash,
         "socket_audit_denial_installed": True,
+        "source_projection": source_projection,
     }
     authority["authority_hash"] = _object_hash(authority, "authority_hash")
     vars(builtins)["_arc3_stage09_supervisor_bootstrap_authority"] = authority

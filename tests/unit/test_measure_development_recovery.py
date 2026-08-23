@@ -897,10 +897,13 @@ def test_stage09_git_helpers_strip_redirection_and_disable_replace_objects(
     monkeypatch.setenv("git_index_file", "redirected.index")
     captured: list[dict[str, str]] = []
 
-    def fake_run(*_args: object, **kwargs: object) -> subprocess.CompletedProcess[str]:
+    def fake_run(*_args: object, **kwargs: object) -> subprocess.CompletedProcess[Any]:
         environment = cast(dict[str, str], kwargs["env"])
         captured.append(environment)
-        return subprocess.CompletedProcess([], 0, stdout="", stderr="")
+        binary = kwargs.get("text") is not True
+        return subprocess.CompletedProcess(
+            [], 0, stdout=b"" if binary else "", stderr=b"" if binary else ""
+        )
 
     monkeypatch.setattr(subprocess, "run", fake_run)
 
@@ -952,6 +955,261 @@ def test_stage09_package_candidates_come_from_commit_tree_not_mutable_index(
     candidates = harness._package_only_candidate_files(repository)
 
     assert candidates == (tracked.resolve(),)
+
+
+def _harness_git_fixture(tmp_path: Path) -> tuple[Path, str, str, dict[str, dict[str, str]]]:
+    repository = tmp_path / "harness-repository"
+    repository.mkdir(parents=True)
+    (repository / ".gitattributes").write_bytes(
+        b"* text=auto eol=lf\nsrc/arc3/evaluation/artifacts.py filter=stage09-test\n"
+    )
+    paths = {
+        "scripts/_stage09_supervisor_bootstrap.py": "BOOTSTRAP = True\n",
+        "scripts/measure_development_recovery.py": "SUPERVISOR = True\n",
+        "scripts/_stage09_development_worker.py": "WORKER = True\n",
+        "src/arc3/evaluation/development_recovery.py": "PROTOCOL = True\n",
+        "src/arc3/evaluation/artifacts.py": "IMPORTED_VERIFIER = True\n",
+    }
+    for relative, content in paths.items():
+        path = repository / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(content.encode("utf-8"))
+    subprocess.run(("git", "init", "-q", str(repository)), check=True, timeout=30)
+    subprocess.run(("git", "-C", str(repository), "add", "."), check=True, timeout=30)
+    subprocess.run(
+        (
+            "git",
+            "-C",
+            str(repository),
+            "-c",
+            "user.name=ARC3 Test",
+            "-c",
+            "user.email=arc3@example.invalid",
+            "commit",
+            "-q",
+            "-m",
+            "fixture",
+        ),
+        check=True,
+        timeout=30,
+    )
+    subprocess.run(
+        ("git", "-C", str(repository), "checkout", "--detach", "-q", "HEAD"),
+        check=True,
+        timeout=30,
+    )
+    commit = subprocess.run(
+        ("git", "-C", str(repository), "rev-parse", "HEAD"),
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    ).stdout.strip()
+    tree = subprocess.run(
+        ("git", "-C", str(repository), "rev-parse", "HEAD^{tree}"),
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    ).stdout.strip()
+    projection = bootstrap._verified_source_projection(repository, commit)
+    return repository, commit, tree, projection
+
+
+@pytest.mark.parametrize("index_flag", ["--assume-unchanged", "--skip-worktree"])
+def test_complete_harness_projection_rejects_hidden_imported_module_drift(
+    tmp_path: Path,
+    index_flag: str,
+) -> None:
+    repository, commit, tree, projection = _harness_git_fixture(tmp_path)
+    files = {
+        relative: projection[relative]["sha256"]
+        for relative in (
+            "scripts/_stage09_supervisor_bootstrap.py",
+            "scripts/measure_development_recovery.py",
+            "scripts/_stage09_development_worker.py",
+            "src/arc3/evaluation/development_recovery.py",
+        )
+    }
+    expected = harness._harness_source_binding(
+        git_commit=commit,
+        git_object_format="sha1",
+        git_tree=tree,
+        files=files,
+        source_projection=projection,
+    )
+    target_relative = "src/arc3/evaluation/artifacts.py"
+    subprocess.run(
+        ("git", "-C", str(repository), "update-index", index_flag, "--", target_relative),
+        check=True,
+        timeout=30,
+    )
+    (repository / target_relative).write_text("IMPORTED_VERIFIER = False\n", encoding="utf-8")
+    hidden_status = subprocess.run(
+        ("git", "-C", str(repository), "status", "--porcelain=v1", "--untracked-files=all"),
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    ).stdout.strip()
+
+    assert hidden_status == ""
+    with pytest.raises(RuntimeError, match="complete source projection changed"):
+        bootstrap._verified_source_projection(repository, commit)
+    for observation in (
+        harness._observe_harness_source(repository, expected),
+        worker._harness_observation(repository, expected),
+    ):
+        assert observation["passed"] is False
+        predicates = cast(dict[str, object], observation["predicates"])
+        assert predicates["clean"] is True
+        assert predicates["index_flags"] is False
+        assert predicates["projection"] is False
+        assert any(
+            target_relative in item for item in cast(list[str], observation["index_non_h_paths"])
+        )
+
+
+def test_complete_harness_projection_rejects_extra_non_cache_source(
+    tmp_path: Path,
+) -> None:
+    repository, commit, tree, projection = _harness_git_fixture(tmp_path)
+    files = {
+        relative: projection[relative]["sha256"]
+        for relative in (
+            "scripts/_stage09_supervisor_bootstrap.py",
+            "scripts/measure_development_recovery.py",
+            "scripts/_stage09_development_worker.py",
+            "src/arc3/evaluation/development_recovery.py",
+        )
+    }
+    expected = harness._harness_source_binding(
+        git_commit=commit,
+        git_object_format="sha1",
+        git_tree=tree,
+        files=files,
+        source_projection=projection,
+    )
+    extra_relative = "src/arc3/uncommitted_import.py"
+    (repository / extra_relative).write_bytes(b"UNCOMMITTED = True\n")
+
+    with pytest.raises(RuntimeError, match="complete source projection changed"):
+        bootstrap._verified_source_projection(repository, commit)
+    for observation in (
+        harness._observe_harness_source(repository, expected),
+        worker._harness_observation(repository, expected),
+    ):
+        assert observation["passed"] is False
+        assert observation["extra_non_cache_paths"] == [extra_relative]
+        predicates = cast(dict[str, object], observation["predicates"])
+        assert predicates["extra_files"] is False
+
+
+def test_complete_harness_projection_rejects_clean_filter_normalized_source_drift(
+    tmp_path: Path,
+) -> None:
+    repository, commit, tree, projection = _harness_git_fixture(tmp_path)
+    files = {
+        relative: projection[relative]["sha256"]
+        for relative in (
+            "scripts/_stage09_supervisor_bootstrap.py",
+            "scripts/measure_development_recovery.py",
+            "scripts/_stage09_development_worker.py",
+            "src/arc3/evaluation/development_recovery.py",
+        )
+    }
+    expected = harness._harness_source_binding(
+        git_commit=commit,
+        git_object_format="sha1",
+        git_tree=tree,
+        files=files,
+        source_projection=projection,
+    )
+    target_relative = "src/arc3/evaluation/artifacts.py"
+    target_blob = projection[target_relative]["git_blob"]
+    subprocess.run(
+        (
+            "git",
+            "-C",
+            str(repository),
+            "config",
+            "filter.stage09-test.clean",
+            f"cat > /dev/null && git cat-file blob {target_blob}",
+        ),
+        check=True,
+        timeout=30,
+    )
+    subprocess.run(
+        (
+            "git",
+            "-C",
+            str(repository),
+            "config",
+            "filter.stage09-test.smudge",
+            "cat",
+        ),
+        check=True,
+        timeout=30,
+    )
+    (repository / target_relative).write_bytes(b"IMPORTED_VERIFIER = 'FILTERED_DRIFT'\n")
+    filtered_diff = subprocess.run(
+        ("git", "-C", str(repository), "diff", "--quiet", "--", target_relative),
+        check=False,
+        timeout=30,
+    )
+    filtered_blob = subprocess.run(
+        (
+            "git",
+            "-C",
+            str(repository),
+            "hash-object",
+            f"--path={target_relative}",
+            target_relative,
+        ),
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    ).stdout.strip()
+
+    assert filtered_diff.returncode == 0
+    assert filtered_blob == target_blob
+    assert (
+        bootstrap._sha256_bytes((repository / target_relative).read_bytes())
+        != (projection[target_relative]["sha256"])
+    )
+    with pytest.raises(RuntimeError, match="complete source projection changed"):
+        bootstrap._verified_source_projection(repository, commit)
+    for observation in (
+        harness._observe_harness_source(repository, expected),
+        worker._harness_observation(repository, expected),
+    ):
+        assert observation["passed"] is False
+        predicates = cast(dict[str, object], observation["predicates"])
+        assert predicates["index_flags"] is True
+        assert predicates["projection"] is False
+
+
+def test_all_harness_observers_reject_non_sha1_git_object_format(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repository, commit, _tree, _projection = _harness_git_fixture(tmp_path)
+    with monkeypatch.context() as context:
+        original = harness._git
+
+        def wrong_supervisor_format(root: Path, *arguments: str) -> str:
+            if arguments == ("rev-parse", "--show-object-format"):
+                return "sha256"
+            return original(root, *arguments)
+
+        context.setattr(harness, "_git", wrong_supervisor_format)
+        with pytest.raises(EvaluationError, match="Git object format changed"):
+            harness._harness_tree_projection(repository, commit)
+    with monkeypatch.context() as context:
+        context.setattr(worker, "_git", lambda _root, _argument: "sha256")
+        with pytest.raises(ValueError, match="Git object format changed"):
+            worker._harness_tree_projection(repository, commit)
 
 
 def test_normal_root_exit_drains_and_verifies_long_lived_descendant(tmp_path: Path) -> None:
@@ -1965,7 +2223,9 @@ def test_exposed_cell_without_terminal_receipt_is_never_relaunched(
         {
             "files": expected_harness["files"],
             "git_commit": expected_harness["git_commit"],
+            "git_object_format": expected_harness["git_object_format"],
             "git_tree": expected_harness["git_tree"],
+            "source_projection": expected_harness["source_projection"],
             "runtime_binding_hash": harness.EXPECTED_RUNTIME_ENVIRONMENT["runtime_binding_hash"],
             "socket_audit_denial_installed": True,
         },
@@ -2142,7 +2402,9 @@ def test_open_cell_segment_resume_charges_full_cell_and_excludes_reboot_downtime
         {
             "files": expected_harness["files"],
             "git_commit": expected_harness["git_commit"],
+            "git_object_format": expected_harness["git_object_format"],
             "git_tree": expected_harness["git_tree"],
+            "source_projection": expected_harness["source_projection"],
             "runtime_binding_hash": harness.EXPECTED_RUNTIME_ENVIRONMENT["runtime_binding_hash"],
             "socket_audit_denial_installed": True,
         },
@@ -2229,7 +2491,9 @@ def test_resume_seals_receipt_without_finalization_and_never_relaunches(
         {
             "files": expected_harness["files"],
             "git_commit": expected_harness["git_commit"],
+            "git_object_format": expected_harness["git_object_format"],
             "git_tree": expected_harness["git_tree"],
+            "source_projection": expected_harness["source_projection"],
             "runtime_binding_hash": harness.EXPECTED_RUNTIME_ENVIRONMENT["runtime_binding_hash"],
             "socket_audit_denial_installed": True,
         },
@@ -3049,7 +3313,7 @@ def test_runtime_binding_rejects_rehashed_full_environment_drift(drift: str) -> 
         harness.validate_runtime_environment_observation(changed, expected=expected)
 
 
-@pytest.mark.parametrize("drift", ["commit", "dirty", "file"])
+@pytest.mark.parametrize("drift", ["commit", "dirty", "file", "object-format"])
 def test_stdlib_bootstrap_rejects_source_drift_before_runtime_probe(
     monkeypatch: pytest.MonkeyPatch,
     drift: str,
@@ -3072,6 +3336,9 @@ def test_stdlib_bootstrap_rejects_source_drift_before_runtime_probe(
     def fake_git(*arguments: str) -> str:
         values = {
             ("rev-parse", "--show-toplevel"): str(bootstrap.ROOT),
+            ("rev-parse", "--show-object-format"): (
+                "sha256" if drift == "object-format" else "sha1"
+            ),
             ("rev-parse", "HEAD"): "c" * 40 if drift == "commit" else commit,
             ("rev-parse", "HEAD^{tree}"): tree,
             ("branch", "--show-current"): "",
@@ -3082,6 +3349,18 @@ def test_stdlib_bootstrap_rejects_source_drift_before_runtime_probe(
         return values[arguments]
 
     monkeypatch.setattr(bootstrap, "_git", fake_git)
+    monkeypatch.setattr(
+        bootstrap,
+        "_verified_source_projection",
+        lambda _root, _commit: {
+            relative: {
+                "git_blob": "d" * 40,
+                "mode": "100644",
+                "sha256": digest,
+            }
+            for relative, digest in files.items()
+        },
+    )
 
     def forbidden(*_args: object, **_kwargs: object) -> NoReturn:
         raise AssertionError("source drift reached runtime validation")
@@ -3126,6 +3405,7 @@ def test_stdlib_bootstrap_rejects_runtime_binding_bytes_before_probe(
     def fake_git(*arguments: str) -> str:
         values = {
             ("rev-parse", "--show-toplevel"): str(bootstrap.ROOT),
+            ("rev-parse", "--show-object-format"): "sha1",
             ("rev-parse", "HEAD"): commit,
             ("rev-parse", "HEAD^{tree}"): tree,
             ("branch", "--show-current"): "",
@@ -3134,6 +3414,18 @@ def test_stdlib_bootstrap_rejects_runtime_binding_bytes_before_probe(
         return values[arguments]
 
     monkeypatch.setattr(bootstrap, "_git", fake_git)
+    monkeypatch.setattr(
+        bootstrap,
+        "_verified_source_projection",
+        lambda _root, _commit: {
+            relative: {
+                "git_blob": "d" * 40,
+                "mode": "100644",
+                "sha256": digest,
+            }
+            for relative, digest in files.items()
+        },
+    )
 
     def forbidden(*_args: object, **_kwargs: object) -> NoReturn:
         raise AssertionError("runtime binding drift reached the import probe")

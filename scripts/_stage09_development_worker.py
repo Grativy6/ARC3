@@ -20,6 +20,12 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any, cast
 
+_HARNESS_SOURCE_PREFIXES = ("agent/", "scripts/", "src/arc3/")
+_HARNESS_GIT_OBJECT_FORMAT = "sha1"
+_HARNESS_CACHE_DIRECTORIES = frozenset(
+    {".hypothesis", ".mypy_cache", ".pytest_cache", ".ruff_cache", "__pycache__"}
+)
+
 
 def _canonical_bytes(value: object) -> bytes:
     return (
@@ -178,64 +184,260 @@ def _status(root: Path) -> str:
     return result.stdout.strip()
 
 
+def _git_bytes(root: Path, *arguments: str) -> bytes:
+    environment = {
+        key: value for key, value in os.environ.items() if not key.upper().startswith("GIT_")
+    }
+    environment["GIT_NO_REPLACE_OBJECTS"] = "1"
+    result = subprocess.run(
+        ["git", "-C", str(root.resolve()), *arguments],
+        check=False,
+        capture_output=True,
+        env=environment,
+        timeout=15.0,
+    )
+    if result.returncode:
+        raise ValueError(f"Stage 09 worker git {' '.join(arguments)} failed")
+    return result.stdout
+
+
+def _git_blob_oid(raw: bytes) -> str:
+    header = f"blob {len(raw)}\0".encode("ascii")
+    return hashlib.sha1(header + raw, usedforsecurity=False).hexdigest()
+
+
+def _harness_tree_projection(root: Path, commit: str) -> dict[str, dict[str, str]]:
+    if _git(root.resolve(), "--show-object-format") != _HARNESS_GIT_OBJECT_FORMAT:
+        raise ValueError("Stage 09 worker Git object format changed")
+    projection: dict[str, dict[str, str]] = {}
+    for raw_entry in _git_bytes(root, "ls-tree", "-r", "-z", commit).split(b"\0"):
+        if not raw_entry:
+            continue
+        metadata, separator, raw_path = raw_entry.partition(b"\t")
+        fields = metadata.split()
+        if not separator or len(fields) != 3:
+            raise ValueError("Stage 09 worker Git tree entry is malformed")
+        try:
+            mode, object_type, object_id = (field.decode("ascii") for field in fields)
+            relative = raw_path.decode("utf-8", errors="strict")
+        except UnicodeDecodeError as error:
+            raise ValueError("Stage 09 worker Git tree path is non-portable") from error
+        if not relative.startswith(_HARNESS_SOURCE_PREFIXES):
+            continue
+        if (
+            object_type != "blob"
+            or mode not in {"100644", "100755"}
+            or len(object_id) != 40
+            or any(character not in "0123456789abcdef" for character in object_id)
+            or relative.startswith("/")
+            or "\\" in relative
+            or any(part in {"", ".", ".."} for part in relative.split("/"))
+            or relative in projection
+        ):
+            raise ValueError("Stage 09 worker Git tree contains a non-regular source")
+        projection[relative] = {"git_blob": object_id, "mode": mode}
+    required = {
+        "scripts/_stage09_supervisor_bootstrap.py",
+        "scripts/measure_development_recovery.py",
+        "scripts/_stage09_development_worker.py",
+        "src/arc3/evaluation/development_recovery.py",
+    }
+    if not projection or not required.issubset(projection):
+        raise ValueError("Stage 09 worker Git tree projection is incomplete")
+    return dict(sorted(projection.items()))
+
+
+def _path_has_symlink_component(root: Path, relative: str) -> bool:
+    current = root.resolve()
+    for part in relative.split("/"):
+        current /= part
+        if current.is_symlink():
+            return True
+    return False
+
+
+def _live_harness_projection(
+    root: Path, tree_projection: Mapping[str, Mapping[str, str]]
+) -> dict[str, dict[str, object]]:
+    repository = root.resolve()
+    observed: dict[str, dict[str, object]] = {}
+    for relative, identity in tree_projection.items():
+        path = repository / relative
+        raw: bytes | None = None
+        if not _path_has_symlink_component(repository, relative) and path.is_file():
+            try:
+                raw = path.read_bytes()
+            except OSError:
+                raw = None
+        observed[relative] = {
+            "git_blob": _git_blob_oid(raw) if raw is not None else None,
+            "mode": identity["mode"],
+            "sha256": f"sha256:{hashlib.sha256(raw).hexdigest()}" if raw is not None else None,
+        }
+    return observed
+
+
+def _live_non_cache_harness_paths(root: Path) -> tuple[str, ...]:
+    repository = root.resolve()
+    found: set[str] = set()
+    for relative_root in ("agent", "scripts", "src/arc3"):
+        base = repository / relative_root
+        if base.is_symlink():
+            found.add(relative_root)
+            continue
+        if not base.is_dir():
+            continue
+        for directory, raw_directories, filenames in os.walk(base, followlinks=False):
+            directory_path = Path(directory)
+            retained: list[str] = []
+            for name in sorted(raw_directories):
+                candidate = directory_path / name
+                if candidate.is_symlink():
+                    found.add(candidate.relative_to(repository).as_posix())
+                elif name not in _HARNESS_CACHE_DIRECTORIES:
+                    retained.append(name)
+            raw_directories[:] = retained
+            for name in sorted(filenames):
+                found.add((directory_path / name).relative_to(repository).as_posix())
+    return tuple(sorted(found))
+
+
+def _harness_index_non_h_paths(root: Path, expected_paths: Sequence[str]) -> tuple[str, ...]:
+    entries: dict[str, str] = {}
+    anomalies: set[str] = set()
+    raw = _git_bytes(root, "ls-files", "-v", "-z", "--", "agent", "scripts", "src/arc3")
+    for raw_entry in raw.split(b"\0"):
+        if not raw_entry:
+            continue
+        if len(raw_entry) < 3 or raw_entry[1:2] != b" ":
+            raise ValueError("Stage 09 worker Git index entry is malformed")
+        try:
+            tag = raw_entry[:1].decode("ascii")
+            relative = raw_entry[2:].decode("utf-8", errors="strict")
+        except UnicodeDecodeError as error:
+            raise ValueError("Stage 09 worker Git index path is non-portable") from error
+        if relative in entries:
+            anomalies.add(f"duplicate:{relative}")
+        entries[relative] = tag
+        if tag != "H":
+            anomalies.add(f"{tag}:{relative}")
+    expected = set(expected_paths)
+    anomalies.update(f"missing:{relative}" for relative in expected.difference(entries))
+    anomalies.update(f"extra:{relative}" for relative in set(entries).difference(expected))
+    return tuple(sorted(anomalies))
+
+
 def _harness_observation(root: Path, expected: Mapping[str, object]) -> dict[str, object]:
     files = expected.get("files")
+    source_projection = expected.get("source_projection")
+    required_files = {
+        "scripts/_stage09_supervisor_bootstrap.py",
+        "scripts/measure_development_recovery.py",
+        "scripts/_stage09_development_worker.py",
+        "src/arc3/evaluation/development_recovery.py",
+    }
     if (
-        expected.get("schema") != "arc3.build-001.stage-09-harness-source-binding.v0.1"
+        expected.get("schema") != "arc3.build-001.stage-09-harness-source-binding.v0.2"
         or expected.get("binding_hash") != _object_hash(expected, "binding_hash")
+        or expected.get("git_object_format") != _HARNESS_GIT_OBJECT_FORMAT
         or not isinstance(files, dict)
-        or set(files)
-        != {
-            "scripts/_stage09_supervisor_bootstrap.py",
-            "scripts/measure_development_recovery.py",
-            "scripts/_stage09_development_worker.py",
-            "src/arc3/evaluation/development_recovery.py",
-        }
+        or set(files) != required_files
+        or any(
+            not isinstance(digest, str)
+            or len(digest) != 71
+            or not digest.startswith("sha256:")
+            or any(character not in "0123456789abcdef" for character in digest[7:])
+            for digest in files.values()
+        )
+        or any(
+            not isinstance(expected.get(field), str)
+            or len(cast(str, expected[field])) != 40
+            or any(character not in "0123456789abcdef" for character in cast(str, expected[field]))
+            for field in ("git_commit", "git_tree")
+        )
+        or not isinstance(source_projection, dict)
+        or not source_projection
+        or not required_files.issubset(source_projection)
+        or any(
+            not isinstance(relative, str)
+            or not relative.startswith(_HARNESS_SOURCE_PREFIXES)
+            or relative.startswith("/")
+            or "\\" in relative
+            or any(part in {"", ".", ".."} for part in relative.split("/"))
+            or not isinstance(identity, dict)
+            or set(identity) != {"git_blob", "mode", "sha256"}
+            or not isinstance(identity.get("git_blob"), str)
+            or len(cast(str, identity["git_blob"])) != 40
+            or any(
+                character not in "0123456789abcdef" for character in cast(str, identity["git_blob"])
+            )
+            or identity.get("mode") not in {"100644", "100755"}
+            or not isinstance(identity.get("sha256"), str)
+            or len(cast(str, identity["sha256"])) != 71
+            or not cast(str, identity["sha256"]).startswith("sha256:")
+            or any(
+                character not in "0123456789abcdef"
+                for character in cast(str, identity["sha256"])[7:]
+            )
+            for relative, identity in source_projection.items()
+        )
+        or any(
+            cast(dict[str, object], source_projection[relative]).get("sha256") != digest
+            for relative, digest in files.items()
+        )
     ):
         raise ValueError("Stage 09 harness source binding is invalid")
     resolved = root.resolve()
-    branch = subprocess.run(
-        ["git", "-C", str(resolved), "branch", "--show-current"],
-        check=True,
-        capture_output=True,
-        env={
-            **{
-                key: value
-                for key, value in os.environ.items()
-                if not key.upper().startswith("GIT_")
-            },
-            "GIT_NO_REPLACE_OBJECTS": "1",
-        },
-        text=True,
-        timeout=10.0,
-    ).stdout.strip()
+    try:
+        branch = (
+            _git_bytes(resolved, "branch", "--show-current")
+            .decode("utf-8", errors="strict")
+            .strip()
+        )
+    except UnicodeDecodeError as error:
+        raise ValueError("Stage 09 worker Git branch is non-UTF-8") from error
     top_level = Path(_git(resolved, "--show-toplevel")).resolve()
     status = _status(resolved)
-    observed_files = {
-        relative: _sha256_file(resolved / relative) if (resolved / relative).is_file() else None
-        for relative in files
-    }
     commit = _git(resolved, "HEAD")
+    object_format = _git(resolved, "--show-object-format")
     tree = _git(resolved, "HEAD^{tree}")
+    tree_projection = _harness_tree_projection(resolved, commit)
+    observed_projection = _live_harness_projection(resolved, tree_projection)
+    observed_files = {
+        relative: observed_projection[relative]["sha256"] for relative in required_files
+    }
+    live_paths = set(_live_non_cache_harness_paths(resolved))
+    extra_paths = tuple(sorted(live_paths.difference(tree_projection)))
+    index_non_h_paths = _harness_index_non_h_paths(resolved, tuple(tree_projection))
     predicates = {
         "clean": status == "",
         "commit": commit == expected.get("git_commit"),
         "detached": branch == "",
+        "extra_files": not extra_paths,
         "files": observed_files == files,
+        "index_flags": not index_non_h_paths,
+        "object_format": object_format
+        == expected.get("git_object_format")
+        == _HARNESS_GIT_OBJECT_FORMAT,
+        "projection": observed_projection == source_projection,
         "root": top_level == resolved,
         "tree": tree == expected.get("git_tree"),
     }
     payload: dict[str, object] = {
-        "schema": "arc3.build-001.stage-09-harness-source-observation.v0.1",
+        "schema": "arc3.build-001.stage-09-harness-source-observation.v0.2",
         "binding_hash": expected["binding_hash"],
         "branch": branch,
         "dirty_worktree": bool(status),
+        "extra_non_cache_paths": list(extra_paths),
         "files": observed_files,
         "git_commit": commit,
+        "git_object_format": object_format,
         "git_tree": tree,
+        "index_non_h_paths": list(index_non_h_paths),
         "passed": all(predicates.values()),
         "predicates": predicates,
         "root": resolved.as_posix(),
+        "source_projection": observed_projection,
     }
     payload["observation_hash"] = _object_hash(payload, "observation_hash")
     return payload
