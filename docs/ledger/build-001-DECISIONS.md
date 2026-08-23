@@ -807,3 +807,91 @@ independent authorities.
 - Reopening condition: either identity namespace is no longer independently verified; restored
   non-phase state drift is accepted; real close/checkpoint/restore behavior changes; or a future
   separately predeclared measurement exposes another validator incompatibility.
+
+## D-001-0041 — Freeze the Stage 09 matched development matrix before gameplay
+
+- Recorded: 2026-08-23T02:28:43.8226104Z
+- Status: accepted
+- Decision: compare frozen Build 000 B0 random, deterministic cycle, and FULL with frozen Build 001
+  FULL over the twelve already-exposed development games, seeds 7 and 11, an 80-action/eight-reset
+  cell envelope, 120-second worker limit, fixed 150-second conservative parent admission per cell,
+  and 14,400-second parent limit. Require at least two distinct Build 001 FULL completions absent
+  from Build 000 FULL, at least 12/24 normal Build 001 FULL runs, a strict B0 win, and complete
+  integrity/evidence predicates. Do not weaken this gate after results.
+- Evidence: `docs/evidence/001-09-development-recovery-predeclaration.json`, file SHA-256
+  `dce14e30d47aff7ac99551ad462c9202113dcd44c591dacd410b86363ddad348`, core SHA-256
+  `b32f91fa228a7f1f2c2bbfee23e8fafc3a9affc18f9b0d3cbf9e050b0e498f3c`, matrix SHA-256
+  `5c4c1d4a1d23bd68822c91a5c82dcbbabad7d0ca9ea0ab298a2df37e149b868b`; 96 predeclared cells.
+- Boundary: this is `local-public` premeasurement authority only. No Stage 09 gameplay has started;
+  the ten-game public holdout remains a separate sealed partition.
+- Reopening condition: none after decisive launch. Before launch, only a fail-closed safety repair
+  that leaves policy, matrix, budgets, hardware, and PASS rule unchanged may be integrated.
+
+## D-001-0042 — Require full policy integrity authority and canonical receipt validation
+
+- Recorded: 2026-08-23T02:28:43.8226104Z
+- Status: accepted
+- Decision: a narrow dependency-only scan cannot authorize a decisive policy run. Bind exact frozen
+  Build 000 and Build 001 full-repository integrity receipts, validate each through the scanner's
+  own canonical byte contract, and preserve rather than overwrite every failed narrow or
+  wrong-namespace preflight.
+- Evidence: B-001-0049 and B-001-0050; full receipt file SHA-256 values
+  `9fd255b3a32549fd09c12247863319e8662805ed43f874b46e52eb3cb675834f` and
+  `b63ea29913a042930b01ace640c283dd0febce3597b637c3d8433fc981579349`; validator repair commit
+  `2a069f3ef0596cea3ec229ca550285286e7268b5`.
+- Boundary: a static integrity PASS supplies no gameplay, performance, or hidden-generalization
+  claim. Any later source drift invalidates the authority and must fail closed.
+- Reopening condition: a receipt does not cover the complete promised surface, canonical bytes are
+  not reconstructed, or its exact source/tree no longer matches the execution boundary.
+
+## D-001-0043 — Supersede the first Stage 10 plan with an opaque v0.2 authority boundary
+
+- Recorded: 2026-08-23T02:28:43.8226104Z
+- Status: accepted
+- Decision: preserve the original Stage 10 v0.1 predeclaration but do not execute it. Use v0.2,
+  which gives synthetic children only an opaque hash-linked non-consumption authority, gives
+  structural/integrity failures precedence over metric floors, pins the exact runtime and lock,
+  and denies sockets before target imports. Continue hardening until no child or denied path opens
+  semantic public surfaces.
+- Evidence: original v0.1 file SHA-256
+  `02ad73f25cd6c21459cf425a29de0b830fa27bd660c58777b272ac57116d26e3`; v0.2 file SHA-256
+  `e056eea0d4a6664996ae9078e15b4cdddb5f6c40d5b770540b8e9068cc224613`; implementation commit
+  `937155fb25b70c0b22b4342e8a70396c23ac461d`; clean non-playing preflight SHA-256
+  `b1c44b1d03d9c590080ea366c743fc372da75461965ada5fc9f13a8e66e6fb2f`.
+- Boundary: independent audit B-001-0052 remains open, so v0.2 is frozen intent rather than
+  execution authority. Stage 10 has not run.
+- Reopening condition: any child parses public identities/assets; malformed evidence is treated as
+  mechanism; source can drift after preflight; or an existing terminal can be silently rerun.
+
+## D-001-0044 — Make holdout opening a typed evidence authority, never a boolean hint
+
+- Recorded: 2026-08-23T02:28:43.8226104Z
+- Status: accepted
+- Decision: Stage 11 mechanically binds exact Stage 09/10 evidence, source/config/lock identities,
+  integrity, workflow, and the opaque manifest commitment. A parent boolean is never sufficient.
+  The denied path must emit a non-consumption receipt without adapter import or semantic manifest
+  access; an earned worker must freshly validate the same exact authority immediately before its
+  first environment action and whenever the frozen contract requires it.
+- Evidence: initial gate implementation commits `aa93b99e8f3a51f54ac6bc85f141b9a100b59893` and
+  `d300570868a84b092241a9d06002382cd574a825`; focused integration 13/13; unresolved adversarial
+  findings in B-001-0052.
+- Boundary: the gate is not yet evaluated and no holdout interaction is authorized. The sealed
+  manifest commitment is not permission to parse the manifest on a denied path.
+- Reopening condition: denied execution imports an adapter or reads semantic manifest bytes; any
+  worker acts without exact fresh authority; or any one of the five workflow gate predicates can
+  be bypassed, defaulted, or rewritten after development results.
+
+## D-001-0045 — Block every decisive run on independent evidence-boundary audit findings
+
+- Recorded: 2026-08-23T02:28:43.8226104Z
+- Status: accepted
+- Decision: do not treat passing focused tests or a `READY_NOT_EXECUTED` receipt as sufficient when
+  independent audit identifies a reachable evidence-promotion, restart, source-drift, or sealed-data
+  bypass. Repair in isolated worktrees, add exploit regressions, rerun non-playing clean-source
+  preflight, and obtain an independent second audit before Stage 09 or Stage 10 execution.
+- Evidence: B-001-0051 and B-001-0052; the Stage 09 attempt/work/exposure paths are absent, Stage 10
+  has not executed, and holdout gameplay/assets remain zero.
+- Boundary: this decision authorizes safety and test work only. It does not authorize a rerun of
+  any unique prior attempt, any holdout opening, or any claim from malformed/recovered evidence.
+- Reopening condition: all cited exploit paths are unreachable under exact-source adversarial tests
+  and independent review, or a new finding reopens the boundary.

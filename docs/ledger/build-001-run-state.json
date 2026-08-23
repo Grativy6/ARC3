@@ -7,12 +7,12 @@
   "build_status": "IN_PROGRESS",
   "status": "IN_PROGRESS",
   "current_stage": "09",
-  "current_task": "Integrate and verify the development-only Stage 09 supervisor, then freeze its decisive source and gate before gameplay",
+  "current_task": "Resolve independent Stage 09, Stage 10, and holdout-authority audit blockers before any gameplay or decisive execution",
   "implementation_branch": "build/001-local-public-recovery",
   "pull_request": "https://github.com/Grativy6/ARC3/pull/5",
   "started_at": "2026-08-21T15:41:02Z",
-  "last_checkpoint_at": "2026-08-23T01:02:06.1503635Z",
-  "last_checkpoint_commit": "fa24a4326ed191a3dd97b36903a2032bb481c524",
+  "last_checkpoint_at": "2026-08-23T02:28:43.8226104Z",
+  "last_checkpoint_commit": "d300570868a84b092241a9d06002382cd574a825",
   "base": {
     "main_commit": "28c7a00732ce48e5c231211b01bc6eba7d0d71b4",
     "main_tree": "4586299448e9b1b585a0878674ed5f9afa60c384",
@@ -637,7 +637,7 @@
     }
   },
   "blocked_items": [],
-  "next_action": "Integrate the isolated Stage 09 development-only supervisor, audit and freeze its exact source, matrix, budgets, hardware, and PASS gate before opening any decisive development run.",
+  "next_action": "Integrate and independently verify the isolated Stage 09 audit repair and the Stage 10/holdout authority repairs; rerun only non-playing clean-source preflights until every blocker is closed.",
   "notes": [
     "Build 000 ledgers and reports are immutable historical evidence and are not overwritten by Build 001.",
     "The owner explicitly approved MIT-0 for ARC3 first-party source in the active Build 001 instruction.",

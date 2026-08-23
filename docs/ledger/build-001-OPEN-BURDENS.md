@@ -1117,3 +1117,104 @@ does not erase earlier uncertainty or failed mechanisms.
   `8cb7f6b12c4da65f23354187da6c9fb3f0ac303f6228b41154aaf1316b2851de`. The repair resolves only
   future validation infrastructure: immutable Attempt 01 remains `FAILED_INFRASTRUCTURE`, retains
   one development exposure, and remains non-rerunnable.
+
+## B-001-0049 — A lock-only Stage 09 integrity scan could not authorize production policy
+
+- Status: RESOLVED
+- Stage: 09
+- Opened: 2026-08-23
+- Burden: the first Stage 09 integrity receipt scanned only `uv.lock`. It reported 60 non-blocking
+  supply-chain warnings and no blocking finding, but it did not cover the full production policy,
+  offline/runtime, game-ID, source-reading, or secret surfaces required by the decisive gate.
+- Why it matters: absence of a blocking finding in a narrow scan cannot be promoted into full
+  competition-integrity authority.
+- Resolution receipt: fresh full-repository receipts from the exact frozen policy checkouts passed
+  every one of the five integrity checks with zero findings. Build 001 receipt
+  `C:/a/arc3-b001/artifacts/stage09/policy-integrity-2e78c258-full.json` has file SHA-256
+  `9fd255b3a32549fd09c12247863319e8662805ed43f874b46e52eb3cb675834f`; Build 000 receipt
+  `C:/a/arc3-b001/artifacts/stage09/policy-integrity-build000-90ecf726-full.json` has file SHA-256
+  `b63ea29913a042930b01ace640c283dd0febce3597b637c3d8433fc981579349`.
+- Boundary: the failed narrow receipt remains preserved and supplies no authority. These scans are
+  non-playing static evidence and do not create a performance result.
+
+## B-001-0050 — Stage 09 initially validated integrity receipts in the wrong hash namespace
+
+- Status: RESOLVED
+- Stage: 09
+- Opened: 2026-08-23
+- Burden: the first clean detached Stage 09 preflight used the evaluation artifact validator's
+  newline-terminated canonical JSON contract for the integrity scanner's newline-free canonical
+  receipt. Both valid full receipts therefore failed closed at the prior-authority boundary.
+- Why it matters: two independently correct hash namespaces were conflated, making the decisive
+  supervisor unavailable and tempting an unsafe bypass.
+- Resolution receipt: commit `2a069f3ef0596cea3ec229ca550285286e7268b5` validates through
+  `IntegrityReceipt.from_bytes` and adds a real-receipt regression. A clean detached non-playing
+  preflight then returned `READY_NOT_EXECUTED`; receipt SHA-256
+  `d8995e91466d9396a85097f1b44f7a641bdce3bcec3fe2cf3418443f814f71b7`; all thirteen predicates
+  were true and no attempt, output, or exposure path was created.
+- Boundary: this resolves only the receipt validator. Later independent audit findings remain
+  separately open under B-001-0051.
+
+## B-001-0051 — Independent audit found unsafe Stage 09 restart and evidence promotion paths
+
+- Status: OPEN
+- Stage: 09
+- Opened: 2026-08-23
+- Owner: Codex
+- Burden: an independent static audit of the ready supervisor found that failed raw receipts could
+  influence decisive completion/normal-termination/B0 metrics; exception class could promote an
+  invariant failure into mechanism evidence; after-boundary reconstruction substituted current
+  preflight values; terminal reconstruction did not live-replay every success/failure trace; an
+  authorized live orphan could coexist with a terminal projection; partial terminals were not
+  reconstructed canonically; and parent admission/finalization time was not fully bound.
+- Why it matters: a self-consistent but malformed restart graph could manufacture or corrupt the
+  Stage 09 gate even while individual receipt hashes verify.
+- Current evidence: no Stage 09 gameplay has begun. The attempt, work, and exposure-ledger paths
+  are absent. An isolated repair is in progress from commit `2a069f3`; decisive execution remains
+  blocked until adversarial regressions, strict typing, lint, exact-source preflight, and a second
+  independent audit all pass.
+- Resolution condition: only raw `SUCCESS` cells may affect decisive metrics; all raw failures are
+  infrastructure unless a separately sealed typed mechanism producer exists; every trace and
+  action/reset budget is replayed; persisted observations reconstruct exactly; live launch tokens
+  cannot be terminalized; partial/terminal graphs are canonical; and full runtime and parent-time
+  authority remain immutable through finalization.
+
+## B-001-0052 — Stage 10 and holdout authorization crossed sealed semantic boundaries
+
+- Status: OPEN
+- Stage: 10–12
+- Opened: 2026-08-23
+- Owner: Codex
+- Burden: independent audit of commit `d300570` found that a Stage 10 rule child still invoked the
+  default integrity scan that parses the public partition manifest; Stage 10 did not revalidate
+  source at every suite or reject a pre-existing terminal before child launch; malformed typed
+  metrics could be downgraded to mechanism failure; the `HOLDOUT_NOT_EARNED` path imported the ARC
+  adapter and directly hashed/parsed the manifest; and earned action workers received no gate
+  authority to revalidate immediately before environment action.
+- Why it matters: sealed identifiers or assets must not enter a denied path, structural evidence
+  failure must not become performance evidence, and parent-only authorization cannot survive
+  source/evidence drift at the action boundary.
+- Current evidence: Stage 10 has not executed and no holdout environment has been opened. Static
+  exploit regressions and isolated repairs are in progress. The ten-game holdout remains
+  `SEALED_UNCONSUMED` with zero gameplay events and zero locally acquired assets.
+- Resolution condition: package/production-only integrity never opens semantic public surfaces;
+  exact source is bound from preflight through every suite; terminal graphs are canonical and
+  non-rerunnable; malformed child evidence is infrastructure; denied paths import no adapter and
+  read zero manifest bytes, identities, paths, or assets; and earned workers carry and freshly
+  validate exact evidence authority immediately before action.
+
+## B-001-0053 — Holdout-gate integration fixtures drifted behind frozen evidence schemas
+
+- Status: RESOLVED
+- Stage: 11
+- Opened: 2026-08-23
+- Burden: after integrating Stage 09 aggregate schema v0.3 and Stage 10 result schema v0.2, the
+  isolated holdout-gate fixtures still emitted older literal schema strings. Eleven of thirteen
+  integration tests failed before any environment or manifest selection.
+- Why it matters: a gate test that proves only stale fixture contracts cannot authorize the actual
+  frozen evidence artifacts.
+- Resolution receipt: commit `d300570868a84b092241a9d06002382cd574a825` imports the production
+  schema constants into the fixtures; the focused suite passed 13/13 and Ruff passed. The original
+  eleven failures remain preserved as integration evidence.
+- Boundary: this resolves only schema alignment. The independent authority blockers under
+  B-001-0052 still prevent Stage 10 execution and any holdout decision.
