@@ -728,6 +728,10 @@ independent authorities.
   `C:/a/arc3-ci-7c4ea86` in 52.01 seconds.
 - Boundary: the remote Linux/Windows full suites for this repair remain pending. This is restart
   and authority evidence, not a Stage 08 performance result, and no public environment was opened.
+- Verification closure: GitHub Actions runs `32604662810` and `32604664455` passed 885 tests on
+  Ubuntu and Windows. A correctly source-bound clean detached Windows rerun passed 885/885 in
+  2,139.82 seconds with `PYTHONPATH=C:/a/arc3-ci-7c4ea86/src`. The earlier mixed-source 22-failure
+  run remains preserved as infrastructure evidence.
 - Reopening condition: checkpoint frequency changes a selected path or trigger; an unacted terminal
   advances cadence; a raw/external receipt enters an abandoned suffix; an orphan latest pointer
   influences restore; or strict source/commitment validation can be bypassed.

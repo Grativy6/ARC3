@@ -1,7 +1,7 @@
 {
   "schema": "arc3.build-001.stage-08-premeasurement-audit.v0.1",
   "recorded_at": "2026-08-23T00:19:21.3870822Z",
-  "status": "READY_NOT_EXECUTED_PENDING_EXACT_SOURCE_CI_AND_LOCAL_FULL_SUITE",
+  "status": "READY_NOT_EXECUTED_PENDING_EXACT_SOURCE_CI",
   "execution_started": false,
   "verification_label": "synthetic",
   "public_gameplay_result": null,
@@ -79,6 +79,19 @@
     "secret_scan": "PASS:9 tests+0 findings",
     "adversarial_review": "PASS:targeted final review cleared interim-integrity stop and immutable returned-consequence binding"
   },
+  "cadence_repair_full_suite": {
+    "source_commit": "7c4ea86fda1fc5900b3c37b204e8c60c476cbab8",
+    "source_root": "C:/a/arc3-ci-7c4ea86",
+    "source_binding": "PYTHONPATH=C:/a/arc3-ci-7c4ea86/src",
+    "command": "C:/a/arc3-b001-28c7a00/Scripts/python.exe -m pytest -q --basetemp C:/a/arc3-b001-28c7a00/t/full-7c-clean2",
+    "status": "PASS",
+    "tests_passed": 885,
+    "duration_seconds": 2139.82,
+    "remote_push_run": 32604662810,
+    "remote_pr_run": 32604664455,
+    "remote_ubuntu": "PASS:885 tests in 920.86s",
+    "remote_windows": "PASS:885 tests in 1569.18s"
+  },
   "legacy_checkpoint_migration": {
     "label": "synthetic",
     "legacy_commit": "df961c7acd67cbe382e5a56a44d6e1358c61278d",
@@ -135,7 +148,7 @@
       32607264914
     ],
     "exact_source_ci_status": "IN_PROGRESS",
-    "correctly_source_bound_local_full_suite": "IN_PROGRESS",
+    "correctly_source_bound_local_full_suite": "PASS:885 tests in 2139.82s",
     "new_public_launch_allowed": false
   }
 }

@@ -972,7 +972,7 @@ does not erase earlier uncertainty or failed mechanisms.
 
 ## B-001-0046 — Stage 08 cadence integration regressed broad checkpoint boundaries
 
-- Status: OPEN
+- Status: RESOLVED
 - Stage: 08
 - Opened: 2026-08-22
 - Burden: remote CI at pushed commit `aecde0cb9969270bfe7b7eb24744ef6efbb16fe7`
@@ -1040,6 +1040,13 @@ does not erase earlier uncertainty or failed mechanisms.
   mismatch and proved that explicit detached `PYTHONPATH` selects the intended source. The first
   863-pass/22-failure run is retained; a correctly source-bound rerun uses a distinct short
   `--basetemp` and does not overwrite it.
+
+- Resolution receipt: commit `7c4ea86fda1fc5900b3c37b204e8c60c476cbab8`; remote push/PR
+  runs `32604662810` and `32604664455` passed lint, format, strict mypy, doctor, and 885 tests on
+  both Ubuntu and Windows. The correctly source-bound clean detached local suite passed 885/885 in
+  2,139.82 seconds with `PYTHONPATH=C:/a/arc3-ci-7c4ea86/src` and isolated base-temp
+  `C:/a/arc3-b001-28c7a00/t/full-7c-clean2`. The original 19 remote failures and the later
+  863-pass/22-failure mixed-source run remain preserved; neither was relabeled as a mechanism result.
 
 ## B-001-0047 — Stage 08 supervisor used a Windows-only subprocess attribute directly
 
