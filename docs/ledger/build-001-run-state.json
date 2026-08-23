@@ -7,12 +7,12 @@
   "build_status": "IN_PROGRESS",
   "status": "IN_PROGRESS",
   "current_stage": "09",
-  "current_task": "Close the Stage 09 decisive-accounting audit no-go, finish Stage 10/holdout authority review, and verify scoped Stage 13 package repairs before any gameplay",
+  "current_task": "Repair complete production-policy reachability, amend the unexecuted Stage 09 source freeze, and close Stage 09/10 process and evidence authority before gameplay",
   "implementation_branch": "build/001-local-public-recovery",
   "pull_request": "https://github.com/Grativy6/ARC3/pull/5",
   "started_at": "2026-08-21T15:41:02Z",
-  "last_checkpoint_at": "2026-08-23T03:51:20.2405029Z",
-  "last_checkpoint_commit": "129b76b720cefc42f8dca2710b54e90e34eb4a1b",
+  "last_checkpoint_at": "2026-08-23T04:19:27.4362220Z",
+  "last_checkpoint_commit": "b4b5c3b867adec1cb332c3ab7322fd13aa7aeac5",
   "base": {
     "main_commit": "28c7a00732ce48e5c231211b01bc6eba7d0d71b4",
     "main_tree": "4586299448e9b1b585a0878674ed5f9afa60c384",
@@ -506,7 +506,7 @@
       "package_archive_checkpoint_commit": "129b76b720cefc42f8dca2710b54e90e34eb4a1b",
       "package_archive_checkpoint_tree": "bc3f4d48251328a4058a72b749c449c70a2fda8c",
       "integrated_verification": "PASS:58-focused+1-windows-privilege-skip;PASS:15-integrity+1-windows-privilege-skip;ruff;strict-mypy-windows-and-linux-175-files",
-      "exact_source_ci": "PENDING:runs-32616332033,32616335138,32616332065,32616335144",
+      "exact_source_ci": "FAILED_INFRASTRUCTURE:run-32616456163-linux-interpreter-origin;FAILED_MECHANISM:run-32616456163-windows-receipt-not-uploaded",
       "os_containment": "ABSENT",
       "python_boundary_scope": "Python audit hooks plus guarded selected in-process tests; not OS filesystem/network/process-tree containment",
       "public_environment_opened": false,
@@ -656,9 +656,10 @@
     "B-001-0051: Stage 09 decisive accounting remains no-go pending charged-timeout repair and final independent audit",
     "B-001-0052: Stage 10 and holdout authority repairs remain under independent completion review",
     "B-001-0054: package boundary repairs await exact-source cross-platform CI and remaining P1 closure",
-    "B-001-0055: package evidence is Python-audit scoped and lacks OS process-tree containment"
+    "B-001-0055: package evidence is Python-audit scoped and lacks OS process-tree containment",
+    "B-001-0056: complete policy reachability invalidated the 2e78c25 wrapper integrity authority; premeasurement source amendment required"
   ],
-  "next_action": "Finish the Stage 09 timeout-charge and crash-window repairs under independent audit, bind Stage 10 and Stage 11 to the repaired terminal graph, and close exact-source Stage 13 CI plus remaining process-tree audit without opening public semantic surfaces.",
+  "next_action": "Commit the pure-normalization integrity repair, freeze and amend Stage 09 before results with fresh full-policy receipts, then finish independent Stage 09/10 process-authority review without opening public semantic surfaces.",
   "notes": [
     "Build 000 ledgers and reports are immutable historical evidence and are not overwritten by Build 001.",
     "The owner explicitly approved MIT-0 for ARC3 first-party source in the active Build 001 instruction.",

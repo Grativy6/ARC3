@@ -1175,12 +1175,19 @@ does not erase earlier uncertainty or failed mechanisms.
   independent audit all pass. The second audit additionally found that controller wall timeouts
   vanished from the frozen 80-action efficiency charge and that a supervisor crash after a durable
   cell receipt but before finalization left resume unable to seal or reconstruct the terminal cell.
-  Both findings remain launch-blocking until exploit regressions pass.
+  Continued audit found four further launch-blocking windows: a durable exposure without a launch
+  or worker-abort receipt could not produce a typed terminal; a durable terminal output without its
+  finalization could still be promoted as PASS; parent work before exposure had no durable open
+  active-segment marker and could vanish across interruption; and pre-kill process snapshots did
+  not prove that a racing descendant could not escape termination. All findings remain preserved
+  until exact crash-injection, reboot, and process-tree regressions pass.
 - Resolution condition: only raw `SUCCESS` cells may affect decisive metrics; all raw failures are
   infrastructure unless a separately sealed typed mechanism producer exists; every trace and
   action/reset budget is replayed; persisted observations reconstruct exactly; live launch tokens
-  cannot be terminalized; partial/terminal graphs are canonical; and full runtime and parent-time
-  authority remain immutable through finalization.
+  cannot be terminalized; partial/terminal graphs are canonical; full runtime and parent-time
+  authority remain immutable through finalization; every timed cell has a durable open/closed
+  segment; recovered terminal-finalization gaps cannot authorize PASS; and process-tree cleanup is
+  verified against a race-safe OS supervision boundary or reported as failed infrastructure.
 
 ## B-001-0052 — Stage 10 and holdout authorization crossed sealed semantic boundaries
 
@@ -1202,12 +1209,16 @@ does not erase earlier uncertainty or failed mechanisms.
   `SEALED_UNCONSUMED` with zero gameplay events and zero locally acquired assets. Continued audit
   also found a mixed-tree path where a Stage 10 supervisor imported from tree A could validate and
   execute tree B with tree A's validator logic; explicit supervisor/import-closure origin binding
-  is now required before any decisive launch.
+  is now required before any decisive launch. A further audit found that Stage 11 checked only two
+  loaded module origins even though scanner/artifact helpers participate in authority, and that a
+  Stage 10 `STARTED` record carried no process creation identity or verified orphan cleanup path.
 - Resolution condition: package/production-only integrity never opens semantic public surfaces;
   exact source is bound from preflight through every suite; terminal graphs are canonical and
   non-rerunnable; malformed child evidence is infrastructure; denied paths import no adapter and
-  read zero manifest bytes, identities, paths, or assets; and earned workers carry and freshly
-  validate exact evidence authority immediately before action.
+  read zero manifest bytes, identities, paths, or assets; earned workers carry and freshly validate
+  exact evidence authority immediately before action; all participating first-party authority
+  modules originate in the frozen execution tree; and interrupted synthetic children are either
+  proven gone by immutable process-tree evidence or force a non-promotable infrastructure terminal.
 
 ## B-001-0053 — Holdout-gate integration fixtures drifted behind frozen evidence schemas
 
@@ -1248,8 +1259,12 @@ does not erase earlier uncertainty or failed mechanisms.
   members, protected explicit candidates before normalization/output exclusion, and UDP/DNS
   sandbox bypasses. Integrated verification passed 58 focused tests with one Windows privilege
   skip, 15 integrity tests with the same bounded privilege skip, Ruff, and strict Windows/Linux
-  mypy over 175 files. Exact-source Windows/Linux package workflow verification and the remaining
-  descendant-process audit remain pending.
+  mypy over 175 files. Exact-source package workflow run `32616456163` then failed on both systems:
+  Linux rejected an isolated interpreter-origin mismatch immediately; Windows ran for about 1,149
+  seconds and returned `FAILED_MECHANISM` instead of the expected private-surface
+  `BLOCKED_EXTERNAL`. The failure path skipped artifact upload, so the Windows internal check
+  receipt is unavailable. Exact-source repair verification, failure-artifact preservation, and the
+  remaining descendant-process audit remain pending.
 - Resolution condition: exact-source CI passes the guarded package subset and startup checks on
   both Windows and Linux; every audit exploit has a failing regression under the vulnerable code
   and a passing denial under the repair; package receipts preserve the scoped claim below; and
@@ -1276,3 +1291,27 @@ does not erase earlier uncertainty or failed mechanisms.
 - Resolution condition: either add measured cross-platform OS filesystem/network/process-tree
   containment with adversarial orphan/native tests, or finish Stage 13 honestly as bounded/partial
   and keep the narrower Python-level claim in every receipt, report, and PR summary.
+
+## B-001-0056 — Complete policy reachability invalidated the frozen wrapper integrity PASS
+
+- Status: OPEN
+- Stage: 09, 11, 13
+- Opened: 2026-08-23
+- Owner: Codex
+- Burden: the repaired static import closure now includes the base module executed by
+  `from arc3.adapters.arc_agi import normalize_frame_data`. On the frozen `2e78c25` production
+  source this exposes `src/arc3/adapters/arc_agi.py: forbidden-dynamic-import`; the prior full-policy
+  receipt omitted that executed base module and therefore cannot authorize Stage 09, Stage 11, or
+  a package integrity PASS.
+- Why it matters: preserving a source freeze cannot preserve authority from an incomplete scanner.
+  Stage 09 has not begun, so the honest repair is a before-results generic policy refactor and an
+  explicit predeclaration amendment, not reliance on the incomplete historical receipt.
+- Current evidence: the ten-game holdout is still sealed, Stage 09 attempt/work/exposure paths are
+  absent, and no development result exists under either source. An isolated repair is extracting
+  frame normalization into a pure module while retaining adapter compatibility; behavioral and
+  static-closure regressions are required before a new policy commit is frozen.
+- Resolution condition: commit the generic refactor; prove wrapper normalization behavior remains
+  equivalent; generate a fresh complete full-policy integrity receipt; preserve the original Stage
+  09 predeclaration and add a hash-bound amendment naming the new exact commit/tree/source hash;
+  repin Stage 09 and Stage 10/11 authority before any decisive gameplay; and independently verify
+  that the amended source has no forbidden production reachability finding.

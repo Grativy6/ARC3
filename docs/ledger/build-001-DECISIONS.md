@@ -932,3 +932,24 @@ independent authorities.
 - Reopening condition: an original archive member can normalize into an accepted unsafe path; an
   explicitly protected candidate can disappear through discovery/output filtering; a Python UDP or
   DNS entry point escapes the sandbox guard; or scoped evidence is promoted into native containment.
+
+## D-001-0048 — Reopen the premeasurement source freeze when complete reachability disproves integrity
+
+- Recorded: 2026-08-23T04:19:27.4362220Z
+- Status: accepted
+- Decision: do not preserve `2e78c25` as decisive Build 001 policy authority after the repaired
+  import closure proves that its wrapper executes a forbidden dynamic-import adapter excluded by
+  the earlier scanner. Because Stage 09 has zero gameplay and no attempt, preserve the original
+  predeclaration and add a before-results amendment that freezes the smallest generic pure-
+  normalization refactor, fresh complete integrity receipts, and exact source identities. The
+  matrix, partitions, seeds, budgets, wall limits, baselines, PASS rule, and holdout gate remain
+  unchanged.
+- Evidence: B-001-0056; package workflow run `32616456163`; repaired closure regression in the
+  isolated Stage 13 hardening branch; Stage 09 attempt/work/exposure paths remain absent and the
+  holdout remains `SEALED_UNCONSUMED`.
+- Boundary: this decision repairs premeasurement source and evidence authority only. It does not
+  authorize gameplay, weaken the development PASS rule, open the holdout, or erase `2e78c25` and
+  its incomplete receipt from provenance.
+- Reopening condition: the refactor changes observed wrapper behavior; any decisive result exists
+  before the amended freeze; fresh full-policy integrity does not pass complete reachability; or a
+  later production-policy byte changes after the amended decisive evaluation.
