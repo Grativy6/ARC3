@@ -175,7 +175,7 @@ class _PytestEvidence:
         self.collected_test_files: tuple[str, ...] = ()
 
     def pytest_collection_finish(self, session: Any) -> None:
-        self.collected_test_count = int(session.testscollected)
+        self.collected_test_count = len(session.items)
         paths: set[str] = set()
         for item in session.items:
             candidate = Path(str(item.path)).resolve()

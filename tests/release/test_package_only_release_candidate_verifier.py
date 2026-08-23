@@ -10,6 +10,7 @@ import scripts.release_candidate_verifier as verifier
 from scripts.package_only_pytest import (
     BUILD001_BOUNDARY_EXCLUSIONS,
     ORDINARY_CI_FULL_SUITE_COMMAND,
+    _PytestEvidence,
     build001_test_selection,
 )
 from scripts.release_candidate_verifier import (
@@ -162,6 +163,24 @@ def test_package_only_test_selection_is_exact_and_full_ci_retains_excluded_cover
     assert f"run: {ORDINARY_CI_FULL_SUITE_COMMAND}" in workflow
     assert "scripts.package_only_pytest" not in workflow
     assert "--ignore" not in workflow
+
+
+def test_package_only_collection_count_comes_from_finished_items(tmp_path: Path) -> None:
+    test_file = tmp_path / "tests" / "test_fixture.py"
+    session = type(
+        "FinishedCollection",
+        (),
+        {
+            "items": [type("Item", (), {"path": test_file})()],
+            "testscollected": 0,
+        },
+    )()
+    evidence = _PytestEvidence(tmp_path)
+
+    evidence.pytest_collection_finish(session)
+
+    assert evidence.collected_test_count == 1
+    assert evidence.collected_test_files == ("tests/test_fixture.py",)
 
 
 @pytest.mark.parametrize(
