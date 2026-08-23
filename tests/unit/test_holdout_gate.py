@@ -9,6 +9,7 @@ import pytest
 
 from arc3.errors import EvaluationError
 from arc3.evaluation.artifacts import canonical_json_bytes, seal_object, sha256_bytes, sha256_file
+from arc3.evaluation.development_recovery import AGGREGATE_SCHEMA as STAGE09_SCHEMA
 from arc3.evaluation.holdout_gate import (
     COMPETITION_CONFIG_PATH,
     STAGE11_GATE_SCHEMA,
@@ -24,7 +25,7 @@ from arc3.evaluation.holdout_gate import (
 )
 from arc3.evaluation.public import PublicEvaluationConfig
 from arc3.evaluation.public_runner import run_public_evaluation
-from arc3.evaluation.stage10_regression import PREDECLARATION_SHA256
+from arc3.evaluation.stage10_regression import PREDECLARATION_SHA256, STAGE10_RESULT_SCHEMA
 from arc3.integrity import INTEGRITY_SCHEMA, IntegrityReceipt
 from arc3.types import JSONValue
 
@@ -132,7 +133,7 @@ def _stage09(
             "wall_measurement_complete": gate_pass,
             "wall_within_limit": gate_pass,
         },
-        "schema": "arc3.build-001.stage-09-aggregate.v0.2",
+        "schema": STAGE09_SCHEMA,
         "source_end": {"build_001": _source_receipt(identity)},
         "source_stable": gate_pass,
         "status": status,
@@ -154,7 +155,7 @@ def _stage10(identity: SourceIdentity, *, status: str = "PASS") -> dict[str, Any
         "evidence_label": "synthetic",
         "infrastructure_failure": None,
         "predeclaration_sha256": PREDECLARATION_SHA256,
-        "schema": "arc3.build-001.stage-10-robustness-regression.v0.1",
+        "schema": STAGE10_RESULT_SCHEMA,
         "source_identity_end": source,
         "source_identity_start": source,
         "status": status,
