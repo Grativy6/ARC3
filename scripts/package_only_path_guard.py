@@ -39,6 +39,8 @@ _PATH_EVENT_ARGUMENTS: dict[str, tuple[int, ...]] = {
 _PROCESS_EVENTS = frozenset(
     {
         "os.exec",
+        "os.fork",
+        "os.forkpty",
         "os.posix_spawn",
         "os.posix_spawnp",
         "os.spawn",
@@ -47,6 +49,8 @@ _PROCESS_EVENTS = frozenset(
         "subprocess.Popen",
     }
 )
+_READ_ONLY_OPEN_FLAGS = os.O_APPEND | os.O_CREAT | os.O_EXCL | os.O_RDWR | os.O_TRUNC | os.O_WRONLY
+_LINUX_KERNEL_TELEMETRY_PATH = Path("/proc/self/status")
 
 
 def _canonical(
@@ -70,6 +74,7 @@ class PackageOnlyPathGuard:
     ) -> None:
         self.root = Path(os.path.realpath(os.path.abspath(root)))
         self.attempts: list[dict[str, str]] = []
+        self.kernel_telemetry_read_count = 0
         self._active = True
         self._canonicalizing = False
         self._directories = tuple(
@@ -89,6 +94,11 @@ class PackageOnlyPathGuard:
             sorted(
                 {_canonical(candidate, base=self.root) for candidate in (self.root, *allowed_roots)}
             )
+        )
+        self._read_only_kernel_telemetry_files = frozenset(
+            {_canonical(_LINUX_KERNEL_TELEMETRY_PATH, base=self.root)}
+            if sys.platform.startswith("linux")
+            else set()
         )
         metadata_roots = (self.root, *allowed_roots)
         self._allow_root_ancestor_metadata_paths = frozenset(
@@ -116,8 +126,36 @@ class PackageOnlyPathGuard:
             candidate == root or candidate.startswith(root + os.sep) for root in self._allowed_roots
         )
 
+    def _allowed_kernel_telemetry_read(
+        self,
+        event: str,
+        args: tuple[Any, ...],
+        candidate: str,
+    ) -> bool:
+        """Allow only an exact read-only Linux RSS surface outside allowed roots."""
+
+        if (
+            event != "open"
+            or len(args) < 3
+            or not isinstance(args[0], (str, bytes, os.PathLike))
+            or os.fsdecode(args[0]) != "/proc/self/status"
+            or args[1] != "r"
+            or candidate not in self._read_only_kernel_telemetry_files
+        ):
+            return False
+        if not isinstance(args[2], int):
+            return False
+        if args[2] & _READ_ONLY_OPEN_FLAGS:
+            return False
+        self.kernel_telemetry_read_count += 1
+        return True
+
     def _record(self, event: str, path: str) -> None:
         record = {"event": event, "path": path}
+        if os.environ.get("ARC3_PACKAGE_ONLY_DIAGNOSTIC_TEST_CONTEXT") == "1":
+            current_test = os.environ.get("PYTEST_CURRENT_TEST")
+            if current_test:
+                record["test"] = current_test.partition(" (")[0]
         self.attempts.append(record)
         os.write(
             self._attempt_log_fd,
@@ -144,6 +182,8 @@ class PackageOnlyPathGuard:
                 candidate = _canonical(raw_path, base=Path.cwd())
             finally:
                 self._canonicalizing = False
+            if self._allowed_kernel_telemetry_read(event, args, candidate):
+                continue
             if event == "os.listdir" and candidate in self._allow_root_ancestor_metadata_paths:
                 continue
             if self._protected(candidate):

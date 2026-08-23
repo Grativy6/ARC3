@@ -12,6 +12,7 @@ import argparse
 import ctypes
 import hashlib
 import importlib.util
+import io
 import json
 import os
 import platform
@@ -31,7 +32,39 @@ from pathlib import Path
 from typing import Any, cast
 
 from arc3.evaluation.artifacts import canonical_json_bytes as evaluation_canonical_json_bytes
-from arc3.packaging.util import canonical_json_bytes as package_canonical_json_bytes
+from arc3.integrity import read_bounded_regular_snapshot, scan_archive_files
+from arc3.integrity.scanner import (
+    DEFAULT_MAX_ARCHIVE_BYTES,
+    DEFAULT_MAX_ARCHIVE_CENTRAL_DIRECTORY_BYTES,
+    DEFAULT_MAX_ARCHIVE_DEPTH,
+    DEFAULT_MAX_ARCHIVE_EXPANDED_BYTES,
+    DEFAULT_MAX_ARCHIVE_MEMBER_BYTES,
+    DEFAULT_MAX_ARCHIVE_MEMBERS,
+    DEFAULT_MAX_CANDIDATE_BYTES,
+)
+from arc3.packaging.builder import collect_git_payload
+from arc3.packaging.candidate import (
+    decode_candidate_archive_snapshot,
+    validate_candidate_member_snapshots,
+)
+from arc3.packaging.notebook import notebook_embedded_inputs
+from arc3.packaging.util import (
+    canonical_json_bytes as package_canonical_json_bytes,
+)
+from arc3.packaging.util import (
+    deterministic_zip_bytes,
+)
+from scripts.package_only_pytest import (
+    BUILD001_BOUNDARY_EXCLUSIONS,
+    ORDINARY_CI_FULL_SUITE_COMMAND,
+    build001_test_selection,
+)
+from scripts.package_only_pytest import (
+    CLAIM_SCOPE as PACKAGE_ONLY_TEST_CLAIM_SCOPE,
+)
+from scripts.package_only_pytest import (
+    SCHEMA as PACKAGE_ONLY_PYTEST_SCHEMA,
+)
 
 SCHEMA = "arc3.release-candidate-verification.v0.1"
 PLAN_SCHEMA = "arc3.release-candidate-plan.v0.1"
@@ -166,25 +199,46 @@ def write_bytes_atomic(path: Path, content: bytes) -> None:
         temporary.unlink(missing_ok=True)
 
 
-def _json_object(path: Path) -> dict[str, Any]:
+def _json_object_bytes(raw: bytes, *, label: str) -> dict[str, Any]:
     try:
-        loaded: object = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as error:
-        raise ValueError(f"cannot read JSON object {path}: {error}") from error
+        loaded: object = json.loads(raw.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as error:
+        raise ValueError(f"cannot decode JSON object {label}: {error}") from error
     if not isinstance(loaded, dict):
-        raise ValueError(f"JSON artifact must contain an object: {path}")
+        raise ValueError(f"JSON artifact must contain an object: {label}")
     return cast(dict[str, Any], loaded)
 
 
-def _verified_self_hashed_object(path: Path, *, hash_field: str) -> dict[str, Any]:
-    document = _json_object(path)
+def _json_object(path: Path) -> dict[str, Any]:
+    try:
+        raw = path.read_bytes()
+    except OSError as error:
+        raise ValueError(f"cannot read JSON object {path}: {error}") from error
+    return _json_object_bytes(raw, label=str(path))
+
+
+def _verified_self_hashed_bytes(
+    raw: bytes,
+    *,
+    label: str,
+    hash_field: str,
+) -> dict[str, Any]:
+    document = _json_object_bytes(raw, label=label)
     claimed = document.pop(hash_field, None)
     if not isinstance(claimed, str):
-        raise ValueError(f"{path} has no string {hash_field}")
+        raise ValueError(f"{label} has no string {hash_field}")
     actual = sha256_bytes(canonical_json_bytes(document))
     if claimed != actual:
-        raise ValueError(f"{path} {hash_field} mismatch: expected {claimed}, computed {actual}")
+        raise ValueError(f"{label} {hash_field} mismatch: expected {claimed}, computed {actual}")
     return document
+
+
+def _verified_self_hashed_object(path: Path, *, hash_field: str) -> dict[str, Any]:
+    return _verified_self_hashed_bytes(
+        path.read_bytes(),
+        label=str(path),
+        hash_field=hash_field,
+    )
 
 
 def _package_receipt_bytes(body: Mapping[str, Any]) -> bytes:
@@ -195,20 +249,20 @@ def _package_receipt_bytes(body: Mapping[str, Any]) -> bytes:
     return package_canonical_json_bytes(document)
 
 
-def _verified_package_receipt(path: Path) -> dict[str, Any]:
-    """Verify a Stage 17 package receipt without changing Stage 18 canonical JSON."""
+def _verified_package_receipt_bytes(raw: bytes, *, label: str) -> dict[str, Any]:
+    """Verify one immutable Stage 17 receipt snapshot."""
 
-    document = _json_object(path)
+    document = _json_object_bytes(raw, label=label)
     claimed = document.pop(RECEIPT_HASH_FIELD, None)
     if not isinstance(claimed, str):
-        raise ValueError(f"{path} has no string {RECEIPT_HASH_FIELD}")
+        raise ValueError(f"{label} has no string {RECEIPT_HASH_FIELD}")
     actual = sha256_bytes(package_canonical_json_bytes(document))
     if claimed != actual:
         raise ValueError(
-            f"{path} {RECEIPT_HASH_FIELD} mismatch: expected {claimed}, computed {actual}"
+            f"{label} {RECEIPT_HASH_FIELD} mismatch: expected {claimed}, computed {actual}"
         )
-    if _package_receipt_bytes(document) != path.read_bytes():
-        raise ValueError(f"package receipt is not canonical JSON: {path}")
+    if _package_receipt_bytes(document) != raw:
+        raise ValueError(f"package receipt is not canonical JSON: {label}")
     return document
 
 
@@ -1134,21 +1188,48 @@ def internal_result(
     )
 
 
-def _git(repository: Path, *arguments: str) -> str:
-    completed = subprocess.run(
-        ("git", *arguments),
-        cwd=repository,
+def _git_environment() -> dict[str, str]:
+    environment = {
+        key: value for key, value in os.environ.items() if not key.upper().startswith("GIT_")
+    }
+    environment["GIT_NO_REPLACE_OBJECTS"] = "1"
+    return environment
+
+
+def _git_result(repository: Path, *arguments: str) -> subprocess.CompletedProcess[bytes]:
+    return subprocess.run(
+        (
+            "git",
+            "--no-replace-objects",
+            "-C",
+            str(repository.resolve()),
+            *arguments,
+        ),
         check=False,
         capture_output=True,
-        text=True,
+        env=_git_environment(),
         timeout=30,
     )
+
+
+def _git(repository: Path, *arguments: str) -> str:
+    completed = _git_result(repository, *arguments)
     if completed.returncode != 0:
+        stderr = completed.stderr.decode("utf-8", errors="replace").strip()
         raise ValueError(
-            f"git {' '.join(arguments)} failed with exit {completed.returncode}: "
-            f"{completed.stderr.strip()}"
+            f"git {' '.join(arguments)} failed with exit {completed.returncode}: {stderr}"
         )
-    return completed.stdout.strip()
+    return completed.stdout.decode("utf-8", errors="strict").strip()
+
+
+def _git_bytes(repository: Path, *arguments: str) -> bytes:
+    completed = _git_result(repository, *arguments)
+    if completed.returncode != 0:
+        stderr = completed.stderr.decode("utf-8", errors="replace").strip()
+        raise ValueError(
+            f"git {' '.join(arguments)} failed with exit {completed.returncode}: {stderr}"
+        )
+    return completed.stdout
 
 
 def repository_identity(repository: Path, expected_commit: str) -> dict[str, object]:
@@ -1171,10 +1252,61 @@ def repository_identity(repository: Path, expected_commit: str) -> dict[str, obj
             "candidate worktree is not clean; status bytes "
             f"{sha256_bytes(status.encode('utf-8'))} contain {len(status.splitlines())} entries"
         )
+    index_projection = _git_bytes(repository, "ls-files", "-v", "-z")
+    index_records = tuple(record for record in index_projection.split(b"\0") if record)
+    if any(len(record) < 3 or record[1:2] != b" " for record in index_records):
+        raise ValueError("Git returned malformed tracked-index tag evidence")
+    nonstandard_index_paths = []
+    index_paths: list[bytes] = []
+    for record in index_records:
+        index_paths.append(record[2:])
+        if record[:1] == b"H":
+            continue
+        try:
+            relative = record[2:].decode("utf-8", errors="strict")
+            tag = record[:1].decode("ascii", errors="strict")
+        except UnicodeDecodeError as error:
+            raise ValueError("Git index contains a non-portable path or tag") from error
+        nonstandard_index_paths.append(f"{tag}:{relative}")
+    if nonstandard_index_paths:
+        raise ValueError(
+            "candidate index has non-H entries that can conceal worktree bytes: "
+            + ", ".join(nonstandard_index_paths[:10])
+        )
+    tree_projection = _git_bytes(repository, "ls-tree", "-r", "-z", expected_commit)
+    tree_entries: dict[bytes, tuple[bytes, bytes]] = {}
+    for record in (record for record in tree_projection.split(b"\0") if record):
+        metadata, separator, raw_path = record.partition(b"\t")
+        fields = metadata.split(b" ")
+        if separator != b"\t" or len(fields) != 3:
+            raise ValueError("Git returned malformed expected-tree stage evidence")
+        mode, object_type, object_id = fields
+        if object_type != b"blob" or raw_path in tree_entries:
+            raise ValueError("expected Git tree has a non-blob or duplicate path")
+        tree_entries[raw_path] = (mode, object_id)
+    stage_projection = _git_bytes(repository, "ls-files", "--stage", "-z")
+    stage_entries: dict[bytes, tuple[bytes, bytes]] = {}
+    for record in (record for record in stage_projection.split(b"\0") if record):
+        metadata, separator, raw_path = record.partition(b"\t")
+        fields = metadata.split(b" ")
+        if separator != b"\t" or len(fields) != 3:
+            raise ValueError("Git returned malformed index-stage evidence")
+        mode, object_id, stage = fields
+        if stage != b"0" or raw_path in stage_entries:
+            raise ValueError("candidate index contains a non-stage-0 or duplicate path")
+        stage_entries[raw_path] = (mode, object_id)
+    if len(index_paths) != len(set(index_paths)) or set(index_paths) != set(tree_entries):
+        raise ValueError("candidate index membership differs from the expected Git tree")
+    if stage_entries != tree_entries:
+        raise ValueError("candidate index stage projection differs from the expected Git tree")
     return {
         "clean": True,
         "git_commit": actual_commit,
+        "git_index_entry_count": len(index_records),
+        "git_index_stage_sha256": sha256_bytes(stage_projection),
+        "git_index_tags_sha256": sha256_bytes(index_projection),
         "git_status_sha256": sha256_bytes(status.encode("utf-8")),
+        "git_tree_projection_sha256": sha256_bytes(tree_projection),
         "repository": "Grativy6/ARC3",
     }
 
@@ -1196,8 +1328,16 @@ def source_lock_identity(repository: Path, expected_commit: str) -> dict[str, ob
         "upstream.lock.json",
         "uv.lock",
     ):
-        path = repository / relative
-        files[relative] = sha256_file(path)
+        blob = _git_bytes(repository, "show", f"{expected_commit}:{relative}")
+        live = read_bounded_regular_snapshot(
+            root=repository,
+            path=repository / relative,
+            max_bytes=DEFAULT_MAX_CANDIDATE_BYTES,
+            path_label=relative,
+        )
+        if live != blob:
+            raise ValueError(f"live source/lock bytes differ from expected Git blob: {relative}")
+        files[relative] = sha256_bytes(blob)
     identity: dict[str, object] = {
         "files": files,
         "git_commit": expected_commit,
@@ -1219,13 +1359,7 @@ def prepare_fresh_output_root(repository: Path, output_root: Path) -> None:
         raise ValueError(f"--output-root must not already exist: {output_root}")
     if repository in output_root.parents:
         relative = output_root.relative_to(repository).as_posix()
-        ignored = subprocess.run(
-            ("git", "check-ignore", "--quiet", "--", relative),
-            cwd=repository,
-            check=False,
-            capture_output=True,
-            timeout=30,
-        )
+        ignored = _git_result(repository, "check-ignore", "--quiet", "--", relative)
         if ignored.returncode != 0:
             raise ValueError("an in-repository --output-root must be covered by .gitignore")
     output_root.mkdir(parents=True, exist_ok=False)
@@ -1540,18 +1674,6 @@ def _build_package_only_plan(
     package_a = output_root / "package-a"
     package_b = output_root / "package-b"
     lock_dependencies = ("dependency-sync", "dependency-lock")
-    package_safe_ignores = (
-        "tests/competition/test_controller_offline_integrity.py",
-        "tests/integration/test_evaluation_cli.py",
-        "tests/integration/test_kaggle_package_determinism.py",
-        "tests/integration/test_retrodiction_decision_integration.py",
-        "tests/integration/test_stage16_runtime_profile.py",
-        "tests/integrity/test_repository_integrity.py",
-        "tests/release/test_release_candidate_verifier.py",
-        "tests/unit/test_measure_rule_change.py",
-        "tests/unit/test_memory_integrity.py",
-        "tests/unit/test_public_evaluation_contract.py",
-    )
     test_argv: list[str] = [
         python,
         "-m",
@@ -1567,13 +1689,14 @@ def _build_package_only_plan(
         "--allow-root",
         str(output_root),
         "--select-in-process-tests",
+        "--build001-boundary-policy",
+        "--expected-commit",
+        "{CANDIDATE_COMMIT}",
         "--",
         "-q",
         "--basetemp",
         str(transient_root / "tmp" / "pytest-package-safe"),
     ]
-    for relative in package_safe_ignores:
-        test_argv.extend(("--ignore", relative))
     specs = (
         CommandSpec(
             "dependency-sync",
@@ -1641,23 +1764,6 @@ def _build_package_only_plan(
             nondeterminism=("test durations and coverage percentages may vary by host",),
         ),
         CommandSpec(
-            "trace-replay-tamper",
-            "trace-replay",
-            (
-                python,
-                "-m",
-                "pytest",
-                "-q",
-                "--no-cov",
-                "--basetemp",
-                str(transient_root / "tmp" / "pytest-replay"),
-                "tests/replay",
-                "tests/property/test_trace_properties.py",
-            ),
-            900.0,
-            dependencies=lock_dependencies,
-        ),
-        CommandSpec(
             "doctor",
             "runtime",
             (python, "-m", "arc3", "doctor", "--json"),
@@ -1722,6 +1828,8 @@ def _build_package_only_plan(
                 "--root",
                 str(repository),
                 "--package-only",
+                "--expected-commit",
+                "{CANDIDATE_COMMIT}",
                 "--archive",
                 str(package_a / "arc3-kaggle-candidate.zip"),
                 "--output",
@@ -1770,6 +1878,15 @@ def _validate_package_only_plan(
     for spec in specs:
         if forbidden_arguments & set(spec.argv):
             raise ValueError(f"package-only check {spec.check_id} has a forbidden argument")
+    for spec in specs:
+        executable = Path(spec.argv[0]).name.lower() if spec.argv else ""
+        invokes_direct_pytest = executable in {"pytest", "pytest.exe"} or (
+            len(spec.argv) >= 3 and spec.argv[1:3] == ("-m", "pytest")
+        )
+        if invokes_direct_pytest:
+            raise ValueError(
+                "package-only plan forbids direct pytest commands outside the guarded runner"
+            )
     integrity_specs = tuple(spec for spec in specs if spec.check_id == "package-integrity")
     if len(integrity_specs) != 1:
         raise ValueError("package-only plan requires exactly one package-integrity check")
@@ -1785,11 +1902,13 @@ def _validate_package_only_plan(
     if integrity.argv.count("--package-only") != 1:
         raise ValueError("package-only package-integrity check must select package-only mode once")
     if (
-        len(integrity.argv) != 10
+        len(integrity.argv) != 12
         or integrity.argv[3] != "--root"
         or integrity.argv[5] != "--package-only"
-        or integrity.argv[6] != "--archive"
-        or integrity.argv[8] != "--output"
+        or integrity.argv[6] != "--expected-commit"
+        or integrity.argv[7] != "{CANDIDATE_COMMIT}"
+        or integrity.argv[8] != "--archive"
+        or integrity.argv[10] != "--output"
     ):
         raise ValueError("package-only package-integrity argv shape is not the frozen static gate")
     if integrity.required is not True or integrity.dependencies != (
@@ -1810,6 +1929,49 @@ def _validate_package_only_plan(
             raise ValueError("package-only integrity archive is not package A")
         if Path(output_value).resolve() != expected_output:
             raise ValueError("package-only integrity receipt leaves the sealed output root")
+    test_specs = tuple(spec for spec in specs if spec.check_id == "package-safe-test-suite")
+    if len(test_specs) != 1:
+        raise ValueError("package-only plan requires exactly one guarded test-suite check")
+    guarded_tests = test_specs[0]
+    if guarded_tests.argv[:3] != (
+        sys.executable,
+        "-m",
+        "scripts.package_only_pytest",
+    ):
+        raise ValueError("package-only tests must execute the guarded in-process runner")
+    if (
+        guarded_tests.argv.count("--select-in-process-tests") != 1
+        or guarded_tests.argv.count("--build001-boundary-policy") != 1
+        or guarded_tests.argv.count("--expected-commit") != 1
+        or "--ignore" in guarded_tests.argv
+        or any(argument.startswith("--ignore=") for argument in guarded_tests.argv)
+        or guarded_tests.required is not True
+        or guarded_tests.dependencies != ("dependency-sync", "dependency-lock")
+    ):
+        raise ValueError("package-only guarded test selection policy is incomplete")
+    separator = tuple(index for index, value in enumerate(guarded_tests.argv) if value == "--")
+    pytest_tail = guarded_tests.argv[separator[0] + 1 :] if len(separator) == 1 else ()
+    if (
+        len(separator) != 1
+        or len(pytest_tail) != 3
+        or pytest_tail[:2] != ("-q", "--basetemp")
+        or not pytest_tail[2]
+    ):
+        raise ValueError("package-only guarded pytest arguments are not the frozen exact shape")
+    test_root = _single_option_value(guarded_tests.argv, "--root")
+    test_receipt = _single_option_value(guarded_tests.argv, "--receipt")
+    test_commit = _single_option_value(guarded_tests.argv, "--expected-commit")
+    if test_commit != "{CANDIDATE_COMMIT}" and _COMMIT.fullmatch(test_commit) is None:
+        raise ValueError("package-only guarded tests do not bind a literal candidate commit")
+    if repository is not None:
+        if Path(test_root).resolve() != repository.resolve():
+            raise ValueError("package-only guarded tests do not target the exact repository")
+        build001_test_selection(repository)
+    if (
+        output_root is not None
+        and Path(test_receipt).resolve() != (output_root / "package-only-test-guard.json").resolve()
+    ):
+        raise ValueError("package-only guarded test receipt leaves the sealed output root")
 
 
 def build_plan(
@@ -2308,22 +2470,10 @@ def benchmark_basis_identity(
     ):
         if not _COMMIT.fullmatch(newer):
             raise ValueError(f"{label} uses an invalid commit")
-        ancestor = subprocess.run(
-            ("git", "merge-base", "--is-ancestor", older, newer),
-            cwd=repository,
-            check=False,
-            capture_output=True,
-            timeout=30,
-        )
+        ancestor = _git_result(repository, "merge-base", "--is-ancestor", older, newer)
         if ancestor.returncode != 0:
             raise ValueError(f"benchmark ancestry check failed: {label}")
-    committed = subprocess.run(
-        ("git", "show", f"{evidence_commit}:{evidence_relative}"),
-        cwd=repository,
-        check=False,
-        capture_output=True,
-        timeout=30,
-    )
+    committed = _git_result(repository, "show", f"{evidence_commit}:{evidence_relative}")
     if committed.returncode != 0 or sha256_bytes(committed.stdout) != evidence_sha256:
         raise ValueError("benchmark evidence commit does not contain the frozen evidence bytes")
     return {
@@ -2394,25 +2544,78 @@ _CANDIDATE_MEMBERS = frozenset(
 )
 
 
-def _candidate_member_hashes(path: Path) -> dict[str, str]:
-    try:
-        with zipfile.ZipFile(path) as archive:
-            infos = archive.infolist()
-            names = [info.filename for info in infos]
-            if (
-                len(names) != len(set(names))
-                or set(names) != _CANDIDATE_MEMBERS
-                or any(
-                    info.is_dir()
-                    or info.filename.startswith("/")
-                    or ".." in Path(info.filename).parts
-                    for info in infos
-                )
-            ):
-                raise ValueError("candidate archive member set is not the fixed release contract")
-            return {name: sha256_bytes(archive.read(name)) for name in sorted(names)}
-    except (OSError, KeyError, zipfile.BadZipFile) as error:
-        raise ValueError(f"candidate archive cannot be independently decoded: {error}") from error
+@dataclass(frozen=True, slots=True)
+class _BoundedPackageArchives:
+    """Immutable snapshots accepted by the bounded recursive archive scanner."""
+
+    records: tuple[tuple[Path, str, bytes], ...]
+
+    def hash_for(self, path: Path) -> str:
+        resolved = path.resolve()
+        for candidate, digest, _snapshot in self.records:
+            if candidate == resolved:
+                return digest
+        raise ValueError(f"bounded archive set omits {resolved.name}")
+
+    def snapshot_for(self, path: Path) -> bytes:
+        resolved = path.resolve()
+        for candidate, _digest, snapshot in self.records:
+            if candidate == resolved:
+                return snapshot
+        raise ValueError(f"bounded archive set omits {resolved.name}")
+
+
+def _bounded_package_archive_preflight(
+    package_roots: Sequence[Path],
+    *,
+    max_archive_bytes: int = DEFAULT_MAX_ARCHIVE_BYTES,
+    max_member_bytes: int = DEFAULT_MAX_ARCHIVE_MEMBER_BYTES,
+    max_members: int = DEFAULT_MAX_ARCHIVE_MEMBERS,
+    max_expanded_bytes: int = DEFAULT_MAX_ARCHIVE_EXPANDED_BYTES,
+    max_central_directory_bytes: int = DEFAULT_MAX_ARCHIVE_CENTRAL_DIRECTORY_BYTES,
+    max_depth: int = DEFAULT_MAX_ARCHIVE_DEPTH,
+) -> _BoundedPackageArchives:
+    """Bound both candidate builds and payloads before any unbounded ZIP consumer."""
+
+    roots = tuple(root.resolve() for root in package_roots)
+    if not roots or len(set(roots)) != len(roots):
+        raise ValueError("package archive preflight requires distinct package roots")
+    common_root = Path(os.path.commonpath([str(root.parent) for root in roots])).resolve()
+    archives = tuple(
+        artifact
+        for root in roots
+        for artifact in (
+            root / "arc3-kaggle-candidate.zip",
+            root / "arc3-first-party.zip",
+        )
+    )
+    scanned_hashes: dict[str, str] = {}
+    scanned_snapshots: dict[str, bytes] = {}
+    findings = scan_archive_files(
+        root=common_root,
+        archives=archives,
+        public_identifiers=(),
+        max_archive_bytes=max_archive_bytes,
+        max_member_bytes=max_member_bytes,
+        max_members=max_members,
+        max_expanded_bytes=max_expanded_bytes,
+        max_central_directory_bytes=max_central_directory_bytes,
+        max_depth=max_depth,
+        scanned_hashes=scanned_hashes,
+        scanned_snapshots=scanned_snapshots,
+    )
+    if findings:
+        summary = ", ".join(f"{finding.path}:{finding.rule_id}" for finding in findings[:8])
+        raise ValueError(f"bounded package archive preflight failed: {summary}")
+    records: list[tuple[Path, str, bytes]] = []
+    for archive in archives:
+        label = archive.relative_to(common_root).as_posix()
+        digest = scanned_hashes.get(label)
+        snapshot = scanned_snapshots.get(label)
+        if digest is None or snapshot is None or sha256_bytes(snapshot) != digest:
+            raise ValueError("bounded package archive preflight omitted an artifact snapshot")
+        records.append((archive.resolve(), digest, snapshot))
+    return _BoundedPackageArchives(records=tuple(records))
 
 
 def _manifest_artifact_hashes(manifest: Mapping[str, Any]) -> dict[str, tuple[str, int]]:
@@ -2442,24 +2645,32 @@ def _manifest_artifact_hashes(manifest: Mapping[str, Any]) -> dict[str, tuple[st
     return result
 
 
-def _validate_package_formats(package_root: Path) -> dict[str, object]:
+def _validate_package_formats(
+    candidate_members: Mapping[str, bytes],
+    *,
+    payload_snapshot: bytes,
+    sandbox_output_snapshot: bytes,
+    validate_executable_notebook: bool,
+) -> dict[str, object]:
+    parsed_json: dict[str, dict[str, Any]] = {}
     for name in (
         "arc3-submission.ipynb",
         "kernel-metadata.json",
+        "package-manifest.json",
         "runtime-wheels-linux-cp312.json",
         "sbom.spdx.json",
         "submission-schema.v0.1.json",
     ):
-        _json_object(package_root / name)
-    requirements = (package_root / "runtime-requirements-linux-cp312.txt").read_text(
-        encoding="utf-8"
-    )
+        parsed_json[name] = _json_object_bytes(candidate_members[name], label=f"candidate!/{name}")
+    try:
+        requirements = candidate_members["runtime-requirements-linux-cp312.txt"].decode("utf-8")
+    except UnicodeDecodeError as error:
+        raise ValueError("runtime requirements are not valid UTF-8") from error
     lines = [line for line in requirements.splitlines() if line and not line.startswith("#")]
     if not lines or any("--hash=sha256:" not in line for line in lines):
         raise ValueError("runtime requirements are not an exact hash-locked declaration")
-    payload_path = package_root / "arc3-first-party.zip"
     try:
-        with zipfile.ZipFile(payload_path) as payload:
+        with zipfile.ZipFile(io.BytesIO(payload_snapshot)) as payload:
             names = [info.filename for info in payload.infolist()]
             if (
                 len(names) != len(set(names))
@@ -2474,15 +2685,46 @@ def _validate_package_formats(package_root: Path) -> dict[str, object]:
                 raise ValueError("first-party payload member set is unsafe or incomplete")
     except (OSError, zipfile.BadZipFile) as error:
         raise ValueError(f"first-party payload cannot be independently decoded: {error}") from error
+    notebook_projection: dict[str, object] = {"status": "NOT_EVALUATED_FIXTURE_PROJECTION"}
+    if validate_executable_notebook:
+        embedded = notebook_embedded_inputs(parsed_json["arc3-submission.ipynb"])
+        if embedded.payload != payload_snapshot:
+            raise ValueError("notebook embedded payload differs from the bounded package payload")
+        if embedded.requirements != candidate_members["runtime-requirements-linux-cp312.txt"]:
+            raise ValueError("notebook embedded requirements differ from the bounded runtime lock")
+        manifest = parsed_json["package-manifest.json"]
+        source = _required_mapping(manifest.get("source"), name="package manifest source")
+        if embedded.source_commit != source.get("git_commit"):
+            raise ValueError("notebook embedded source commit differs from the package manifest")
+        if embedded.validation_parquet != sandbox_output_snapshot:
+            raise ValueError(
+                "notebook embedded validation output differs from the sandbox artifact"
+            )
+        notebook_projection = {
+            "payload_sha256": sha256_bytes(embedded.payload),
+            "requirements_sha256": sha256_bytes(embedded.requirements),
+            "source_commit": embedded.source_commit,
+            "status": "PASS",
+            "validation_parquet_sha256": sha256_bytes(embedded.validation_parquet),
+        }
     return {
         "candidate_member_count": len(_CANDIDATE_MEMBERS),
+        "notebook_embedded_inputs": notebook_projection,
         "payload_member_count": len(names),
         "runtime_requirement_count": len(lines),
     }
 
 
-def _package_runtime_format_metrics(package_root: Path) -> dict[str, object]:
-    wheel_manifest = _json_object(package_root / "runtime-wheels-linux-cp312.json")
+def _package_runtime_format_metrics(
+    *,
+    candidate_snapshot: bytes,
+    payload_snapshot: bytes,
+    candidate_members: Mapping[str, bytes],
+) -> dict[str, object]:
+    wheel_manifest = _json_object_bytes(
+        candidate_members["runtime-wheels-linux-cp312.json"],
+        label="candidate!/runtime-wheels-linux-cp312.json",
+    )
     raw_packages = wheel_manifest.get("packages")
     if not isinstance(raw_packages, list) or not raw_packages:
         raise ValueError("runtime wheel manifest has no package records")
@@ -2494,8 +2736,8 @@ def _package_runtime_format_metrics(package_root: Path) -> dict[str, object]:
             raise ValueError("runtime wheel manifest has an invalid package identity")
         wheel_names.append(package_name)
     return {
-        "archive_size_bytes": (package_root / "arc3-kaggle-candidate.zip").stat().st_size,
-        "payload_size_bytes": (package_root / "arc3-first-party.zip").stat().st_size,
+        "archive_size_bytes": len(candidate_snapshot),
+        "payload_size_bytes": len(payload_snapshot),
         "runtime_wheel_count": len(wheel_names),
         "runtime_wheel_names_sha256": sha256_bytes(canonical_json_bytes(sorted(wheel_names))),
     }
@@ -2506,24 +2748,67 @@ def package_projection(
     *,
     expected_commit: str | None = None,
     include_runtime_metrics: bool = False,
+    repository: Path | None = None,
+    bounded_archives: _BoundedPackageArchives | None = None,
 ) -> dict[str, object]:
     """Validate and project one package receipt to deterministic artifact identities."""
 
-    receipt = _verified_package_receipt(receipt_path)
+    package_root = receipt_path.resolve().parent
+    candidate_path = package_root / "arc3-kaggle-candidate.zip"
+    payload_path = package_root / "arc3-first-party.zip"
+    preflight = (
+        _bounded_package_archive_preflight((package_root,))
+        if bounded_archives is None
+        else bounded_archives
+    )
+    candidate_snapshot = preflight.snapshot_for(candidate_path)
+    payload_snapshot = preflight.snapshot_for(payload_path)
+    current_archives = _bounded_package_archive_preflight((package_root,))
+    if current_archives.hash_for(candidate_path) != preflight.hash_for(
+        candidate_path
+    ) or current_archives.hash_for(payload_path) != preflight.hash_for(payload_path):
+        raise ValueError("bounded archive paths changed after their immutable snapshots were read")
+    candidate_members = decode_candidate_archive_snapshot(candidate_snapshot)
+    if candidate_members["arc3-first-party.zip"] != payload_snapshot:
+        raise ValueError("candidate payload differs from the bounded top-level payload snapshot")
+    top_level_snapshots: dict[str, bytes] = {}
+    for relative in sorted(_CANDIDATE_MEMBERS):
+        if relative == "arc3-first-party.zip":
+            raw = payload_snapshot
+        else:
+            raw = read_bounded_regular_snapshot(
+                root=package_root,
+                path=package_root / relative,
+                max_bytes=DEFAULT_MAX_ARCHIVE_MEMBER_BYTES,
+                path_label=relative,
+            )
+        if raw != candidate_members[relative]:
+            raise ValueError(f"candidate member differs from top-level package file: {relative}")
+        top_level_snapshots[relative] = raw
+    receipt_raw = read_bounded_regular_snapshot(
+        root=package_root,
+        path=receipt_path,
+        max_bytes=DEFAULT_MAX_CANDIDATE_BYTES,
+        path_label=receipt_path.name,
+    )
+    receipt = _verified_package_receipt_bytes(receipt_raw, label=str(receipt_path))
     if receipt.get("schema") != "arc3.kaggle-build-receipt.v0.1":
         raise ValueError(f"unsupported package receipt schema: {receipt_path}")
     if receipt.get("status") != "PACKAGING_PASS":
         raise ValueError(f"package receipt does not claim PACKAGING_PASS: {receipt_path}")
     if receipt.get("official_submission_performed") is not False:
         raise ValueError(f"package receipt has an invalid submission boundary: {receipt_path}")
-    package_root = receipt_path.resolve().parent
     actual_hashes: dict[str, str] = {}
     for field, relative in _PACKAGE_FILE_FIELDS.items():
         claimed = receipt.get(field)
-        artifact = package_root / relative
         if not isinstance(claimed, str):
             raise ValueError(f"package receipt is missing {field}: {receipt_path}")
-        actual = sha256_file(artifact)
+        if relative == "arc3-kaggle-candidate.zip":
+            actual = preflight.hash_for(candidate_path)
+        elif relative == "arc3-first-party.zip":
+            actual = preflight.hash_for(payload_path)
+        else:
+            actual = sha256_bytes(top_level_snapshots[relative])
         if claimed != actual:
             raise ValueError(f"package artifact {relative} disagrees with {field}")
         actual_hashes[field] = actual
@@ -2536,13 +2821,56 @@ def package_projection(
         raise ValueError("package candidate validation did not pass")
     if candidate_validation.get("candidate_sha256") != actual_hashes["candidate_sha256"]:
         raise ValueError("package candidate validation is not linked to the candidate bytes")
+    payload_git_projection_sha256: str | None = None
+    if repository is not None:
+        if expected_commit is None:
+            raise ValueError("Git-bound package projection requires an expected commit")
+        recomputed_validation = validate_candidate_member_snapshots(
+            candidate_snapshot,
+            candidate_members,
+        )
+        if candidate_validation != recomputed_validation:
+            raise ValueError("package candidate validation was not independently reproducible")
+        expected_members, expected_records, expected_source = collect_git_payload(
+            repository,
+            expected_commit,
+        )
+        expected_payload = deterministic_zip_bytes(expected_members)
+        if sha256_bytes(expected_payload) != actual_hashes["payload_sha256"]:
+            raise ValueError("first-party payload bytes do not derive from the expected Git commit")
+        manifest_for_source = _json_object_bytes(
+            candidate_members["package-manifest.json"],
+            label="candidate!/package-manifest.json",
+        )
+        payload_for_source = _required_mapping(
+            manifest_for_source.get("payload"), name="package manifest payload"
+        )
+        if (
+            payload_for_source.get("files") != [record.to_dict() for record in expected_records]
+            or payload_for_source.get("source_identity") != expected_source
+        ):
+            raise ValueError("first-party payload projection differs from the expected Git tree")
+        payload_git_projection_sha256 = sha256_bytes(
+            canonical_json_bytes(
+                {
+                    "files": payload_for_source.get("files"),
+                    "source_identity": payload_for_source.get("source_identity"),
+                }
+            )
+        )
     if sandbox.get("status") != "PASS" or validation.get("status") != "PASS":
         raise ValueError("package sandbox or schema validation did not pass")
     sandbox_sha256 = sha256_bytes(package_canonical_json_bytes(sandbox))
     if receipt.get("sandbox_receipt_sha256") != sandbox_sha256:
         raise ValueError("package sandbox receipt hash is not linked to the receipt")
     sandbox_output = package_root / "offline-sandbox" / "submission.parquet"
-    actual_output_sha256 = sha256_file(sandbox_output)
+    sandbox_output_snapshot = read_bounded_regular_snapshot(
+        root=package_root,
+        path=sandbox_output,
+        max_bytes=DEFAULT_MAX_CANDIDATE_BYTES,
+        path_label="offline-sandbox/submission.parquet",
+    )
+    actual_output_sha256 = sha256_bytes(sandbox_output_snapshot)
     if not (
         receipt.get("sandbox_output_sha256")
         == sandbox.get("output_sha256")
@@ -2560,7 +2888,10 @@ def package_projection(
         raise ValueError("package sandbox secret rescan did not pass")
     if sandbox.get("network_attempts") != 0 or sandbox.get("credentials_present") != []:
         raise ValueError("package sandbox crossed the offline or credential boundary")
-    manifest = _json_object(package_root / "package-manifest.json")
+    manifest = _json_object_bytes(
+        candidate_members["package-manifest.json"],
+        label="candidate!/package-manifest.json",
+    )
     source = _required_mapping(manifest.get("source"), name="package manifest source")
     if manifest.get("build_status") != "PACKAGING_PASS" or source.get("git_dirty") is not False:
         raise ValueError("package manifest does not bind PACKAGING_PASS to a clean source")
@@ -2578,16 +2909,17 @@ def package_projection(
     if secret_scan.get("status") != "PASS" or secret_scan.get("findings") != []:
         raise ValueError("package manifest secret scan did not pass cleanly")
     manifest_records = _manifest_artifact_hashes(manifest)
-    candidate_members = _candidate_member_hashes(package_root / "arc3-kaggle-candidate.zip")
-    format_validation = _validate_package_formats(package_root)
+    format_validation = _validate_package_formats(
+        candidate_members,
+        payload_snapshot=payload_snapshot,
+        sandbox_output_snapshot=sandbox_output_snapshot,
+        validate_executable_notebook=repository is not None,
+    )
     for relative in sorted(_CANDIDATE_MEMBERS):
-        top_level = package_root / relative
-        actual = sha256_file(top_level)
-        if candidate_members[relative] != actual:
-            raise ValueError(f"candidate member differs from top-level package file: {relative}")
+        actual = sha256_bytes(candidate_members[relative])
         if relative != "package-manifest.json":
             recorded_digest, recorded_size = manifest_records[relative]
-            if recorded_digest != actual or recorded_size != top_level.stat().st_size:
+            if recorded_digest != actual or recorded_size != len(candidate_members[relative]):
                 raise ValueError(f"package manifest artifact identity changed: {relative}")
     if not (
         sandbox.get("dependency_install_status") == "PASS"
@@ -2600,6 +2932,24 @@ def package_projection(
     projection: dict[str, object] = {field: actual_hashes[field] for field in _PACKAGE_FIELDS}
     projection.update(
         {
+            "bounded_archive_preflight": {
+                "candidate_sha256": preflight.hash_for(candidate_path),
+                "max_archive_bytes_cumulative": DEFAULT_MAX_ARCHIVE_BYTES,
+                "max_central_directory_bytes_cumulative": (
+                    DEFAULT_MAX_ARCHIVE_CENTRAL_DIRECTORY_BYTES
+                ),
+                "max_depth": DEFAULT_MAX_ARCHIVE_DEPTH,
+                "max_expanded_bytes_cumulative": DEFAULT_MAX_ARCHIVE_EXPANDED_BYTES,
+                "max_member_bytes": DEFAULT_MAX_ARCHIVE_MEMBER_BYTES,
+                "max_members_cumulative": DEFAULT_MAX_ARCHIVE_MEMBERS,
+                "payload_sha256": preflight.hash_for(payload_path),
+                "status": "PASS",
+            },
+            "build_receipt_sha256": sha256_bytes(receipt_raw),
+            "candidate_member_sha256": {
+                relative: sha256_bytes(candidate_members[relative])
+                for relative in sorted(candidate_members)
+            },
             "sandbox_output_sha256": actual_output_sha256,
             "sandbox_receipt_sha256": sandbox_sha256,
             "status": "PACKAGING_PASS",
@@ -2607,8 +2957,16 @@ def package_projection(
             "validated_formats": format_validation,
         }
     )
+    if payload_git_projection_sha256 is not None:
+        projection["payload_git_projection_sha256"] = payload_git_projection_sha256
     if include_runtime_metrics:
-        projection.update(_package_runtime_format_metrics(package_root))
+        projection.update(
+            _package_runtime_format_metrics(
+                candidate_snapshot=candidate_snapshot,
+                payload_snapshot=payload_snapshot,
+                candidate_members=candidate_members,
+            )
+        )
     return projection
 
 
@@ -2618,18 +2976,26 @@ def compare_packages(
     *,
     expected_commit: str | None = None,
     include_runtime_metrics: bool = False,
+    repository: Path | None = None,
 ) -> tuple[bool, dict[str, object]]:
     """Require two fresh offline builds to produce byte-identical identities."""
 
+    first_root = first.resolve().parent
+    second_root = second.resolve().parent
+    bounded_archives = _bounded_package_archive_preflight((first_root, second_root))
     first_projection = package_projection(
         first,
         expected_commit=expected_commit,
         include_runtime_metrics=include_runtime_metrics,
+        repository=repository,
+        bounded_archives=bounded_archives,
     )
     second_projection = package_projection(
         second,
         expected_commit=expected_commit,
         include_runtime_metrics=include_runtime_metrics,
+        repository=repository,
+        bounded_archives=bounded_archives,
     )
     first_bytes = canonical_json_bytes(first_projection)
     second_bytes = canonical_json_bytes(second_projection)
@@ -2642,18 +3008,28 @@ def compare_packages(
     }
 
 
-def _last_json_log(path: Path) -> dict[str, Any]:
+def _last_json_log_bytes(raw: bytes, *, label: str) -> dict[str, Any]:
     try:
-        lines = [line for line in path.read_text(encoding="utf-8").splitlines() if line]
-    except (OSError, UnicodeDecodeError) as error:
-        raise ValueError(f"cannot read command JSON log {path}: {error}") from error
+        lines = [line for line in raw.decode("utf-8").splitlines() if line]
+    except UnicodeDecodeError as error:
+        raise ValueError(f"cannot decode command JSON log {label}: {error}") from error
     if not lines:
-        raise ValueError(f"command JSON log is empty: {path}")
+        raise ValueError(f"command JSON log is empty: {label}")
     try:
         loaded: object = json.loads(lines[-1])
     except json.JSONDecodeError as error:
         raise ValueError(f"last command output line is not JSON: {error}") from error
     return _required_mapping(loaded, name="command JSON output")
+
+
+def _last_json_log(path: Path) -> dict[str, Any]:
+    raw = read_bounded_regular_snapshot(
+        root=path.resolve().parent,
+        path=path,
+        max_bytes=DEFAULT_MAX_CANDIDATE_BYTES,
+        path_label=path.name,
+    )
+    return _last_json_log_bytes(raw, label=str(path))
 
 
 def official_smoke_available(
@@ -2786,7 +3162,16 @@ def scan_generated_logs(
         if path.is_symlink() or not path.is_file():
             residual_findings.append({"file": path.name, "reason": "non-regular log"})
             continue
-        content = path.read_bytes()
+        try:
+            content = read_bounded_regular_snapshot(
+                root=output_root,
+                path=path,
+                max_bytes=DEFAULT_MAX_CANDIDATE_BYTES,
+                path_label=path.relative_to(output_root).as_posix(),
+            )
+        except ValueError as error:
+            residual_findings.append({"file": path.name, "reason": str(error)})
+            continue
         labels = [
             f"pattern-{index}"
             for index, pattern in enumerate(_SECRET_PATTERNS, start=1)
@@ -2811,30 +3196,184 @@ def scan_generated_logs(
     }
 
 
-def _complete_artifact_set(output_root: Path, *, sealed: bool) -> dict[str, object]:
+def _package_only_expected_artifact_files(specs: Sequence[CommandSpec]) -> frozenset[str]:
+    package_files = {
+        *_CANDIDATE_MEMBERS,
+        "arc3-kaggle-candidate.zip",
+        "build-receipt.json",
+        "offline-sandbox/submission.parquet",
+    }
+    return frozenset(
+        {
+            "integrity-receipt.json",
+            "package-only-test-guard.json",
+            *(f"logs/{spec.check_id}.stdout.log" for spec in specs),
+            *(f"logs/{spec.check_id}.stderr.log" for spec in specs),
+            *(f"package-a/{relative}" for relative in package_files),
+            *(f"package-b/{relative}" for relative in package_files),
+        }
+    )
+
+
+def _complete_artifact_set(
+    output_root: Path,
+    *,
+    sealed: bool,
+    expected_files: frozenset[str] | None = None,
+    scan_all_sealed_bytes_for_secrets: bool = False,
+) -> dict[str, object]:
     """Hash the complete non-transient output set, excluding self-referential wrappers."""
 
     files: dict[str, str] = {}
     total_bytes = 0
+    secret_findings: list[dict[str, object]] = []
     for path in sorted(output_root.rglob("*")):
         relative = path.relative_to(output_root).as_posix()
-        if relative in _RECEIPT_WRAPPERS or relative.startswith(_TRANSIENT_OUTPUT_PREFIXES):
+        if relative in _RECEIPT_WRAPPERS:
             continue
         if path.is_symlink():
             raise ValueError(f"release artifact set contains a symlink: {relative}")
-        if path.is_file():
-            files[relative] = sha256_file(path)
-            total_bytes += path.stat().st_size
+        if relative.startswith(_TRANSIENT_OUTPUT_PREFIXES):
+            if expected_files is not None and not path.is_dir():
+                raise ValueError(
+                    f"package-only output contains an unsealed transient-prefix file: {relative}"
+                )
+            continue
+        if path.is_dir():
+            continue
+        if not path.is_file():
+            raise ValueError(f"release artifact set contains a non-regular node: {relative}")
+        raw = read_bounded_regular_snapshot(
+            root=output_root,
+            path=path,
+            max_bytes=DEFAULT_MAX_ARCHIVE_BYTES,
+            path_label=relative,
+        )
+        files[relative] = sha256_bytes(raw)
+        total_bytes += len(raw)
+        if scan_all_sealed_bytes_for_secrets:
+            patterns = [
+                f"pattern-{index}"
+                for index, pattern in enumerate(_SECRET_PATTERNS, start=1)
+                if pattern.search(raw)
+            ]
+            if patterns:
+                secret_findings.append({"file": relative, "patterns": patterns})
+    if expected_files is not None and set(files) != set(expected_files):
+        missing = sorted(set(expected_files).difference(files))
+        extra = sorted(set(files).difference(expected_files))
+        raise ValueError(
+            "package-only output membership differs from the exact artifact contract; "
+            f"missing={missing[:8]}, extra={extra[:8]}"
+        )
+    if secret_findings:
+        raise ValueError("release artifact set contains a secret-pattern finding")
     if sealed and not files:
         raise ValueError("a passing release verification cannot seal an empty artifact set")
     return {
+        "all_sealed_raw_bytes_secret_scanned": scan_all_sealed_bytes_for_secrets,
         "complete": sealed,
         "excluded_prefixes": list(_TRANSIENT_OUTPUT_PREFIXES),
         "excluded_wrappers": sorted(_RECEIPT_WRAPPERS),
+        "expected_allowlist_enforced": expected_files is not None,
         "file_count": len(files),
         "files": files,
+        "secret_finding_count": len(secret_findings),
         "set_sha256": sha256_bytes(canonical_json_bytes(files)),
         "total_bytes": total_bytes,
+    }
+
+
+def _validate_package_only_seal_links(
+    sealed_artifact_set: Mapping[str, object],
+    *,
+    package_details: Mapping[str, object],
+    guard_details: Mapping[str, object],
+    integrity_details: Mapping[str, object],
+    log_details: Mapping[str, object],
+    results: Sequence[CheckResult],
+    startup_log_sha256: str | None,
+) -> dict[str, object]:
+    """Cross-bind every allowlisted Build 001 output to its validating snapshot."""
+
+    expected: dict[str, str] = {}
+    for projection_name, package_directory in (
+        ("first", "package-a"),
+        ("second", "package-b"),
+    ):
+        projection = _required_mapping(
+            package_details.get(projection_name),
+            name=f"{projection_name} package projection",
+        )
+        member_hashes = _required_mapping(
+            projection.get("candidate_member_sha256"),
+            name=f"{projection_name} candidate member hashes",
+        )
+        if set(member_hashes) != set(_CANDIDATE_MEMBERS) or not all(
+            isinstance(value, str) for value in member_hashes.values()
+        ):
+            raise ValueError("package projection has an incomplete candidate-member hash set")
+        candidate_sha256 = projection.get("candidate_sha256")
+        receipt_sha256 = projection.get("build_receipt_sha256")
+        sandbox_sha256 = projection.get("sandbox_output_sha256")
+        if not all(
+            isinstance(value, str) for value in (candidate_sha256, receipt_sha256, sandbox_sha256)
+        ):
+            raise ValueError("package projection has incomplete top-level artifact hashes")
+        expected[f"{package_directory}/arc3-kaggle-candidate.zip"] = cast(str, candidate_sha256)
+        expected[f"{package_directory}/build-receipt.json"] = cast(str, receipt_sha256)
+        expected[f"{package_directory}/offline-sandbox/submission.parquet"] = cast(
+            str, sandbox_sha256
+        )
+        expected.update(
+            {
+                f"{package_directory}/{relative}": cast(str, digest)
+                for relative, digest in member_hashes.items()
+            }
+        )
+
+    guard_sha256 = guard_details.get("artifact_sha256")
+    integrity_sha256 = integrity_details.get("artifact_sha256")
+    if not isinstance(guard_sha256, str) or not isinstance(integrity_sha256, str):
+        raise ValueError("guard or integrity validation omitted its immutable artifact hash")
+    expected["package-only-test-guard.json"] = guard_sha256
+    expected["integrity-receipt.json"] = integrity_sha256
+    log_hashes = _required_mapping(log_details.get("log_hashes"), name="generated log hashes")
+    if not all(
+        isinstance(name, str) and isinstance(digest, str) for name, digest in log_hashes.items()
+    ):
+        raise ValueError("generated log hash projection is invalid")
+    expected.update({f"logs/{name}": cast(str, digest) for name, digest in log_hashes.items()})
+    if "offline-package-startup.stdout.log" in log_hashes and (
+        startup_log_sha256 is None
+        or log_hashes.get("offline-package-startup.stdout.log") != startup_log_sha256
+    ):
+        raise ValueError("startup semantic snapshot differs from the sealed generated log")
+    command_results = tuple(result for result in results if result.kind == "command")
+    expected_log_paths: set[str] = set()
+    for result in command_results:
+        expected_stdout = f"logs/{result.check_id}.stdout.log"
+        expected_stderr = f"logs/{result.check_id}.stderr.log"
+        if (
+            result.stdout_log != expected_stdout
+            or result.stderr_log != expected_stderr
+            or result.stdout_sha256 != log_hashes.get(Path(expected_stdout).name)
+            or result.stderr_sha256 != log_hashes.get(Path(expected_stderr).name)
+        ):
+            raise ValueError("command result log hashes differ from the sealed log snapshots")
+        expected_log_paths.update({expected_stdout, expected_stderr})
+    if expected_log_paths != {f"logs/{name}" for name in log_hashes}:
+        raise ValueError("command results do not cover the exact sealed log set")
+
+    sealed_files = _required_mapping(
+        sealed_artifact_set.get("files"), name="sealed package-only artifact hashes"
+    )
+    if expected != sealed_files:
+        raise ValueError("sealed package-only hashes differ from validated immutable snapshots")
+    return {
+        "linked_file_count": len(expected),
+        "linked_files_sha256": sha256_bytes(canonical_json_bytes(expected)),
+        "status": "PASS",
     }
 
 
@@ -2855,13 +3394,27 @@ def verify_sealed_artifact_set(document: Mapping[str, Any], output_root: Path) -
         isinstance(name, str) and isinstance(digest, str) for name, digest in expected_files.items()
     ):
         raise ValueError("release sealed artifact file map is invalid")
-    actual = _complete_artifact_set(output_root, sealed=must_be_complete)
+    expected_allowlist_enforced = sealed.get("expected_allowlist_enforced") is True
+    expected_files = (
+        frozenset(cast(dict[str, str], expected_files)) if expected_allowlist_enforced else None
+    )
+    actual = _complete_artifact_set(
+        output_root,
+        sealed=must_be_complete,
+        expected_files=expected_files,
+        scan_all_sealed_bytes_for_secrets=(
+            sealed.get("all_sealed_raw_bytes_secret_scanned") is True
+        ),
+    )
     for field in (
+        "all_sealed_raw_bytes_secret_scanned",
         "complete",
         "excluded_prefixes",
         "excluded_wrappers",
+        "expected_allowlist_enforced",
         "file_count",
         "files",
+        "secret_finding_count",
         "set_sha256",
         "total_bytes",
     ):
@@ -2951,11 +3504,22 @@ def _runtime_identity() -> dict[str, object]:
     }
 
 
-def verify_release_receipt(path: Path) -> dict[str, Any]:
+def verify_release_receipt(path: Path, *, expected_raw: bytes | None = None) -> dict[str, Any]:
     """Parse, self-hash, and require canonical bytes for a release receipt."""
 
-    raw = path.read_bytes()
-    document = _verified_self_hashed_object(path, hash_field=RECEIPT_HASH_FIELD)
+    raw = read_bounded_regular_snapshot(
+        root=path.resolve().parent,
+        path=path,
+        max_bytes=DEFAULT_MAX_CANDIDATE_BYTES,
+        path_label=path.name,
+    )
+    if expected_raw is not None and raw != expected_raw:
+        raise ValueError("release verification receipt differs from its exact written bytes")
+    document = _verified_self_hashed_bytes(
+        raw,
+        label=str(path),
+        hash_field=RECEIPT_HASH_FIELD,
+    )
     if document.get("schema") != SCHEMA:
         raise ValueError("unsupported release verification receipt schema")
     if _receipt_bytes(document) != raw:
@@ -2968,9 +3532,20 @@ def _validate_package_only_integrity(
     path: Path,
     *,
     expected_commit: str,
+    expected_archive_sha256: str,
     repository: Path,
 ) -> tuple[bool, dict[str, object]]:
-    integrity = _verified_self_hashed_object(path, hash_field=RECEIPT_HASH_FIELD)
+    raw = read_bounded_regular_snapshot(
+        root=path.resolve().parent,
+        path=path,
+        max_bytes=DEFAULT_MAX_CANDIDATE_BYTES,
+        path_label=path.name,
+    )
+    integrity = _verified_self_hashed_bytes(
+        raw,
+        label=str(path),
+        hash_field=RECEIPT_HASH_FIELD,
+    )
     inputs = _required_mapping(integrity.get("inputs"), name="package integrity inputs")
     checks = _required_mapping(integrity.get("checks"), name="package integrity checks")
     assurance = _required_mapping(
@@ -3027,26 +3602,9 @@ def _validate_package_only_integrity(
             for value in reachable_hashes.values()
         )
     )
-    recomputed_hashes: dict[str, str] = {}
-    if declared_continuity:
-        assert isinstance(reachable_paths, list)
-        for relative in cast(list[str], reachable_paths):
-            lexical_candidate = repository / relative
-            if lexical_candidate.is_symlink():
-                recomputed_hashes = {}
-                break
-            candidate = lexical_candidate.resolve()
-            try:
-                candidate.relative_to(repository.resolve())
-            except ValueError:
-                recomputed_hashes = {}
-                break
-            if not candidate.is_file() or candidate.is_symlink():
-                recomputed_hashes = {}
-                break
-            recomputed_hashes[relative] = sha256_file(candidate)
     candidate_set_passed = False
     recomputed_reachable_paths: list[str] = []
+    exact_candidate_snapshots: dict[str, bytes] = {}
     if isinstance(declared_candidate_paths, list) and all(
         isinstance(item, str) for item in declared_candidate_paths
     ):
@@ -3054,7 +3612,11 @@ def _validate_package_only_integrity(
         from scripts.check_competition_integrity import package_only_candidate_files
 
         try:
-            independent_candidates = package_only_candidate_files(repository)
+            independent_candidates = package_only_candidate_files(
+                repository,
+                expected_commit,
+                candidate_snapshots=exact_candidate_snapshots,
+            )
             independent_candidate_labels = [
                 path.relative_to(repository).as_posix() for path in independent_candidates
             ]
@@ -3065,11 +3627,35 @@ def _validate_package_only_integrity(
                     repository,
                     candidate_files=independent_candidates,
                     entry_points=_PRODUCTION_POLICY_ENTRY_POINTS,
+                    candidate_snapshots=exact_candidate_snapshots,
                 )
             ]
         except (OSError, ValueError):
             candidate_set_passed = False
             recomputed_reachable_paths = []
+            exact_candidate_snapshots = {}
+    recomputed_hashes: dict[str, str] = {}
+    if declared_continuity:
+        assert isinstance(reachable_paths, list)
+        try:
+            recomputed_hashes = {
+                relative: sha256_bytes(exact_candidate_snapshots[relative])
+                for relative in cast(list[str], reachable_paths)
+            }
+        except KeyError:
+            recomputed_hashes = {}
+    expected_snapshot_identity = sha256_bytes(
+        canonical_json_bytes(
+            {label: sha256_bytes(raw) for label, raw in sorted(exact_candidate_snapshots.items())}
+        )
+    )
+    source_snapshot_passed = (
+        bool(exact_candidate_snapshots)
+        and inputs.get("candidate_snapshot_file_count") == len(exact_candidate_snapshots)
+        and inputs.get("candidate_snapshot_total_bytes")
+        == sum(len(raw) for raw in exact_candidate_snapshots.values())
+        and inputs.get("candidate_snapshot_sha256") == expected_snapshot_identity
+    )
     coverage_passed = (
         declared_continuity
         and isinstance(reachable_paths, list)
@@ -3077,6 +3663,7 @@ def _validate_package_only_integrity(
         and inputs.get("entry_points") == list(_PRODUCTION_POLICY_ENTRY_POINTS)
         and all(entry in reachable_paths for entry in _PRODUCTION_POLICY_ENTRY_POINTS)
         and candidate_set_passed
+        and source_snapshot_passed
         and reachable_paths == recomputed_reachable_paths
         and coverage
         == {
@@ -3100,6 +3687,12 @@ def _validate_package_only_integrity(
         git_identity.get("commit") == expected_commit
         and git_identity.get("dirty_worktree") is False
     )
+    archive_label = "@supplied-archive/0000/arc3-kaggle-candidate.zip"
+    archive_identity_passed = (
+        inputs.get("archive_count") == 1
+        and inputs.get("archive_paths") == [archive_label]
+        and source_hashes.get(archive_label) == expected_archive_sha256
+    )
     passed = (
         integrity.get("passed") is False
         and integrity.get("package_only_passed") is True
@@ -3111,8 +3704,12 @@ def _validate_package_only_integrity(
         and license_passed
         and continuity_passed
         and source_identity_passed
+        and archive_identity_passed
     )
     details: dict[str, object] = {
+        "artifact_sha256": sha256_bytes(raw),
+        "archive_identity_passed": archive_identity_passed,
+        "archive_sha256": source_hashes.get(archive_label),
         "checks_passed": check_passed,
         "candidate_set_passed": candidate_set_passed,
         "finding_counts": cast(object, integrity.get("finding_counts")),
@@ -3129,6 +3726,7 @@ def _validate_package_only_integrity(
         "recomputed_reachable_policy_paths": recomputed_reachable_paths,
         "schema": cast(object, integrity.get("schema")),
         "source_identity_passed": source_identity_passed,
+        "source_snapshot_passed": source_snapshot_passed,
     }
     for key in ("LICENSE", "THIRD_PARTY_NOTICES.md", "pyproject.toml", "uv.lock"):
         value = source_hashes.get(key)
@@ -3137,34 +3735,106 @@ def _validate_package_only_integrity(
     return passed, details
 
 
-def _validate_package_test_guard(path: Path) -> dict[str, object]:
-    guard = _verified_self_hashed_object(path, hash_field=RECEIPT_HASH_FIELD)
+def _validate_package_test_guard(
+    path: Path,
+    *,
+    repository: Path,
+    expected_commit: str,
+) -> dict[str, object]:
+    raw = read_bounded_regular_snapshot(
+        root=path.resolve().parent,
+        path=path,
+        max_bytes=DEFAULT_MAX_CANDIDATE_BYTES,
+        path_label=path.name,
+    )
+    guard = _verified_self_hashed_bytes(
+        raw,
+        label=str(path),
+        hash_field=RECEIPT_HASH_FIELD,
+    )
+    expected_selection = build001_test_selection(
+        repository,
+        expected_commit=expected_commit,
+    ).to_dict()
+    exact_selection = all(
+        guard.get(field) == expected_selection[field]
+        for field in (
+            "all_test_file_count",
+            "all_test_files",
+            "all_test_files_sha256",
+            "boundary_exclusion_reasons",
+            "excluded_boundary_tests",
+            "excluded_process_capable_tests",
+            "selected_test_file_count",
+            "selected_test_files",
+            "selected_test_files_sha256",
+            "source_closure_exact_git_commit_bound",
+            "source_closure_file_count",
+            "source_closure_files",
+            "source_closure_records",
+            "source_closure_sha256",
+            "source_commit",
+            "source_index_stage_records",
+            "source_index_stage_sha256",
+            "source_index_tags",
+            "source_index_tags_sha256",
+        )
+    )
+    expected_kernel_paths = ["/proc/self/status"] if sys.platform.startswith("linux") else []
+    workflow_relative = ".github/workflows/ci.yml"
+    workflow_blob = _git_bytes(repository, "show", f"{expected_commit}:{workflow_relative}")
+    workflow_snapshot = read_bounded_regular_snapshot(
+        root=repository,
+        path=repository / workflow_relative,
+        max_bytes=DEFAULT_MAX_CANDIDATE_BYTES,
+        path_label=workflow_relative,
+    )
+    if workflow_snapshot != workflow_blob:
+        raise ValueError("ordinary CI workflow bytes differ from the expected Git blob")
+    try:
+        workflow = workflow_snapshot.decode("utf-8")
+    except UnicodeDecodeError as error:
+        raise ValueError("ordinary CI workflow is not UTF-8") from error
+    ordinary_ci_retains_full_suite = (
+        f"run: {ORDINARY_CI_FULL_SUITE_COMMAND}" in workflow
+        and "scripts.package_only_pytest" not in workflow
+        and "--ignore" not in workflow
+    )
+    collected_files = guard.get("collected_test_files")
+    selected_files = expected_selection["selected_test_files"]
     if (
-        guard.get("schema") != "arc3.package-only-pytest.v0.2"
+        guard.get("schema") != PACKAGE_ONLY_PYTEST_SCHEMA
         or guard.get("status") != "PASS"
         or guard.get("attempt_count") != 0
         or guard.get("attempts") != []
+        or guard.get("attempt_log_sha256") != sha256_bytes(b"")
         or guard.get("pytest_exit_code") != 0
         or guard.get("runner_failure") is not None
         or guard.get("canonical_paths") is not True
         or guard.get("allow_root_ancestor_directory_metadata_allowed") is not True
         or guard.get("child_processes_denied") is not True
-        or guard.get("claim_scope")
-        != (
-            "selected Python-level in-process tests made no Python-audited disallowed path "
-            "access beyond allow-root-ancestor directory metadata and spawned no Python-audited "
-            "child process; this is not OS containment"
-        )
+        or guard.get("claim_scope") != PACKAGE_ONLY_TEST_CLAIM_SCOPE
         or guard.get("external_paths_default_denied") is not True
         or guard.get("framework_writable_state") != "isolated-under-allowed-guard-parent"
         or not isinstance(guard.get("sys_path_entries_outside_allowed_roots_removed"), int)
         or cast(int, guard["sys_path_entries_outside_allowed_roots_removed"]) < 0
         or guard.get("pytest_rootdir_forced") is not True
         or guard.get("selection_policy")
-        != "static-process-capability-exclusion-plus-runtime-process-denial"
-        or not isinstance(guard.get("selected_test_file_count"), int)
-        or cast(int, guard["selected_test_file_count"]) <= 0
-        or not isinstance(guard.get("excluded_process_capable_tests"), list)
+        != "exact-git-blob-execution-closure-v0.4-plus-runtime-boundary-denial"
+        or guard.get("source_projection_matches_after_tests") is not True
+        or guard.get("source_closure_exact_git_commit_bound") is not True
+        or guard.get("source_commit") != expected_commit
+        or guard.get("collection_matches_selected_files") is not True
+        or collected_files != selected_files
+        or not isinstance(guard.get("collected_test_count"), int)
+        or cast(int, guard["collected_test_count"]) <= 0
+        or not exact_selection
+        or guard.get("kernel_telemetry_paths") != expected_kernel_paths
+        or guard.get("kernel_telemetry_read_only") is not True
+        or not isinstance(guard.get("kernel_telemetry_read_count"), int)
+        or cast(int, guard["kernel_telemetry_read_count"]) < 0
+        or guard.get("ordinary_ci_full_suite_command") != ORDINARY_CI_FULL_SUITE_COMMAND
+        or not ordinary_ci_retains_full_suite
         or guard.get("protected_directories") != ["artifacts", "docs/evaluation"]
         or guard.get("protected_files")
         != [
@@ -3174,26 +3844,35 @@ def _validate_package_test_guard(path: Path) -> dict[str, object]:
             "guard-receipt",
         ]
     ):
-        raise ValueError("package-only pytest guard did not prove a clean protected-path boundary")
+        raise ValueError("package-only pytest guard did not prove its exact test/path boundary")
     return {
+        "artifact_sha256": sha256_bytes(raw),
+        "all_test_file_count": cast(object, guard.get("all_test_file_count")),
+        "all_test_files_sha256": cast(object, guard.get("all_test_files_sha256")),
         "attempt_count": 0,
-        "allow_root_ancestor_directory_metadata_allowed": True,
+        "attempt_log_sha256": cast(object, guard.get("attempt_log_sha256")),
+        "boundary_exclusion_count": len(BUILD001_BOUNDARY_EXCLUSIONS),
         "canonical_paths": True,
         "child_processes_denied": True,
         "claim_scope": cast(object, guard.get("claim_scope")),
+        "collected_test_count": cast(object, guard.get("collected_test_count")),
         "excluded_process_capable_test_count": len(
             cast(list[object], guard["excluded_process_capable_tests"])
         ),
         "external_paths_default_denied": True,
-        "framework_writable_state": cast(object, guard.get("framework_writable_state")),
-        "protected_directories": cast(object, guard.get("protected_directories")),
-        "protected_files": cast(object, guard.get("protected_files")),
-        "pytest_rootdir_forced": True,
+        "kernel_telemetry_paths": expected_kernel_paths,
+        "kernel_telemetry_read_count": cast(object, guard.get("kernel_telemetry_read_count")),
+        "ordinary_ci_retains_full_suite": True,
         "schema": cast(object, guard.get("schema")),
+        "selected_test_file_count": cast(object, guard.get("selected_test_file_count")),
+        "selected_test_files_sha256": cast(object, guard.get("selected_test_files_sha256")),
+        "source_closure_file_count": cast(object, guard.get("source_closure_file_count")),
+        "source_closure_sha256": cast(object, guard.get("source_closure_sha256")),
+        "source_commit": expected_commit,
+        "source_index_stage_sha256": cast(object, guard.get("source_index_stage_sha256")),
+        "source_index_tags_sha256": cast(object, guard.get("source_index_tags_sha256")),
+        "source_projection_matches_after_tests": True,
         "status": cast(object, guard.get("status")),
-        "sys_path_entries_outside_allowed_roots_removed": cast(
-            object, guard.get("sys_path_entries_outside_allowed_roots_removed")
-        ),
     }
 
 
@@ -3371,10 +4050,13 @@ def _run_package_only_verification(
         results.append(result)
         prior[result.check_id] = result
 
+    guard_details: dict[str, object] = {}
     if prior["package-safe-test-suite"].status == "PASS":
         try:
             guard_details = _validate_package_test_guard(
-                output_root / "package-only-test-guard.json"
+                output_root / "package-only-test-guard.json",
+                repository=repository,
+                expected_commit=expected_commit,
             )
             guard_result = internal_result(
                 "package-test-guard-validation",
@@ -3407,6 +4089,7 @@ def _run_package_only_verification(
                 output_root / "package-b" / "build-receipt.json",
                 expected_commit=expected_commit,
                 include_runtime_metrics=True,
+                repository=repository,
             )
             package_result = internal_result(
                 "offline-package-determinism",
@@ -3432,13 +4115,21 @@ def _run_package_only_verification(
     results.append(package_result)
     prior[package_result.check_id] = package_result
 
+    integrity_details: dict[str, object] = {}
     verified_license_status: str | None = None
     verified_license_sha256: str | None = None
     if prior["package-integrity"].status == "PASS":
         try:
+            first_projection = _required_mapping(
+                package_details.get("first"), name="first package projection"
+            )
+            expected_archive_sha256 = first_projection.get("candidate_sha256")
+            if not isinstance(expected_archive_sha256, str):
+                raise ValueError("first package projection has no candidate SHA-256")
             integrity_passed, integrity_details = _validate_package_only_integrity(
                 output_root / "integrity-receipt.json",
                 expected_commit=expected_commit,
+                expected_archive_sha256=expected_archive_sha256,
                 repository=repository,
             )
             raw_status = integrity_details.get("first_party_license_status")
@@ -3472,9 +4163,21 @@ def _run_package_only_verification(
     prior[integrity_result.check_id] = integrity_result
 
     startup: dict[str, Any] = {}
+    startup_log_sha256: str | None = None
     if prior["offline-package-startup"].status == "PASS":
         try:
-            startup = _last_json_log(output_root / "logs" / "offline-package-startup.stdout.log")
+            startup_log_path = output_root / "logs" / "offline-package-startup.stdout.log"
+            startup_log_snapshot = read_bounded_regular_snapshot(
+                root=output_root,
+                path=startup_log_path,
+                max_bytes=DEFAULT_MAX_CANDIDATE_BYTES,
+                path_label="logs/offline-package-startup.stdout.log",
+            )
+            startup_log_sha256 = sha256_bytes(startup_log_snapshot)
+            startup = _last_json_log_bytes(
+                startup_log_snapshot,
+                label=str(startup_log_path),
+            )
         except (OSError, ValueError) as error:
             startup = {"interpretation_error": str(error)}
     if package_result.status == "PASS" and prior["offline-package-startup"].status == "PASS":
@@ -3551,9 +4254,29 @@ def _run_package_only_verification(
     results.append(log_scan)
 
     status = _overall_status(results, blocked_is_complete=True)
+    exact_expected_files = (
+        _package_only_expected_artifact_files(specs)
+        if status in {"BLOCKED_EXTERNAL", "PASS"}
+        else None
+    )
     sealed_artifact_set = _complete_artifact_set(
         output_root,
         sealed=status in {"BLOCKED_EXTERNAL", "PASS"},
+        expected_files=exact_expected_files,
+        scan_all_sealed_bytes_for_secrets=exact_expected_files is not None,
+    )
+    seal_links = (
+        _validate_package_only_seal_links(
+            sealed_artifact_set,
+            package_details=package_details,
+            guard_details=guard_details,
+            integrity_details=integrity_details,
+            log_details=log_details,
+            results=results,
+            startup_log_sha256=startup_log_sha256,
+        )
+        if exact_expected_files is not None
+        else {"status": "NOT_APPLICABLE_FAILED_RUN"}
     )
     seal_result = internal_result(
         "sealed-artifact-set",
@@ -3563,6 +4286,7 @@ def _run_package_only_verification(
             "complete": sealed_artifact_set["complete"],
             "file_count": sealed_artifact_set["file_count"],
             "set_sha256": sealed_artifact_set["set_sha256"],
+            "snapshot_links": seal_links,
             "total_bytes": sealed_artifact_set["total_bytes"],
         },
     )
@@ -3610,11 +4334,13 @@ def _run_package_only_verification(
         },
     }
     receipt_path = output_root / "release-verification-receipt.json"
-    write_bytes_atomic(receipt_path, _receipt_bytes(body))
-    verify_release_receipt(receipt_path)
+    receipt_raw = _receipt_bytes(body)
+    write_bytes_atomic(receipt_path, receipt_raw)
+    verify_release_receipt(receipt_path, expected_raw=receipt_raw)
     curated_path = output_root / "release-verification-evidence.json"
-    write_bytes_atomic(curated_path, _curated_evidence_bytes(body, sha256_file(receipt_path)))
-    verify_release_receipt(receipt_path)
+    curated_raw = _curated_evidence_bytes(body, sha256_bytes(receipt_raw))
+    write_bytes_atomic(curated_path, curated_raw)
+    verify_release_receipt(receipt_path, expected_raw=receipt_raw)
     return body
 
 
@@ -3738,6 +4464,7 @@ def run_release_verification(
                 output_root / "package-a" / "build-receipt.json",
                 output_root / "package-b" / "build-receipt.json",
                 expected_commit=expected_commit,
+                repository=repository,
             )
             package_result = internal_result(
                 "offline-package-determinism",
@@ -3966,14 +4693,16 @@ def run_release_verification(
         },
     }
     receipt_path = output_root / "release-verification-receipt.json"
-    write_bytes_atomic(receipt_path, _receipt_bytes(body))
-    verify_release_receipt(receipt_path)
+    receipt_raw = _receipt_bytes(body)
+    write_bytes_atomic(receipt_path, receipt_raw)
+    verify_release_receipt(receipt_path, expected_raw=receipt_raw)
     curated_path = output_root / "release-verification-evidence.json"
+    curated_raw = _curated_evidence_bytes(body, sha256_bytes(receipt_raw))
     write_bytes_atomic(
         curated_path,
-        _curated_evidence_bytes(body, sha256_file(receipt_path)),
+        curated_raw,
     )
-    verify_release_receipt(receipt_path)
+    verify_release_receipt(receipt_path, expected_raw=receipt_raw)
     return body
 
 

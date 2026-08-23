@@ -44,6 +44,7 @@ from scripts.release_candidate_verifier import (
 from arc3.evaluation.artifacts import canonical_json_bytes as evaluation_canonical_json_bytes
 from arc3.evaluation.public import PublicGameEntry, local_asset_identity
 from arc3.packaging.builder import build_kaggle_candidate
+from arc3.packaging.notebook import build_notebook
 from arc3.packaging.util import canonical_json_bytes as package_canonical_json_bytes
 
 
@@ -378,7 +379,11 @@ def test_package_projection_accepts_real_builder_receipt(tmp_path: Path) -> None
         sandbox_timeout_seconds=120.0,
     )
 
-    projection = package_projection(result.build_receipt, expected_commit=commit)
+    projection = package_projection(
+        result.build_receipt,
+        expected_commit=commit,
+        repository=repository,
+    )
 
     assert result.status == "PACKAGING_PASS"
     assert result.build_receipt.read_bytes().endswith(b"\n")
@@ -387,10 +392,247 @@ def test_package_projection_accepts_real_builder_receipt(tmp_path: Path) -> None
 
 
 @pytest.mark.parametrize(
+    ("relative", "replacement"),
+    (
+        ("package-manifest.json", b'{"source":{"git_commit":"wrong"}}'),
+        ("runtime-wheels-linux-cp312.json", b"not-json"),
+        ("build-receipt.json", b"not-json"),
+        ("offline-sandbox/submission.parquet", b"changed-after-snapshot"),
+    ),
+)
+def test_package_projection_semantics_use_bounded_immutable_snapshots(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    relative: str,
+    replacement: bytes,
+) -> None:
+    receipt = _write_package(tmp_path / "package")
+    target = receipt.parent / relative
+    original_reader = verifier.read_bounded_regular_snapshot
+    mutated = False
+
+    def mutate_after_snapshot(
+        *,
+        root: Path,
+        path: Path,
+        max_bytes: int,
+        path_label: str | None = None,
+    ) -> bytes:
+        nonlocal mutated
+        raw = original_reader(
+            root=root,
+            path=path,
+            max_bytes=max_bytes,
+            path_label=path_label,
+        )
+        if path.resolve() == target.resolve():
+            target.write_bytes(replacement)
+            mutated = True
+        return raw
+
+    monkeypatch.setattr(verifier, "read_bounded_regular_snapshot", mutate_after_snapshot)
+
+    projection = verifier.package_projection(
+        receipt,
+        expected_commit="a" * 40,
+        include_runtime_metrics=True,
+    )
+
+    assert mutated is True
+    assert projection["status"] == "PACKAGING_PASS"
+
+
+@pytest.mark.parametrize(
+    ("substitution", "message"),
+    (
+        ("payload", "embedded payload"),
+        ("requirements", "embedded requirements"),
+        ("source-commit", "embedded source commit"),
+        ("validation", "embedded validation output"),
+    ),
+)
+def test_executable_notebook_inputs_must_match_reviewed_package_snapshots(
+    substitution: str,
+    message: str,
+) -> None:
+    payload = _zip_bytes({"agent/my_agent.py": b"pass\n", "src/arc3/__init__.py": b""})
+    requirements = b"package==1 --hash=sha256:abc\n"
+    sandbox_output = b"parquet"
+    source_commit = "a" * 40
+    notebook = build_notebook(
+        payload=b"other-payload" if substitution == "payload" else payload,
+        payload_sha256=sha256_bytes(b"other-payload" if substitution == "payload" else payload),
+        runtime_requirements=(
+            b"other==1 --hash=sha256:def\n" if substitution == "requirements" else requirements
+        ),
+        requirements_sha256=sha256_bytes(
+            b"other==1 --hash=sha256:def\n" if substitution == "requirements" else requirements
+        ),
+        validation_parquet=(b"other-parquet" if substitution == "validation" else sandbox_output),
+        source_commit="b" * 40 if substitution == "source-commit" else source_commit,
+    )
+    members = {
+        "arc3-submission.ipynb": package_canonical_json_bytes(notebook),
+        "kernel-metadata.json": b"{}",
+        "package-manifest.json": package_canonical_json_bytes(
+            {"source": {"git_commit": source_commit}}
+        ),
+        "runtime-requirements-linux-cp312.txt": requirements,
+        "runtime-wheels-linux-cp312.json": b"{}",
+        "sbom.spdx.json": b"{}",
+        "submission-schema.v0.1.json": b"{}",
+    }
+
+    with pytest.raises(ValueError, match=message):
+        verifier._validate_package_formats(
+            members,
+            payload_snapshot=payload,
+            sandbox_output_snapshot=sandbox_output,
+            validate_executable_notebook=True,
+        )
+
+
+def test_package_only_seal_cross_binds_every_exact_output_to_validated_snapshots(
+    tmp_path: Path,
+) -> None:
+    output = tmp_path / "output"
+    first = _write_package(output / "package-a")
+    second = _write_package(output / "package-b")
+    equal, package_details = compare_packages(first, second, expected_commit="a" * 40)
+    guard = output / "package-only-test-guard.json"
+    integrity = output / "integrity-receipt.json"
+    guard.write_bytes(b"guard")
+    integrity.write_bytes(b"integrity")
+    expected_files = verifier._package_only_expected_artifact_files(())
+    sealed = verifier._complete_artifact_set(
+        output,
+        sealed=True,
+        expected_files=expected_files,
+        scan_all_sealed_bytes_for_secrets=True,
+    )
+    guard_details = {"artifact_sha256": sha256_file(guard)}
+    integrity_details = {"artifact_sha256": sha256_file(integrity)}
+
+    links = verifier._validate_package_only_seal_links(
+        sealed,
+        package_details=package_details,
+        guard_details=guard_details,
+        integrity_details=integrity_details,
+        log_details={"log_hashes": {}},
+        results=(),
+        startup_log_sha256=None,
+    )
+
+    assert equal is True
+    assert links["status"] == "PASS"
+    (output / "package-a" / "package-manifest.json").write_bytes(b"changed-after-validation")
+    changed = verifier._complete_artifact_set(
+        output,
+        sealed=True,
+        expected_files=expected_files,
+        scan_all_sealed_bytes_for_secrets=True,
+    )
+    with pytest.raises(ValueError, match="validated immutable snapshots"):
+        verifier._validate_package_only_seal_links(
+            changed,
+            package_details=package_details,
+            guard_details=guard_details,
+            integrity_details=integrity_details,
+            log_details={"log_hashes": {}},
+            results=(),
+            startup_log_sha256=None,
+        )
+
+
+@pytest.mark.parametrize("mutated_stream", ("stdout", "stderr"))
+def test_package_only_seal_rejects_non_startup_command_log_mutation(
+    tmp_path: Path,
+    mutated_stream: str,
+) -> None:
+    output = tmp_path / "output"
+    first = _write_package(output / "package-a")
+    second = _write_package(output / "package-b")
+    _equal, package_details = compare_packages(first, second, expected_commit="a" * 40)
+    guard = output / "package-only-test-guard.json"
+    integrity = output / "integrity-receipt.json"
+    guard.write_bytes(b"guard")
+    integrity.write_bytes(b"integrity")
+    spec = CommandSpec("fixture", "tests", (sys.executable, "-c", "pass"), 30.0)
+    logs = output / "logs"
+    logs.mkdir()
+    stdout = logs / "fixture.stdout.log"
+    stderr = logs / "fixture.stderr.log"
+    stdout.write_bytes(b"original stdout\n")
+    stderr.write_bytes(b"original stderr\n")
+    result = verifier.CheckResult(
+        check_id="fixture",
+        category="tests",
+        kind="command",
+        required=True,
+        status="PASS",
+        started_at=None,
+        completed_at=None,
+        duration_seconds=0.0,
+        argv=spec.argv,
+        exit_code=0,
+        stdout_log="logs/fixture.stdout.log",
+        stdout_sha256=sha256_file(stdout),
+        stderr_log="logs/fixture.stderr.log",
+        stderr_sha256=sha256_file(stderr),
+        reason=None,
+        details={},
+    )
+    (stdout if mutated_stream == "stdout" else stderr).write_bytes(b"mutated after command\n")
+    log_hashes = {
+        "fixture.stdout.log": sha256_file(stdout),
+        "fixture.stderr.log": sha256_file(stderr),
+    }
+    sealed = verifier._complete_artifact_set(
+        output,
+        sealed=True,
+        expected_files=verifier._package_only_expected_artifact_files((spec,)),
+        scan_all_sealed_bytes_for_secrets=True,
+    )
+
+    with pytest.raises(ValueError, match="command result log hashes"):
+        verifier._validate_package_only_seal_links(
+            sealed,
+            package_details=package_details,
+            guard_details={"artifact_sha256": sha256_file(guard)},
+            integrity_details={"artifact_sha256": sha256_file(integrity)},
+            log_details={"log_hashes": log_hashes},
+            results=(result,),
+            startup_log_sha256=None,
+        )
+
+
+@pytest.mark.parametrize("relative", ("unexpected.bin", "tmp/unsealed.bin"))
+def test_package_only_seal_rejects_unexpected_and_transient_prefix_files(
+    tmp_path: Path,
+    relative: str,
+) -> None:
+    output = tmp_path / "output"
+    expected = output / "expected.bin"
+    unexpected = output / relative
+    expected.parent.mkdir(parents=True)
+    expected.write_bytes(b"expected")
+    unexpected.parent.mkdir(parents=True, exist_ok=True)
+    unexpected.write_bytes(b"unexpected")
+
+    with pytest.raises(ValueError, match=r"artifact contract|transient-prefix"):
+        verifier._complete_artifact_set(
+            output,
+            sealed=True,
+            expected_files=frozenset({"expected.bin"}),
+            scan_all_sealed_bytes_for_secrets=True,
+        )
+
+
+@pytest.mark.parametrize(
     ("mutation", "message"),
     [
-        ("tamper", "disagrees"),
-        ("missing", "regular non-symlink"),
+        ("tamper", "bounded package archive preflight"),
+        ("missing", "candidate-unreadable"),
         ("failed-receipt", "PACKAGING_PASS"),
         ("failed-sandbox", "did not pass"),
     ],

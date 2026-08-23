@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import io
 import zipfile
 from pathlib import Path
 
@@ -13,6 +14,26 @@ from arc3.integrity import (
     load_public_identifiers,
     scan_archive_files,
 )
+
+
+def _zip_bytes(
+    members: dict[str, bytes | str],
+    *,
+    modes: dict[str, int] | None = None,
+) -> bytes:
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as handle:
+        for name, content in members.items():
+            info = zipfile.ZipInfo(name, date_time=(1980, 1, 1, 0, 0, 0))
+            if modes is not None and name in modes:
+                info.create_system = 3
+                info.external_attr = modes[name] << 16
+            handle.writestr(info, content)
+    return buffer.getvalue()
+
+
+def _write_candidate(path: Path, payload: bytes) -> None:
+    path.write_bytes(_zip_bytes({"arc3-first-party.zip": payload}))
 
 
 @pytest.mark.competition
@@ -58,7 +79,7 @@ def test_archive_path_traversal_is_blocking(integrity_repo: tuple[Path, str, str
     findings = scan_archive_files(root=root, archives=(archive,), public_identifiers=())
     assert any(
         finding.category is FindingCategory.UNSAFE_ARCHIVE
-        and finding.rule_id == "archive-path-traversal"
+        and finding.rule_id == "archive-central-directory-unsafe"
         for finding in findings
     )
 
@@ -71,8 +92,10 @@ def test_explicit_external_archive_is_scanned_with_a_portable_label(
     root, _, _ = integrity_repo
     archive = tmp_path / "generated-output" / "candidate.zip"
     archive.parent.mkdir()
-    with zipfile.ZipFile(archive, "w") as handle:
-        handle.writestr("agent/my_agent.py", "class MyAgent:\n    pass\n")
+    _write_candidate(
+        archive,
+        _zip_bytes({"agent/my_agent.py": "class MyAgent:\n    pass\n"}),
+    )
 
     findings = scan_archive_files(root=root, archives=(archive,), public_identifiers=())
     assert findings == ()

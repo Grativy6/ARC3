@@ -132,6 +132,29 @@ def test_package_only_pytest_denies_isolated_python_child(tmp_path: Path) -> Non
     )
 
 
+@pytest.mark.skipif(not sys.platform.startswith("linux"), reason="POSIX clone audit events")
+@pytest.mark.parametrize("operation", ("fork", "forkpty"))
+def test_package_only_pytest_denies_transitive_posix_clone_events(
+    tmp_path: Path,
+    operation: str,
+) -> None:
+    fake_root = tmp_path / "repository"
+    completed, document = _run_guarded_test(
+        fake_root=fake_root,
+        tmp_path=tmp_path,
+        test_source=(
+            "from process_clone_probe import attempt_clone\n"
+            f"OPERATION = {operation!r}\n"
+            "def test_clone_event():\n"
+            "    attempt_clone(OPERATION)\n"
+        ),
+    )
+
+    assert completed.returncode == 3
+    assert document["status"] == "FAILED_BOUNDARY"
+    assert {"event": f"os.{operation}", "path": "child-process"} in document["attempts"]
+
+
 @pytest.mark.parametrize(
     ("statement", "event", "relative"),
     [
@@ -195,6 +218,81 @@ def test_package_only_pytest_default_denies_external_paths(tmp_path: Path) -> No
         external_root.rmdir()
 
     assert completed.returncode == 3
+    assert {"event": "open", "path": "protected-external-path"} in document["attempts"]
+
+
+@pytest.mark.skipif(not sys.platform.startswith("linux"), reason="Linux /proc boundary")
+def test_package_only_pytest_allows_only_exact_read_only_linux_rss_surface(
+    tmp_path: Path,
+) -> None:
+    fake_root = tmp_path / "repository"
+    completed, document = _run_guarded_test(
+        fake_root=fake_root,
+        tmp_path=tmp_path,
+        test_source=(
+            "from pathlib import Path\n"
+            "def test_kernel_rss():\n"
+            "    assert 'VmRSS' in Path('/proc/self/status').read_text(encoding='utf-8')\n"
+        ),
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    assert document["status"] == "PASS"
+    assert document["attempts"] == []
+    assert document["kernel_telemetry_paths"] == ["/proc/self/status"]
+    assert document["kernel_telemetry_read_count"] == 1
+
+
+@pytest.mark.skipif(not sys.platform.startswith("linux"), reason="Linux /proc boundary")
+@pytest.mark.parametrize(
+    "statement",
+    (
+        "Path('/proc/self/cmdline').read_text(encoding='utf-8')",
+        "Path(f'/proc/{os.getpid()}/status').read_text(encoding='utf-8')",
+        "Path('/proc/thread-self/status').read_text(encoding='utf-8')",
+        "Path('/proc/self/../self/status').read_text(encoding='utf-8')",
+        "Path('/proc/self/status').write_text('denied', encoding='utf-8')",
+    ),
+)
+def test_package_only_pytest_denies_linux_proc_siblings_aliases_and_writes(
+    tmp_path: Path,
+    statement: str,
+) -> None:
+    fake_root = tmp_path / "repository"
+    completed, document = _run_guarded_test(
+        fake_root=fake_root,
+        tmp_path=tmp_path,
+        test_source=(
+            "import os\n"
+            "from pathlib import Path\n"
+            "def test_denied_proc_surface():\n"
+            f"    {statement}\n"
+        ),
+    )
+
+    assert completed.returncode == 3
+    assert document["kernel_telemetry_read_count"] == 0
+    assert {"event": "open", "path": "protected-external-path"} in document["attempts"]
+
+
+@pytest.mark.skipif(not sys.platform.startswith("linux"), reason="Linux /proc boundary")
+def test_package_only_pytest_denies_symlink_alias_to_linux_rss_surface(tmp_path: Path) -> None:
+    fake_root = tmp_path / "repository"
+    fake_root.mkdir()
+    alias = fake_root / "rss-alias"
+    alias.symlink_to("/proc/self/status")
+    completed, document = _run_guarded_test(
+        fake_root=fake_root,
+        tmp_path=tmp_path,
+        test_source=(
+            "from pathlib import Path\n"
+            "def test_denied_rss_alias():\n"
+            f"    Path({str(alias)!r}).read_text(encoding='utf-8')\n"
+        ),
+    )
+
+    assert completed.returncode == 3
+    assert document["kernel_telemetry_read_count"] == 0
     assert {"event": "open", "path": "protected-external-path"} in document["attempts"]
 
 

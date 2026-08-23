@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 import subprocess
 import tempfile
 from datetime import UTC, datetime
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import cast
 
 from arc3.packaging.candidate import validate_candidate_archive
@@ -83,6 +84,7 @@ _SECRET_PATTERNS = (
     ),
 )
 _OWNER_USERNAME = re.compile(r"^[A-Za-z0-9_-]+$")
+_COMMIT = re.compile(r"^[0-9a-f]{40}$")
 
 
 def _role(path: str) -> str:
@@ -95,7 +97,79 @@ def _role(path: str) -> str:
     return "build-and-provenance-metadata"
 
 
-def _collect_payload(repository: Path) -> tuple[dict[str, bytes], tuple[FileRecord, ...]]:
+def _payload_path_selected(relative: str) -> bool:
+    if relative in {*_METADATA_FILES, "agent/my_agent.py"}:
+        return True
+    path = PurePosixPath(relative)
+    parts = path.parts
+    if (
+        len(parts) < 3
+        or parts[:2] != ("src", "arc3")
+        or path.suffix not in _SOURCE_SUFFIXES
+        or "__pycache__" in parts
+        or parts[2] not in _RUNTIME_TOP_LEVEL
+    ):
+        return False
+    return not (
+        len(parts) == 4 and parts[2] == "packaging" and parts[3] in _BUILD_ONLY_PACKAGING_MODULES
+    )
+
+
+def _git_bytes(repository: Path, *arguments: str) -> bytes:
+    environment = {
+        key: value for key, value in os.environ.items() if not key.upper().startswith("GIT_")
+    }
+    environment["GIT_NO_REPLACE_OBJECTS"] = "1"
+    completed = subprocess.run(
+        ["git", "--no-replace-objects", "-C", str(repository.resolve()), *arguments],
+        check=False,
+        capture_output=True,
+        env=environment,
+    )
+    if completed.returncode != 0:
+        stderr = completed.stderr.decode("utf-8", errors="replace").strip()
+        raise PackagingError(
+            f"git {' '.join(arguments)} failed with exit {completed.returncode}: {stderr}"
+        )
+    return completed.stdout
+
+
+def _git_payload_members(repository: Path, source_commit: str) -> dict[str, bytes]:
+    """Read the exact selected payload bytes from one Git tree, not the worktree."""
+
+    raw_tree = _git_bytes(repository, "ls-tree", "-r", "-z", source_commit)
+    selected: dict[str, tuple[str, str]] = {}
+    for raw_entry in raw_tree.split(b"\0"):
+        if not raw_entry:
+            continue
+        metadata, separator, raw_path = raw_entry.partition(b"\t")
+        fields = metadata.split()
+        if not separator or len(fields) != 3:
+            raise PackagingError("git returned a malformed tree entry")
+        try:
+            relative = raw_path.decode("utf-8", errors="strict")
+            mode, object_type, object_id = (field.decode("ascii") for field in fields)
+        except UnicodeDecodeError as error:
+            raise PackagingError("package source tree contains a non-portable path") from error
+        if not _payload_path_selected(relative):
+            continue
+        if object_type != "blob" or mode not in {"100644", "100755"}:
+            raise PackagingError(f"package source is not a regular Git blob: {relative}")
+        if relative in selected:
+            raise PackagingError(f"duplicate package source path in Git tree: {relative}")
+        selected[relative] = (object_id, mode)
+    missing_metadata = sorted({*_METADATA_FILES, "agent/my_agent.py"}.difference(selected))
+    if missing_metadata:
+        raise PackagingError(
+            "Git tree omits required package inputs: " + ", ".join(missing_metadata)
+        )
+    return {
+        relative: _git_bytes(repository, "cat-file", "blob", object_id)
+        for relative, (object_id, _mode) in sorted(selected.items())
+    }
+
+
+def _live_payload_members(repository: Path) -> dict[str, bytes]:
     source_root = repository / "src" / "arc3"
     agent_path = repository / "agent" / "my_agent.py"
     if not source_root.is_dir() or not agent_path.is_file():
@@ -119,13 +193,27 @@ def _collect_payload(repository: Path) -> tuple[dict[str, bytes], tuple[FileReco
         paths.append(path)
 
     members: dict[str, bytes] = {}
-    records: list[FileRecord] = []
     for path in sorted(paths, key=lambda candidate: candidate.relative_to(repository).as_posix()):
         if path.is_symlink():
             raise PackagingError(f"symbolic links are not permitted in the package: {path}")
         relative = path.relative_to(repository).as_posix()
-        content = path.read_bytes()
-        members[relative] = content
+        members[relative] = path.read_bytes()
+    return members
+
+
+def _collect_payload(
+    repository: Path,
+    *,
+    source_commit: str,
+    exact_commit: bool,
+) -> tuple[dict[str, bytes], tuple[FileRecord, ...], dict[str, JSONValue]]:
+    members = (
+        _git_payload_members(repository, source_commit)
+        if exact_commit
+        else _live_payload_members(repository)
+    )
+    records: list[FileRecord] = []
+    for relative, content in sorted(members.items()):
         records.append(
             FileRecord(
                 path=relative,
@@ -144,7 +232,42 @@ def _collect_payload(repository: Path) -> tuple[dict[str, bytes], tuple[FileReco
             "competition runtime payload is incomplete: "
             + ", ".join(sorted(missing_runtime_members))
         )
-    return members, tuple(records)
+    record_projection = [record.to_dict() for record in records]
+    record_document = cast(dict[str, JSONValue], {"files": record_projection})
+    source_identity: dict[str, JSONValue] = {
+        "exact_git_commit_bound": exact_commit,
+        "git_commit": source_commit,
+        "member_count": len(records),
+        "member_records_sha256": sha256_bytes(canonical_json_bytes(record_document)),
+        "mode": "git-blob-exact" if exact_commit else "live-worktree-preacceptance",
+    }
+    return members, tuple(records), source_identity
+
+
+def collect_git_payload(
+    repository: Path,
+    source_commit: str,
+) -> tuple[dict[str, bytes], tuple[FileRecord, ...], dict[str, JSONValue]]:
+    """Project the exact competition payload from one immutable Git commit."""
+
+    resolved = repository.resolve()
+    if _COMMIT.fullmatch(source_commit) is None:
+        raise PackagingError("payload source commit must be a full lowercase Git SHA")
+    if Path(_git_command(resolved, "rev-parse", "--show-toplevel")).resolve() != resolved:
+        raise PackagingError("payload source is not the exact Git top level")
+    literal_commit = _git_command(
+        resolved,
+        "rev-parse",
+        "--verify",
+        f"{source_commit}^{{commit}}",
+    )
+    if literal_commit != source_commit:
+        raise PackagingError("payload source commit did not resolve literally")
+    return _collect_payload(
+        resolved,
+        source_commit=source_commit,
+        exact_commit=True,
+    )
 
 
 def scan_payload_for_secrets(members: dict[str, bytes]) -> tuple[str, ...]:
@@ -168,11 +291,15 @@ def scan_payload_for_secrets(members: dict[str, bytes]) -> tuple[str, ...]:
 
 
 def _git_command(repository: Path, *arguments: str) -> str:
+    environment = {
+        key: value for key, value in os.environ.items() if not key.upper().startswith("GIT_")
+    }
+    environment["GIT_NO_REPLACE_OBJECTS"] = "1"
     completed = subprocess.run(
-        ["git", *arguments],
-        cwd=repository,
+        ["git", "--no-replace-objects", "-C", str(repository.resolve()), *arguments],
         check=False,
         capture_output=True,
+        env=environment,
         text=True,
     )
     if completed.returncode != 0:
@@ -183,8 +310,8 @@ def _git_command(repository: Path, *arguments: str) -> str:
     return completed.stdout.strip()
 
 
-def _source_timestamp(repository: Path) -> str:
-    raw = _git_command(repository, "show", "-s", "--format=%cI", "HEAD")
+def _source_timestamp(repository: Path, source_commit: str) -> str:
+    raw = _git_command(repository, "show", "-s", "--format=%cI", source_commit)
     try:
         parsed = datetime.fromisoformat(raw)
     except ValueError as error:
@@ -192,10 +319,10 @@ def _source_timestamp(repository: Path) -> str:
     return parsed.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
-def _upstream_summary(repository: Path) -> list[JSONValue]:
+def _upstream_summary(raw_bytes: bytes) -> list[JSONValue]:
     try:
-        raw = json.loads((repository / "upstream.lock.json").read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as error:
+        raw = json.loads(raw_bytes)
+    except (UnicodeDecodeError, json.JSONDecodeError) as error:
         raise PackagingError(f"cannot read upstream.lock.json: {error}") from error
     if not isinstance(raw, dict) or not isinstance(raw.get("repositories"), list):
         raise PackagingError("upstream.lock.json has no repository array")
@@ -245,6 +372,10 @@ def build_kaggle_candidate(
             f"output directory must be fresh and must not already exist: {output_directory}"
         )
 
+    top_level = Path(_git_command(repository, "rev-parse", "--show-toplevel")).resolve()
+    if top_level != repository:
+        raise PackagingError(f"repository is not the exact Git top level: {repository}")
+
     source_commit = _git_command(repository, "rev-parse", "HEAD")
     source_dirty = bool(_git_command(repository, "status", "--short", "--untracked-files=normal"))
     if source_dirty and not allow_dirty_preacceptance:
@@ -253,16 +384,35 @@ def build_kaggle_candidate(
             "or pass allow_dirty_preacceptance for an explicitly non-final rehearsal"
         )
     build_status = "PACKAGING_PREACCEPTANCE" if source_dirty else "PACKAGING_PASS"
-    source_timestamp = _source_timestamp(repository)
-    payload_members, payload_records = _collect_payload(repository)
+    source_timestamp = _source_timestamp(repository, source_commit)
+    payload_members, payload_records, payload_source_identity = _collect_payload(
+        repository,
+        source_commit=source_commit,
+        exact_commit=not source_dirty,
+    )
     secret_findings = scan_payload_for_secrets(payload_members)
     if secret_findings:
         raise PackagingError("package secret scan failed: " + "; ".join(secret_findings))
     payload_bytes = deterministic_zip_bytes(payload_members)
     payload_sha256 = sha256_bytes(payload_bytes)
-    runtime_requirements, wheel_manifest_document, runtime_wheels = (
-        build_linux_runtime_requirements(repository / "uv.lock")
-    )
+    lock_bytes = payload_members["uv.lock"]
+    schema_bytes = payload_members["src/arc3/packaging/submission-schema.v0.1.json"]
+    upstream_summary = _upstream_summary(payload_members["upstream.lock.json"])
+    with tempfile.TemporaryDirectory(prefix="arc3-source-inputs-") as source_inputs:
+        lock_snapshot = Path(source_inputs) / "uv.lock"
+        write_bytes_atomic(lock_snapshot, lock_bytes)
+        runtime_requirements, wheel_manifest_document, runtime_wheels = (
+            build_linux_runtime_requirements(lock_snapshot)
+        )
+        sbom_document = build_spdx_sbom(
+            lock_snapshot,
+            runtime_wheels=runtime_wheels,
+            payload_sha256=payload_sha256,
+            requirements_sha256=sha256_bytes(runtime_requirements),
+            wheel_manifest_sha256=sha256_bytes(canonical_json_bytes(wheel_manifest_document)),
+            source_commit=source_commit,
+            source_timestamp=source_timestamp,
+        )
     runtime_requirements_sha256 = sha256_bytes(runtime_requirements)
     wheel_manifest_bytes = canonical_json_bytes(wheel_manifest_document)
     wheel_manifest_sha256 = sha256_bytes(wheel_manifest_bytes)
@@ -307,25 +457,14 @@ def build_kaggle_candidate(
     validate_kernel_metadata(metadata_document)
     metadata_bytes = _write_json(metadata_path, metadata_document)
 
-    schema_source = repository / "src" / "arc3" / "packaging" / "submission-schema.v0.1.json"
-    schema_bytes = schema_source.read_bytes()
     try:
         schema_document = json.loads(schema_bytes)
-    except json.JSONDecodeError as error:
+    except (UnicodeDecodeError, json.JSONDecodeError) as error:
         raise PackagingError(f"submission schema is invalid JSON: {error}") from error
     if not isinstance(schema_document, dict):
         raise PackagingError("submission schema must be a JSON object")
     write_bytes_atomic(schema_path, schema_bytes)
 
-    sbom_document = build_spdx_sbom(
-        repository / "uv.lock",
-        runtime_wheels=runtime_wheels,
-        payload_sha256=payload_sha256,
-        requirements_sha256=runtime_requirements_sha256,
-        wheel_manifest_sha256=wheel_manifest_sha256,
-        source_commit=source_commit,
-        source_timestamp=source_timestamp,
-    )
     sbom_bytes = _write_json(sbom_path, sbom_document)
     artifact_records = (
         FileRecord(
@@ -413,6 +552,7 @@ def build_kaggle_candidate(
             "files": [record.to_dict() for record in payload_records],
             "sha256": payload_sha256,
             "size_bytes": len(payload_bytes),
+            "source_identity": payload_source_identity,
         },
         "schema": "arc3.kaggle-package-manifest.v0.1",
         "secret_scan": {
@@ -433,7 +573,7 @@ def build_kaggle_candidate(
                 "arcprize/ARC-AGI-3-Kaggle-Starter@eeb1535404f321d280a8f9194bbc1d7aca5f05fc"
             ),
         },
-        "upstreams": _upstream_summary(repository),
+        "upstreams": upstream_summary,
         "build_status": build_status,
         "runtime_lock": {
             "requirements": requirements_path.name,
@@ -513,4 +653,4 @@ def build_kaggle_candidate(
     )
 
 
-__all__ = ["build_kaggle_candidate", "scan_payload_for_secrets"]
+__all__ = ["build_kaggle_candidate", "collect_git_payload", "scan_payload_for_secrets"]

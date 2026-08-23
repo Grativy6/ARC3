@@ -15,7 +15,7 @@ from typing import Any, cast
 
 from arc3.integrity.hashes import canonical_json_bytes, sha256_bytes
 from arc3.integrity.models import DependencyRecord
-from arc3.licensing import first_party_license_identity
+from arc3.licensing import first_party_license_identity, first_party_license_identity_bytes
 from arc3.types import JSONValue
 
 _SIMPLE_PLATFORM_MARKER = re.compile(
@@ -145,13 +145,20 @@ def inventory_locked_dependencies(
     lock_path: Path,
     *,
     include_installed_metadata: bool = True,
+    lock_snapshot: bytes | None = None,
+    first_party_source_snapshots: Mapping[str, bytes] | None = None,
 ) -> tuple[DependencyRecord, ...]:
     """Read ``uv.lock`` and enrich entries from local wheel metadata only.
 
     This function never invokes a package index, installer, or network client.
     """
 
-    document = tomllib.loads(lock_path.read_text(encoding="utf-8"))
+    lock_text = (
+        lock_path.read_text(encoding="utf-8")
+        if lock_snapshot is None
+        else lock_snapshot.decode("utf-8")
+    )
+    document = tomllib.loads(lock_text)
     raw_packages = document.get("package")
     if not isinstance(raw_packages, list):
         raise ValueError("uv lock has no package array")
@@ -167,7 +174,18 @@ def inventory_locked_dependencies(
         if not isinstance(name, str) or not isinstance(version, str):
             raise ValueError("uv lock package entry must have string name and version")
         if name == "arc3":
-            license_status, license_evidence = first_party_license_identity(lock_path.parent)
+            if first_party_source_snapshots is None:
+                license_status, license_evidence = first_party_license_identity(lock_path.parent)
+            else:
+                try:
+                    license_status, license_evidence = first_party_license_identity_bytes(
+                        first_party_source_snapshots["LICENSE"],
+                        first_party_source_snapshots["pyproject.toml"],
+                    )
+                except KeyError as error:
+                    raise ValueError(
+                        "first-party license snapshot projection is incomplete"
+                    ) from error
             records.append(
                 DependencyRecord(
                     name=name,

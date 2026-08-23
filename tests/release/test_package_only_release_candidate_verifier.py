@@ -7,6 +7,11 @@ from pathlib import Path
 
 import pytest
 import scripts.release_candidate_verifier as verifier
+from scripts.package_only_pytest import (
+    BUILD001_BOUNDARY_EXCLUSIONS,
+    ORDINARY_CI_FULL_SUITE_COMMAND,
+    build001_test_selection,
+)
 from scripts.release_candidate_verifier import (
     BUILD001_PACKAGE_ONLY_PROFILE,
     CommandSpec,
@@ -42,21 +47,39 @@ def test_package_only_plan_has_no_public_inventory_or_gameplay(tmp_path: Path) -
         "package-integrity",
         "ruff-format",
         "ruff-lint",
-        "trace-replay-tamper",
     }
     assert by_id["dependency-sync"].argv[-1] == "--offline"
     assert by_id["dependency-lock"].argv[-1] == "--offline"
     assert "--package-only" in by_id["package-integrity"].argv
+    assert (
+        by_id["package-integrity"].argv[
+            by_id["package-integrity"].argv.index("--expected-commit") + 1
+        ]
+        == "{CANDIDATE_COMMIT}"
+    )
     assert "scripts.package_only_pytest" in by_id["package-safe-test-suite"].argv
     assert "--select-in-process-tests" in by_id["package-safe-test-suite"].argv
+    assert "--build001-boundary-policy" in by_id["package-safe-test-suite"].argv
+    assert (
+        by_id["package-safe-test-suite"].argv[
+            by_id["package-safe-test-suite"].argv.index("--expected-commit") + 1
+        ]
+        == "{CANDIDATE_COMMIT}"
+    )
     assert "package-only-test-guard.json" in " ".join(by_id["package-safe-test-suite"].argv)
-    safe_test_argv = set(by_id["package-safe-test-suite"].argv)
-    assert {
-        "tests/integration/test_evaluation_cli.py",
-        "tests/integration/test_kaggle_package_determinism.py",
-        "tests/integration/test_retrodiction_decision_integration.py",
-        "tests/integration/test_stage16_runtime_profile.py",
-    } <= safe_test_argv
+    assert "--ignore" not in by_id["package-safe-test-suite"].argv
+    selection = build001_test_selection(repository)
+    assert "tests/property/test_trace_properties.py" in selection.selected_test_files
+    assert all(
+        relative in selection.selected_test_files
+        for relative in (
+            "tests/replay/test_controller_checkpoint.py",
+            "tests/replay/test_legacy_checkpoint_migration.py",
+            "tests/replay/test_memory_source_replay.py",
+            "tests/replay/test_retrodiction_checkpoint.py",
+            "tests/replay/test_trace_replay.py",
+        )
+    )
     assert all(
         by_id[check_id].measure_peak_rss
         for check_id in (
@@ -77,6 +100,29 @@ def test_package_only_plan_has_no_public_inventory_or_gameplay(tmp_path: Path) -
         assert forbidden not in rendered
 
 
+def test_package_only_test_selection_is_exact_and_full_ci_retains_excluded_coverage() -> None:
+    repository = Path(__file__).resolve().parents[2]
+    selection = build001_test_selection(repository)
+    reasons = dict(BUILD001_BOUNDARY_EXCLUSIONS)
+    workflow = (repository / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+
+    assert selection.selected_test_files
+    assert "tests/integrity/test_nested_archive_scan.py" in selection.selected_test_files
+    assert tuple(sorted(reasons)) == tuple(path for path, _ in selection.boundary_exclusion_reasons)
+    assert all(reason.strip() for reason in reasons.values())
+    assert {
+        "tests/integrity/test_dependencies.py",
+        "tests/integrity/test_first_party_license.py",
+        "tests/integrity/test_receipt.py",
+        "tests/integrity/test_secret_scan.py",
+        "tests/unit/test_diagnose_hot_path.py",
+        "tests/unit/test_measure_hot_path.py",
+    } <= set(reasons)
+    assert f"run: {ORDINARY_CI_FULL_SUITE_COMMAND}" in workflow
+    assert "scripts.package_only_pytest" not in workflow
+    assert "--ignore" not in workflow
+
+
 @pytest.mark.parametrize(
     "argv",
     [
@@ -91,6 +137,22 @@ def test_package_only_plan_guard_rejects_public_semantic_reachability(
     dangerous = CommandSpec("dangerous", "fixture", argv, 30.0)
     with pytest.raises(ValueError, match="package-only"):
         _validate_package_only_plan((dangerous,))
+
+
+@pytest.mark.parametrize(
+    "argv",
+    [
+        (sys.executable, "-m", "pytest", "-q", "tests/replay"),
+        ("pytest", "-q", "tests/replay"),
+        ("pytest.exe", "-q", "tests/replay"),
+    ],
+)
+def test_package_only_plan_rejects_every_direct_pytest_command(
+    argv: tuple[str, ...],
+) -> None:
+    direct = CommandSpec("unguarded-tests", "tests", argv, 30.0)
+    with pytest.raises(ValueError, match="direct pytest"):
+        _validate_package_only_plan((direct,))
 
 
 def test_package_only_plan_rejects_substring_only_integrity_impostor(tmp_path: Path) -> None:
@@ -207,17 +269,14 @@ def test_package_workflow_uploads_available_failure_evidence() -> None:
     assert "if-no-files-found: error" in workflow
 
 
-def test_package_runtime_format_metrics_bind_archive_and_wheel_inventory(
-    tmp_path: Path,
-) -> None:
-    (tmp_path / "arc3-kaggle-candidate.zip").write_bytes(b"candidate")
-    (tmp_path / "arc3-first-party.zip").write_bytes(b"payload")
-    (tmp_path / "runtime-wheels-linux-cp312.json").write_text(
-        '{"packages":[{"name":"alpha"},{"name":"beta"}]}',
-        encoding="utf-8",
+def test_package_runtime_format_metrics_bind_archive_and_wheel_inventory() -> None:
+    metrics = _package_runtime_format_metrics(
+        candidate_snapshot=b"candidate",
+        payload_snapshot=b"payload",
+        candidate_members={
+            "runtime-wheels-linux-cp312.json": (b'{"packages":[{"name":"alpha"},{"name":"beta"}]}')
+        },
     )
-
-    metrics = _package_runtime_format_metrics(tmp_path)
 
     assert metrics["archive_size_bytes"] == len(b"candidate")
     assert metrics["payload_size_bytes"] == len(b"payload")

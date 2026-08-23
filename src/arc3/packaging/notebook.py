@@ -3,6 +3,10 @@
 from __future__ import annotations
 
 import base64
+import binascii
+import hashlib
+import re
+from dataclasses import dataclass
 
 from arc3.packaging.models import PackagingError
 from arc3.types import JSONValue
@@ -10,6 +14,24 @@ from arc3.types import JSONValue
 COMPETITION_SLUG = "arc-prize-2026-arc-agi-3"
 DEFAULT_INPUT_ROOT = f"/kaggle/input/competitions/{COMPETITION_SLUG}"
 REHEARSAL_AUTHORITY = "arc3.stage17.notebook-rehearsal.v0.1"
+_EMBEDDED_REQUIREMENTS = re.compile(
+    r'embedded_requirements = base64\.b64decode\("([A-Za-z0-9+/=]*)"\)'
+)
+_EMBEDDED_PAYLOAD = re.compile(r'payload_bytes = base64\.b64decode\("([A-Za-z0-9+/=]*)"\)')
+_EMBEDDED_VALIDATION = re.compile(
+    r'output_path\.write_bytes\(base64\.b64decode\("([A-Za-z0-9+/=]*)"\)\)'
+)
+_EMBEDDED_COMMIT = re.compile(r'os\.environ\["ARC3_GIT_COMMIT"\] = "([0-9a-f]{40})"')
+
+
+@dataclass(frozen=True, slots=True)
+class NotebookEmbeddedInputs:
+    """Immutable inputs recovered from an exact generated notebook contract."""
+
+    payload: bytes
+    requirements: bytes
+    source_commit: str
+    validation_parquet: bytes
 
 
 def _code_cell(source: str, tag: str) -> dict[str, JSONValue]:
@@ -281,7 +303,19 @@ if not os.environ.get("KAGGLE_IS_COMPETITION_RERUN"):
     }
 
 
-def validate_notebook(document: dict[str, JSONValue]) -> None:
+def _embedded_bytes(pattern: re.Pattern[str], source: str, *, label: str) -> bytes:
+    matches = pattern.findall(source)
+    if len(matches) != 1:
+        raise PackagingError(f"notebook has no unique generated {label} embedding")
+    try:
+        return base64.b64decode(matches[0], validate=True)
+    except (ValueError, binascii.Error) as error:
+        raise PackagingError(f"notebook generated {label} embedding is invalid") from error
+
+
+def _validated_notebook_embedded_inputs(
+    document: dict[str, JSONValue],
+) -> NotebookEmbeddedInputs:
     """Fail closed if generated metadata could enable internet or accelerators."""
 
     metadata = document.get("metadata")
@@ -310,6 +344,32 @@ def validate_notebook(document: dict[str, JSONValue]) -> None:
             raise PackagingError("generated code cells must be clean and unexecuted")
         compile(source, "<arc3-generated-notebook-cell>", "exec")
         code_sources.append(source)
+    if len(code_sources) != 4:
+        raise PackagingError("notebook must contain exactly four generated code cells")
+    requirements = _embedded_bytes(
+        _EMBEDDED_REQUIREMENTS,
+        code_sources[0],
+        label="requirements",
+    )
+    payload = _embedded_bytes(_EMBEDDED_PAYLOAD, code_sources[1], label="payload")
+    validation_parquet = _embedded_bytes(
+        _EMBEDDED_VALIDATION,
+        code_sources[3],
+        label="validation output",
+    )
+    commit_matches = _EMBEDDED_COMMIT.findall(code_sources[1])
+    if len(commit_matches) != 1:
+        raise PackagingError("notebook has no unique generated source commit")
+    expected = build_notebook(
+        payload=payload,
+        payload_sha256="sha256:" + hashlib.sha256(payload).hexdigest(),
+        runtime_requirements=requirements,
+        requirements_sha256="sha256:" + hashlib.sha256(requirements).hexdigest(),
+        validation_parquet=validation_parquet,
+        source_commit=commit_matches[0],
+    )
+    if document != expected:
+        raise PackagingError("notebook differs from the strict generated cell/source contract")
     joined = "\n".join(code_sources).lower()
     if "--no-index" not in joined:
         raise PackagingError("notebook dependency installation must be offline-only")
@@ -335,6 +395,24 @@ def validate_notebook(document: dict[str, JSONValue]) -> None:
     ):
         if submission_call in joined:
             raise PackagingError(f"human-gated Kaggle write found in notebook: {submission_call}")
+    return NotebookEmbeddedInputs(
+        payload=payload,
+        requirements=requirements,
+        source_commit=commit_matches[0],
+        validation_parquet=validation_parquet,
+    )
+
+
+def validate_notebook(document: dict[str, JSONValue]) -> None:
+    """Fail closed unless the notebook is the exact generated executable contract."""
+
+    _validated_notebook_embedded_inputs(document)
+
+
+def notebook_embedded_inputs(document: dict[str, JSONValue]) -> NotebookEmbeddedInputs:
+    """Validate and project the exact executable bytes embedded in a notebook."""
+
+    return _validated_notebook_embedded_inputs(document)
 
 
 def validate_kernel_metadata(document: dict[str, JSONValue]) -> None:
@@ -370,9 +448,11 @@ __all__ = [
     "COMPETITION_SLUG",
     "DEFAULT_INPUT_ROOT",
     "REHEARSAL_AUTHORITY",
+    "NotebookEmbeddedInputs",
     "build_kernel_metadata",
     "build_notebook",
     "code_sources",
+    "notebook_embedded_inputs",
     "validate_kernel_metadata",
     "validate_notebook",
 ]

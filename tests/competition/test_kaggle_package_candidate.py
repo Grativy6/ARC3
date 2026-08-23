@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import io
 import json
 import os
 import subprocess
@@ -15,6 +16,7 @@ from urllib.parse import urlparse
 import pytest
 from packaging.tags import compatible_tags, cpython_tags
 from packaging.utils import parse_wheel_filename
+from scripts.package_only_pytest import BUILD001_BOUNDARY_EXCLUSIONS, build001_test_selection
 
 from arc3.packaging import builder as packaging_builder
 from arc3.packaging import runtime_launcher as launcher_module
@@ -24,7 +26,7 @@ from arc3.packaging import submission as submission_module
 from arc3.packaging.builder import build_kaggle_candidate, scan_payload_for_secrets
 from arc3.packaging.candidate import validate_candidate_archive
 from arc3.packaging.models import PYTHON_NETWORK_ENFORCEMENT, PackagingError
-from arc3.packaging.notebook import validate_kernel_metadata, validate_notebook
+from arc3.packaging.notebook import build_notebook, validate_kernel_metadata, validate_notebook
 from arc3.packaging.requirements import (
     TARGET_ABI,
     TARGET_IMPLEMENTATION,
@@ -41,6 +43,55 @@ from arc3.packaging.submission import SUBMISSION_COLUMNS, validate_submission_pa
 from arc3.packaging.util import deterministic_zip_bytes, sha256_bytes
 
 REPOSITORY = Path(__file__).resolve().parents[2]
+
+
+def _git_fixture(repository: Path, *arguments: str) -> str:
+    completed = subprocess.run(
+        ("git", *arguments),
+        cwd=repository,
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert completed.returncode == 0, completed.stderr
+    return completed.stdout.strip()
+
+
+@pytest.mark.competition
+@pytest.mark.parametrize("mutation", ("extra-cell", "hosted-import", "hosted-runtime-call"))
+def test_generated_notebook_rejects_any_added_executable_policy(mutation: str) -> None:
+    notebook = build_notebook(
+        payload=b"payload",
+        payload_sha256=sha256_bytes(b"payload"),
+        runtime_requirements=b"requirements",
+        requirements_sha256=sha256_bytes(b"requirements"),
+        validation_parquet=b"parquet",
+        source_commit="a" * 40,
+    )
+    cells = notebook["cells"]
+    assert isinstance(cells, list)
+    if mutation == "extra-cell":
+        cells.append(
+            {
+                "cell_type": "code",
+                "execution_count": None,
+                "metadata": {"tags": ["unexpected"]},
+                "outputs": [],
+                "source": "VALUE = 1\n",
+            }
+        )
+    else:
+        launch_cell = cells[3]
+        assert isinstance(launch_cell, dict)
+        source = launch_cell["source"]
+        assert isinstance(source, str)
+        launch_cell["source"] = source + (
+            "\nimport openai\n" if mutation == "hosted-import" else "\nopenai.Client()\n"
+        )
+
+    with pytest.raises(PackagingError, match=r"strict generated|exactly four"):
+        validate_notebook(notebook)
 
 
 @pytest.mark.competition
@@ -261,6 +312,232 @@ def test_stage17_payload_excludes_build_tools_from_runtime_reachability(tmp_path
     assert b"generativelanguage.googleapis.com" not in runtime_sources
     assert b"import subprocess" not in runtime_sources
     assert b"subprocess.run" not in runtime_sources
+
+
+@pytest.mark.competition
+def test_payload_is_projected_from_exact_git_blobs_not_hidden_worktree_bytes(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repository = tmp_path / "repository"
+    selected_files = {
+        "LICENSE": "license\n",
+        "THIRD_PARTY_NOTICES.md": "notices\n",
+        "agent/my_agent.py": "class MyAgent:\n    pass\n",
+        "pyproject.toml": "[project]\nname='fixture'\n",
+        "src/arc3/competition-runtime.v0.1.json": "{}\n",
+        "src/arc3/competition_runtime.py": "RUNTIME = 'tracked'\n",
+        "src/arc3/policy/controller.py": "VALUE = 'tracked'\n",
+        "upstream.lock.json": "{}\n",
+        "uv.lock": "version = 1\n",
+    }
+    for relative, content in selected_files.items():
+        path = repository / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(content, encoding="utf-8")
+    _git_fixture(repository, "init", "-q")
+    _git_fixture(repository, "add", ".")
+    _git_fixture(
+        repository,
+        "-c",
+        "user.name=ARC3 Test",
+        "-c",
+        "user.email=arc3@example.invalid",
+        "commit",
+        "-q",
+        "-m",
+        "fixture",
+    )
+    commit = _git_fixture(repository, "rev-parse", "HEAD")
+
+    hidden_extra = repository / "src" / "arc3" / "policy" / "ignored.py"
+    hidden_extra.write_text("HOSTED = 'ignored-extra'\n", encoding="utf-8")
+    (repository / ".git" / "info" / "exclude").write_text(
+        "src/arc3/policy/ignored.py\n",
+        encoding="utf-8",
+    )
+    hidden_modified = repository / "src" / "arc3" / "policy" / "controller.py"
+    hidden_modified.write_text("VALUE = 'hidden-modification'\n", encoding="utf-8")
+    _git_fixture(
+        repository,
+        "update-index",
+        "--assume-unchanged",
+        hidden_modified.relative_to(repository).as_posix(),
+    )
+    assert _git_fixture(repository, "status", "--short", "--untracked-files=normal") == ""
+
+    decoy = tmp_path / "decoy"
+    decoy.mkdir()
+    _git_fixture(decoy, "init", "-q")
+    monkeypatch.setenv("GIT_DIR", str(decoy / ".git"))
+    monkeypatch.setenv("GIT_WORK_TREE", str(decoy))
+
+    members, records, source_identity = packaging_builder.collect_git_payload(
+        repository,
+        commit,
+    )
+    monkeypatch.delenv("GIT_DIR")
+    monkeypatch.delenv("GIT_WORK_TREE")
+    payload = deterministic_zip_bytes(members)
+
+    assert "src/arc3/policy/ignored.py" not in members
+    assert members["src/arc3/policy/controller.py"] == b"VALUE = 'tracked'\n"
+    assert source_identity == {
+        "exact_git_commit_bound": True,
+        "git_commit": commit,
+        "member_count": len(records),
+        "member_records_sha256": sha256_bytes(
+            packaging_builder.canonical_json_bytes(
+                {"files": [record.to_dict() for record in records]}
+            )
+        ),
+        "mode": "git-blob-exact",
+    }
+    with zipfile.ZipFile(io.BytesIO(payload)) as archive:
+        assert set(archive.namelist()) == set(members)
+        assert archive.read("src/arc3/policy/controller.py") == b"VALUE = 'tracked'\n"
+
+    _git_fixture(
+        repository,
+        "update-index",
+        "--no-assume-unchanged",
+        hidden_modified.relative_to(repository).as_posix(),
+    )
+    _git_fixture(repository, "add", hidden_modified.relative_to(repository).as_posix())
+    _git_fixture(
+        repository,
+        "-c",
+        "user.name=ARC3 Test",
+        "-c",
+        "user.email=arc3@example.invalid",
+        "commit",
+        "-q",
+        "-m",
+        "replacement fixture",
+    )
+    replacement_commit = _git_fixture(repository, "rev-parse", "HEAD")
+    _git_fixture(repository, "replace", commit, replacement_commit)
+
+    replaced_members, _, _ = packaging_builder.collect_git_payload(repository, commit)
+
+    assert replaced_members["src/arc3/policy/controller.py"] == b"VALUE = 'tracked'\n"
+
+
+@pytest.mark.competition
+def test_final_candidate_nonpayload_inputs_derive_from_the_same_exact_git_commit(
+    tmp_path: Path,
+) -> None:
+    repository = tmp_path / "source"
+    subprocess.run(
+        ("git", "clone", "--quiet", "--no-hardlinks", str(REPOSITORY), str(repository)),
+        check=True,
+        capture_output=True,
+        timeout=60,
+    )
+    commit = _git_fixture(repository, "rev-parse", "HEAD")
+    targets = {
+        "uv.lock": b"not valid TOML",
+        "upstream.lock.json": b"not valid JSON",
+        "src/arc3/packaging/submission-schema.v0.1.json": b"not valid JSON",
+    }
+    for relative, replacement in targets.items():
+        (repository / relative).write_bytes(replacement)
+        _git_fixture(repository, "update-index", "--assume-unchanged", relative)
+    assert _git_fixture(repository, "status", "--short", "--untracked-files=normal") == ""
+
+    result = build_kaggle_candidate(repository, tmp_path / "package")
+
+    assert result.status == "PACKAGING_PASS"
+    with zipfile.ZipFile(result.candidate_archive) as candidate:
+        schema_bytes = candidate.read("submission-schema.v0.1.json")
+        wheel_manifest = json.loads(candidate.read("runtime-wheels-linux-cp312.json"))
+        manifest = json.loads(candidate.read("package-manifest.json"))
+    committed_schema = subprocess.run(
+        (
+            "git",
+            "--no-replace-objects",
+            "-C",
+            str(repository),
+            "show",
+            f"{commit}:src/arc3/packaging/submission-schema.v0.1.json",
+        ),
+        check=True,
+        capture_output=True,
+        timeout=30,
+    ).stdout
+    committed_lock = subprocess.run(
+        ("git", "--no-replace-objects", "-C", str(repository), "show", f"{commit}:uv.lock"),
+        check=True,
+        capture_output=True,
+        timeout=30,
+    ).stdout
+
+    assert schema_bytes == committed_schema
+    assert wheel_manifest["uv_lock_sha256"] == sha256_bytes(committed_lock)
+    assert manifest["source"]["git_commit"] == commit
+    assert manifest["source"]["git_commit_timestamp"] == packaging_builder._source_timestamp(
+        repository,
+        commit,
+    )
+
+
+@pytest.mark.competition
+@pytest.mark.parametrize(
+    ("attack", "message"),
+    (
+        ("assume-unchanged", "non-H Git index entry"),
+        ("divergent-cached-index", "Git index projection differs"),
+    ),
+)
+def test_guarded_test_projection_rejects_hidden_or_divergent_index_bytes(
+    tmp_path: Path,
+    attack: str,
+    message: str,
+) -> None:
+    repository = tmp_path / "repository"
+    fixture_files = {
+        ".github/workflows/ci.yml": "jobs: {}\n",
+        "pyproject.toml": "[project]\nname='fixture'\n",
+        "scripts/__init__.py": "",
+        "scripts/_package_only_bootstrap/sitecustomize.py": "",
+        "scripts/package_only_path_guard.py": "VALUE = 1\n",
+        "scripts/package_only_pytest.py": "VALUE = 1\n",
+        "tests/test_selected.py": "def test_selected():\n    assert True\n",
+        "uv.lock": "version = 1\n",
+        **{
+            relative: "def test_excluded():\n    assert True\n"
+            for relative, _ in BUILD001_BOUNDARY_EXCLUSIONS
+        },
+    }
+    for relative, content in fixture_files.items():
+        path = repository / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(content, encoding="utf-8")
+    _git_fixture(repository, "init", "-q")
+    _git_fixture(repository, "add", ".")
+    _git_fixture(
+        repository,
+        "-c",
+        "user.name=ARC3 Test",
+        "-c",
+        "user.email=arc3@example.invalid",
+        "commit",
+        "-q",
+        "-m",
+        "fixture",
+    )
+    commit = _git_fixture(repository, "rev-parse", "HEAD")
+    selected = repository / "tests" / "test_selected.py"
+    selected.write_text("def test_selected():\n    assert False\n", encoding="utf-8")
+    if attack == "assume-unchanged":
+        _git_fixture(repository, "update-index", "--assume-unchanged", "tests/test_selected.py")
+        assert _git_fixture(repository, "status", "--short", "--untracked-files=normal") == ""
+    else:
+        _git_fixture(repository, "add", "tests/test_selected.py")
+        selected.write_text("def test_selected():\n    assert True\n", encoding="utf-8")
+
+    with pytest.raises(ValueError, match=message):
+        build001_test_selection(repository, expected_commit=commit)
 
 
 @pytest.mark.competition

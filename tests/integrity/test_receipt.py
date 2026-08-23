@@ -108,6 +108,52 @@ def test_package_only_receipt_cannot_load_or_hash_public_manifest(
 
 
 @pytest.mark.competition
+def test_package_only_exact_snapshot_rejects_substitution_and_mid_run_mutation(
+    integrity_repo: tuple[Path, str, str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root, _, _ = integrity_repo
+    relatives = (
+        "LICENSE",
+        "THIRD_PARTY_NOTICES.md",
+        "agent/my_agent.py",
+        "pyproject.toml",
+        "upstream.lock.json",
+        "uv.lock",
+    )
+    candidates = tuple(root / relative for relative in relatives)
+    snapshots = {relative: (root / relative).read_bytes() for relative in relatives}
+    substituted = dict(snapshots)
+    substituted["agent/my_agent.py"] = b"VALUE = 'substituted'\n"
+
+    with pytest.raises(ValueError, match="differs from immutable snapshot"):
+        build_integrity_receipt(
+            root,
+            candidate_files=candidates,
+            candidate_snapshots=substituted,
+            include_installed_metadata=False,
+            semantic_public_manifest_access=False,
+        )
+
+    original_scan = scanner.scan_policy_files
+
+    def mutate_after_policy_scan(*args: object, **kwargs: object) -> object:
+        findings = original_scan(*args, **kwargs)  # type: ignore[arg-type]
+        (root / "agent/my_agent.py").write_bytes(b"VALUE = 'mutated'\n")
+        return findings
+
+    monkeypatch.setattr(scanner, "scan_policy_files", mutate_after_policy_scan)
+    with pytest.raises(ValueError, match="differs from immutable snapshot"):
+        build_integrity_receipt(
+            root,
+            candidate_files=candidates,
+            candidate_snapshots=snapshots,
+            include_installed_metadata=False,
+            semantic_public_manifest_access=False,
+        )
+
+
+@pytest.mark.competition
 def test_package_only_static_coverage_hashes_reachable_module_outside_policy_root(
     integrity_repo: tuple[Path, str, str],
 ) -> None:
@@ -186,6 +232,7 @@ def test_release_validator_recomputes_reachable_policy_hashes(
     passed, details = verifier._validate_package_only_integrity(
         path,
         expected_commit="0" * 40,
+        expected_archive_sha256=f"sha256:{'0' * 64}",
         repository=root,
     )
 
@@ -224,6 +271,41 @@ def test_package_only_static_coverage_requires_reachable_policy_scan_coverage(
     assert coverage["policy_scan_covers_reachable_paths"] is False
     assert coverage["status"] == "FAIL"
     assert receipt.body["package_only_passed"] is False
+
+
+@pytest.mark.competition
+def test_release_validator_binds_scanned_external_archive_to_package_projection(
+    integrity_repo: tuple[Path, str, str], tmp_path: Path
+) -> None:
+    root, _, _ = integrity_repo
+    archive = tmp_path / "arc3-kaggle-candidate.zip"
+    archive.write_bytes(b"synthetic-candidate")
+    receipt = build_integrity_receipt(
+        root,
+        candidate_files=(root / "agent" / "my_agent.py",),
+        archive_paths=(archive,),
+        include_installed_metadata=False,
+        semantic_public_manifest_access=False,
+    )
+    path = tmp_path / "integrity.json"
+    path.write_bytes(receipt.canonical_bytes())
+    digest = f"sha256:{hashlib.sha256(archive.read_bytes()).hexdigest()}"
+
+    _, matching = verifier._validate_package_only_integrity(
+        path,
+        expected_commit="0" * 40,
+        expected_archive_sha256=digest,
+        repository=root,
+    )
+    _, mismatching = verifier._validate_package_only_integrity(
+        path,
+        expected_commit="0" * 40,
+        expected_archive_sha256=f"sha256:{'0' * 64}",
+        repository=root,
+    )
+
+    assert matching["archive_identity_passed"] is True
+    assert mismatching["archive_identity_passed"] is False
 
 
 @pytest.mark.competition

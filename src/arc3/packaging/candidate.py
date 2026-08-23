@@ -2,18 +2,23 @@
 
 from __future__ import annotations
 
+import io
 import json
 import re
 import stat
 import tomllib
 import zipfile
+from collections.abc import Mapping
 from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import cast
 from urllib.parse import unquote, urlparse
 
 from arc3.licensing import MIT0_LICENSE_SHA256
 from arc3.packaging.models import PYTHON_NETWORK_ENFORCEMENT, PackagingError
-from arc3.packaging.notebook import validate_kernel_metadata, validate_notebook
+from arc3.packaging.notebook import (
+    notebook_embedded_inputs,
+    validate_kernel_metadata,
+)
 from arc3.packaging.requirements import (
     TARGET_ABI,
     TARGET_IMPLEMENTATION,
@@ -273,171 +278,192 @@ def _validate_runtime_sbom(
             raise PackagingError(f"SBOM build-only identity is absent or unpinned: {name}")
 
 
-def validate_candidate_archive(path: Path) -> dict[str, JSONValue]:
-    """Reopen a candidate and verify all top-level and payload identities."""
+def _decode_candidate_members(candidate: zipfile.ZipFile) -> dict[str, bytes]:
+    names = _safe_unique_names(candidate, label="candidate archive")
+    if names != EXPECTED_CANDIDATE_MEMBERS:
+        raise PackagingError(
+            "candidate archive members differ from the fixed review-artifact contract"
+        )
+    return {name: candidate.read(name) for name in names}
 
-    if not path.is_file():
-        raise PackagingError(f"candidate archive does not exist: {path}")
+
+def _validate_candidate_members(
+    members: Mapping[str, bytes], *, candidate_sha256: str
+) -> dict[str, JSONValue]:
+    names = tuple(members)
+    if names != EXPECTED_CANDIDATE_MEMBERS:
+        raise PackagingError("candidate member snapshots differ from the fixed release contract")
+    manifest = _json_object(members["package-manifest.json"], name="manifest")
+    artifacts = _record_map(manifest.get("artifacts"), name="artifact")
+    expected_artifacts = set(EXPECTED_CANDIDATE_MEMBERS) - {"package-manifest.json"}
+    if artifacts.keys() != expected_artifacts:
+        raise PackagingError("manifest artifact paths do not match candidate members")
+    for name, record in artifacts.items():
+        content = members[name]
+        if record["sha256"] != sha256_bytes(content):
+            raise PackagingError(f"candidate member hash mismatch: {name}")
+        if record["size_bytes"] != len(content):
+            raise PackagingError(f"candidate member size mismatch: {name}")
+
+    source = manifest.get("source")
+    build_status = manifest.get("build_status")
+    if not isinstance(source, dict) or not isinstance(source.get("git_dirty"), bool):
+        raise PackagingError("candidate manifest has no source cleanliness receipt")
+    expected_status = "PACKAGING_PREACCEPTANCE" if source["git_dirty"] else "PACKAGING_PASS"
+    if build_status != expected_status:
+        raise PackagingError("candidate build status does not match source cleanliness")
+
+    runtime_lock = manifest.get("runtime_lock")
+    if not isinstance(runtime_lock, dict):
+        raise PackagingError("candidate manifest has no exact runtime lock")
+    requirements_bytes = members["runtime-requirements-linux-cp312.txt"]
+    wheel_manifest_bytes = members["runtime-wheels-linux-cp312.json"]
+    if runtime_lock.get("requirements_sha256") != sha256_bytes(requirements_bytes):
+        raise PackagingError("runtime requirements hash does not match the manifest")
+    if runtime_lock.get("wheel_manifest_sha256") != sha256_bytes(wheel_manifest_bytes):
+        raise PackagingError("runtime wheel manifest hash does not match the manifest")
+    if runtime_lock.get("target") != TARGET_PLATFORM:
+        raise PackagingError("package manifest has an unexpected runtime target")
+    wheels = _runtime_wheel_identities(requirements_bytes, wheel_manifest_bytes)
+
+    offline_rehearsal = manifest.get("offline_rehearsal")
+    if not isinstance(offline_rehearsal, dict):
+        raise PackagingError("candidate manifest has no offline rehearsal receipt")
+    sandbox = offline_rehearsal.get("receipt")
+    if not isinstance(sandbox, dict) or sandbox.get("status") != "PASS":
+        raise PackagingError("candidate sandbox receipt is absent or did not pass")
+    if sandbox.get("notebook_sha256") != sha256_bytes(members["arc3-submission.ipynb"]):
+        raise PackagingError("sandbox receipt does not identify the candidate notebook")
+    if sandbox.get("payload_sha256") != sha256_bytes(members["arc3-first-party.zip"]):
+        raise PackagingError("sandbox receipt does not identify the candidate payload")
+    if sandbox.get("requirements_sha256") != sha256_bytes(requirements_bytes):
+        raise PackagingError("sandbox receipt does not identify production requirements")
+    if sandbox.get("secret_scan_status") != "PASS":
+        raise PackagingError("sandbox extracted-payload secret rescan did not pass")
+    if (
+        sandbox.get("production_rerun_exercised") is not True
+        or sandbox.get("agent_action_cycle_status") != "PASS"
+        or sandbox.get("agent_consequence_state") != "NOT_FINISHED"
+        or not isinstance(sandbox.get("agent_cycle_actions"), list)
+        or cast(list[object], sandbox["agent_cycle_actions"])[0:1] != ["RESET"]
+        or sandbox.get("dependency_install_status") != "PASS"
+        or sandbox.get("network_attempts") != 0
+        or sandbox.get("network_enforcement") != PYTHON_NETWORK_ENFORCEMENT
+        or sandbox.get("credentials_present") != []
+        or sandbox.get("framework_commit") != AGENTS_COMMIT
+        or sandbox.get("framework_identity") != SAFE_FRAMEWORK_FIXTURE_IDENTITY
+        or sandbox.get("framework_fixture") is not True
+        or not isinstance(sandbox.get("gateway_connections"), int)
+        or cast(int, sandbox["gateway_connections"]) < 2
+    ):
+        raise PackagingError("sandbox receipt did not exercise the hardened rerun path")
+    limitations = sandbox.get("limitations")
+    if (
+        not isinstance(limitations, list)
+        or len(limitations) < 4
+        or not any(
+            isinstance(item, str) and "OS-level network containment is absent" in item
+            for item in limitations
+        )
+    ):
+        raise PackagingError("sandbox receipt does not preserve its external limitations")
+    secret_scan = manifest.get("secret_scan")
+    if (
+        not isinstance(secret_scan, dict)
+        or secret_scan.get("status") != "PASS"
+        or secret_scan.get("findings") != []
+        or secret_scan.get("scopes")
+        != ["payload-before-archive", "candidate-members-before-archive"]
+    ):
+        raise PackagingError("candidate manifest has no complete secret-rescan receipt")
+
+    notebook = _json_object(members["arc3-submission.ipynb"], name="notebook")
+    metadata = _json_object(members["kernel-metadata.json"], name="metadata")
+    embedded = notebook_embedded_inputs(notebook)
+    if embedded.payload != members["arc3-first-party.zip"]:
+        raise PackagingError("notebook embedded payload differs from the candidate payload")
+    if embedded.requirements != requirements_bytes:
+        raise PackagingError("notebook embedded requirements differ from the runtime lock")
+    if embedded.source_commit != source.get("git_commit"):
+        raise PackagingError("notebook embedded source commit differs from the manifest")
+    validate_kernel_metadata(metadata)
+    sbom = _json_object(members["sbom.spdx.json"], name="SBOM")
+    _validate_runtime_sbom(
+        sbom,
+        wheels=wheels,
+        requirements_sha256=cast(str, runtime_lock["requirements_sha256"]),
+        wheel_manifest_sha256=cast(str, runtime_lock["wheel_manifest_sha256"]),
+        payload_sha256=sha256_bytes(members["arc3-first-party.zip"]),
+    )
+    schema = _json_object(members["submission-schema.v0.1.json"], name="submission schema")
+    if schema.get("required") != ["row_id", "game_id", "end_of_game", "score"]:
+        raise PackagingError("candidate submission schema has unexpected required fields")
+
     try:
-        with zipfile.ZipFile(path) as candidate:
-            names = _safe_unique_names(candidate, label="candidate archive")
-            if names != EXPECTED_CANDIDATE_MEMBERS:
+        with zipfile.ZipFile(io.BytesIO(members["arc3-first-party.zip"])) as payload:
+            payload_names = _safe_unique_names(payload, label="first-party payload")
+            required_runtime_members = {
+                "LICENSE",
+                "THIRD_PARTY_NOTICES.md",
+                "src/arc3/competition-runtime.v0.1.json",
+                "src/arc3/competition_runtime.py",
+            }
+            if not required_runtime_members.issubset(payload_names):
                 raise PackagingError(
-                    "candidate archive members differ from the fixed review-artifact contract"
+                    "first-party payload omits the frozen competition runtime declaration"
                 )
-            manifest = _json_object(candidate.read("package-manifest.json"), name="manifest")
-            artifacts = _record_map(manifest.get("artifacts"), name="artifact")
-            expected_artifacts = set(EXPECTED_CANDIDATE_MEMBERS) - {"package-manifest.json"}
-            if artifacts.keys() != expected_artifacts:
-                raise PackagingError("manifest artifact paths do not match candidate members")
-            for name, record in artifacts.items():
-                content = candidate.read(name)
-                if record["sha256"] != sha256_bytes(content):
-                    raise PackagingError(f"candidate member hash mismatch: {name}")
-                if record["size_bytes"] != len(content):
-                    raise PackagingError(f"candidate member size mismatch: {name}")
-
-            source = manifest.get("source")
-            build_status = manifest.get("build_status")
-            if not isinstance(source, dict) or not isinstance(source.get("git_dirty"), bool):
-                raise PackagingError("candidate manifest has no source cleanliness receipt")
-            expected_status = "PACKAGING_PREACCEPTANCE" if source["git_dirty"] else "PACKAGING_PASS"
-            if build_status != expected_status:
-                raise PackagingError("candidate build status does not match source cleanliness")
-
-            runtime_lock = manifest.get("runtime_lock")
-            if not isinstance(runtime_lock, dict):
-                raise PackagingError("candidate manifest has no exact runtime lock")
-            requirements_bytes = candidate.read("runtime-requirements-linux-cp312.txt")
-            wheel_manifest_bytes = candidate.read("runtime-wheels-linux-cp312.json")
-            if runtime_lock.get("requirements_sha256") != sha256_bytes(requirements_bytes):
-                raise PackagingError("runtime requirements hash does not match the manifest")
-            if runtime_lock.get("wheel_manifest_sha256") != sha256_bytes(wheel_manifest_bytes):
-                raise PackagingError("runtime wheel manifest hash does not match the manifest")
-            if runtime_lock.get("target") != TARGET_PLATFORM:
-                raise PackagingError("package manifest has an unexpected runtime target")
-            wheels = _runtime_wheel_identities(requirements_bytes, wheel_manifest_bytes)
-
-            offline_rehearsal = manifest.get("offline_rehearsal")
-            if not isinstance(offline_rehearsal, dict):
-                raise PackagingError("candidate manifest has no offline rehearsal receipt")
-            sandbox = offline_rehearsal.get("receipt")
-            if not isinstance(sandbox, dict) or sandbox.get("status") != "PASS":
-                raise PackagingError("candidate sandbox receipt is absent or did not pass")
-            if sandbox.get("notebook_sha256") != sha256_bytes(
-                candidate.read("arc3-submission.ipynb")
-            ):
-                raise PackagingError("sandbox receipt does not identify the candidate notebook")
-            if sandbox.get("payload_sha256") != sha256_bytes(
-                candidate.read("arc3-first-party.zip")
-            ):
-                raise PackagingError("sandbox receipt does not identify the candidate payload")
-            if sandbox.get("requirements_sha256") != sha256_bytes(requirements_bytes):
-                raise PackagingError("sandbox receipt does not identify production requirements")
-            if sandbox.get("secret_scan_status") != "PASS":
-                raise PackagingError("sandbox extracted-payload secret rescan did not pass")
+            if sha256_bytes(payload.read("LICENSE")) != f"sha256:{MIT0_LICENSE_SHA256}":
+                raise PackagingError("payload LICENSE does not match owner-approved MIT-0")
+            payload_manifest = manifest.get("payload")
+            if not isinstance(payload_manifest, dict):
+                raise PackagingError("manifest payload record is missing")
+            records = _record_map(payload_manifest.get("files"), name="payload")
+            _verify_recorded_members(payload, records, label="first-party payload")
+            source_identity = payload_manifest.get("source_identity")
+            expected_exact = source["git_dirty"] is False
+            record_projection = [records[name] for name in sorted(records)]
+            record_document = cast(dict[str, JSONValue], {"files": record_projection})
             if (
-                sandbox.get("production_rerun_exercised") is not True
-                or sandbox.get("agent_action_cycle_status") != "PASS"
-                or sandbox.get("agent_consequence_state") != "NOT_FINISHED"
-                or not isinstance(sandbox.get("agent_cycle_actions"), list)
-                or cast(list[object], sandbox["agent_cycle_actions"])[0:1] != ["RESET"]
-                or sandbox.get("dependency_install_status") != "PASS"
-                or sandbox.get("network_attempts") != 0
-                or sandbox.get("network_enforcement") != PYTHON_NETWORK_ENFORCEMENT
-                or sandbox.get("credentials_present") != []
-                or sandbox.get("framework_commit") != AGENTS_COMMIT
-                or sandbox.get("framework_identity") != SAFE_FRAMEWORK_FIXTURE_IDENTITY
-                or sandbox.get("framework_fixture") is not True
-                or not isinstance(sandbox.get("gateway_connections"), int)
-                or cast(int, sandbox["gateway_connections"]) < 2
+                not isinstance(source_identity, dict)
+                or source_identity.get("exact_git_commit_bound") is not expected_exact
+                or source_identity.get("git_commit") != source.get("git_commit")
+                or source_identity.get("member_count") != len(records)
+                or source_identity.get("member_records_sha256")
+                != sha256_bytes(canonical_json_bytes(record_document))
+                or source_identity.get("mode")
+                != ("git-blob-exact" if expected_exact else "live-worktree-preacceptance")
             ):
-                raise PackagingError("sandbox receipt did not exercise the hardened rerun path")
-            limitations = sandbox.get("limitations")
-            if (
-                not isinstance(limitations, list)
-                or len(limitations) < 4
-                or not any(
-                    isinstance(item, str) and "OS-level network containment is absent" in item
-                    for item in limitations
+                raise PackagingError(
+                    "first-party payload lacks an exact source-member identity projection"
                 )
-            ):
-                raise PackagingError("sandbox receipt does not preserve its external limitations")
-            secret_scan = manifest.get("secret_scan")
+            wheel_manifest = _json_object(wheel_manifest_bytes, name="runtime wheel manifest")
+            if wheel_manifest.get("uv_lock_sha256") != sha256_bytes(payload.read("uv.lock")):
+                raise PackagingError("runtime wheel manifest does not identify payload uv.lock")
+            try:
+                project = tomllib.loads(payload.read("pyproject.toml").decode("utf-8"))
+            except (UnicodeDecodeError, tomllib.TOMLDecodeError) as error:
+                raise PackagingError(f"payload pyproject.toml is invalid: {error}") from error
+            build_system = project.get("build-system")
+            project_metadata = project.get("project")
+            tool = project.get("tool")
+            uv = tool.get("uv") if isinstance(tool, dict) else None
             if (
-                not isinstance(secret_scan, dict)
-                or secret_scan.get("status") != "PASS"
-                or secret_scan.get("findings") != []
-                or secret_scan.get("scopes")
-                != ["payload-before-archive", "candidate-members-before-archive"]
+                not isinstance(build_system, dict)
+                or build_system.get("requires") != ["hatchling==1.32.0"]
+                or not isinstance(project_metadata, dict)
+                or project_metadata.get("license") != "MIT-0"
+                or project_metadata.get("license-files") != ["LICENSE"]
+                or not isinstance(uv, dict)
+                or uv.get("required-version") != "==0.12.5"
             ):
-                raise PackagingError("candidate manifest has no complete secret-rescan receipt")
-
-            notebook = _json_object(candidate.read("arc3-submission.ipynb"), name="notebook")
-            metadata = _json_object(candidate.read("kernel-metadata.json"), name="metadata")
-            validate_notebook(notebook)
-            validate_kernel_metadata(metadata)
-            sbom = _json_object(candidate.read("sbom.spdx.json"), name="SBOM")
-            _validate_runtime_sbom(
-                sbom,
-                wheels=wheels,
-                requirements_sha256=cast(str, runtime_lock["requirements_sha256"]),
-                wheel_manifest_sha256=cast(str, runtime_lock["wheel_manifest_sha256"]),
-                payload_sha256=sha256_bytes(candidate.read("arc3-first-party.zip")),
-            )
-            schema = _json_object(
-                candidate.read("submission-schema.v0.1.json"), name="submission schema"
-            )
-            if schema.get("required") != ["row_id", "game_id", "end_of_game", "score"]:
-                raise PackagingError("candidate submission schema has unexpected required fields")
-
-            with zipfile.ZipFile(candidate.open("arc3-first-party.zip")) as payload:
-                payload_names = _safe_unique_names(payload, label="first-party payload")
-                required_runtime_members = {
-                    "LICENSE",
-                    "THIRD_PARTY_NOTICES.md",
-                    "src/arc3/competition-runtime.v0.1.json",
-                    "src/arc3/competition_runtime.py",
-                }
-                if not required_runtime_members.issubset(payload_names):
-                    raise PackagingError(
-                        "first-party payload omits the frozen competition runtime declaration"
-                    )
-                if sha256_bytes(payload.read("LICENSE")) != f"sha256:{MIT0_LICENSE_SHA256}":
-                    raise PackagingError("payload LICENSE does not match owner-approved MIT-0")
-                payload_manifest = manifest.get("payload")
-                if not isinstance(payload_manifest, dict):
-                    raise PackagingError("manifest payload record is missing")
-                records = _record_map(payload_manifest.get("files"), name="payload")
-                _verify_recorded_members(payload, records, label="first-party payload")
-                wheel_manifest = _json_object(wheel_manifest_bytes, name="runtime wheel manifest")
-                if wheel_manifest.get("uv_lock_sha256") != sha256_bytes(payload.read("uv.lock")):
-                    raise PackagingError("runtime wheel manifest does not identify payload uv.lock")
-                try:
-                    project = tomllib.loads(payload.read("pyproject.toml").decode("utf-8"))
-                except (UnicodeDecodeError, tomllib.TOMLDecodeError) as error:
-                    raise PackagingError(f"payload pyproject.toml is invalid: {error}") from error
-                build_system = project.get("build-system")
-                project_metadata = project.get("project")
-                tool = project.get("tool")
-                uv = tool.get("uv") if isinstance(tool, dict) else None
-                if (
-                    not isinstance(build_system, dict)
-                    or build_system.get("requires") != ["hatchling==1.32.0"]
-                    or not isinstance(project_metadata, dict)
-                    or project_metadata.get("license") != "MIT-0"
-                    or project_metadata.get("license-files") != ["LICENSE"]
-                    or not isinstance(uv, dict)
-                    or uv.get("required-version") != "==0.12.5"
-                ):
-                    raise PackagingError(
-                        "payload build-system, license, or uv version is not exactly pinned"
-                    )
+                raise PackagingError(
+                    "payload build-system, license, or uv version is not exactly pinned"
+                )
     except (OSError, zipfile.BadZipFile, KeyError) as error:
-        raise PackagingError(f"candidate archive cannot be decoded: {error}") from error
+        raise PackagingError(f"candidate payload cannot be decoded: {error}") from error
 
     return {
-        "candidate_sha256": sha256_file(path),
+        "candidate_sha256": candidate_sha256,
         "member_count": len(names),
         "payload_member_count": len(payload_names),
         "schema": "arc3.kaggle-candidate-validation.v0.1",
@@ -445,4 +471,54 @@ def validate_candidate_archive(path: Path) -> dict[str, JSONValue]:
     }
 
 
-__all__ = ["EXPECTED_CANDIDATE_MEMBERS", "validate_candidate_archive"]
+def inspect_candidate_archive_snapshot(
+    snapshot: bytes,
+) -> tuple[dict[str, JSONValue], dict[str, bytes]]:
+    """Decode and validate one already resource-bounded immutable candidate snapshot."""
+
+    members = decode_candidate_archive_snapshot(snapshot)
+    return validate_candidate_member_snapshots(snapshot, members), members
+
+
+def decode_candidate_archive_snapshot(snapshot: bytes) -> dict[str, bytes]:
+    """Decode fixed candidate members once from an immutable bounded snapshot."""
+
+    try:
+        with zipfile.ZipFile(io.BytesIO(snapshot)) as candidate:
+            return _decode_candidate_members(candidate)
+    except (OSError, zipfile.BadZipFile, KeyError) as error:
+        raise PackagingError(f"candidate archive cannot be decoded: {error}") from error
+
+
+def validate_candidate_member_snapshots(
+    snapshot: bytes,
+    members: Mapping[str, bytes],
+) -> dict[str, JSONValue]:
+    """Validate decoded member snapshots while retaining their outer-archive identity."""
+
+    return _validate_candidate_members(members, candidate_sha256=sha256_bytes(snapshot))
+
+
+def validate_candidate_archive(path: Path | bytes) -> dict[str, JSONValue]:
+    """Verify a candidate path or an already bounded immutable byte snapshot."""
+
+    if isinstance(path, bytes):
+        return inspect_candidate_archive_snapshot(path)[0]
+    if not path.is_file():
+        raise PackagingError(f"candidate archive does not exist: {path}")
+    candidate_sha256 = sha256_file(path)
+    try:
+        with zipfile.ZipFile(path) as candidate:
+            members = _decode_candidate_members(candidate)
+    except (OSError, zipfile.BadZipFile, KeyError) as error:
+        raise PackagingError(f"candidate archive cannot be decoded: {error}") from error
+    return _validate_candidate_members(members, candidate_sha256=candidate_sha256)
+
+
+__all__ = [
+    "EXPECTED_CANDIDATE_MEMBERS",
+    "decode_candidate_archive_snapshot",
+    "inspect_candidate_archive_snapshot",
+    "validate_candidate_archive",
+    "validate_candidate_member_snapshots",
+]

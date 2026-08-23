@@ -4,16 +4,18 @@ from __future__ import annotations
 
 import argparse
 import os
+import re
 import subprocess
 import sys
 import tempfile
 from collections.abc import Sequence
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 from arc3.integrity import (
     DEFAULT_MAX_CANDIDATE_BYTES,
     IntegrityReceipt,
     build_integrity_receipt,
+    read_bounded_regular_snapshot,
 )
 
 _PACKAGE_ONLY_PREFIXES = (".github/", "agent/", "scripts/", "src/", "tests/")
@@ -31,6 +33,9 @@ _PACKAGE_ONLY_ROOT_FILES = frozenset(
         "uv.lock",
     }
 )
+_COMMIT = re.compile(r"^[0-9a-f]{40}$")
+_MAX_SOURCE_SNAPSHOT_BYTES = 256 * 1024 * 1024
+_MAX_SOURCE_SNAPSHOT_FILES = 20_000
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -70,56 +75,219 @@ def build_parser() -> argparse.ArgumentParser:
             "Build ledger; manifest-related arguments are forbidden"
         ),
     )
+    parser.add_argument(
+        "--expected-commit",
+        help="literal clean Git commit required by --package-only",
+    )
     return parser
 
 
-def package_only_candidate_files(root: Path) -> tuple[Path, ...]:
-    """Return tracked package/source surfaces while excluding all evaluation ledgers."""
-
-    repository = root.resolve()
+def _git_environment() -> dict[str, str]:
     environment = {
         key: value for key, value in os.environ.items() if not key.upper().startswith("GIT_")
     }
-    top_level = subprocess.run(
-        ("git", "rev-parse", "--show-toplevel"),
-        cwd=repository,
-        env=environment,
-        check=False,
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-        timeout=30,
-    )
-    if top_level.returncode != 0 or Path(top_level.stdout.strip()).resolve() != repository:
-        raise ValueError("package-only integrity requires the exact repository Git root")
+    environment["GIT_NO_REPLACE_OBJECTS"] = "1"
+    return environment
+
+
+def _git_bytes(root: Path, *arguments: str, input_bytes: bytes | None = None) -> bytes:
     completed = subprocess.run(
-        ("git", "ls-files", "-z"),
-        cwd=repository,
-        env=environment,
+        ("git", "--no-replace-objects", "-C", str(root.resolve()), *arguments),
         check=False,
         capture_output=True,
+        env=_git_environment(),
+        input=input_bytes,
         timeout=30,
     )
     if completed.returncode != 0:
-        raise ValueError("package-only integrity requires a readable Git index")
-    raw_names = completed.stdout.split(b"\0")
+        stderr = completed.stderr.decode("utf-8", errors="replace").strip()
+        raise ValueError(
+            f"package-only integrity Git command failed ({' '.join(arguments)}): "
+            f"{stderr or 'no stderr'}"
+        )
+    return completed.stdout
+
+
+def _git_text(root: Path, *arguments: str) -> str:
     try:
-        names = tuple(name.decode("utf-8") for name in raw_names if name)
+        return _git_bytes(root, *arguments).decode("utf-8", errors="strict").strip()
     except UnicodeDecodeError as error:
-        raise ValueError("package-only integrity found a non-UTF-8 tracked path") from error
+        raise ValueError("package-only integrity Git text is not portable UTF-8") from error
+
+
+def _git_blob_bytes(root: Path, object_ids: Sequence[str]) -> dict[str, bytes]:
+    unique_ids = tuple(dict.fromkeys(object_ids))
+    if len(unique_ids) > _MAX_SOURCE_SNAPSHOT_FILES:
+        raise ValueError("package-only integrity source snapshot exceeds the file-count limit")
+    batch_input = "".join(f"{object_id}\n" for object_id in unique_ids).encode("ascii")
+    metadata = _git_bytes(root, "cat-file", "--batch-check", input_bytes=batch_input)
+    total_bytes = 0
+    metadata_lines = metadata.decode("ascii", errors="strict").splitlines()
+    if len(metadata_lines) != len(unique_ids):
+        raise ValueError("package-only integrity received incomplete Git blob metadata")
+    expected_sizes: list[int] = []
+    for expected_id, line in zip(unique_ids, metadata_lines, strict=True):
+        fields = line.split(" ")
+        if len(fields) != 3 or fields[:2] != [expected_id, "blob"]:
+            raise ValueError("package-only integrity received the wrong Git blob metadata")
+        size = int(fields[2])
+        if size > DEFAULT_MAX_CANDIDATE_BYTES:
+            raise ValueError("package-only integrity Git blob exceeds the per-file byte limit")
+        total_bytes += size
+        if total_bytes > _MAX_SOURCE_SNAPSHOT_BYTES:
+            raise ValueError("package-only integrity source snapshot exceeds the byte limit")
+        expected_sizes.append(size)
+    blobs: dict[str, bytes] = {}
+    process = subprocess.Popen(
+        ("git", "--no-replace-objects", "-C", str(root.resolve()), "cat-file", "--batch"),
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        env=_git_environment(),
+    )
+    assert process.stdin is not None and process.stdout is not None and process.stderr is not None
+    try:
+        for expected_id, expected_size in zip(unique_ids, expected_sizes, strict=True):
+            process.stdin.write(f"{expected_id}\n".encode("ascii"))
+            process.stdin.flush()
+            header = process.stdout.readline(256)
+            fields = header.rstrip(b"\n").decode("ascii", errors="strict").split(" ")
+            if fields != [expected_id, "blob", str(expected_size)]:
+                raise ValueError("package-only integrity received the wrong Git blob object")
+            raw = process.stdout.read(expected_size)
+            if len(raw) != expected_size or process.stdout.read(1) != b"\n":
+                raise ValueError("package-only integrity received malformed Git blob framing")
+            blobs[expected_id] = raw
+        process.stdin.close()
+        trailing = process.stdout.read(1)
+        stderr = process.stderr.read(65_537)
+        return_code = process.wait(timeout=30)
+        if return_code != 0 or trailing or len(stderr) > 65_536:
+            raise ValueError("package-only integrity Git blob stream failed closed")
+    except BaseException:
+        if process.poll() is None:
+            process.kill()
+        process.wait(timeout=30)
+        raise
+    return blobs
+
+
+def package_only_candidate_files(
+    root: Path,
+    expected_commit: str,
+    *,
+    candidate_snapshots: dict[str, bytes] | None = None,
+) -> tuple[Path, ...]:
+    """Return exact-commit package/source surfaces outside evaluation ledgers."""
+
+    root = root.resolve()
+    if _COMMIT.fullmatch(expected_commit) is None:
+        raise ValueError("package-only integrity requires a full lowercase expected commit")
+    if Path(_git_text(root, "rev-parse", "--show-toplevel")).resolve() != root:
+        raise ValueError("package-only integrity root is not the exact Git top level")
+    if _git_text(root, "rev-parse", "--verify", f"{expected_commit}^{{commit}}") != expected_commit:
+        raise ValueError("package-only integrity expected commit did not resolve literally")
+    if _git_text(root, "rev-parse", "HEAD") != expected_commit:
+        raise ValueError("package-only integrity HEAD differs from the expected commit")
+    if _git_text(root, "status", "--porcelain=v1", "--untracked-files=normal"):
+        raise ValueError("package-only integrity requires a clean worktree")
+
+    tree: dict[str, tuple[str, str]] = {}
+    for entry in _git_bytes(root, "ls-tree", "-r", "-z", expected_commit).split(b"\0"):
+        if not entry:
+            continue
+        metadata, separator, raw_path = entry.partition(b"\t")
+        fields = metadata.split(b" ")
+        if separator != b"\t" or len(fields) != 3:
+            raise ValueError("package-only integrity received a malformed Git tree entry")
+        try:
+            mode, object_type, object_id = (
+                field.decode("ascii", errors="strict") for field in fields
+            )
+            relative = raw_path.decode("utf-8", errors="strict")
+        except UnicodeDecodeError as error:
+            raise ValueError("package-only integrity found a non-portable Git tree") from error
+        if relative in tree:
+            raise ValueError("package-only integrity found a duplicate Git tree path")
+        tree[relative] = (mode, object_id if object_type == "blob" else object_type)
+
+    index_projection = _git_bytes(root, "ls-files", "-v", "-z")
+    index_paths: set[str] = set()
+    for record in (record for record in index_projection.split(b"\0") if record):
+        if len(record) < 3 or record[1:2] != b" ":
+            raise ValueError("package-only integrity received malformed Git index evidence")
+        try:
+            tag = record[:1].decode("ascii", errors="strict")
+            relative = record[2:].decode("utf-8", errors="strict")
+        except UnicodeDecodeError as error:
+            raise ValueError("package-only integrity found a non-portable Git index") from error
+        if tag != "H":
+            raise ValueError(f"package-only integrity rejects non-H Git index entry: {relative}")
+        if relative in index_paths:
+            raise ValueError("package-only integrity found a duplicate Git index path")
+        index_paths.add(relative)
+    if index_paths != set(tree):
+        raise ValueError("package-only integrity index membership differs from expected Git tree")
+    stage_entries: dict[str, tuple[str, str]] = {}
+    for record in _git_bytes(root, "ls-files", "--stage", "-z").split(b"\0"):
+        if not record:
+            continue
+        metadata, separator, raw_path = record.partition(b"\t")
+        fields = metadata.split(b" ")
+        if separator != b"\t" or len(fields) != 3:
+            raise ValueError("package-only integrity received malformed index-stage evidence")
+        raw_mode, raw_object_id, stage = fields
+        try:
+            relative = raw_path.decode("utf-8", errors="strict")
+            mode = raw_mode.decode("ascii", errors="strict")
+            object_id = raw_object_id.decode("ascii", errors="strict")
+        except UnicodeDecodeError as error:
+            raise ValueError("package-only integrity found a non-portable index stage") from error
+        if stage != b"0" or relative in stage_entries:
+            raise ValueError("package-only integrity requires unique stage-0 index entries")
+        stage_entries[relative] = (mode, object_id)
+    if stage_entries != tree:
+        raise ValueError("package-only integrity index projection differs from expected Git tree")
+
+    names = tuple(sorted(tree))
     selected: list[Path] = []
     for name in names:
-        normalized = Path(name).as_posix()
+        portable = PurePosixPath(name)
+        if (
+            portable.is_absolute()
+            or "\\" in name
+            or any(part in {"", ".", ".."} for part in portable.parts)
+        ):
+            raise ValueError("package-only integrity found an unsafe Git tree path")
+        normalized = portable.as_posix()
         if normalized in _PACKAGE_ONLY_ROOT_FILES or normalized.startswith(_PACKAGE_ONLY_PREFIXES):
-            path = (repository / normalized).resolve()
+            mode, object_id = tree[name]
+            if mode not in {"100644", "100755"} or not re.fullmatch(r"[0-9a-f]{40,64}", object_id):
+                raise ValueError(f"package-only candidate is not a regular Git blob: {normalized}")
+            path = root.joinpath(*portable.parts)
             try:
-                path.relative_to(repository)
+                path.resolve().relative_to(root)
             except ValueError as error:
                 raise ValueError("package-only candidate path escapes the repository") from error
             selected.append(path)
     if not selected:
         raise ValueError("package-only integrity found no tracked package/source files")
+    blobs = _git_blob_bytes(root, [tree[path.relative_to(root).as_posix()][1] for path in selected])
+    for path in selected:
+        relative = path.relative_to(root).as_posix()
+        expected = blobs[tree[relative][1]]
+        live = read_bounded_regular_snapshot(
+            root=root,
+            path=path,
+            max_bytes=DEFAULT_MAX_CANDIDATE_BYTES,
+            path_label=relative,
+        )
+        if live != expected:
+            raise ValueError(
+                f"package-only candidate bytes differ from expected Git blob: {relative}"
+            )
+        if candidate_snapshots is not None:
+            candidate_snapshots[relative] = expected
     return tuple(selected)
 
 
@@ -174,6 +342,12 @@ def main(argv: Sequence[str] | None = None) -> int:
             file=sys.stderr,
         )
         return 2
+    if args.package_only and args.expected_commit is None:
+        print(
+            "integrity scan refused: --package-only requires --expected-commit",
+            file=sys.stderr,
+        )
+        return 2
     manifest = (
         None
         if args.package_only
@@ -207,6 +381,16 @@ def main(argv: Sequence[str] | None = None) -> int:
     try:
         if output is not None:
             _validate_output_path(output=output, protected=protected)
+        package_candidate_snapshots: dict[str, bytes] | None = None
+        package_candidates: tuple[Path, ...] | None = None
+        if args.package_only:
+            assert args.expected_commit is not None
+            package_candidate_snapshots = {}
+            package_candidates = package_only_candidate_files(
+                root,
+                args.expected_commit,
+                candidate_snapshots=package_candidate_snapshots,
+            )
         receipt = build_integrity_receipt(
             root,
             manifest_path=manifest,
@@ -219,7 +403,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             include_installed_metadata=not args.lock_only_metadata,
             generated_at=args.generated_at,
             semantic_public_manifest_access=not args.package_only,
-            candidate_files=(package_only_candidate_files(root) if args.package_only else None),
+            candidate_files=package_candidates,
+            candidate_snapshots=package_candidate_snapshots,
         )
     except (FileExistsError, OSError, ValueError) as error:
         print(f"integrity scan refused: {error}", file=sys.stderr)
