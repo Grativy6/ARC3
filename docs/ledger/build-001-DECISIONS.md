@@ -739,3 +739,28 @@ independent authorities.
 - Reopening condition: checkpoint frequency changes a selected path or trigger; an unacted terminal
   advances cadence; a raw/external receipt enters an abandoned suffix; an orphan latest pointer
   influences restore; or strict source/commitment validation can be bypassed.
+
+## D-001-0038 — Preserve the unique Stage 08 infrastructure failure without rerunning it
+
+- Recorded: 2026-08-23T00:51:15.3565958Z
+- Status: accepted
+- Decision: Classify the one predeclared Stage 08 execution as `FAILED_INFRASTRUCTURE`, preserve
+  every surviving receipt, expose no later matrix cell, and never rerun the exposed cell within
+  Build 001. Report no paired timing, material-reduction, mechanism, or public-recovery result.
+  Continue only independent later workflow work. A read-only audit may diagnose the harness, but a
+  successful later repair cannot retroactively change this attempt's status.
+- Evidence: `docs/evidence/001-08-two-speed-controller.json`; raw attempt
+  `C:/a/arc3-b001/artifacts/stage08/two-speed-controller-attempt-01.json`, file SHA-256
+  `7c39fa77de24bd1925d9dbd489d583118f96d4b7fe860678607f485506ad39d4`; one-event exposure
+  ledger SHA-256 `be73b837805a66ed172b20573aa31c41fe6ba16ced4d471929b6018e22a5d52e`.
+  The first worker submitted and received eight actions, replayed 241 trace events, then failed
+  terminal snapshot and boundary-chain validation. Nineteen cells were never opened.
+- Diagnosis: the checkpoint validator compared frozen Build 000's intentionally pre-`CLOSED`
+  checkpoint phase with its post-close in-memory phase. The boundary validator separately equated
+  the domain-separated semantic `GridFrame.digest` with the trace blob's canonical-JSON hash. Both
+  are evidence-validation harness incompatibilities; neither establishes a controller defect.
+- Boundary: the worker's raw failed-evidence scorecard (0.0, zero levels, `NOT_FINISHED`) is not an
+  accepted typed Stage 08 score. Frozen source, development assets, and holdout state remained
+  stable; the ten-game holdout has zero gameplay events and remains sealed.
+- Reopening condition: none for this attempt. A future separately predeclared measurement may use
+  a repaired generic validator but cannot overwrite, resume, or supersede Attempt 01.

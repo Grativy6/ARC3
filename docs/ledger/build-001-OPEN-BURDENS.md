@@ -1076,3 +1076,36 @@ does not erase earlier uncertainty or failed mechanisms.
   format, strict mypy, 959 tests, and runtime doctor on both Ubuntu and Windows at commit
   `2e78c258cfbee8be62462f61ed08ad04c00a8934`. The original two Ubuntu type failures remain
   preserved above and in the premeasurement audit.
+
+## B-001-0048 — Stage 08 validators conflated close state and frame-hash namespaces
+
+- Status: OPEN
+- Stage: 08
+- Opened: 2026-08-23
+- Owner: Codex
+- Burden: the unique Stage 08 attempt stopped after one development cell because two integration
+  validators rejected valid frozen Build 000 evidence. Terminal restore compared the correct
+  pre-`CLOSED` checkpoint phase with the post-close in-memory phase. Boundary validation required
+  the domain-separated semantic `GridFrame.digest` to equal the trace descriptor/blob hash over
+  canonical JSON, even though both identities were independently valid and intentionally differ.
+- Why it matters: unit fixtures reused one fake hash for both namespaces and mocked restore success,
+  so 111 focused tests and full cross-platform CI did not exercise the real frozen comparator's
+  close or hashing contracts. The resulting fail-closed behavior protected claims but consumed the
+  only permitted exposure of cell 00 and made the 20-cell timing gate unavailable.
+- Current evidence: raw attempt SHA-256
+  `7c39fa77de24bd1925d9dbd489d583118f96d4b7fe860678607f485506ad39d4`;
+  worker result SHA-256 `523f0a6fbc8b34d9ea739e17d507597a3f94d506ed8521b19335644c776e1465`;
+  replay-verified trace semantic frame digest `b0c134f1cbe1bac078337e72000916d047f34742d2202561fdb65c63ccfd6e37`
+  versus trace frame/blob hash `dcb73927160522c26e2655d31ead221e6da6aab818037d20388bbf46e9afa1b0`.
+  A read-only eight-boundary audit found the remaining decision, action, link, ordering, returned
+  consequence, semantic receipt, and trace-adjacency predicates valid. See
+  `docs/evidence/001-08-two-speed-controller.json` and D-001-0038.
+- Next discriminating action: add non-playing integration fixtures using real semantic and trace
+  hash encodings plus a real frozen-style close/checkpoint/restore cycle; repair the validators
+  without relaxing either namespace or ordinary restore; run focused, lint, format, and strict-type
+  checks. Do not rerun or resume the Stage 08 matrix.
+- Resolution condition: the generic validator independently proves both hash namespaces and their
+  causal link, accepts the correct pre-close checkpoint phase while still rejecting actual state
+  drift, and regression tests fail under either original conflation. This can resolve the harness
+  burden for future work but cannot change Stage 08 Attempt 01 from `FAILED_INFRASTRUCTURE`.
+- Resolution receipt: none.
