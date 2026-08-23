@@ -1901,12 +1901,15 @@ def _validate_package_only_plan(
         )
     if integrity.argv.count("--package-only") != 1:
         raise ValueError("package-only package-integrity check must select package-only mode once")
+    integrity_commit = integrity.argv[7] if len(integrity.argv) > 7 else ""
     if (
         len(integrity.argv) != 12
         or integrity.argv[3] != "--root"
         or integrity.argv[5] != "--package-only"
         or integrity.argv[6] != "--expected-commit"
-        or integrity.argv[7] != "{CANDIDATE_COMMIT}"
+        or (
+            integrity_commit != "{CANDIDATE_COMMIT}" and _COMMIT.fullmatch(integrity_commit) is None
+        )
         or integrity.argv[8] != "--archive"
         or integrity.argv[10] != "--output"
     ):
@@ -1963,6 +1966,8 @@ def _validate_package_only_plan(
     test_commit = _single_option_value(guarded_tests.argv, "--expected-commit")
     if test_commit != "{CANDIDATE_COMMIT}" and _COMMIT.fullmatch(test_commit) is None:
         raise ValueError("package-only guarded tests do not bind a literal candidate commit")
+    if test_commit != integrity_commit:
+        raise ValueError("package-only guarded tests and integrity scan bind different commits")
     if repository is not None:
         if Path(test_root).resolve() != repository.resolve():
             raise ValueError("package-only guarded tests do not target the exact repository")

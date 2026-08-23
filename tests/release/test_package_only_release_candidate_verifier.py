@@ -100,6 +100,47 @@ def test_package_only_plan_has_no_public_inventory_or_gameplay(tmp_path: Path) -
         assert forbidden not in rendered
 
 
+def test_rendered_package_only_plan_preserves_one_literal_commit_binding(
+    tmp_path: Path,
+) -> None:
+    repository = Path(__file__).resolve().parents[2]
+    output_root = tmp_path / "output"
+    specs = build_plan(
+        repository=repository,
+        output_root=output_root,
+        transient_root=tmp_path / "transient",
+        expectation=None,
+        uv_command=("uv",),
+        official_environments=None,
+        profile=BUILD001_PACKAGE_ONLY_PROFILE,
+    )
+    commit = "a" * 40
+    rendered = tuple(verifier._replace_candidate_commit(spec, commit) for spec in specs)
+
+    _validate_package_only_plan(
+        rendered,
+        repository=repository,
+        output_root=output_root,
+    )
+
+    mismatched = tuple(
+        verifier.replace(
+            spec,
+            argv=tuple(
+                "b" * 40 if spec.check_id == "package-integrity" and value == commit else value
+                for value in spec.argv
+            ),
+        )
+        for spec in rendered
+    )
+    with pytest.raises(ValueError, match="bind different commits"):
+        _validate_package_only_plan(
+            mismatched,
+            repository=repository,
+            output_root=output_root,
+        )
+
+
 def test_package_only_test_selection_is_exact_and_full_ci_retains_excluded_coverage() -> None:
     repository = Path(__file__).resolve().parents[2]
     selection = build001_test_selection(repository)
