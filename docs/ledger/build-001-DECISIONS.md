@@ -1285,3 +1285,41 @@ independent authorities.
 - Reopening condition: none for this attempt. A future harness may add the missing exact-commit
   argument and authenticate failed-infrastructure receipts, but cannot alter, resume, or supersede
   this Stage 10 terminal.
+
+## D-001-0064 — Repair only future Stage 10 plans and read-only terminal authentication
+
+- Recorded: 2026-08-23T10:41:38.3507231Z
+- Status: accepted.
+- Decision: add the scanner's mandatory `--expected-commit` argument to future Stage 10 plans and
+  admit absent declared artifact/composite paths only when recomputed evidence proves an exact
+  `FAILED_INFRASTRUCTURE` terminal. Keep `PASS`, `FAILED_MECHANISM`, and interrupted `STARTED`
+  states fail-closed. Authenticate the historical H=`8872003…` graph by replaying only its
+  non-playing preflight from the exact clean tree and checking every graph fingerprint before and
+  after.
+- Evidence: commits `88888f314bf573bdea43e340fa5f28873df3a24e` and
+  `ae74ec0e35e4a2f0446d99d061fdc91e9c598a28`; 34 Stage 10 tests passed with one POSIX-only skip,
+  35 holdout-gate tests passed, Ruff/format/strict-mypy checks passed, and the live historical API
+  returned `FAILED_INFRASTRUCTURE` without executing a suite.
+- Boundary: this cannot repair or rerun the consumed Stage 10 attempt. Missing outputs can never
+  support an earned holdout gate.
+- Reopening condition: reconstruction changes any historical byte, starts or recovers a suite,
+  admits absent success/mechanism evidence, or changes the frozen H result.
+
+## D-001-0065 — Refuse the holdout and preserve nonconsumption
+
+- Recorded: 2026-08-23T10:41:38.3507231Z
+- Status: accepted after mechanical evaluation.
+- Decision: record `HOLDOUT_NOT_EARNED`, execute no Stage 12 gameplay, and treat the ten-game public
+  holdout as `SEALED_UNCONSUMED` for all remaining Build 001 work. No owner or autonomous override
+  may weaken the predeclared five-predicate gate in this build.
+- Evidence: Stage 11 external receipt file SHA-256
+  `sha256:edf01ae6c69a7ce4f862d68bb5a3660cc1b2ce805725d88edd11e1b372a48dcd`, core hash
+  `sha256:7fc63e47bbc601c98daa5c204c809ac216d92cb848f45f493a89fbfb682988bc`; Stage 12 external receipt
+  file SHA-256 `sha256:52005ea16e7f0413f33ad61fed651ee7d8f79ee7493553a6b1aedff34a69709c`, core hash
+  `sha256:ec9dfe6ffea40c4ecec42888c3872247392768bdbacfa663b484011d774bb24b`.
+  Independent verification passed. The receipts record zero loaded identities, zero parsed
+  manifests, zero environment actions, and no adapter load.
+- Boundary: this is `synthetic` gate/nonconsumption evidence, not a public-game score or
+  generalization result. Stage 09 and Stage 10 remain their original infrastructure failures.
+- Reopening condition: none inside Build 001. A later explicitly owner-directed exploratory run
+  must use a separate protocol and label and cannot revise this sealed decision.

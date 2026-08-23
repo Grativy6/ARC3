@@ -1792,3 +1792,52 @@ does not erase earlier uncertainty or failed mechanisms.
   Neither stale tests nor current behavior may be silently relabeled.
 - Resolution condition: determine which side of each contract is authoritative, update mechanism or
   tests with regression evidence, and obtain clean exact-head ordinary CI on Ubuntu and Windows.
+
+### B-001-0052 — Stage 11/12 mechanically close the holdout decision
+
+- Status update: RESOLVED for Build 001; the holdout remains unconsumed.
+- Resolved: 2026-08-23T10:41:38.3507231Z
+- Resolving evidence: clean detached source `262b5f1c443d2df28b61ecab19ada760943f5f67`
+  authenticated the exact Stage 09 and Stage 10 terminals and produced `HOLDOUT_NOT_EARNED` at
+  Stage 11 external file SHA-256
+  `sha256:edf01ae6c69a7ce4f862d68bb5a3660cc1b2ce805725d88edd11e1b372a48dcd` plus the Stage 12
+  nonconsumption receipt at
+  `sha256:52005ea16e7f0413f33ad61fed651ee7d8f79ee7493553a6b1aedff34a69709c`.
+- Residual: no Build 001 public-holdout score exists. The sealed decision cannot be reopened within
+  this build.
+
+### B-001-0065 — Future plan, terminal verifier, and denial path are repaired
+
+- Status update: RESOLVED for future planning and exact failed-terminal authentication; the
+  consumed Stage 10 attempt remains `FAILED_INFRASTRUCTURE`.
+- Resolved: 2026-08-23T10:41:38.3507231Z
+- Resolving evidence: `88888f314bf573bdea43e340fa5f28873df3a24e` adds the required frozen
+  commit argument and read-only historical reconstruction; `ae74ec0e35e4a2f0446d99d061fdc91e9c598a28`
+  permits absent composite authority only for an authenticated infrastructure terminal and forces
+  `HOLDOUT_NOT_EARNED`. Focused suites passed 34+35 tests with one platform skip.
+- Residual: the original missing-argument failure and eight unstarted Stage 10 suites remain
+  permanent evidence and are not retroactively repaired.
+
+### B-001-0066 — Local CI contract repairs pass; hosted confirmation remains
+
+- Status update: NARROWED.
+- Last updated: 2026-08-23T10:41:38.3507231Z
+- Current evidence: commit `262b5f1c443d2df28b61ecab19ada760943f5f67` preserves the production
+  rule-change classifier and updates two stale expectations to `FAILED_MECHANISM`. POSIX fork probes
+  now catch and verify the exact guard denial so pytest returns zero while the wrapper retains exit
+  3 and `FAILED_BOUNDARY`. The complete two-file suite passed 61 tests with nine Windows skips;
+  Ruff and format checks passed.
+- Remaining burden: obtain exact-head hosted Ubuntu and Windows CI. The two Linux-only fork probes
+  are not locally executed on this Windows host.
+
+## B-001-0067 — First Stage 11 invocation imported the live editable source
+
+- Status: RESOLVED without output or holdout access.
+- Stage: 11.
+- Opened and resolved: 2026-08-23T10:41:38.3507231Z
+- Evidence: `docs/evidence/001-11-source-origin-failure.json`. The detached invocation failed
+  closed with `Stage 11 first-party module origin is outside the execution source: arc3`; both Stage
+  11 and Stage 12 output paths were absent afterward.
+- Resolution: bind `PYTHONPATH` to the exact detached root and `src` directory. Import-origin smoke
+  then named only H=`262b5f1…`, and the environment-free receipt generation/verification passed.
+- Residual: none. No manifest, identity, adapter, or gameplay surface was opened.

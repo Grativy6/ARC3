@@ -2,8 +2,10 @@
 
 ## Result
 
-**Status:** `PASS` for the gate procedure; decision `HOLDOUT_NOT_EARNED`  
-**Evidence label:** `synthetic`  
+**Status:** `PASS` for the gate procedure; decision `HOLDOUT_NOT_EARNED`
+
+**Evidence label:** `synthetic`
+
 **Claim boundary:** gate/nonconsumption evidence only; no public-holdout result exists
 
 The five frozen predicates were evaluated from already-produced evidence at clean detached commit
@@ -18,12 +20,10 @@ The five frozen predicates were evaluated from already-produced evidence at clea
 | production source unchanged | false | the gate/verifier source projection is later than production P=`d6d4bac…` |
 | sealed holdout identity matches | false | the receipt preserved only the opaque hash; it parsed no manifest or identities |
 
-The gate receipt is `docs/evidence/001-11-holdout-gate.json`. Its semantic core hash is
-`sha256:7fc63e47bbc601c98daa5c204c809ac216d92cb848f45f493a89fbfb682988bc`. The exact external
-canonical bytes remain at `C:/a/arc3-b001/artifacts/stage11/holdout-gate.json`, 5,928 bytes, file
-SHA-256 `sha256:edf01ae6c69a7ce4f862d68bb5a3660cc1b2ce805725d88edd11e1b372a48dcd`.
-The tracked semantic mirror differs only by its repository newline and is validated by object hash,
-not promoted as the external file identity.
+The exact gate receipt is tracked at `docs/evidence/001-11-holdout-gate.json` and preserved at
+`C:/a/arc3-b001/artifacts/stage11/holdout-gate.json`. Both copies are 5,928 byte-identical bytes at
+file SHA-256 `sha256:edf01ae6c69a7ce4f862d68bb5a3660cc1b2ce805725d88edd11e1b372a48dcd`; its semantic core hash is
+`sha256:7fc63e47bbc601c98daa5c204c809ac216d92cb848f45f493a89fbfb682988bc`.
 
 ## Failed launch preserved
 
