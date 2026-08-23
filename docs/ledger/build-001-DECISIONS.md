@@ -1209,3 +1209,26 @@ independent authorities.
 - Reopening condition: none for this attempt. A future harness may repair Windows launcher/worker
   identity binding and test the repair synthetically, but it cannot alter, resume, or supersede the
   Build 001 Stage 09 terminal.
+
+## D-001-0061 — Repair package evidence producers instead of weakening the hosted guard
+
+- Recorded: 2026-08-23T09:44:26.4091652Z
+- Status: accepted; hosted revalidation pending.
+- Decision: keep the package-only subprocess guard and `BLOCKED_EXTERNAL` terminal expectation
+  unchanged. Replace `platform.platform()` in the offline doctor with the subprocess-free
+  `os.name:sys.platform` identity, and record pytest collection at
+  `pytest_collection_finish` from `len(session.items)` rather than the not-yet-finalized
+  `session.testscollected` counter.
+- Evidence: commit `54322de9262096f0c71bc691773d9403e7ed3fe1`; hosted push run
+  `32629721117` and PR run `32629723259` each produced authenticated failures at source
+  `16f69d7d4ccbdb4dc72f298762b7025022990d20`. Ubuntu completed 699 tests but correctly
+  denied the doctor's implicit `uname -p` child process; Windows completed 697 tests with two
+  skips but recorded a zero collection count. The repaired focused suite passed 22 tests; a real
+  guarded doctor run passed five tests with zero process attempts and receipt file SHA-256
+  `sha256:904ad9a6160289ac76795b8225d8c108ea94060115085a6c016ab70c2c111d23`.
+- Boundary: this is package evidence-infrastructure repair, not agent-policy, gameplay, holdout,
+  private-platform, or performance evidence. Linux and Windows exact-head hosted terminals are
+  still required before the package path can be accepted.
+- Reopening condition: a guarded test can spawn a process without a recorded denial, a completed
+  collection again reports zero tests, the offline doctor invokes a command-backed identity
+  helper, or either hosted platform fails for the same mechanism after `54322de`.

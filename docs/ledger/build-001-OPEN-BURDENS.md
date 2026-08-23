@@ -1649,3 +1649,31 @@ does not erase earlier uncertainty or failed mechanisms.
 - Resolution condition: future launch tests reproduce the launcher/child PID split and prove that
   the actual contained interpreter, exact command/spec, source, and launch token are authorized
   without accepting an unrelated process. This cannot change Stage 09's status.
+
+## B-001-0064 — Literal-head hosted package checks exposed two evidence-producer defects
+
+- Status: NARROWED locally; hosted revalidation remains open.
+- Stage: 09, 13
+- Opened: 2026-08-23
+- Last updated: 2026-08-23T09:44:26.4091652Z
+- Owner: Codex
+- Burden: at exact source `16f69d7d4ccbdb4dc72f298762b7025022990d20`, both Ubuntu
+  package-only jobs returned `FAILED_MECHANISM` after the guard recorded one denied child process,
+  while both Windows jobs returned `FAILED_INFRASTRUCTURE` because the receipt recorded zero
+  collected tests despite 697 passes and two skips. The workflows then correctly refused to
+  relabel either terminal as the expected missing-private-surface `BLOCKED_EXTERNAL` result.
+- Why it matters: a passing test body is not a valid package receipt when a boundary guard records
+  a process attempt or the evidence producer cannot prove which tests were collected.
+- Current evidence: Ubuntu's causal path was `doctor._filesystem_check` through
+  `platform.platform()` to CPython's `uname -p` fallback. Windows read
+  `session.testscollected` before pytest finalized it. Commit
+  `54322de9262096f0c71bc691773d9403e7ed3fe1` makes the doctor identity subprocess-free and
+  records `len(session.items)`. Twenty-two focused tests, Ruff check/format, strict mypy, and a
+  real guarded five-test doctor run pass locally with zero process attempts. All four failed hosted
+  receipts and archive hashes remain preserved in `C:/a/arc3-stage13-ci-audit-32629723259`.
+- Next discriminating action: require the push and draft-PR package workflows at a descendant of
+  `54322de` to produce authenticated Linux and Windows terminals, and diagnose any new failure
+  without weakening the guard or expected private-surface boundary.
+- Resolution condition: both hosted platforms reach the exact expected authenticated package
+  terminal from the same literal candidate commit; local evidence alone does not resolve this.
+- Resolution receipt: pending hosted runs.

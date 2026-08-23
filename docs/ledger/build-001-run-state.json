@@ -11,8 +11,8 @@
   "implementation_branch": "build/001-local-public-recovery",
   "pull_request": "https://github.com/Grativy6/ARC3/pull/5",
   "started_at": "2026-08-21T15:41:02Z",
-  "last_checkpoint_at": "2026-08-23T08:52:15.5157754Z",
-  "last_checkpoint_commit": "73f9fefc42b5a31dd1a847f449ae5f31104fb897",
+  "last_checkpoint_at": "2026-08-23T09:44:26.4091652Z",
+  "last_checkpoint_commit": "54322de9262096f0c71bc691773d9403e7ed3fe1",
   "base": {
     "main_commit": "28c7a00732ce48e5c231211b01bc6eba7d0d71b4",
     "main_tree": "4586299448e9b1b585a0878674ed5f9afa60c384",
@@ -753,7 +753,8 @@
     "B-001-0052: Stage 09 infrastructure terminal is authenticated; exact Stage 10 execution and Stage 11 mechanical gate decision remain required",
     "B-001-0054: exact-snapshot nested-package repair passed locally; literal-head Linux/Windows package workflows remain required",
     "B-001-0055: package evidence is Python-audit scoped and lacks OS process-tree containment",
-    "B-001-0063: Windows virtual-environment launcher PID differs from the worker interpreter PID; Stage 09 failed closed and cannot be rerun"
+    "B-001-0063: Windows virtual-environment launcher PID differs from the worker interpreter PID; Stage 09 failed closed and cannot be rerun",
+    "B-001-0064: hosted Linux and Windows package evidence exposed two repaired local mechanisms; exact-head revalidation is pending"
   ],
   "next_action": "Validate the frozen Stage 10 protocol against the authenticated Stage 09 FAILED_INFRASTRUCTURE terminal; execute only the independent suites the authority admits, preserve any fail-closed terminal, and do not access the sealed holdout.",
   "notes": [
