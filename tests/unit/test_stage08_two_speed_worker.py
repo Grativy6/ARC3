@@ -17,12 +17,17 @@ from typing import Any, cast
 
 import pytest
 
+from arc3.adapters import GridFrame, Observation
+from arc3.config import ARC3Config, BudgetConfig
 from arc3.evaluation.two_speed_measurement import (
     MeasurementVariant,
     build_measurement_matrix,
     canonical_measurement_hash,
     verify_canonical_object_hash,
 )
+from arc3.policy import ARC3Controller, ControllerPhase, ControllerPreset, RunContext
+from arc3.trace import BlobStore
+from arc3.types import ActionName, EnvironmentMode, GameId, GameStateName
 
 ROOT = Path(__file__).resolve().parents[2]
 WORKER_PATH = ROOT / "scripts" / "_stage08_two_speed_worker.py"
@@ -105,7 +110,15 @@ def _receipt_chain(
     *,
     is_reset: bool,
     submission_ordinal: int,
-) -> tuple[dict[str, object], list[SimpleNamespace]]:
+    initial_semantic_frame_hash: str = "sha256:" + "b" * 64,
+    initial_trace_frame_hash: str = "sha256:" + "d" * 64,
+    returned_semantic_frame_hash: str = "sha256:" + "a" * 64,
+    returned_trace_frame_hash: str = "sha256:" + "c" * 64,
+) -> tuple[
+    dict[str, object],
+    list[SimpleNamespace],
+    dict[str, tuple[str, ...]],
+]:
     action = {"coordinate": None, "name": "RESET" if is_reset else "ACTION1"}
     observation_id = f"{prefix}-observation"
     selected_id = f"{prefix}-selected"
@@ -114,11 +127,9 @@ def _receipt_chain(
     consequence_id = f"{prefix}-consequence"
     after_observation_id = f"{prefix}-after-observation"
     decision_id = f"{prefix}-decision"
-    frame_hash = "sha256:" + "a" * 64
-    initial_frame_hash = "sha256:" + "b" * 64
     initial_observation = {
         "available_actions": ["ACTION1", "RESET"],
-        "frame_digest": initial_frame_hash,
+        "frame_digest": initial_semantic_frame_hash,
         "full_reset": False,
         "game_id": "ar25-0c556536",
         "levels_completed": 0,
@@ -128,7 +139,7 @@ def _receipt_chain(
     }
     returned_observation = {
         "available_actions": ["ACTION1", "RESET"],
-        "frame_digest": frame_hash,
+        "frame_digest": returned_semantic_frame_hash,
         "full_reset": is_reset,
         "game_id": "ar25-0c556536",
         "levels_completed": 0,
@@ -145,7 +156,7 @@ def _receipt_chain(
         "choose_wall_ns": 1,
         "consequence_event_id": consequence_id,
         "consequence_event_hash": _event(consequence_id, "unused").event_hash,
-        "consequence_frame_hashes": [frame_hash],
+        "consequence_frame_hashes": [returned_semantic_frame_hash],
         "consequence_observation_event_hash": _event(after_observation_id, "unused").event_hash,
         "consequence_observation_event_id": after_observation_id,
         "consequence_returned": True,
@@ -166,7 +177,7 @@ def _receipt_chain(
             observation_id,
             "observation.received",
             available_actions=["ACTION1", "RESET"],
-            frames=[{"frame_hash": initial_frame_hash}],
+            frames=[{"frame_hash": initial_trace_frame_hash}],
             game_state="NOT_FINISHED",
             returned_action=None,
             upstream_metadata={
@@ -204,7 +215,7 @@ def _receipt_chain(
             after_state="NOT_FINISHED",
             levels_completed=0,
             returned_action=action,
-            returned_frames=[{"frame_hash": frame_hash}],
+            returned_frames=[{"frame_hash": returned_trace_frame_hash}],
             selected_event_id=selected_id,
             submitted_action=action,
             submitted_event_id=submitted_id,
@@ -213,7 +224,7 @@ def _receipt_chain(
             after_observation_id,
             "observation.received",
             available_actions=["ACTION1", "RESET"],
-            frames=[{"frame_hash": frame_hash}],
+            frames=[{"frame_hash": returned_trace_frame_hash}],
             game_state="NOT_FINISHED",
             returned_action=action,
             upstream_metadata={
@@ -223,7 +234,11 @@ def _receipt_chain(
             },
         ),
     ]
-    return boundary, events
+    semantic_frame_hashes = {
+        observation_id: (initial_semantic_frame_hash,),
+        after_observation_id: (returned_semantic_frame_hash,),
+    }
+    return boundary, events, semantic_frame_hashes
 
 
 def _minimal_boundary(*, is_reset: bool, status: str = "normal") -> dict[str, object]:
@@ -298,10 +313,15 @@ def _patch_successful_finalization_dependencies(
         lambda _state: (
             {"byte_length": 0, "replay_verified": True},
             [],
+            {},
         ),
     )
 
-    def project(state: Any, _events: object) -> tuple[list[dict[str, object]], dict[str, object]]:
+    def project(
+        state: Any,
+        _events: object,
+        _semantic_frame_hashes: object,
+    ) -> tuple[list[dict[str, object]], dict[str, object]]:
         boundaries = (
             projected(state)
             if projected is not None
@@ -438,9 +458,15 @@ def test_worker_paths_require_exact_fresh_contained_layout(
 
 
 def test_frozen_projection_preserves_interleaved_reset_order(worker: ModuleType) -> None:
-    action_0, events_0 = _receipt_chain(worker, "a0", is_reset=False, submission_ordinal=0)
-    reset, reset_events = _receipt_chain(worker, "r0", is_reset=True, submission_ordinal=1)
-    action_1, events_1 = _receipt_chain(worker, "a1", is_reset=False, submission_ordinal=2)
+    action_0, events_0, semantic_0 = _receipt_chain(
+        worker, "a0", is_reset=False, submission_ordinal=0
+    )
+    reset, reset_events, reset_semantic = _receipt_chain(
+        worker, "r0", is_reset=True, submission_ordinal=1
+    )
+    action_1, events_1, semantic_1 = _receipt_chain(
+        worker, "a1", is_reset=False, submission_ordinal=2
+    )
     state = worker._WorkerState(
         spec={"variant": MeasurementVariant.FROZEN_BUILD_000_FULL.value},
         source_identity={},
@@ -448,7 +474,11 @@ def test_frozen_projection_preserves_interleaved_reset_order(worker: ModuleType)
     )
     state.submitted_boundaries.extend((action_0, reset, action_1))
 
-    projected, cadence = worker._cadence_projection(state, [*events_0, *reset_events, *events_1])
+    projected, cadence = worker._cadence_projection(
+        state,
+        [*events_0, *reset_events, *events_1],
+        {**semantic_0, **reset_semantic, **semantic_1},
+    )
 
     assert [boundary["submission_ordinal"] for boundary in projected] == [0, 1, 2]
     assert [boundary["is_reset"] for boundary in projected] == [False, True, False]
@@ -457,11 +487,23 @@ def test_frozen_projection_preserves_interleaved_reset_order(worker: ModuleType)
 
 
 def test_action_chain_projection_fails_closed_on_link_tamper(worker: ModuleType) -> None:
-    boundary, events = _receipt_chain(worker, "tamper", is_reset=False, submission_ordinal=0)
-    assert worker._action_chain_projection(boundary, events)["action_chain_valid"] is True
+    boundary, events, semantic_frame_hashes = _receipt_chain(
+        worker, "tamper", is_reset=False, submission_ordinal=0
+    )
+    assert (
+        worker._action_chain_projection(boundary, events, semantic_frame_hashes)[
+            "action_chain_valid"
+        ]
+        is True
+    )
 
     events[2].payload["selected_event_id"] = "wrong-selected-event"
-    assert worker._action_chain_projection(boundary, events)["action_chain_valid"] is False
+    assert (
+        worker._action_chain_projection(boundary, events, semantic_frame_hashes)[
+            "action_chain_valid"
+        ]
+        is False
+    )
 
 
 @pytest.mark.parametrize(
@@ -478,18 +520,125 @@ def test_action_chain_projection_fails_closed_on_returned_observation_tamper(
     field: str,
     tampered_value: object,
 ) -> None:
-    boundary, events = _receipt_chain(
+    boundary, events, semantic_frame_hashes = _receipt_chain(
         worker, "returned-tamper", is_reset=False, submission_ordinal=0
     )
     consequence = cast(dict[str, object], boundary["consequence"])
     consequence[field] = tampered_value
-    assert worker._action_chain_projection(boundary, events)["action_chain_valid"] is False
+    assert (
+        worker._action_chain_projection(boundary, events, semantic_frame_hashes)[
+            "action_chain_valid"
+        ]
+        is False
+    )
+
+
+def test_real_frame_hash_namespaces_are_distinct_and_jointly_validated(
+    worker: ModuleType,
+    tmp_path: Path,
+) -> None:
+    frame = GridFrame.from_rows(((1, 2), (3, 4)))
+    blobs = BlobStore(tmp_path / "blobs")
+    trace_receipt = blobs.put_frame(frame.cells)
+    semantic_digest = str(frame.digest)
+    assert trace_receipt.frame_hash != semantic_digest
+
+    boundary, events, expected_semantic_hashes = _receipt_chain(
+        worker,
+        "real-hash-namespaces",
+        is_reset=False,
+        submission_ordinal=0,
+        initial_semantic_frame_hash=semantic_digest,
+        initial_trace_frame_hash=trace_receipt.frame_hash,
+        returned_semantic_frame_hash=semantic_digest,
+        returned_trace_frame_hash=trace_receipt.frame_hash,
+    )
+    descriptor = trace_receipt.to_payload()
+    events[0].payload["frames"] = [descriptor]
+    events[4].payload["returned_frames"] = [descriptor]
+    events[5].payload["frames"] = [descriptor]
+
+    observed_semantic_hashes = worker._verified_semantic_frame_hashes(
+        SimpleNamespace(blobs=blobs),
+        events,
+    )
+
+    assert observed_semantic_hashes == expected_semantic_hashes
+    assert (
+        worker._action_chain_projection(boundary, events, observed_semantic_hashes)[
+            "action_chain_valid"
+        ]
+        is True
+    )
+
+    tampered = copy.deepcopy(events)
+    tampered[5].payload["frames"][0]["frame_hash"] = "sha256:" + "f" * 64
+    with pytest.raises(RuntimeError, match="trace frame identity changed"):
+        worker._verified_semantic_frame_hashes(SimpleNamespace(blobs=blobs), tampered)
+
+
+def test_real_close_restore_compares_the_checkpoint_compatible_phase(
+    worker: ModuleType,
+    tmp_path: Path,
+) -> None:
+    cell_root = tmp_path / "cell"
+    context = RunContext(
+        run_id="stage08-close-restore",
+        episode_id="stage08-close-restore-episode",
+        game_id="synthetic-stage08-close-restore",
+        trace_root=cell_root / "trace",
+        checkpoint_root=cell_root / "checkpoint",
+        config=ARC3Config(
+            mode=EnvironmentMode.SYNTHETIC,
+            seed=7,
+            profile="stage08-close-restore-test",
+            budgets=BudgetConfig(max_actions=8, max_resets=8),
+        ),
+        git_commit="stage08-close-restore-test",
+    )
+    observation = Observation(
+        game_id=GameId(context.game_id),
+        frames=(GridFrame.from_rows(((0, 1), (1, 0))),),
+        state=GameStateName.NOT_FINISHED,
+        levels_completed=0,
+        win_levels=1,
+        available_actions=(ActionName.ACTION1,),
+        full_reset=True,
+    )
+    controller = ARC3Controller(ControllerPreset.FULL)
+    controller.reset(context)
+    controller.observe(observation)
+    checkpoint_compatible_snapshot = controller.snapshot
+    state = worker._WorkerState(
+        spec={
+            "checkpoint_root": str(context.checkpoint_root),
+            "trace_root": str(context.trace_root),
+        },
+        source_identity={},
+        asset_before={},
+    )
+    state.context = context
+    state.controller = controller
+
+    worker._close_controller(state)
+    assert checkpoint_compatible_snapshot.phase is ControllerPhase.OBSERVED
+    assert controller.snapshot.phase is ControllerPhase.CLOSED
+
+    receipt = worker._restore_checkpoint(state)
+
+    assert receipt["restore_valid"] is True
+    assert receipt["closed_snapshot_phase"] == ControllerPhase.CLOSED.value
+    assert receipt["expected_snapshot"] == receipt["restored_snapshot"]
+    expected = cast(dict[str, object], receipt["expected_snapshot"])
+    assert expected["phase"] == ControllerPhase.OBSERVED.value
 
 
 def test_cadence_projection_binds_nullable_ids_mode_schema_and_observation(
     worker: ModuleType,
 ) -> None:
-    boundary, events = _receipt_chain(worker, "cadence", is_reset=False, submission_ordinal=0)
+    boundary, events, semantic_frame_hashes = _receipt_chain(
+        worker, "cadence", is_reset=False, submission_ordinal=0
+    )
     observation, selected, validated, submitted, consequence, after_observation = events
     path_event = _event(
         "cadence-path",
@@ -588,11 +737,11 @@ def test_cadence_projection_binds_nullable_ids_mode_schema_and_observation(
     state.cadence_config = SimpleNamespace(configuration_hash="sha256:" + "3" * 64)
     state.submitted_boundaries.append(boundary)
 
-    _projected, cadence = worker._cadence_projection(state, ordered_events)
+    _projected, cadence = worker._cadence_projection(state, ordered_events, semantic_frame_hashes)
     assert cadence["typed_deep_receipts_complete"] is True
 
     path_event.payload["observation_event_id"] = "wrong-observation"
-    _projected, tampered = worker._cadence_projection(state, ordered_events)
+    _projected, tampered = worker._cadence_projection(state, ordered_events, semantic_frame_hashes)
     assert tampered["typed_deep_receipts_complete"] is False
 
     path_event.payload["observation_event_id"] = boundary["observation_event_id"]
@@ -603,12 +752,14 @@ def test_cadence_projection_binds_nullable_ids_mode_schema_and_observation(
     ):
         original = copy.deepcopy(path_event.payload[field])
         path_event.payload[field] = tampered_value
-        _projected, tampered = worker._cadence_projection(state, ordered_events)
+        _projected, tampered = worker._cadence_projection(
+            state, ordered_events, semantic_frame_hashes
+        )
         assert tampered["typed_deep_receipts_complete"] is False
         path_event.payload[field] = original
 
     terminal.payload["artifact_projection_hash"] = "sha256:" + "7" * 64
-    _projected, tampered = worker._cadence_projection(state, ordered_events)
+    _projected, tampered = worker._cadence_projection(state, ordered_events, semantic_frame_hashes)
     assert tampered["typed_deep_receipts_complete"] is False
 
 

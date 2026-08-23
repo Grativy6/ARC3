@@ -989,6 +989,10 @@ def _restore_checkpoint(state: _WorkerState) -> dict[str, object]:
     )
 
     expected_snapshot = state.controller.snapshot
+    checkpoint_phase = getattr(checkpoint, "phase", None)
+    checkpoint_phase_value = getattr(checkpoint_phase, "value", None)
+    if not isinstance(checkpoint_phase_value, str):
+        raise RuntimeError("Stage 08 checkpoint-compatible controller phase is unavailable")
     if state.cadence_config is None:
         restored = ARC3Controller.restore(
             restore_context,
@@ -1016,7 +1020,11 @@ def _restore_checkpoint(state: _WorkerState) -> dict[str, object]:
                 if expected_snapshot.pending_action is None
                 else _action_payload(expected_snapshot.pending_action)
             ),
-            "phase": expected_snapshot.phase.value,
+            # ``close`` deliberately changes only the live wrapper phase to
+            # CLOSED *after* writing the final resumable checkpoint.  Compare
+            # against the phase captured by that checkpoint rather than the
+            # non-resumable post-close wrapper phase.
+            "phase": checkpoint_phase_value,
             "resets_used": expected_snapshot.resets_used,
             "step_index": expected_snapshot.step_index,
         }
@@ -1037,6 +1045,7 @@ def _restore_checkpoint(state: _WorkerState) -> dict[str, object]:
             raise RuntimeError("Stage 08 restored terminal controller snapshot changed")
         return {
             "checkpoint_sha256": _sha256_file(path),
+            "closed_snapshot_phase": expected_snapshot.phase.value,
             "expected_snapshot": expected_projection,
             "next_action_equivalence_tested": False,
             "path": path.resolve().as_posix(),
@@ -1050,7 +1059,54 @@ def _restore_checkpoint(state: _WorkerState) -> dict[str, object]:
         restored.close()
 
 
-def _trace_receipt(state: _WorkerState) -> tuple[dict[str, object], list[Any]]:
+def _verified_semantic_frame_hashes(
+    journal: Any,
+    events: Sequence[Any],
+) -> dict[str, tuple[str, ...]]:
+    """Bind trace blob identities to normalized ``GridFrame`` identities.
+
+    Trace frame descriptors hash their canonical JSON blob representation,
+    while ``GridFrame.digest`` hashes a domain-separated binary grid.  Both are
+    valid but intentionally distinct identities, so evidence validation must
+    verify each namespace rather than compare them directly.
+    """
+
+    from arc3.adapters import GridFrame
+
+    semantic_by_observation: dict[str, tuple[str, ...]] = {}
+    for event in events:
+        if event.event_type != "observation.received":
+            continue
+        raw_frames = event.payload.get("frames")
+        if not isinstance(raw_frames, list) or not raw_frames:
+            raise RuntimeError("Stage 08 observation trace frame descriptors are unavailable")
+        semantic_hashes: list[str] = []
+        for raw_descriptor in raw_frames:
+            if not isinstance(raw_descriptor, Mapping):
+                raise RuntimeError("Stage 08 observation trace frame descriptor is invalid")
+            blob_hash = raw_descriptor.get("blob_hash")
+            trace_frame_hash = raw_descriptor.get("frame_hash")
+            if not isinstance(blob_hash, str) or not isinstance(trace_frame_hash, str):
+                raise RuntimeError("Stage 08 observation trace frame hashes are invalid")
+            rows = journal.blobs.get_frame(blob_hash)
+            normalized_rows = [list(row) for row in rows]
+            observed_trace_frame_hash = _sha256_bytes(_canonical_json_bytes(normalized_rows))
+            frame = GridFrame.from_rows(rows)
+            if (
+                observed_trace_frame_hash != trace_frame_hash
+                or raw_descriptor.get("width") != frame.width
+                or raw_descriptor.get("height") != frame.height
+                or raw_descriptor.get("palette") != list(frame.palette)
+            ):
+                raise RuntimeError("Stage 08 observation trace frame identity changed")
+            semantic_hashes.append(str(frame.digest))
+        semantic_by_observation[event.event_id] = tuple(semantic_hashes)
+    return semantic_by_observation
+
+
+def _trace_receipt(
+    state: _WorkerState,
+) -> tuple[dict[str, object], list[Any], dict[str, tuple[str, ...]]]:
     from arc3.trace import EventJournal, ReplayEngine
 
     trace_root = Path(cast(str, state.spec["trace_root"]))
@@ -1060,6 +1116,7 @@ def _trace_receipt(state: _WorkerState) -> tuple[dict[str, object], list[Any]]:
         if journal.active_path.is_file() and journal.active_path.stat().st_size:
             journal.seal()
         events = list(ReplayEngine(journal).verify_integrity(verify_blobs=True))
+        semantic_frame_hashes = _verified_semantic_frame_hashes(journal, events)
         counts: dict[str, int] = {}
         for event in events:
             counts[event.event_type] = counts.get(event.event_type, 0) + 1
@@ -1067,12 +1124,21 @@ def _trace_receipt(state: _WorkerState) -> tuple[dict[str, object], list[Any]]:
             "byte_length": _directory_bytes(trace_root),
             "event_count": len(events),
             "event_type_counts": counts,
+            "frame_namespace_validation": {
+                "observation_event_count": len(semantic_frame_hashes),
+                "semantic_frame_digest_count": sum(
+                    len(items) for items in semantic_frame_hashes.values()
+                ),
+                "semantic_grid_digests_derived": True,
+                "trace_blob_hashes_verified": True,
+                "trace_frame_hashes_verified": True,
+            },
             "manifest_hash": journal.manifest.manifest_hash,
             "path": trace_root.resolve().as_posix(),
             "replay_verified": True,
             "tail_event_hash": events[-1].event_hash if events else None,
         }
-        return receipt, events
+        return receipt, events, semantic_frame_hashes
     finally:
         journal.close()
 
@@ -1080,6 +1146,7 @@ def _trace_receipt(state: _WorkerState) -> tuple[dict[str, object], list[Any]]:
 def _action_chain_projection(
     boundary: Mapping[str, object],
     events: Sequence[Any],
+    semantic_frame_hashes: Mapping[str, tuple[str, ...]],
 ) -> dict[str, object]:
     def observation_receipt_matches(
         payload: object,
@@ -1093,12 +1160,17 @@ def _action_chain_projection(
             return False
         frames = event.payload.get("frames")
         metadata = event.payload.get("upstream_metadata")
-        if not isinstance(frames, list) or not frames or not isinstance(metadata, Mapping):
+        semantic_hashes = semantic_frame_hashes.get(event.event_id)
+        if (
+            not isinstance(frames, list)
+            or not frames
+            or not isinstance(metadata, Mapping)
+            or semantic_hashes is None
+            or len(semantic_hashes) != len(frames)
+        ):
             return False
-        final_frame = frames[-1]
         return (
-            isinstance(final_frame, Mapping)
-            and final_frame.get("frame_hash") == payload.get("frame_digest")
+            semantic_hashes[-1] == payload.get("frame_digest")
             and event.game_id == payload.get("game_id")
             and event.payload.get("game_state") == payload.get("state")
             and event.payload.get("available_actions") == payload.get("available_actions")
@@ -1139,6 +1211,11 @@ def _action_chain_projection(
     returned_frames = (
         consequence.payload.get("returned_frames") if consequence is not None else None
     )
+    returned_semantic_hashes = (
+        semantic_frame_hashes.get(after_observation.event_id)
+        if after_observation is not None
+        else None
+    )
     exact_return_binding = (
         isinstance(consequence_payload, Mapping)
         and consequence is not None
@@ -1146,13 +1223,10 @@ def _action_chain_projection(
         and observation_receipt_matches(consequence_payload, after_observation)
         and isinstance(consequence_frame_hashes, list)
         and consequence_frame_hashes
+        and returned_semantic_hashes is not None
         and isinstance(returned_frames, list)
         and returned_frames == after_observation.payload.get("frames")
-        and consequence_frame_hashes
-        == [
-            frame.get("frame_hash") if isinstance(frame, Mapping) else None
-            for frame in returned_frames
-        ]
+        and consequence_frame_hashes == list(returned_semantic_hashes)
         and consequence_payload.get("frame_digest") == consequence_frame_hashes[-1]
         and consequence.payload.get("after_state") == consequence_payload.get("state")
         and consequence.payload.get("levels_completed")
@@ -1218,10 +1292,11 @@ def _action_chain_projection(
 def _cadence_projection(
     state: _WorkerState,
     events: Sequence[Any],
+    semantic_frame_hashes: Mapping[str, tuple[str, ...]],
 ) -> tuple[list[dict[str, object]], dict[str, object]]:
     variant = cast(str, state.spec["variant"])
     action_chains = {
-        id(boundary): _action_chain_projection(boundary, events)
+        id(boundary): _action_chain_projection(boundary, events, semantic_frame_hashes)
         for boundary in state.submitted_boundaries
     }
     if variant == "FROZEN_BUILD_000_FULL":
@@ -1701,7 +1776,7 @@ def _finalize(
     if checkpoint.get("restore_valid") is not True:
         fail("checkpoint-restore", "terminal checkpoint did not restore exactly")
     try:
-        trace, events = _trace_receipt(state)
+        trace, events, semantic_frame_hashes = _trace_receipt(state)
     except Exception as trace_error:
         trace = {
             "byte_length": _directory_bytes(Path(cast(str, state.spec["trace_root"]))),
@@ -1710,9 +1785,14 @@ def _finalize(
             "reason": f"{type(trace_error).__name__}: {trace_error}",
         }
         events = []
+        semantic_frame_hashes = {}
         fail("trace-replay", trace_error)
     try:
-        projected_boundaries, cadence = _cadence_projection(state, events)
+        projected_boundaries, cadence = _cadence_projection(
+            state,
+            events,
+            semantic_frame_hashes,
+        )
     except Exception as cadence_error:
         projected_boundaries = [
             {
