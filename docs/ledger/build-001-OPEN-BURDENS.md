@@ -1079,7 +1079,7 @@ does not erase earlier uncertainty or failed mechanisms.
 
 ## B-001-0048 — Stage 08 validators conflated close state and frame-hash namespaces
 
-- Status: OPEN
+- Status: RESOLVED
 - Stage: 08
 - Opened: 2026-08-23
 - Owner: Codex
@@ -1218,3 +1218,49 @@ does not erase earlier uncertainty or failed mechanisms.
   eleven failures remain preserved as integration evidence.
 - Boundary: this resolves only schema alignment. The independent authority blockers under
   B-001-0052 still prevent Stage 10 execution and any holdout decision.
+
+## B-001-0054 — Package-only verification could falsely pass crossed boundaries
+
+- Status: OPEN
+- Stage: 13
+- Opened: 2026-08-23
+- Owner: Codex
+- Burden: exact-commit audit of `96de932` demonstrated four false-PASS paths: a `python -I`
+  child bypassed inherited `sitecustomize` and read a protected synthetic file; `os.remove`
+  deleted protected evidence without an attempt; a Windows junction bypassed lexical path
+  checks; and a packaged synthetic agent sent UDP while startup reported zero network attempts.
+  The first Linux package workflow also failed because isolated mode could not import the editable
+  candidate source, and the workflow initially treated the verifier's exit code incorrectly.
+- Why it matters: neither a zero-attempt receipt nor an offline startup PASS is evidence when the
+  boundary can be escaped. Such receipts cannot authorize Stage 13, Stage 10, or holdout work.
+- Current evidence: commits `903f9f5e137cdc1c699bc164173e21b3e6d8c3a7` and
+  `24450526ca3c36e9b34fd6f3bc9116555aa37b6f` explicitly bind isolated imports, canonicalize
+  junctions, default-deny external paths, protect the receipt/log, deny child processes and
+  destructive operations, and deny all Python socket audit events during startup. Fourteen
+  focused adversarial tests passed; Ruff and strict Windows/Linux mypy passed. Exact-source
+  Windows/Linux package workflow verification remains pending, and additional P1 package audit
+  repairs remain in progress.
+- Resolution condition: exact-source CI passes the guarded package subset and startup checks on
+  both Windows and Linux; every audit exploit has a failing regression under the vulnerable code
+  and a passing denial under the repair; package receipts preserve the scoped claim below; and
+  package archive/integrity safety findings are closed or separately reported.
+
+## B-001-0055 — Python audit guards are not OS process-tree containment
+
+- Status: OPEN
+- Stage: 13
+- Opened: 2026-08-23
+- Owner: Codex
+- Burden: the repaired package-only test guard proves only that selected in-process tests made no
+  Python-audited disallowed access and spawned no Python-audited child. It does not mount or ACL an
+  allowlisted filesystem, create a network namespace/firewall boundary, prevent native-extension
+  escape, or supervise aggregate descendant RSS and orphan termination. The verifier's current
+  resource measurement is direct-process only.
+- Why it matters: a Python audit receipt must not be promoted into a claim that the entire process
+  tree was OS-contained or physically incapable of reaching every host resource.
+- Current evidence: the v0.2 guard receipt states verbatim that it is not OS containment; the
+  package startup receipt separately names Python audit-hook socket/process enforcement. Fresh
+  hosted CI runners and filtered scopes reduce exposure but do not erase this architectural limit.
+- Resolution condition: either add measured cross-platform OS filesystem/network/process-tree
+  containment with adversarial orphan/native tests, or finish Stage 13 honestly as bounded/partial
+  and keep the narrower Python-level claim in every receipt, report, and PR summary.

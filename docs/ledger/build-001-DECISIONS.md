@@ -895,3 +895,21 @@ independent authorities.
   any unique prior attempt, any holdout opening, or any claim from malformed/recovered evidence.
 - Reopening condition: all cited exploit paths are unreachable under exact-source adversarial tests
   and independent review, or a new finding reopens the boundary.
+
+## D-001-0046 — Scope package guards to what Python-level evidence can establish
+
+- Recorded: 2026-08-23T03:42:21.1696945Z
+- Status: accepted
+- Decision: a package-only guard PASS may mean only that the statically selected in-process test
+  set made no Python-audited disallowed path access beyond allow-root-ancestor directory metadata
+  and spawned no Python-audited child. Startup may claim Python socket/process audit denial only.
+  Neither result is OS containment. Default-deny canonical paths, protect the guard evidence
+  itself, preserve the full excluded-test list, and fail the verifier if this exact scope changes.
+- Evidence: independent audit B-001-0054/B-001-0055; exploit regressions for isolated child,
+  external read, destructive operations, junction traversal, guard-log deletion, UDP send, and
+  startup child launch; repair commit `24450526ca3c36e9b34fd6f3bc9116555aa37b6f`.
+- Boundary: this decision authorizes no public semantic access, gameplay, private Kaggle claim,
+  official submission, or statement that native/process-tree reachability has been eliminated.
+- Reopening condition: any guarded Python operation crosses the declared boundary without a
+  recorded failure, any excluded/process-capable test is silently promoted, or a report describes
+  the scoped evidence as OS-level offline containment.
