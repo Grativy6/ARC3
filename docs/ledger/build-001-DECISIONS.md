@@ -764,3 +764,26 @@ independent authorities.
   stable; the ten-game holdout has zero gameplay events and remains sealed.
 - Reopening condition: none for this attempt. A future separately predeclared measurement may use
   a repaired generic validator but cannot overwrite, resume, or supersede Attempt 01.
+
+## D-001-0039 — Freeze Stage 10 floors and supervise valid negative child evidence
+
+- Recorded: 2026-08-23T00:57:24.3930952Z
+- Status: accepted
+- Decision: Freeze the Workflow 001 Stage 10 qualitative and exact regression floors before any
+  decisive execution. Run nine synthetic suites serially under one exact clean source identity.
+  Accept child exit 1 only when a self-hashed artifact proves a bounded measured
+  `FAILED_MECHANISM`; preserve that negative evidence and continue independent suites. Give any
+  missing, interrupted, malformed, source-drifted, or hash-invalid child infrastructure precedence.
+- Evidence: `docs/evidence/001-10-robustness-regression-predeclaration.json`, SHA-256
+  `02ad73f25cd6c21459cf425a29de0b830fa27bd660c58777b272ac57116d26e3`; integration commit
+  `670e57b7077a94b9c5087b4a9827a00681f26d4b`; 47 integrated supervisor, checkpoint, cadence, and
+  integrity tests passed in 24.09 seconds; Ruff, format, and strict mypy over six files passed. Its
+  clean non-playing preflight froze nine collision-free suites with plan hash
+  `3e4a4bff3cc7b4d36c516e1666deacb93a487c07f3753d786d92cf5ba913b12a` and created neither an
+  attempt root nor result.
+- Boundary: this is `synthetic` premeasurement infrastructure, not a Stage 10 result. It opens no
+  public environment and reads no holdout identity or asset. The eventual decisive source commit
+  must contain source floor `2e78c258` and be frozen explicitly at launch.
+- Reopening condition: a valid negative child is relabeled as infrastructure from exit code alone;
+  an interrupted child can be silently rerun; source, stream, child, parent, or invocation hashes
+  can drift on resume; or any frozen floor changes after observing a decisive result.

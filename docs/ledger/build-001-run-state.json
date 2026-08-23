@@ -11,8 +11,8 @@
   "implementation_branch": "build/001-local-public-recovery",
   "pull_request": "https://github.com/Grativy6/ARC3/pull/5",
   "started_at": "2026-08-21T15:41:02Z",
-  "last_checkpoint_at": "2026-08-23T00:51:15.3565958Z",
-  "last_checkpoint_commit": "60bf7e949daa01365a3dd048e6a4a1644bc10e9e",
+  "last_checkpoint_at": "2026-08-23T00:57:24.3930952Z",
+  "last_checkpoint_commit": "670e57b7077a94b9c5087b4a9827a00681f26d4b",
   "base": {
     "main_commit": "28c7a00732ce48e5c231211b01bc6eba7d0d71b4",
     "main_tree": "4586299448e9b1b585a0878674ed5f9afa60c384",
@@ -461,6 +461,30 @@
         "B-001-0048"
       ],
       "public_holdout_consumed": false
+    },
+    "10": {
+      "status": "PENDING",
+      "label": "synthetic",
+      "claim": "NO_GENERALIZATION_CLAIM",
+      "predeclaration": "docs/evidence/001-10-robustness-regression-predeclaration.json",
+      "predeclaration_sha256": "sha256:02ad73f25cd6c21459cf425a29de0b830fa27bd660c58777b272ac57116d26e3",
+      "source_floor_commit": "2e78c258cfbee8be62462f61ed08ad04c00a8934",
+      "supervisor_integration_commit": "670e57b7077a94b9c5087b4a9827a00681f26d4b",
+      "supervisor_integration_tree": "038f197226c3faa9e375b220444912ba3576addb",
+      "implementation_status": "FROZEN_PREMEASUREMENT_SUPERVISOR_READY",
+      "decisive_execution_started": false,
+      "integrated_verification": "PASS:47-tests-in-24.09s+ruff+format+mypy-strict-6-files",
+      "non_playing_preflight": {
+        "status": "PASS",
+        "source_commit": "670e57b7077a94b9c5087b4a9827a00681f26d4b",
+        "plan_hash": "sha256:3e4a4bff3cc7b4d36c516e1666deacb93a487c07f3753d786d92cf5ba913b12a",
+        "preflight_hash": "sha256:0dc3f97dc7dafb6bd124d6bee9044cfb6f15e107b985dd6dd7985e2d99a99af2",
+        "suite_count": 9,
+        "attempt_root_created": false,
+        "output_created": false
+      },
+      "public_environment_opened": false,
+      "public_holdout_consumed": false
     }
   },
   "artifacts": {
@@ -595,6 +619,10 @@
     "stage_08_report": {
       "path": "docs/reports/001-08-two-speed-controller.md",
       "sha256": "e6aae8fbf30df955770587c4962b5630b0a2a72f950b4bc5a290d48bb9758f03"
+    },
+    "stage_10_predeclaration": {
+      "path": "docs/evidence/001-10-robustness-regression-predeclaration.json",
+      "sha256": "02ad73f25cd6c21459cf425a29de0b830fa27bd660c58777b272ac57116d26e3"
     }
   },
   "blocked_items": [],
