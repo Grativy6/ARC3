@@ -11,7 +11,7 @@ import stat
 import subprocess
 import zipfile
 from collections import deque
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 
@@ -392,6 +392,29 @@ def _repository_input_path(root: Path, raw_path: str | Path) -> Path:
     normalized = Path(os.path.abspath(candidate))
     _relative_path(root, normalized)
     return normalized
+
+
+def _archive_input_path(root: Path, raw_path: str | Path) -> Path:
+    """Normalize an explicitly supplied archive without requiring checkout residency."""
+
+    candidate = Path(raw_path)
+    if not candidate.is_absolute():
+        candidate = root / candidate
+    return Path(os.path.abspath(candidate))
+
+
+def _archive_path_labels(root: Path, archives: Sequence[Path]) -> Mapping[Path, str]:
+    """Return portable labels for repository-local and explicitly supplied archives."""
+
+    labels: dict[Path, str] = {}
+    for index, archive in enumerate(archives):
+        if _is_within(root, archive):
+            label = _relative_path(root, archive)
+        else:
+            safe_name = re.sub(r"[^A-Za-z0-9._-]", "_", archive.name) or "archive.zip"
+            label = f"@supplied-archive/{index:04d}/{safe_name}"
+        labels[archive] = label
+    return labels
 
 
 def _path_at_or_below(path: Path, prefix: Path) -> bool:
@@ -786,45 +809,55 @@ def _read_scannable_file(
     path: Path,
     max_bytes: int,
     read_contents: bool = True,
+    path_label: str | None = None,
 ) -> tuple[bytes | None, IntegrityFinding | None]:
-    try:
-        metadata = path.lstat()
-    except OSError as error:
-        return None, _finding(
+    def unreadable_finding(
+        *,
+        rule_id: str,
+        evidence: str,
+        message: str,
+    ) -> IntegrityFinding:
+        if path_label is not None:
+            return _finding_for_label(
+                path_label=path_label,
+                line=1,
+                category=FindingCategory.UNSCANNABLE_CANDIDATE,
+                rule_id=rule_id,
+                evidence=evidence,
+                message=message,
+            )
+        return _finding(
             root=root,
             path=path,
             line=1,
             category=FindingCategory.UNSCANNABLE_CANDIDATE,
+            rule_id=rule_id,
+            evidence=evidence,
+            message=message,
+        )
+
+    try:
+        metadata = path.lstat()
+    except OSError as error:
+        return None, unreadable_finding(
             rule_id="candidate-unreadable",
             evidence=type(error).__name__,
             message="candidate path cannot be read for static assurance",
         )
     if stat.S_ISLNK(metadata.st_mode):
-        return None, _finding(
-            root=root,
-            path=path,
-            line=1,
-            category=FindingCategory.UNSCANNABLE_CANDIDATE,
+        return None, unreadable_finding(
             rule_id="candidate-symlink",
             evidence="symlink",
             message="candidate path is a symlink and is not safe to follow",
         )
     if not stat.S_ISREG(metadata.st_mode):
-        return None, _finding(
-            root=root,
-            path=path,
-            line=1,
-            category=FindingCategory.UNSCANNABLE_CANDIDATE,
+        return None, unreadable_finding(
             rule_id="candidate-not-regular",
             evidence=str(metadata.st_mode),
             message="candidate path is not a regular file",
         )
     if metadata.st_size > max_bytes:
-        return None, _finding(
-            root=root,
-            path=path,
-            line=1,
-            category=FindingCategory.UNSCANNABLE_CANDIDATE,
+        return None, unreadable_finding(
             rule_id="candidate-size-limit",
             evidence=str(metadata.st_size),
             message="candidate file exceeds the explicit static-scan byte limit",
@@ -834,11 +867,7 @@ def _read_scannable_file(
     try:
         return path.read_bytes(), None
     except OSError as error:
-        return None, _finding(
-            root=root,
-            path=path,
-            line=1,
-            category=FindingCategory.UNSCANNABLE_CANDIDATE,
+        return None, unreadable_finding(
             rule_id="candidate-unreadable",
             evidence=type(error).__name__,
             message="candidate path cannot be read for static assurance",
@@ -1028,13 +1057,16 @@ def scan_archive_files(
 
     identifiers = tuple(sorted(set(public_identifiers), key=lambda value: (-len(value), value)))
     findings: list[IntegrityFinding] = []
-    for archive in archives:
-        path_label = _relative_path(root, archive)
+    archive_sequence = tuple(archives)
+    archive_labels = _archive_path_labels(root, archive_sequence)
+    for archive in archive_sequence:
+        path_label = archive_labels[archive]
         raw, unreadable = _read_scannable_file(
             root=root,
             path=archive,
             max_bytes=max_archive_bytes,
             read_contents=False,
+            path_label=path_label,
         )
         if unreadable is not None:
             findings.append(unreadable)
@@ -1424,12 +1456,8 @@ def build_integrity_receipt(
         if semantic_public_manifest_access
         else None
     )
-    archives = tuple(
-        sorted(
-            {_repository_input_path(repository, path) for path in archive_paths},
-            key=lambda item: _relative_path(repository, item),
-        )
-    )
+    archives = tuple(dict.fromkeys(_archive_input_path(repository, path) for path in archive_paths))
+    archive_labels = _archive_path_labels(repository, archives)
     output_exclusions: tuple[Path, ...] = ()
     output_label: str | None = None
     if receipt_output_path is not None and _is_within(repository, receipt_output_path):
@@ -1660,18 +1688,24 @@ def build_integrity_receipt(
     }
     file_hashes: dict[str, JSONValue] = {}
     hash_findings: list[IntegrityFinding] = []
-    for path in sorted(identity_paths, key=lambda item: _relative_path(repository, item)):
+
+    def identity_label(path: Path) -> str:
+        if path in archive_labels:
+            return archive_labels[path]
+        return _relative_path(repository, path)
+
+    for path in sorted(identity_paths, key=identity_label):
         try:
             metadata = path.lstat()
             if stat.S_ISREG(metadata.st_mode) and metadata.st_size <= max_candidate_bytes:
-                file_hashes[_relative_path(repository, path)] = sha256_file(path)
+                file_hashes[identity_label(path)] = sha256_file(path)
             elif path in archives and stat.S_ISREG(metadata.st_mode):
-                file_hashes[_relative_path(repository, path)] = sha256_file(path)
+                file_hashes[identity_label(path)] = sha256_file(path)
         except OSError as error:
+            label = identity_label(path)
             hash_findings.append(
-                _finding(
-                    root=repository,
-                    path=path,
+                _finding_for_label(
+                    path_label=label,
                     line=1,
                     category=FindingCategory.SOURCE_IDENTITY,
                     rule_id="source-hash-unavailable",
@@ -1726,7 +1760,7 @@ def build_integrity_receipt(
     )
     inputs: dict[str, JSONValue] = {
         "archive_count": len(archives),
-        "archive_paths": [_relative_path(repository, path) for path in archives],
+        "archive_paths": [archive_labels[path] for path in archives],
         "candidate_file_count": len(normalized_candidates),
         "candidate_paths": [_relative_path(repository, path) for path in normalized_candidates],
         "candidate_mode": (

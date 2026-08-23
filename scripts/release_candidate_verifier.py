@@ -1542,6 +1542,10 @@ def _build_package_only_plan(
     lock_dependencies = ("dependency-sync", "dependency-lock")
     package_safe_ignores = (
         "tests/competition/test_controller_offline_integrity.py",
+        "tests/integration/test_evaluation_cli.py",
+        "tests/integration/test_kaggle_package_determinism.py",
+        "tests/integration/test_retrodiction_decision_integration.py",
+        "tests/integration/test_stage16_runtime_profile.py",
         "tests/integrity/test_repository_integrity.py",
         "tests/release/test_release_candidate_verifier.py",
         "tests/unit/test_measure_rule_change.py",

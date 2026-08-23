@@ -1360,3 +1360,24 @@ does not erase earlier uncertainty or failed mechanisms.
   clean commit; add the before-results Stage 09 amendment without changing the frozen matrix,
   seeds, budgets, pass rule, or holdout gate; then repin Stage 09/10/11 authority before gameplay.
 - Resolution receipt: pending amended freeze and fresh exact-source authority artifacts.
+
+### B-001-0054 — Cross-platform failure evidence narrowed the remaining package repair
+
+- Status update: NARROWED, not resolved.
+- Last updated: 2026-08-23T05:11:04.1107215Z
+- Current evidence: package-only workflow run `32618693323` completed on both systems and uploaded
+  failure artifacts. It evaluated GitHub's pull-request merge commit
+  `396f53bd545276faaeb3f1b872ad45b6a1336e4a`, rather than literal branch head `44d9f83`.
+  Ubuntu preserved receipt file
+  `sha256:681eac22b411ebd3bd80593d52e4f8508c2e6101b5f4c452296016a7dd5e29e6`
+  after 754 tests passed and 10 failed; Windows preserved receipt file
+  `sha256:63b635cdb9ac3f60e1569f8a5f2de355806f1e7e2f82c80e4b794c8bc7c5fd69`
+  after 756 passed and 8 failed. Both static checks rejected the generated archive because it was
+  outside the checkout. The remaining guarded failures attempted a correctly denied public
+  manifest read or child process; two Ubuntu-only runtime-profile failures depended on correctly
+  denied external OS telemetry. The local repair gives explicit external archives portable labels,
+  retains all archive safety checks, excludes the four boundary-requiring files only from the
+  Python-audited subset, and binds pull-request package runs to the literal head SHA.
+- Remaining burden: commit the repair, execute the literal exact-head workflow on Linux and
+  Windows, validate both uploaded receipts and ordinary-CI coverage, and preserve any contradiction.
+- Resolution receipt: pending exact-head cross-platform run.

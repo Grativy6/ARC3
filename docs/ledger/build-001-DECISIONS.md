@@ -978,3 +978,29 @@ independent authorities.
 - Reopening condition: wrapper behavior differs after extraction; a reachable module is omitted,
   unscanned, or unhashed; exact-source receipt validation fails; hosted cross-platform execution
   contradicts the local result; or production-policy bytes change after the amended freeze.
+
+## D-001-0050 — Keep generated-package scanning portable and guarded tests boundary-honest
+
+- Recorded: 2026-08-23T05:11:04.1107215Z
+- Status: accepted
+- Decision: permit the static integrity scanner to read only explicitly supplied package archives
+  outside the checkout, reject links/non-regular/unreadable/oversized inputs as before, and record
+  deterministic ordinal labels instead of host paths. Keep tests that require public partition
+  semantics, child processes, or protected OS telemetry outside the Python-audited in-process
+  package-safe subset; preserve their coverage in the ordinary cross-platform suite. On pull
+  requests, check out the literal head SHA before claiming an exact-source package receipt.
+- Evidence: package-only workflow run `32618693323` preserved both platform failures and artifacts.
+  Ubuntu reported 754 passed/10 failed and Windows 756 passed/8 failed; both refused the generated
+  external archive. Artifact digests are
+  `sha256:03b3427f90d6410a58460762bf0ea77bee17d45a7a598ffb96997bb722067a67`
+  and `sha256:c46ebd7c7fbfc1bb6ad8a73573dc1670f85a3a6dee25837d2cd07194cdde2a77`.
+  The focused repair passed 16 tests, Ruff check/format, strict mypy over the changed first-party
+  modules, and a direct external-archive scan with zero blocking/archive findings and no absolute
+  path in the receipt.
+- Boundary: excluded guarded tests are not silently declared package-safe; they remain named in
+  command evidence and must pass in ordinary CI. This creates no gameplay result, public-identifier
+  scan, OS-containment claim, or private-platform compatibility claim.
+- Reopening condition: an external archive path leaks into canonical evidence, archive safety is
+  weakened, an excluded test disappears from ordinary CI, a pull-request package run verifies a
+  synthetic merge commit as if it were the literal branch head, or exact-head cross-platform CI
+  contradicts the focused repair.

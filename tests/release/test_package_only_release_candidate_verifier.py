@@ -50,6 +50,13 @@ def test_package_only_plan_has_no_public_inventory_or_gameplay(tmp_path: Path) -
     assert "scripts.package_only_pytest" in by_id["package-safe-test-suite"].argv
     assert "--select-in-process-tests" in by_id["package-safe-test-suite"].argv
     assert "package-only-test-guard.json" in " ".join(by_id["package-safe-test-suite"].argv)
+    safe_test_argv = set(by_id["package-safe-test-suite"].argv)
+    assert {
+        "tests/integration/test_evaluation_cli.py",
+        "tests/integration/test_kaggle_package_determinism.py",
+        "tests/integration/test_retrodiction_decision_integration.py",
+        "tests/integration/test_stage16_runtime_profile.py",
+    } <= safe_test_argv
     assert all(
         by_id[check_id].measure_peak_rss
         for check_id in (
