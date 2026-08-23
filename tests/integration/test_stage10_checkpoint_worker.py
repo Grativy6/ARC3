@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
+import subprocess
 import sys
 from pathlib import Path
 from types import ModuleType
@@ -20,6 +21,27 @@ def worker() -> ModuleType:
     sys.modules[module_name] = module
     specification.loader.exec_module(module)
     return module
+
+
+@pytest.mark.integration
+def test_checkpoint_worker_git_identity_disables_redirection_and_replacements(
+    worker: ModuleType,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("GIT_DIR", "redirected.git")
+    monkeypatch.setenv("git_work_tree", "redirected-worktree")
+    captured: dict[str, str] = {}
+
+    def fake_run(*_args: object, **kwargs: object) -> subprocess.CompletedProcess[str]:
+        captured.update(kwargs["env"])
+        return subprocess.CompletedProcess([], 0, stdout="", stderr="")
+
+    monkeypatch.setattr(worker.subprocess, "run", fake_run)
+
+    assert worker._git("rev-parse", "HEAD") == ""
+    assert captured["GIT_NO_REPLACE_OBJECTS"] == "1"
+    assert "GIT_DIR" not in captured
+    assert "git_work_tree" not in captured
 
 
 @pytest.mark.integration

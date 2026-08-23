@@ -131,6 +131,7 @@ def _git(root: Path, *arguments: str, check: bool = True) -> str:
     environment = {
         key: value for key, value in os.environ.items() if not key.upper().startswith("GIT_")
     }
+    environment["GIT_NO_REPLACE_OBJECTS"] = "1"
     completed = subprocess.run(
         ("git", *arguments),
         cwd=root,
@@ -151,6 +152,7 @@ def _git_success(root: Path, *arguments: str) -> bool:
     environment = {
         key: value for key, value in os.environ.items() if not key.upper().startswith("GIT_")
     }
+    environment["GIT_NO_REPLACE_OBJECTS"] = "1"
     return (
         subprocess.run(
             ("git", *arguments),
@@ -626,6 +628,7 @@ def _safe_environment(source_root: Path) -> dict[str, str]:
     environment.update(
         {
             "ARC3_OFFLINE": "1",
+            "GIT_NO_REPLACE_OBJECTS": "1",
             "HF_HUB_OFFLINE": "1",
             "NO_PROXY": "*",
             "PYTHONNOUSERSITE": "1",

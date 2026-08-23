@@ -51,6 +51,38 @@ def _supervisor() -> dict[str, object]:
     }
 
 
+def test_stage10_git_authority_disables_replacements_and_caller_redirection(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("GIT_DIR", "redirected.git")
+    monkeypatch.setenv("git_index_file", "redirected.index")
+    captured: list[dict[str, str]] = []
+
+    def fake_run(*_args: object, **kwargs: object) -> subprocess.CompletedProcess[str]:
+        captured.append(cast(dict[str, str], kwargs["env"]))
+        return subprocess.CompletedProcess([], 0, stdout="", stderr="")
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    assert harness._git(ROOT, "status", "--porcelain=v1") == ""
+    assert harness._git_success(ROOT, "rev-parse", "HEAD") is True
+    assert len(captured) == 2
+    for environment in captured:
+        assert environment["GIT_NO_REPLACE_OBJECTS"] == "1"
+        assert "GIT_DIR" not in environment
+        assert "git_index_file" not in environment
+
+
+def test_stage10_child_environment_disables_replacement_objects(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("GIT_DIR", "redirected.git")
+    environment = harness._safe_environment(ROOT)
+
+    assert environment["GIT_NO_REPLACE_OBJECTS"] == "1"
+    assert "GIT_DIR" not in environment
+
+
 def _integrity_inputs(tmp_path: Path) -> Path:
     path = tmp_path / "integrity-authority-inputs.json"
     payload: dict[str, object] = {

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -33,11 +34,16 @@ _MAX_ACTIONS = 16
 
 
 def _git(*arguments: str) -> str:
+    environment = {
+        key: value for key, value in os.environ.items() if not key.upper().startswith("GIT_")
+    }
+    environment["GIT_NO_REPLACE_OBJECTS"] = "1"
     completed = subprocess.run(
         ("git", *arguments),
         cwd=ROOT,
         check=False,
         capture_output=True,
+        env=environment,
         text=True,
         encoding="utf-8",
         timeout=10,
