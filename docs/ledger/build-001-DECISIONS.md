@@ -787,3 +787,23 @@ independent authorities.
 - Reopening condition: a valid negative child is relabeled as infrastructure from exit code alone;
   an interrupted child can be silently rerun; source, stream, child, parent, or invocation hashes
   can drift on resume; or any frozen floor changes after observing a decisive result.
+
+## D-001-0040 — Repair future Stage 08 validation without rewriting Attempt 01
+
+- Recorded: 2026-08-23T01:02:06.1503635Z
+- Status: accepted
+- Decision: Treat the two Stage 08 validation failures as distinct namespace/lifecycle defects.
+  Verify canonical trace frame identities and domain-separated semantic grid identities separately,
+  bind controller consequence receipts to the semantic identity, and compare terminal restoration
+  with the phase actually captured in the checkpoint. Preserve all other exact snapshot and causal
+  receipt checks. Apply the repair only to future validation; never rerun, resume, or relabel the
+  unique Stage 08 Attempt 01.
+- Evidence: implementation commit `fa24a4326ed191a3dd97b36903a2032bb481c524`; worker SHA-256
+  `31cdea4060013d2a80358b2249d62bf556064f7e1ae87b729a84cb5715f61f03`; regression-test SHA-256
+  `8cb7f6b12c4da65f23354187da6c9fb3f0ac303f6228b41154aaf1316b2851de`; 113 focused tests passed,
+  Ruff lint/format passed, and strict mypy passed over the repaired source and test module.
+- Boundary: this is non-playing infrastructure evidence. It creates no score, opens no environment,
+  consumes no holdout, and cannot supply the missing Stage 08 timing pairs or materiality result.
+- Reopening condition: either identity namespace is no longer independently verified; restored
+  non-phase state drift is accepted; real close/checkpoint/restore behavior changes; or a future
+  separately predeclared measurement exposes another validator incompatibility.

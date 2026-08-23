@@ -5,7 +5,7 @@ does not erase earlier uncertainty or failed mechanisms.
 
 ## B-001-0001 — Local-public controller failure
 
-- Status: OPEN
+- Status: RESOLVED_FOR_FUTURE_VALIDATION
 - Carried from: Build 000 burdens B-20260821-038 and B-20260821-045
 - Burden: FULL completed zero levels and timed out in every measured local-public run; causal hot
   path and generic recovery remain unproved.
@@ -1092,6 +1092,7 @@ does not erase earlier uncertainty or failed mechanisms.
   so 111 focused tests and full cross-platform CI did not exercise the real frozen comparator's
   close or hashing contracts. The resulting fail-closed behavior protected claims but consumed the
   only permitted exposure of cell 00 and made the 20-cell timing gate unavailable.
+- Last updated: 2026-08-23
 - Current evidence: raw attempt SHA-256
   `7c39fa77de24bd1925d9dbd489d583118f96d4b7fe860678607f485506ad39d4`;
   worker result SHA-256 `523f0a6fbc8b34d9ea739e17d507597a3f94d506ed8521b19335644c776e1465`;
@@ -1100,12 +1101,19 @@ does not erase earlier uncertainty or failed mechanisms.
   A read-only eight-boundary audit found the remaining decision, action, link, ordering, returned
   consequence, semantic receipt, and trace-adjacency predicates valid. See
   `docs/evidence/001-08-two-speed-controller.json` and D-001-0038.
-- Next discriminating action: add non-playing integration fixtures using real semantic and trace
-  hash encodings plus a real frozen-style close/checkpoint/restore cycle; repair the validators
-  without relaxing either namespace or ordinary restore; run focused, lint, format, and strict-type
-  checks. Do not rerun or resume the Stage 08 matrix.
+- Next discriminating action: none for the generic validator repair. Do not rerun or resume the
+  Stage 08 matrix.
 - Resolution condition: the generic validator independently proves both hash namespaces and their
   causal link, accepts the correct pre-close checkpoint phase while still rejecting actual state
   drift, and regression tests fail under either original conflation. This can resolve the harness
   burden for future work but cannot change Stage 08 Attempt 01 from `FAILED_INFRASTRUCTURE`.
-- Resolution receipt: none.
+- Resolution receipt: commit `fa24a4326ed191a3dd97b36903a2032bb481c524` independently verifies
+  trace blob/canonical-frame hashes and semantic `GridFrame.digest` values, retains their causal
+  link, and compares restored state with the checkpoint-recorded phase. Real `BlobStore`/`GridFrame`
+  and real close/checkpoint/restore regressions fail under the two original conflations. Integrated
+  verification passed 113 focused tests, Ruff lint/format, and strict mypy over both repaired source
+  and regression tests. Worker SHA-256 is
+  `31cdea4060013d2a80358b2249d62bf556064f7e1ae87b729a84cb5715f61f03`; regression-test SHA-256 is
+  `8cb7f6b12c4da65f23354187da6c9fb3f0ac303f6228b41154aaf1316b2851de`. The repair resolves only
+  future validation infrastructure: immutable Attempt 01 remains `FAILED_INFRASTRUCTURE`, retains
+  one development exposure, and remains non-rerunnable.

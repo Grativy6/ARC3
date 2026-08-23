@@ -11,8 +11,8 @@
   "implementation_branch": "build/001-local-public-recovery",
   "pull_request": "https://github.com/Grativy6/ARC3/pull/5",
   "started_at": "2026-08-21T15:41:02Z",
-  "last_checkpoint_at": "2026-08-23T00:57:24.3930952Z",
-  "last_checkpoint_commit": "670e57b7077a94b9c5087b4a9827a00681f26d4b",
+  "last_checkpoint_at": "2026-08-23T01:02:06.1503635Z",
+  "last_checkpoint_commit": "fa24a4326ed191a3dd97b36903a2032bb481c524",
   "base": {
     "main_commit": "28c7a00732ce48e5c231211b01bc6eba7d0d71b4",
     "main_tree": "4586299448e9b1b585a0878674ed5f9afa60c384",
@@ -386,7 +386,7 @@
       "public_repetitions_per_variant": 5,
       "public_variants": 4,
       "mechanics_capacity": "ARC3Config.budgets.max_actions",
-      "implementation_status": "PROCESS_ISOLATED_HARNESS_VERIFIED;UNIQUE_ATTEMPT_FAILED_EVIDENCE_VALIDATION;NO_RERUN",
+      "implementation_status": "PROCESS_ISOLATED_HARNESS_VERIFIED;UNIQUE_ATTEMPT_FAILED_EVIDENCE_VALIDATION;GENERIC_VALIDATOR_REPAIRED_FOR_FUTURE_USE;NO_RERUN",
       "mechanics_capacity_checkpoint_commit": "5d1a67840bf75a939e25832d8300fa9c835c0e1d",
       "mechanics_capacity_verification": "PASS:82-focused+lifecycle+controller+all-retrodiction-modes+replay+ruff+format+mypy-strict",
       "failure_sealing_source_commit": "b4b033b4206a2c0044544c992bd02b709d1c59ad",
@@ -436,6 +436,17 @@
       "throughput_comparison": "UNAVAILABLE",
       "public_recovery_claim": "UNAVAILABLE",
       "root_cause_classification": "EVIDENCE_VALIDATION_HARNESS_INCOMPATIBILITY",
+      "future_validator_repair": {
+        "status": "PASS_NON_PLAYING_INFRASTRUCTURE",
+        "commit": "fa24a4326ed191a3dd97b36903a2032bb481c524",
+        "worker_sha256": "sha256:31cdea4060013d2a80358b2249d62bf556064f7e1ae87b729a84cb5715f61f03",
+        "regression_test_sha256": "sha256:8cb7f6b12c4da65f23354187da6c9fb3f0ac303f6228b41154aaf1316b2851de",
+        "verification": "PASS:113-focused+ruff+format+mypy-strict-source-and-tests",
+        "attempt_01_unchanged": true,
+        "attempt_01_rerun": false,
+        "environment_opened": false,
+        "holdout_consumed": false
+      },
       "process_harness_source_sha256": {
         "typed_contract": "sha256:d3ee67c9238dbda905045edef91de1a59d764169f4eb85dec19aa89a147b7300",
         "worker": "sha256:2bc77bdf3280dd8c216094f7363f4ef1e2106342150969f182461b0b80a94dcb",
@@ -451,14 +462,14 @@
         "B-001-0044",
         "B-001-0045",
         "B-001-0046",
-        "B-001-0047"
+        "B-001-0047",
+        "B-001-0048"
       ],
       "open_burdens": [
         "B-001-0014",
         "B-001-0039",
         "B-001-0040",
-        "B-001-0042",
-        "B-001-0048"
+        "B-001-0042"
       ],
       "public_holdout_consumed": false
     },

@@ -234,7 +234,7 @@ def _receipt_chain(
             },
         ),
     ]
-    semantic_frame_hashes = {
+    semantic_frame_hashes: dict[str, tuple[str, ...]] = {
         observation_id: (initial_semantic_frame_hash,),
         after_observation_id: (returned_semantic_frame_hash,),
     }
@@ -810,12 +810,12 @@ def test_accept_excludes_live_binding_instrumentation_from_controller_totals(
     assert boundary["choose_cpu_ns"] == 85
     assert boundary["choose_wall_ns"] == 173
     assert boundary["controller_total_cpu_ns"] == (
-        cast(int, boundary["choose_cpu_ns"])
+        boundary["choose_cpu_ns"]
         + cast(int, boundary["consequence_cpu_ns"])
         + cast(int, boundary["checkpoint_cpu_ns"])
     )
     assert boundary["controller_total_wall_ns"] == (
-        cast(int, boundary["choose_wall_ns"])
+        boundary["choose_wall_ns"]
         + cast(int, boundary["consequence_wall_ns"])
         + cast(int, boundary["checkpoint_wall_ns"])
     )
