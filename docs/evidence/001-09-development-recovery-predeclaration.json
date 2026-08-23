@@ -1,0 +1,90 @@
+{
+  "schema": "arc3.build-001.stage-09-predeclaration.v0.2",
+  "recorded_at": "2026-08-23T00:00:00Z",
+  "result_state": "READY_NOT_EXECUTED",
+  "evidence_label": "local-public",
+  "claim_boundary": "Only the twelve already exposed Build 000 development identities are authorized. No public-holdout discovery, acquisition, gameplay, or hidden-game generalization claim is authorized.",
+  "bindings": {
+    "build_001_commit": "2e78c258cfbee8be62462f61ed08ad04c00a8934",
+    "build_001_tree": "4145356c116944bbd7c0c412771de9179ba22efe",
+    "build_001_first_party_source_sha256": "sha256:4dc8b7d7802be6b97427e12fe550bd4a6832ef30f6acdc4b509294a5a1add7f1",
+    "build_000_commit": "90ecf7267d5bb23d751d6f7ce3e8aa75f2f1a130",
+    "build_000_tree": "0cf6e00b2fcc399e7a99a62c20e91bb84d485f13",
+    "build_000_first_party_source_sha256": "sha256:2112c390ac62432270a98fdcf6067b02c968b4139d3ee17c68bcd1d21842109c",
+    "public_partition_manifest_sha256": "sha256:682d5891c2aface54803d9bd1173c55ed21e89856e13b8a478fb9276ee963f2f",
+    "upstream_lock_sha256": "sha256:67e1d937e213bbcc25783784d04c4fa349b85dc09b94855256916ca6b96e808a",
+    "stage08_result_file_sha256": "sha256:7c39fa77de24bd1925d9dbd489d583118f96d4b7fe860678607f485506ad39d4",
+    "stage08_result_core_hash": "sha256:e3e078092318882f2c32887c6a223c0396938abba0ca7b30fdcde0eb5b15383f",
+    "stage08_exposure_sha256": "sha256:be73b837805a66ed172b20573aa31c41fe6ba16ced4d471929b6018e22a5d52e",
+    "stage08_status": "FAILED_INFRASTRUCTURE",
+    "development_partition_hash": "sha256:bb22711c59555965de0a96f05d55272e0c31fba755825d849869137953a21d80",
+    "matrix_hash": "sha256:5c4c1d4a1d23bd68822c91a5c82dcbbabad7d0ca9ea0ab298a2df37e149b868b",
+    "cell_count": 96,
+    "seeds": [7, 11],
+    "max_actions": 80,
+    "max_resets": 8,
+    "worker_wall_seconds": 120.0,
+    "overall_active_wall_seconds": 14400.0
+  },
+  "source_and_execution_contract": {
+    "build_000_source": "clean detached checkout at the final frozen Build 000 production commit/tree",
+    "build_001_source": "clean detached checkout at the owner-selected 2e78c258 Stage 09 production snapshot",
+    "configuration": "the common Stage 15 local-public production envelope: profile stage15-local-public; frozen competition decision/memory/search/trace limits; 80 actions; 8 resets; 120 seconds",
+    "supervision": "one isolated child process tree at a time; parent exposure receipt fsynced immediately before process launch",
+    "network": "offline policy and official local environment only",
+    "asset_use": "hash-only asset validation; semantic game-source inspection is forbidden",
+    "no_rerun": "any exposure receipt permanently consumes its cell even if the child or supervisor is interrupted",
+    "resume": "reuse only an exact self-hashed terminal parent receipt; an exposed cell without one becomes infrastructure-failure evidence and is never relaunched",
+    "no_overwrite": "noncanonical or identity-mismatched specs, streams, receipts, ledgers, or aggregate outputs stop execution",
+    "holdout": "SEALED_UNCONSUMED"
+  },
+  "development_games": [
+    {"asset_sha256": "sha256:dcdcaf14bf6e61564d6b7e9a7503be57d65733fcdd6e5c2b02da746779274181", "game_id": "tr87-cd924810", "stable_name": "tr87"},
+    {"asset_sha256": "sha256:483e583c88e91c2ae58ad1fa7b274d97813993796ce798551a563e1a9a78a7ff", "game_id": "r11l-495a7899", "stable_name": "r11l"},
+    {"asset_sha256": "sha256:844d3717dd2bb158e658010d21363ad00b3597d12ebe0cb97c24e5d923196b90", "game_id": "cd82-fb555c5d", "stable_name": "cd82"},
+    {"asset_sha256": "sha256:b8cf3491d5506a3fae0210f37a20faa7c864d8407dab18459376c9c13dc5ff41", "game_id": "sk48-d8078629", "stable_name": "sk48"},
+    {"asset_sha256": "sha256:9888ae0fce7285f40089749692ad84583b13bf0206287e1678fbfc2d907673de", "game_id": "m0r0-492f87ba", "stable_name": "m0r0"},
+    {"asset_sha256": "sha256:fe337174d175c13ae0d6796325ac55bc16261098df7b55226ad6ae3fbbef8555", "game_id": "ka59-38d34dbb", "stable_name": "ka59"},
+    {"asset_sha256": "sha256:e0e3e9f475ecd6e6101adc080b91a0a05919c2ba8c64a38aba690c44057c29d3", "game_id": "tu93-0768757b", "stable_name": "tu93"},
+    {"asset_sha256": "sha256:3f77f216e6b97083d8cbcf50d3439b18f6556dea06e7ae2564dcdfbd8f2d8203", "game_id": "lf52-271a04aa", "stable_name": "lf52"},
+    {"asset_sha256": "sha256:60ca84c0a65821982fd5119f22f7997620df397f81205fa80882df71496b53e5", "game_id": "g50t-5849a774", "stable_name": "g50t"},
+    {"asset_sha256": "sha256:cfec302ab60d79cbfdb618674488fc1f733d7617f841127fe8a906da07e12561", "game_id": "lp85-305b61c3", "stable_name": "lp85"},
+    {"asset_sha256": "sha256:e796e615d2e10c93b849f9bf150308fbf84d624725deaf995d7ec2d1c2f86b22", "game_id": "ar25-0c556536", "stable_name": "ar25"},
+    {"asset_sha256": "sha256:2c2f3412429bea00ba1173ff069304f028cfd1ba5935d896c5e10044ebbeda5a", "game_id": "ls20-9607627b", "stable_name": "ls20"}
+  ],
+  "measurement_matrix": {
+    "expansion_order": ["development_games", "seeds", "variants"],
+    "variant_order": ["build_000_random", "build_000_cycle", "build_000_full", "build_001_full"],
+    "variants": [
+      {"agent": "random", "baseline_id": "B0", "source_commit": "90ecf7267d5bb23d751d6f7ce3e8aa75f2f1a130", "source_tree": "0cf6e00b2fcc399e7a99a62c20e91bb84d485f13", "variant": "build_000_random"},
+      {"agent": "cycle", "baseline_id": "B1", "source_commit": "90ecf7267d5bb23d751d6f7ce3e8aa75f2f1a130", "source_tree": "0cf6e00b2fcc399e7a99a62c20e91bb84d485f13", "variant": "build_000_cycle"},
+      {"agent": "full", "baseline_id": "B4", "source_commit": "90ecf7267d5bb23d751d6f7ce3e8aa75f2f1a130", "source_tree": "0cf6e00b2fcc399e7a99a62c20e91bb84d485f13", "variant": "build_000_full"},
+      {"agent": "full", "baseline_id": "B4", "source_commit": "2e78c258cfbee8be62462f61ed08ad04c00a8934", "source_tree": "4145356c116944bbd7c0c412771de9179ba22efe", "variant": "build_001_full"}
+    ]
+  },
+  "historical_reference_only": {
+    "reason": "Build 000 Stage 15 ran at 6a0f6e5, not final frozen Build 000 source 90ecf726. It is provenance, not a substitute for the decisive matched baseline.",
+    "evaluation_id": "stage15-development-6a0f6e5b9cf0",
+    "manifest_file_sha256": "sha256:156b1f1bbd185d336068d5dc3b3c6b2241ff651c60107e9694df995eac85a592",
+    "summary_file_sha256": "sha256:118899e787169c37a65e6e6fec600055c9a53a7885ee042bceeb8f5aec2da107",
+    "results_file_sha256": "sha256:87e4d0fe9468be2f10354a261705955e0e5cfdab90c6a572f506265dbd0ba450"
+  },
+  "decision_gate": {
+    "distinct_new_completed_games_minimum": 2,
+    "full_normal_termination_fraction_minimum": 0.5,
+    "build_001_full_beats_b0": "strictly more verified levels completed under the equal 80-action per-run budget, or strictly fewer effective actions per verified completed level; a controller wall timeout is conservatively charged 80 actions",
+    "integrity_required": true,
+    "all_evidence_verifies": true,
+    "status_mapping": {
+      "PASS": "all five gates pass with no infrastructure failure",
+      "FAILED_MECHANISM": "all 96 decisive cells are evidence-complete but a performance gate fails",
+      "FAILED_INFRASTRUCTURE": "any global or cell source, asset, exposure, receipt, process-tree, or evidence validation fails"
+    }
+  },
+  "resource_receipts": {
+    "per_cell": ["parent active wall ns", "child CPU seconds where available", "child peak RSS bytes where available", "stdout/stderr bytes and SHA-256", "return code", "timeout and process-tree termination receipt"],
+    "aggregate": ["cumulative active supervisor wall ns", "sum child CPU where complete", "maximum child peak RSS", "hardware/runtime identity at start and end"],
+    "overall_limit_semantics": "sum of parent per-cell active wall across attempts, from cell preparation through terminal receipt preparation; preflight and interruption downtime are excluded; no cell starts unless the remaining active budget can admit its full 120-second worker limit"
+  },
+  "predeclaration_core_hash": "sha256:b32f91fa228a7f1f2c2bbfee23e8fafc3a9affc18f9b0d3cbf9e050b0e498f3c"
+}
