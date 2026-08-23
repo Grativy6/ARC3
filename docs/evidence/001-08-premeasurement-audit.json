@@ -1,7 +1,7 @@
 {
   "schema": "arc3.build-001.stage-08-premeasurement-audit.v0.1",
   "recorded_at": "2026-08-23T00:19:21.3870822Z",
-  "status": "READY_NOT_EXECUTED_PENDING_EXACT_SOURCE_CI",
+  "status": "READY_NOT_EXECUTED",
   "execution_started": false,
   "verification_label": "synthetic",
   "public_gameplay_result": null,
@@ -77,7 +77,19 @@
     "mypy_windows": "PASS:161 source files",
     "mypy_explicit_linux_target": "PASS:161 source files",
     "secret_scan": "PASS:9 tests+0 findings",
-    "adversarial_review": "PASS:targeted final review cleared interim-integrity stop and immutable returned-consequence binding"
+    "adversarial_review": "PASS:targeted final review cleared interim-integrity stop and immutable returned-consequence binding",
+    "exact_source_ci": {
+      "source_commit": "2e78c258cfbee8be62462f61ed08ad04c00a8934",
+      "push_run": 32607264914,
+      "pull_request_run": 32607267169,
+      "push_ubuntu": "PASS:959 tests in 840.80s+doctor",
+      "pull_request_ubuntu": "PASS:959 tests in 946.92s+doctor",
+      "push_windows": "PASS:959 tests in 1558.74s+doctor",
+      "pull_request_windows": "PASS:959 tests in 1555.66s+doctor",
+      "ruff_check": "PASS:both runs and both platforms",
+      "ruff_format_check": "PASS:both runs and both platforms",
+      "mypy": "PASS:161 source files on both runs and both platforms"
+    }
   },
   "cadence_repair_full_suite": {
     "source_commit": "7c4ea86fda1fc5900b3c37b204e8c60c476cbab8",
@@ -142,13 +154,14 @@
       "summary": "first detached local full suite mixed clean tests with the dirty editable source and produced 863 passes plus 22 constructor failures"
     }
   ],
-  "pending_gates": {
+  "launch_gates": {
     "exact_source_ci_runs": [
       32607267169,
       32607264914
     ],
-    "exact_source_ci_status": "IN_PROGRESS",
+    "exact_source_ci_status": "PASS",
     "correctly_source_bound_local_full_suite": "PASS:885 tests in 2139.82s",
-    "new_public_launch_allowed": false
+    "stage_08_development_launch_allowed": true,
+    "public_holdout_allowed": false
   }
 }

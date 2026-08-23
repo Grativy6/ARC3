@@ -700,6 +700,10 @@ independent authorities.
   `903d6ab2f6e86fcdd33b353ee30c8d7692c35846e464538e8236c0a51b7fad00` for the
   typed contract, worker, and supervisor respectively. No public environment was opened by these
   tests.
+- Exact-source verification closure: push run `32607264914` and draft-PR run `32607267169` passed
+  lint, format, strict mypy over 161 files, 959 tests, and runtime doctor on both Ubuntu and Windows
+  at commit `2e78c258cfbee8be62462f61ed08ad04c00a8934`. Ubuntu test durations were 840.80
+  and 946.92 seconds; Windows durations were 1,558.74 and 1,555.66 seconds.
 - Boundary: a valid controller worker timeout is resource/mechanism evidence; launch, missing-result,
   interrupted, parser, source, asset, exposure, or receipt faults are infrastructure failures. The
   Python socket guard is not an OS network namespace. The frozen 20-cell matrix has not yet run,

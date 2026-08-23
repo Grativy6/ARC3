@@ -410,11 +410,11 @@
       "process_harness_checkpoint_tree": "61f57df268335dadef1ab47ca7421cbbccce3cf8",
       "process_harness_verification": "PASS:111-contract+worker+parent-supervisor+exact-live-cadence-binding+immutable-returned-consequence-binding+prefix-wide-resume-validation+process-tree-timeout+instrumentation-exclusion+parent-domain-recomputation+interim-integrity-stop+ruff+format+windows-and-linux-target-mypy-strict-161-files;no-public-environment-opened",
       "process_harness_secret_scan": "PASS:9-tests+0-findings",
-      "process_harness_remote_ci": "FAILED_INFRASTRUCTURE:32607075312+32607073797:ubuntu-strict-mypy-subprocess.CREATE_NEW_PROCESS_GROUP-attr-defined;windows-pending;no-public-cell-opened",
+      "process_harness_remote_ci": "PASS:2e78c258:32607264914+32607267169:ubuntu+windows:ruff+format+mypy-161+959-tests+doctor;prior-32607075312+32607073797-type-failures-preserved;no-public-cell-opened",
       "premeasurement_audit_path": "docs/evidence/001-08-premeasurement-audit.json",
-      "premeasurement_audit_status": "READY_NOT_EXECUTED_PENDING_EXACT_SOURCE_CI",
+      "premeasurement_audit_status": "READY_NOT_EXECUTED",
       "premeasurement_audit_checkpoint_commit": "a54771a53339815bc3a2a0f5a684c5049ea39eb0",
-      "premeasurement_audit_sha256": "sha256:890a566496da12d4e27a180cc077a0b5adb30179ac45ae18c13332e0cc4a3717",
+      "premeasurement_audit_sha256": "sha256:bc0e7161fa4d999fad63b025c2545b13fa0bf7444168ca7dc1c23dd45056f863",
       "non_playing_preflight_hash": "sha256:f5b445550b4af0a0e59474b9235a1f869b41a7e938ac07b69155c086c1e5539c",
       "process_harness_source_sha256": {
         "typed_contract": "sha256:d3ee67c9238dbda905045edef91de1a59d764169f4eb85dec19aa89a147b7300",
@@ -430,14 +430,14 @@
         "B-001-0043",
         "B-001-0044",
         "B-001-0045",
-        "B-001-0046"
+        "B-001-0046",
+        "B-001-0047"
       ],
       "open_burdens": [
         "B-001-0014",
         "B-001-0039",
         "B-001-0040",
-        "B-001-0042",
-        "B-001-0047"
+        "B-001-0042"
       ],
       "public_holdout_consumed": false
     }

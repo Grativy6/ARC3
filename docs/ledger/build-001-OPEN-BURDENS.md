@@ -1050,7 +1050,7 @@ does not erase earlier uncertainty or failed mechanisms.
 
 ## B-001-0047 — Stage 08 supervisor used a Windows-only subprocess attribute directly
 
-- Status: OPEN
+- Status: RESOLVED
 - Stage: 08
 - Opened: 2026-08-23
 - Burden: the first push of the sealed process harness passed Ruff but failed strict mypy on both
@@ -1070,4 +1070,9 @@ does not erase earlier uncertainty or failed mechanisms.
 - Resolution condition: strict mypy passes under both Windows and an explicit Linux target; focused
   process-tree tests still pass on Windows; pushed Ubuntu and Windows CI pass from the repaired
   source; the original failed jobs remain cited here.
-- Resolution receipt: none.
+- Resolution receipt: the supervisor resolves the flag through typed `getattr`; strict mypy passed
+  over 161 source files on Windows and under an explicit Linux target, and 111/111 focused Stage 08
+  tests passed. Exact-source push run `32607264914` and draft-PR run `32607267169` passed lint,
+  format, strict mypy, 959 tests, and runtime doctor on both Ubuntu and Windows at commit
+  `2e78c258cfbee8be62462f61ed08ad04c00a8934`. The original two Ubuntu type failures remain
+  preserved above and in the premeasurement audit.
