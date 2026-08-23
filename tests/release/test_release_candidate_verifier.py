@@ -170,7 +170,7 @@ def _write_package(
         ),
         "kernel-metadata.json": b'{"id":"owner/arc3"}',
         "runtime-requirements-linux-cp312.txt": b"package==1 --hash=sha256:abc\n",
-        "runtime-wheels-linux-cp312.json": b'{"wheels":[]}',
+        "runtime-wheels-linux-cp312.json": b'{"packages":[{"name":"fixture"}]}',
         "sbom.spdx.json": b'{"spdxVersion":"SPDX-2.3"}',
         "submission-schema.v0.1.json": b'{"required":[]}',
     }
@@ -508,6 +508,7 @@ def test_plan_declares_every_release_boundary_without_hosted_inference(tmp_path:
     assert str(transient / "cache" / "mypy" / "full") in by_id["mypy-strict"].argv
     assert str(tmp_path / "package-a") in by_id["offline-package-a"].argv
     rendered = canonical_json_bytes([spec.to_dict() for spec in specs]).lower()
+    assert b"measure_peak_rss" not in rendered
     assert b"openai" not in rendered
     assert b"anthropic" not in rendered
 
@@ -568,6 +569,7 @@ def test_command_runner_allowlists_environment_and_redacts_logs(
             str(token_file),
         ),
         30.0,
+        measure_peak_rss=True,
     )
     output = tmp_path / "out"
     result = run_command(
@@ -579,6 +581,9 @@ def test_command_runner_allowlists_environment_and_redacts_logs(
     )
     log = (output / "logs" / "tiny-command.stdout.log").read_text()
     assert result.status == "PASS"
+    peak_rss_bytes = result.details["peak_rss_bytes"]
+    assert isinstance(peak_rss_bytes, int)
+    assert peak_rss_bytes > 0
     assert "False False" in log
     assert token not in log
     assert "[REDACTED_SECRET_PATTERN]" in log

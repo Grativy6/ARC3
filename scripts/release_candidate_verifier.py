@@ -1,4 +1,4 @@
-"""Run and seal the Stage 18 clean-clone release-candidate checks.
+"""Run sealed Build 000 or package-only Build 001 clean-clone checks.
 
 The verifier is intentionally a repository-side orchestrator. A caller creates a
 fresh clone, follows the documented bootstrap, and then invokes this script with
@@ -9,6 +9,7 @@ accept terms, upload, submit, or mutate tracked repository files.
 from __future__ import annotations
 
 import argparse
+import ctypes
 import hashlib
 import importlib.util
 import json
@@ -38,6 +39,9 @@ RECEIPT_HASH_FIELD = "receipt_sha256"
 EXPECTATION_HASH_FIELD = "expectation_sha256"
 REPOSITORY = Path(__file__).resolve().parents[1]
 DEFAULT_EXPECTATION = Path(__file__).with_name("release_candidate_benchmark.v0.1.json")
+BUILD000_PROFILE = "build000-release"
+BUILD001_PACKAGE_ONLY_PROFILE = "build001-package-only"
+VERIFICATION_PROFILES = (BUILD000_PROFILE, BUILD001_PACKAGE_ONLY_PROFILE)
 
 _COMMIT = re.compile(r"^[0-9a-f]{40}$")
 _SAFE_CHECK_ID = re.compile(r"^[a-z0-9][a-z0-9-]*$")
@@ -87,6 +91,28 @@ _INTERNAL_CHECKS = (
     "official-availability",
     "repository-clean-after",
     "sealed-artifact-set",
+)
+_PACKAGE_ONLY_INTERNAL_CHECKS = (
+    "generated-log-secret-scan",
+    "integrity-receipt-validation",
+    "interpreter-source-identity",
+    "offline-package-determinism",
+    "package-test-guard-validation",
+    "package-runtime-metrics",
+    "private-kaggle-surfaces",
+    "repository-clean-after",
+    "sealed-artifact-set",
+    "source-lock-identity",
+)
+_PACKAGE_ONLY_FORBIDDEN_PLAN_FRAGMENTS = (
+    "docs/evaluation/",
+    "evaluate_public.py",
+    "official-environments",
+    "official-inventory",
+    "official-smoke",
+    "public-game-partitions",
+    "scripts/evaluate_public",
+    "scripts.evaluate_public",
 )
 
 
@@ -209,6 +235,7 @@ class CommandSpec:
     dependencies: tuple[str, ...] = ()
     failure_status: str = "FAILED_MECHANISM"
     nondeterminism: tuple[str, ...] = ()
+    measure_peak_rss: bool = False
 
     def __post_init__(self) -> None:
         if not _SAFE_CHECK_ID.fullmatch(self.check_id):
@@ -221,7 +248,7 @@ class CommandSpec:
             raise ValueError(f"check {self.check_id} has an invalid failure status")
 
     def to_dict(self) -> dict[str, object]:
-        return {
+        document: dict[str, object] = {
             "argv": list(self.argv),
             "category": self.category,
             "dependencies": list(self.dependencies),
@@ -231,6 +258,9 @@ class CommandSpec:
             "required": self.required,
             "timeout_seconds": self.timeout_seconds,
         }
+        if self.measure_peak_rss:
+            document["measure_peak_rss"] = True
+        return document
 
 
 @dataclass(frozen=True, slots=True)
@@ -386,6 +416,81 @@ def _blocked_result(spec: CommandSpec, reason: str, *, status: str) -> CheckResu
     )
 
 
+class _ProcessMemoryCounters(ctypes.Structure):
+    _fields_ = [
+        ("cb", ctypes.c_uint32),
+        ("PageFaultCount", ctypes.c_uint32),
+        ("PeakWorkingSetSize", ctypes.c_size_t),
+        ("WorkingSetSize", ctypes.c_size_t),
+        ("QuotaPeakPagedPoolUsage", ctypes.c_size_t),
+        ("QuotaPagedPoolUsage", ctypes.c_size_t),
+        ("QuotaPeakNonPagedPoolUsage", ctypes.c_size_t),
+        ("QuotaNonPagedPoolUsage", ctypes.c_size_t),
+        ("PagefileUsage", ctypes.c_size_t),
+        ("PeakPagefileUsage", ctypes.c_size_t),
+    ]
+
+
+def _sample_process_rss(pid: int) -> tuple[int | None, str]:
+    """Sample direct-process peak RSS using only platform standard-library surfaces."""
+
+    current_platform = platform.system().lower()
+    if current_platform == "windows":
+        windll = getattr(ctypes, "windll", None)
+        if windll is None:
+            return None, "windows-ctypes-unavailable"
+        process_query_information = 0x0400
+        process_vm_read = 0x0010
+        open_process = windll.kernel32.OpenProcess
+        open_process.argtypes = (ctypes.c_uint32, ctypes.c_int, ctypes.c_uint32)
+        open_process.restype = ctypes.c_void_p
+        close_handle = windll.kernel32.CloseHandle
+        close_handle.argtypes = (ctypes.c_void_p,)
+        close_handle.restype = ctypes.c_int
+        get_process_memory_info = windll.psapi.GetProcessMemoryInfo
+        get_process_memory_info.argtypes = (
+            ctypes.c_void_p,
+            ctypes.POINTER(_ProcessMemoryCounters),
+            ctypes.c_uint32,
+        )
+        get_process_memory_info.restype = ctypes.c_int
+        handle = open_process(
+            process_query_information | process_vm_read,
+            False,
+            pid,
+        )
+        if not handle:
+            return None, "windows-process-unavailable"
+        counters = _ProcessMemoryCounters()
+        counters.cb = ctypes.sizeof(counters)
+        try:
+            success = get_process_memory_info(
+                handle,
+                ctypes.byref(counters),
+                counters.cb,
+            )
+            if not success:
+                return None, "windows-get-process-memory-info-failed"
+            return int(counters.PeakWorkingSetSize), "windows-peak-working-set"
+        finally:
+            close_handle(handle)
+    if current_platform == "linux":
+        try:
+            fields: dict[str, int] = {}
+            for line in Path(f"/proc/{pid}/status").read_text(encoding="ascii").splitlines():
+                name, separator, value = line.partition(":")
+                if separator and name in {"VmHWM", "VmRSS"}:
+                    fields[name] = int(value.strip().split()[0]) * 1024
+            if "VmHWM" in fields:
+                return fields["VmHWM"], "linux-proc-vmhwm"
+            if "VmRSS" in fields:
+                return fields["VmRSS"], "linux-proc-vmrss"
+        except (OSError, UnicodeDecodeError, ValueError):
+            pass
+        return None, "linux-proc-unavailable"
+    return None, "unsupported-platform"
+
+
 def run_command(
     spec: CommandSpec,
     *,
@@ -417,24 +522,59 @@ def run_command(
     return_code: int | None = None
     stdout = b""
     stderr = b""
+    peak_rss_bytes: int | None = None
+    rss_measurement_source = "process-not-started"
     status = spec.failure_status
     reason: str | None = None
     try:
-        completed = subprocess.run(
-            list(spec.argv),
-            cwd=repository,
-            env=environment,
-            check=False,
-            capture_output=True,
-            timeout=spec.timeout_seconds,
-        )
-        return_code = completed.returncode
-        stdout = completed.stdout
-        stderr = completed.stderr
-        if return_code == 0:
-            status = "PASS"
+        if spec.measure_peak_rss:
+            process = subprocess.Popen(
+                list(spec.argv),
+                cwd=repository,
+                env=environment,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+            deadline = time.monotonic() + spec.timeout_seconds
+            while True:
+                sampled_rss, sampled_source = _sample_process_rss(process.pid)
+                if sampled_rss is not None:
+                    peak_rss_bytes = max(peak_rss_bytes or 0, sampled_rss)
+                    rss_measurement_source = sampled_source
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    process.kill()
+                    stdout, stderr = process.communicate()
+                    return_code = process.returncode
+                    status = "FAILED_INFRASTRUCTURE"
+                    reason = f"command exceeded {spec.timeout_seconds} seconds"
+                    break
+                try:
+                    stdout, stderr = process.communicate(timeout=min(0.05, remaining))
+                except subprocess.TimeoutExpired:
+                    continue
+                return_code = process.returncode
+                if return_code == 0:
+                    status = "PASS"
+                else:
+                    reason = f"command returned exit code {return_code}"
+                break
         else:
-            reason = f"command returned exit code {return_code}"
+            completed = subprocess.run(
+                list(spec.argv),
+                cwd=repository,
+                env=environment,
+                check=False,
+                capture_output=True,
+                timeout=spec.timeout_seconds,
+            )
+            return_code = completed.returncode
+            stdout = completed.stdout
+            stderr = completed.stderr
+            if return_code == 0:
+                status = "PASS"
+            else:
+                reason = f"command returned exit code {return_code}"
     except subprocess.TimeoutExpired as error:
         status = "FAILED_INFRASTRUCTURE"
         reason = f"command exceeded {spec.timeout_seconds} seconds"
@@ -450,6 +590,21 @@ def run_command(
     stderr, stderr_redactions = _redact_generated_log(stderr)
     write_bytes_atomic(stdout_path, stdout)
     write_bytes_atomic(stderr_path, stderr)
+    details: dict[str, object] = {
+        "command": _display_command(spec.argv),
+        "environment_policy": "strict allowlist plus isolated writable homes and caches",
+        "generated_log_redactions": stdout_redactions + stderr_redactions,
+        "nondeterminism": list(spec.nondeterminism),
+        "non_allowlisted_environment_variables_removed": removed_sensitive_variables,
+    }
+    if spec.measure_peak_rss:
+        details.update(
+            {
+                "peak_rss_bytes": peak_rss_bytes,
+                "rss_measurement_scope": "direct spawned process; descendants are excluded",
+                "rss_measurement_source": rss_measurement_source,
+            }
+        )
     return CheckResult(
         check_id=spec.check_id,
         category=spec.category,
@@ -466,13 +621,7 @@ def run_command(
         stderr_log=_path_for_receipt(stderr_path, output_root),
         stderr_sha256=sha256_bytes(stderr),
         reason=reason,
-        details={
-            "command": _display_command(spec.argv),
-            "environment_policy": "strict allowlist plus isolated writable homes and caches",
-            "generated_log_redactions": stdout_redactions + stderr_redactions,
-            "nondeterminism": list(spec.nondeterminism),
-            "non_allowlisted_environment_variables_removed": removed_sensitive_variables,
-        },
+        details=details,
     )
 
 
@@ -553,6 +702,35 @@ def repository_identity(repository: Path, expected_commit: str) -> dict[str, obj
         "git_status_sha256": sha256_bytes(status.encode("utf-8")),
         "repository": "Grativy6/ARC3",
     }
+
+
+def source_lock_identity(repository: Path, expected_commit: str) -> dict[str, object]:
+    """Bind package-relevant source trees and lock/notices bytes to the candidate commit."""
+
+    repository = repository.resolve()
+    if _git(repository, "rev-parse", "HEAD") != expected_commit:
+        raise ValueError("source/lock identity is not running at the expected commit")
+    subtrees: dict[str, str] = {}
+    for relative in ("agent", "scripts", "src"):
+        subtrees[relative] = _git(repository, "rev-parse", f"{expected_commit}:{relative}")
+    files: dict[str, str] = {}
+    for relative in (
+        "LICENSE",
+        "THIRD_PARTY_NOTICES.md",
+        "pyproject.toml",
+        "upstream.lock.json",
+        "uv.lock",
+    ):
+        path = repository / relative
+        files[relative] = sha256_file(path)
+    identity: dict[str, object] = {
+        "files": files,
+        "git_commit": expected_commit,
+        "git_tree": _git(repository, "rev-parse", f"{expected_commit}^{{tree}}"),
+        "subtree_git_objects": subtrees,
+    }
+    identity["identity_sha256"] = sha256_bytes(canonical_json_bytes(identity))
+    return identity
 
 
 def prepare_fresh_output_root(repository: Path, output_root: Path) -> None:
@@ -805,20 +983,252 @@ def _expectation_configuration(expectation: Mapping[str, Any]) -> dict[str, Any]
     return configuration
 
 
+def _build_package_only_plan(
+    *,
+    repository: Path,
+    output_root: Path,
+    transient_root: Path,
+    uv_command: tuple[str, ...],
+) -> tuple[CommandSpec, ...]:
+    """Declare Build 001 packaging checks with no public-evaluation reachability."""
+
+    python = sys.executable
+    package_a = output_root / "package-a"
+    package_b = output_root / "package-b"
+    lock_dependencies = ("dependency-sync", "dependency-lock")
+    package_safe_ignores = (
+        "tests/competition/test_controller_offline_integrity.py",
+        "tests/integrity/test_repository_integrity.py",
+        "tests/release/test_release_candidate_verifier.py",
+        "tests/unit/test_measure_rule_change.py",
+        "tests/unit/test_memory_integrity.py",
+        "tests/unit/test_public_evaluation_contract.py",
+    )
+    test_argv: list[str] = [
+        python,
+        "-m",
+        "scripts.package_only_pytest",
+        "--root",
+        str(repository),
+        "--guard-log",
+        str(transient_root / "package-only-test-guard-attempts.jsonl"),
+        "--receipt",
+        str(output_root / "package-only-test-guard.json"),
+        "--",
+        "-q",
+        "--basetemp",
+        str(transient_root / "tmp" / "pytest-package-safe"),
+    ]
+    for relative in package_safe_ignores:
+        test_argv.extend(("--ignore", relative))
+    specs = (
+        CommandSpec(
+            "dependency-sync",
+            "dependency-lock",
+            (
+                *uv_command,
+                "sync",
+                "--frozen",
+                "--all-extras",
+                "--dev",
+                "--python",
+                "3.12.14",
+                "--link-mode",
+                "copy",
+                "--offline",
+            ),
+            900.0,
+            failure_status="FAILED_INFRASTRUCTURE",
+        ),
+        CommandSpec(
+            "dependency-lock",
+            "dependency-lock",
+            (*uv_command, "lock", "--check", "--offline"),
+            120.0,
+            dependencies=("dependency-sync",),
+            failure_status="FAILED_INFRASTRUCTURE",
+        ),
+        CommandSpec(
+            "ruff-lint",
+            "quality",
+            (python, "-m", "ruff", "check", "--no-cache", "."),
+            300.0,
+            dependencies=lock_dependencies,
+        ),
+        CommandSpec(
+            "ruff-format",
+            "quality",
+            (python, "-m", "ruff", "format", "--check", "--no-cache", "."),
+            300.0,
+            dependencies=lock_dependencies,
+        ),
+        CommandSpec(
+            "mypy-strict",
+            "quality",
+            (
+                python,
+                "-m",
+                "mypy",
+                "--strict",
+                "--cache-dir",
+                str(transient_root / "cache" / "mypy" / "package-only"),
+                "src",
+                "agent",
+                "scripts",
+            ),
+            900.0,
+            dependencies=lock_dependencies,
+        ),
+        CommandSpec(
+            "package-safe-test-suite",
+            "tests",
+            tuple(test_argv),
+            2400.0,
+            dependencies=lock_dependencies,
+            nondeterminism=("test durations and coverage percentages may vary by host",),
+        ),
+        CommandSpec(
+            "trace-replay-tamper",
+            "trace-replay",
+            (
+                python,
+                "-m",
+                "pytest",
+                "-q",
+                "--no-cov",
+                "--basetemp",
+                str(transient_root / "tmp" / "pytest-replay"),
+                "tests/replay",
+                "tests/property/test_trace_properties.py",
+            ),
+            900.0,
+            dependencies=lock_dependencies,
+        ),
+        CommandSpec(
+            "doctor",
+            "runtime",
+            (python, "-m", "arc3", "doctor", "--json"),
+            120.0,
+            dependencies=lock_dependencies,
+        ),
+        CommandSpec(
+            "offline-package-a",
+            "offline-package",
+            (
+                python,
+                "-m",
+                "scripts.prepare_kaggle_submission",
+                "--output",
+                str(package_a),
+                "--sandbox-timeout",
+                "120",
+            ),
+            900.0,
+            dependencies=lock_dependencies,
+            measure_peak_rss=True,
+        ),
+        CommandSpec(
+            "offline-package-b",
+            "offline-package",
+            (
+                python,
+                "-m",
+                "scripts.prepare_kaggle_submission",
+                "--output",
+                str(package_b),
+                "--sandbox-timeout",
+                "120",
+            ),
+            900.0,
+            dependencies=lock_dependencies,
+            measure_peak_rss=True,
+        ),
+        CommandSpec(
+            "offline-package-startup",
+            "offline-package",
+            (
+                python,
+                "-I",
+                str(repository / "scripts" / "package_startup_probe.py"),
+                "--package-root",
+                str(package_a),
+                "--expected-commit",
+                "{CANDIDATE_COMMIT}",
+            ),
+            180.0,
+            dependencies=("offline-package-a",),
+            measure_peak_rss=True,
+        ),
+        CommandSpec(
+            "package-integrity",
+            "integrity",
+            (
+                python,
+                "-m",
+                "scripts.check_competition_integrity",
+                "--root",
+                str(repository),
+                "--package-only",
+                "--archive",
+                str(package_a / "arc3-kaggle-candidate.zip"),
+                "--output",
+                str(output_root / "integrity-receipt.json"),
+            ),
+            900.0,
+            dependencies=(*lock_dependencies, "offline-package-a"),
+            nondeterminism=(
+                "installed distribution metadata may differ by platform while lock identity stays fixed",
+            ),
+        ),
+    )
+    _validate_package_only_plan(specs)
+    return specs
+
+
+def _validate_package_only_plan(specs: Sequence[CommandSpec]) -> None:
+    """Fail closed if a package-only plan can reach public inventory or gameplay."""
+
+    rendered = canonical_json_bytes([spec.to_dict() for spec in specs]).decode("utf-8").lower()
+    normalized = rendered.replace("\\", "/")
+    forbidden = [
+        fragment for fragment in _PACKAGE_ONLY_FORBIDDEN_PLAN_FRAGMENTS if fragment in normalized
+    ]
+    if forbidden:
+        raise ValueError(
+            "package-only plan crossed the semantic public boundary: " + ", ".join(forbidden)
+        )
+    forbidden_arguments = {"--environments-dir", "--manifest", "--run-state"}
+    for spec in specs:
+        if forbidden_arguments & set(spec.argv):
+            raise ValueError(f"package-only check {spec.check_id} has a forbidden argument")
+
+
 def build_plan(
     *,
     repository: Path,
     output_root: Path,
     transient_root: Path,
-    expectation: Mapping[str, Any],
+    expectation: Mapping[str, Any] | None,
     uv_command: tuple[str, ...],
-    official_environments: Path,
+    official_environments: Path | None,
+    profile: str = BUILD000_PROFILE,
 ) -> tuple[CommandSpec, ...]:
-    """Declare every Stage 18 command before execution."""
+    """Declare every command for the selected release-verification profile."""
 
     repository = repository.resolve()
     output_root = output_root.resolve()
     transient_root = transient_root.resolve()
+    if profile == BUILD001_PACKAGE_ONLY_PROFILE:
+        return _build_package_only_plan(
+            repository=repository,
+            output_root=output_root,
+            transient_root=transient_root,
+            uv_command=uv_command,
+        )
+    if profile != BUILD000_PROFILE:
+        raise ValueError(f"unsupported release-verification profile: {profile}")
+    if expectation is None or official_environments is None:
+        raise ValueError("Build 000 release verification requires benchmark and official inputs")
     official_environments = official_environments.resolve()
     python = sys.executable
     configuration = _expectation_configuration(expectation)
@@ -1083,6 +1493,7 @@ def _replace_candidate_commit(spec: CommandSpec, commit: str) -> CommandSpec:
         dependencies=spec.dependencies,
         failure_status=spec.failure_status,
         nondeterminism=spec.nondeterminism,
+        measure_peak_rss=spec.measure_peak_rss,
     )
 
 
@@ -1461,8 +1872,31 @@ def _validate_package_formats(package_root: Path) -> dict[str, object]:
     }
 
 
+def _package_runtime_format_metrics(package_root: Path) -> dict[str, object]:
+    wheel_manifest = _json_object(package_root / "runtime-wheels-linux-cp312.json")
+    raw_packages = wheel_manifest.get("packages")
+    if not isinstance(raw_packages, list) or not raw_packages:
+        raise ValueError("runtime wheel manifest has no package records")
+    wheel_names: list[str] = []
+    for raw_package in raw_packages:
+        package = _required_mapping(raw_package, name="runtime wheel package")
+        package_name = package.get("name")
+        if not isinstance(package_name, str) or not package_name or package_name in wheel_names:
+            raise ValueError("runtime wheel manifest has an invalid package identity")
+        wheel_names.append(package_name)
+    return {
+        "archive_size_bytes": (package_root / "arc3-kaggle-candidate.zip").stat().st_size,
+        "payload_size_bytes": (package_root / "arc3-first-party.zip").stat().st_size,
+        "runtime_wheel_count": len(wheel_names),
+        "runtime_wheel_names_sha256": sha256_bytes(canonical_json_bytes(sorted(wheel_names))),
+    }
+
+
 def package_projection(
-    receipt_path: Path, *, expected_commit: str | None = None
+    receipt_path: Path,
+    *,
+    expected_commit: str | None = None,
+    include_runtime_metrics: bool = False,
 ) -> dict[str, object]:
     """Validate and project one package receipt to deterministic artifact identities."""
 
@@ -1564,16 +1998,30 @@ def package_projection(
             "validated_formats": format_validation,
         }
     )
+    if include_runtime_metrics:
+        projection.update(_package_runtime_format_metrics(package_root))
     return projection
 
 
 def compare_packages(
-    first: Path, second: Path, *, expected_commit: str | None = None
+    first: Path,
+    second: Path,
+    *,
+    expected_commit: str | None = None,
+    include_runtime_metrics: bool = False,
 ) -> tuple[bool, dict[str, object]]:
     """Require two fresh offline builds to produce byte-identical identities."""
 
-    first_projection = package_projection(first, expected_commit=expected_commit)
-    second_projection = package_projection(second, expected_commit=expected_commit)
+    first_projection = package_projection(
+        first,
+        expected_commit=expected_commit,
+        include_runtime_metrics=include_runtime_metrics,
+    )
+    second_projection = package_projection(
+        second,
+        expected_commit=expected_commit,
+        include_runtime_metrics=include_runtime_metrics,
+    )
     first_bytes = canonical_json_bytes(first_projection)
     second_bytes = canonical_json_bytes(second_projection)
     return first_bytes == second_bytes, {
@@ -1787,14 +2235,18 @@ def verify_sealed_artifact_set(document: Mapping[str, Any], output_root: Path) -
     sealed = _required_mapping(
         document.get("sealed_artifact_set"), name="release sealed artifact set"
     )
-    if document.get("status") == "PASS" and sealed.get("complete") is not True:
-        raise ValueError("passing release receipt does not seal a complete artifact set")
+    must_be_complete = document.get("status") == "PASS" or (
+        document.get("profile") == BUILD001_PACKAGE_ONLY_PROFILE
+        and document.get("status") == "BLOCKED_EXTERNAL"
+    )
+    if must_be_complete and sealed.get("complete") is not True:
+        raise ValueError("completed release receipt does not seal a complete artifact set")
     expected_files = sealed.get("files")
     if not isinstance(expected_files, dict) or not all(
         isinstance(name, str) and isinstance(digest, str) for name, digest in expected_files.items()
     ):
         raise ValueError("release sealed artifact file map is invalid")
-    actual = _complete_artifact_set(output_root, sealed=document.get("status") == "PASS")
+    actual = _complete_artifact_set(output_root, sealed=must_be_complete)
     for field in (
         "complete",
         "excluded_prefixes",
@@ -1830,25 +2282,41 @@ def _curated_evidence_bytes(body: Mapping[str, object], raw_receipt_sha256: str)
         "status": body.get("status"),
         "verification_boundary": body.get("verification_boundary"),
     }
+    if body.get("profile") == BUILD001_PACKAGE_ONLY_PROFILE:
+        document["measurements"] = body.get("measurements")
+        document["profile"] = body.get("profile")
     document["evidence_sha256"] = sha256_bytes(canonical_json_bytes(document))
     return canonical_json_bytes(document)
 
 
-def _plan_document(specs: Sequence[CommandSpec]) -> dict[str, object]:
+def _plan_document(
+    specs: Sequence[CommandSpec], *, profile: str = BUILD000_PROFILE
+) -> dict[str, object]:
+    internal_checks = (
+        _PACKAGE_ONLY_INTERNAL_CHECKS
+        if profile == BUILD001_PACKAGE_ONLY_PROFILE
+        else _INTERNAL_CHECKS
+    )
     body: dict[str, object] = {
         "checks": [spec.to_dict() for spec in specs],
-        "internal_checks": list(_INTERNAL_CHECKS),
+        "internal_checks": list(internal_checks),
         "schema": PLAN_SCHEMA,
     }
+    if profile != BUILD000_PROFILE:
+        body["profile"] = profile
     body["plan_sha256"] = sha256_bytes(canonical_json_bytes(body))
     return body
 
 
-def _overall_status(results: Sequence[CheckResult]) -> str:
+def _overall_status(results: Sequence[CheckResult], *, blocked_is_complete: bool = False) -> str:
     required = [result for result in results if result.required]
     if any(result.status == "FAILED_INFRASTRUCTURE" for result in required):
         return "FAILED_INFRASTRUCTURE"
     if any(result.status != "PASS" for result in required):
+        if blocked_is_complete and all(
+            result.status in {"BLOCKED_EXTERNAL", "PASS"} for result in required
+        ):
+            return "BLOCKED_EXTERNAL"
         return "FAILED_MECHANISM"
     return "PASS"
 
@@ -1887,6 +2355,501 @@ def verify_release_receipt(path: Path) -> dict[str, Any]:
     return document
 
 
+def _validate_package_only_integrity(
+    path: Path, *, expected_commit: str
+) -> tuple[bool, dict[str, object]]:
+    integrity = _verified_self_hashed_object(path, hash_field=RECEIPT_HASH_FIELD)
+    inputs = _required_mapping(integrity.get("inputs"), name="package integrity inputs")
+    checks = _required_mapping(integrity.get("checks"), name="package integrity checks")
+    assurance = _required_mapping(
+        integrity.get("assurance_scope"), name="package integrity assurance scope"
+    )
+    license_summary = _required_mapping(
+        integrity.get("license_summary"), name="package integrity license summary"
+    )
+    git_identity = _required_mapping(integrity.get("git"), name="package integrity Git identity")
+    check_passed = all(
+        isinstance(checks.get(name), dict) and checks[name].get("passed") is True
+        for name in (
+            "archive_static",
+            "policy_static",
+            "secret_scan",
+            "source_identity",
+            "supply_chain",
+        )
+    )
+    public_boundary = (
+        inputs.get("manifest") is None
+        and inputs.get("run_state") is None
+        and inputs.get("public_identifier_count") == 0
+        and inputs.get("public_identifier_mode") == "disabled-package-only"
+        and assurance.get("public_identifier_scan")
+        == "NOT_EVALUATED_PACKAGE_ONLY_NO_SEMANTIC_MANIFEST_ACCESS"
+    )
+    license_passed = (
+        license_summary.get("first_party_license_status") == "MIT-0"
+        and license_summary.get("status") == "PASS"
+        and license_summary.get("unknown_or_missing_metadata_count") == 0
+        and license_summary.get("installed_version_mismatch_count") == 0
+        and license_summary.get("not_evaluated_count") == 0
+    )
+    reachable_paths = inputs.get("reachable_policy_paths")
+    reachable_hashes = integrity.get("reachable_policy_source_hashes")
+    continuity_passed = (
+        isinstance(reachable_paths, list)
+        and bool(reachable_paths)
+        and all(isinstance(item, str) for item in reachable_paths)
+        and reachable_paths == sorted(set(reachable_paths))
+        and isinstance(reachable_hashes, dict)
+        and set(reachable_hashes) == set(reachable_paths)
+        and all(
+            isinstance(value, str) and re.fullmatch(r"sha256:[0-9a-f]{64}", value)
+            for value in reachable_hashes.values()
+        )
+    )
+    source_identity_passed = (
+        git_identity.get("commit") == expected_commit
+        and git_identity.get("dirty_worktree") is False
+    )
+    passed = (
+        integrity.get("passed") is False
+        and integrity.get("package_only_passed") is True
+        and integrity.get("integrity_scope") == "package-only-no-public-identifiers"
+        and integrity.get("full_competition_integrity_status") == "NOT_EVALUATED_PUBLIC_IDENTIFIERS"
+        and integrity.get("finding_counts") == {"blocking": 0, "total": 0, "warnings": 0}
+        and check_passed
+        and public_boundary
+        and license_passed
+        and continuity_passed
+        and source_identity_passed
+    )
+    details: dict[str, object] = {
+        "checks_passed": check_passed,
+        "finding_counts": cast(object, integrity.get("finding_counts")),
+        "first_party_license_status": cast(
+            object, license_summary.get("first_party_license_status")
+        ),
+        "license_inventory_passed": license_passed,
+        "package_only_passed": integrity.get("package_only_passed") is True,
+        "passed": passed,
+        "policy_continuity_passed": continuity_passed,
+        "public_semantic_boundary_passed": public_boundary,
+        "reachable_policy_source_hashes": cast(object, reachable_hashes),
+        "schema": cast(object, integrity.get("schema")),
+        "source_identity_passed": source_identity_passed,
+    }
+    source_hashes = integrity.get("source_hashes")
+    if isinstance(source_hashes, dict):
+        for key in ("LICENSE", "THIRD_PARTY_NOTICES.md", "pyproject.toml", "uv.lock"):
+            value = source_hashes.get(key)
+            if isinstance(value, str):
+                details[f"source_hash:{key}"] = value
+    return passed, details
+
+
+def _validate_package_test_guard(path: Path) -> dict[str, object]:
+    guard = _verified_self_hashed_object(path, hash_field=RECEIPT_HASH_FIELD)
+    if (
+        guard.get("schema") != "arc3.package-only-pytest.v0.1"
+        or guard.get("status") != "PASS"
+        or guard.get("attempt_count") != 0
+        or guard.get("attempts") != []
+        or guard.get("pytest_exit_code") != 0
+        or guard.get("protected_directories") != ["artifacts", "docs/evaluation"]
+        or guard.get("protected_files")
+        != [
+            "docs/ledger/build-001-run-state.json",
+            "docs/ledger/run-state.json",
+        ]
+    ):
+        raise ValueError("package-only pytest guard did not prove a clean protected-path boundary")
+    return {
+        "attempt_count": 0,
+        "protected_directories": cast(object, guard.get("protected_directories")),
+        "protected_files": cast(object, guard.get("protected_files")),
+        "schema": cast(object, guard.get("schema")),
+        "status": cast(object, guard.get("status")),
+    }
+
+
+def _package_runtime_measurements(
+    *,
+    results: Sequence[CheckResult],
+    package_details: Mapping[str, object],
+    startup: Mapping[str, Any],
+) -> tuple[bool, dict[str, object]]:
+    by_id = {result.check_id: result for result in results}
+    first = _required_mapping(package_details.get("first"), name="first package projection")
+    second = _required_mapping(package_details.get("second"), name="second package projection")
+    command_wall_seconds = {
+        result.check_id: result.duration_seconds
+        for result in results
+        if result.kind == "command" and result.duration_seconds is not None
+    }
+    command_peak_rss_bytes = {
+        result.check_id: result.details.get("peak_rss_bytes")
+        for result in results
+        if result.kind == "command"
+    }
+    measured_ids = ("offline-package-a", "offline-package-b", "offline-package-startup")
+    rss_available = all(
+        isinstance(command_peak_rss_bytes.get(check_id), int)
+        and not isinstance(command_peak_rss_bytes.get(check_id), bool)
+        and cast(int, command_peak_rss_bytes[check_id]) > 0
+        for check_id in measured_ids
+    )
+    startup_passed = (
+        startup.get("schema") == "arc3.package-startup-probe.v0.1"
+        and startup.get("status") == "PASS"
+        and startup.get("network_attempts") == 0
+        and startup.get("payload_sha256") == first.get("payload_sha256")
+        and all(
+            isinstance(startup.get(field), (int, float))
+            and not isinstance(startup.get(field), bool)
+            and cast(float, startup[field]) >= 0
+            for field in ("import_seconds", "instantiate_seconds", "total_seconds")
+        )
+    )
+    package_values_equal = all(
+        first.get(field) == second.get(field)
+        for field in ("archive_size_bytes", "runtime_wheel_count", "candidate_sha256")
+    )
+    required_commands_passed = all(
+        check_id in by_id and by_id[check_id].status == "PASS" for check_id in measured_ids
+    )
+    passed = rss_available and startup_passed and package_values_equal and required_commands_passed
+    return passed, {
+        "archive_size_bytes": first.get("archive_size_bytes"),
+        "command_peak_rss_bytes": command_peak_rss_bytes,
+        "command_wall_seconds": command_wall_seconds,
+        "package_build_peak_rss_bytes": {
+            check_id: command_peak_rss_bytes.get(check_id)
+            for check_id in ("offline-package-a", "offline-package-b")
+        },
+        "package_build_wall_seconds": {
+            check_id: command_wall_seconds.get(check_id)
+            for check_id in ("offline-package-a", "offline-package-b")
+        },
+        "package_values_equal": package_values_equal,
+        "rss_available": rss_available,
+        "rss_scope": "direct spawned process; descendants excluded and reported separately",
+        "runtime_wheel_count": first.get("runtime_wheel_count"),
+        "startup": dict(startup),
+        "startup_passed": startup_passed,
+    }
+
+
+def _run_package_only_verification(
+    *,
+    repository: Path,
+    output_root: Path,
+    transient_root: Path,
+    expected_commit: str,
+    uv_command: tuple[str, ...],
+) -> dict[str, object]:
+    """Run only Build 001 offline packaging surfaces and preserve the external block."""
+
+    started_at = _utc_now()
+    identity = repository_identity(repository, expected_commit)
+    prepare_fresh_output_root(repository, output_root)
+    prepare_fresh_transient_root(repository, output_root, transient_root)
+    interpreter_identity = interpreter_source_identity(repository, transient_root)
+    identity["interpreter"] = interpreter_identity
+    source_identity = source_lock_identity(repository, expected_commit)
+    raw_specs = build_plan(
+        repository=repository,
+        output_root=output_root,
+        transient_root=transient_root,
+        expectation=None,
+        uv_command=uv_command,
+        official_environments=None,
+        profile=BUILD001_PACKAGE_ONLY_PROFILE,
+    )
+    specs = tuple(_replace_candidate_commit(spec, expected_commit) for spec in raw_specs)
+    _validate_package_only_plan(specs)
+    results: list[CheckResult] = [
+        internal_result(
+            "interpreter-source-identity",
+            "source-identity",
+            status="PASS",
+            details=interpreter_identity,
+        ),
+        internal_result(
+            "source-lock-identity",
+            "source-identity",
+            status="PASS",
+            details=source_identity,
+        ),
+    ]
+    prior: dict[str, CheckResult] = {result.check_id: result for result in results}
+    for spec in specs:
+        result = run_command(
+            spec,
+            repository=repository,
+            output_root=output_root,
+            transient_root=transient_root,
+            prior=prior,
+        )
+        results.append(result)
+        prior[result.check_id] = result
+
+    if prior["package-safe-test-suite"].status == "PASS":
+        try:
+            guard_details = _validate_package_test_guard(
+                output_root / "package-only-test-guard.json"
+            )
+            guard_result = internal_result(
+                "package-test-guard-validation",
+                "tests",
+                status="PASS",
+                details=guard_details,
+            )
+        except (OSError, ValueError) as error:
+            guard_result = internal_result(
+                "package-test-guard-validation",
+                "tests",
+                status="FAILED_INFRASTRUCTURE",
+                reason=f"package-only pytest guard validation failed: {error}",
+            )
+    else:
+        guard_result = internal_result(
+            "package-test-guard-validation",
+            "tests",
+            status="FAILED_MECHANISM",
+            reason="package-safe test command did not pass",
+        )
+    results.append(guard_result)
+    prior[guard_result.check_id] = guard_result
+
+    package_details: dict[str, object] = {}
+    if prior["offline-package-a"].status == "PASS" and prior["offline-package-b"].status == "PASS":
+        try:
+            equal, package_details = compare_packages(
+                output_root / "package-a" / "build-receipt.json",
+                output_root / "package-b" / "build-receipt.json",
+                expected_commit=expected_commit,
+                include_runtime_metrics=True,
+            )
+            package_result = internal_result(
+                "offline-package-determinism",
+                "offline-package",
+                status="PASS" if equal else "FAILED_MECHANISM",
+                reason=None if equal else "two fresh package builds have different identities",
+                details=package_details,
+            )
+        except (OSError, ValueError) as error:
+            package_result = internal_result(
+                "offline-package-determinism",
+                "offline-package",
+                status="FAILED_INFRASTRUCTURE",
+                reason=f"package receipt comparison failed: {error}",
+            )
+    else:
+        package_result = internal_result(
+            "offline-package-determinism",
+            "offline-package",
+            status="FAILED_MECHANISM",
+            reason="one or both offline package builds failed",
+        )
+    results.append(package_result)
+    prior[package_result.check_id] = package_result
+
+    verified_license_status: str | None = None
+    verified_license_sha256: str | None = None
+    if prior["package-integrity"].status == "PASS":
+        try:
+            integrity_passed, integrity_details = _validate_package_only_integrity(
+                output_root / "integrity-receipt.json",
+                expected_commit=expected_commit,
+            )
+            raw_status = integrity_details.get("first_party_license_status")
+            if isinstance(raw_status, str):
+                verified_license_status = raw_status
+            raw_hash = integrity_details.get("source_hash:LICENSE")
+            if isinstance(raw_hash, str):
+                verified_license_sha256 = raw_hash
+            integrity_result = internal_result(
+                "integrity-receipt-validation",
+                "integrity",
+                status="PASS" if integrity_passed else "FAILED_MECHANISM",
+                reason=None if integrity_passed else "package-only integrity receipt did not pass",
+                details=integrity_details,
+            )
+        except (OSError, ValueError) as error:
+            integrity_result = internal_result(
+                "integrity-receipt-validation",
+                "integrity",
+                status="FAILED_INFRASTRUCTURE",
+                reason=f"package-only integrity receipt validation failed: {error}",
+            )
+    else:
+        integrity_result = internal_result(
+            "integrity-receipt-validation",
+            "integrity",
+            status="FAILED_MECHANISM",
+            reason="package-only integrity command did not pass",
+        )
+    results.append(integrity_result)
+    prior[integrity_result.check_id] = integrity_result
+
+    startup: dict[str, Any] = {}
+    if prior["offline-package-startup"].status == "PASS":
+        try:
+            startup = _last_json_log(output_root / "logs" / "offline-package-startup.stdout.log")
+        except (OSError, ValueError) as error:
+            startup = {"interpretation_error": str(error)}
+    if package_result.status == "PASS" and prior["offline-package-startup"].status == "PASS":
+        try:
+            metrics_passed, measurements = _package_runtime_measurements(
+                results=results,
+                package_details=package_details,
+                startup=startup,
+            )
+            metrics_result = internal_result(
+                "package-runtime-metrics",
+                "offline-package",
+                status="PASS" if metrics_passed else "FAILED_INFRASTRUCTURE",
+                reason=None
+                if metrics_passed
+                else "required package runtime metrics are incomplete",
+                details=measurements,
+            )
+        except ValueError as error:
+            measurements = {"interpretation_error": str(error)}
+            metrics_result = internal_result(
+                "package-runtime-metrics",
+                "offline-package",
+                status="FAILED_INFRASTRUCTURE",
+                reason=f"package runtime metric validation failed: {error}",
+                details=measurements,
+            )
+    else:
+        measurements = {}
+        metrics_result = internal_result(
+            "package-runtime-metrics",
+            "offline-package",
+            status="FAILED_MECHANISM",
+            reason="package determinism or startup command did not pass",
+        )
+    results.append(metrics_result)
+    prior[metrics_result.check_id] = metrics_result
+
+    private_surfaces = {
+        "access_attempted": False,
+        "exact_private_gateway": "UNAVAILABLE",
+        "exact_private_platform_agents_input": "UNAVAILABLE",
+        "exact_private_scorer": "UNAVAILABLE",
+        "exact_private_wheel_inventory": "UNAVAILABLE",
+        "official_submission_performed": False,
+        "status": "BLOCKED_EXTERNAL",
+    }
+    private_result = internal_result(
+        "private-kaggle-surfaces",
+        "external-boundary",
+        status="BLOCKED_EXTERNAL",
+        reason=(
+            "exact private Kaggle wheels, platform Agents input, gateway, and scorer are not "
+            "available; local gateway-shaped fixtures cannot establish private compatibility"
+        ),
+        details=private_surfaces,
+    )
+    results.append(private_result)
+    prior[private_result.check_id] = private_result
+
+    try:
+        final_identity = repository_identity(repository, expected_commit)
+        final_clean = internal_result(
+            "repository-clean-after",
+            "source-identity",
+            status="PASS",
+            details=final_identity,
+        )
+    except ValueError as error:
+        final_clean = internal_result(
+            "repository-clean-after",
+            "source-identity",
+            status="FAILED_INFRASTRUCTURE",
+            reason=str(error),
+        )
+    results.append(final_clean)
+    logs_passed, log_details = scan_generated_logs(output_root, results)
+    log_scan = internal_result(
+        "generated-log-secret-scan",
+        "secret-scan",
+        status="PASS" if logs_passed else "FAILED_MECHANISM",
+        reason=None if logs_passed else "generated output retained or redacted a secret value",
+        details=log_details,
+    )
+    results.append(log_scan)
+
+    status = _overall_status(results, blocked_is_complete=True)
+    sealed_artifact_set = _complete_artifact_set(
+        output_root,
+        sealed=status in {"BLOCKED_EXTERNAL", "PASS"},
+    )
+    seal_result = internal_result(
+        "sealed-artifact-set",
+        "artifacts",
+        status="PASS",
+        details={
+            "complete": sealed_artifact_set["complete"],
+            "file_count": sealed_artifact_set["file_count"],
+            "set_sha256": sealed_artifact_set["set_sha256"],
+            "total_bytes": sealed_artifact_set["total_bytes"],
+        },
+    )
+    results.append(seal_result)
+    body: dict[str, object] = {
+        "artifact_hashes": sealed_artifact_set["files"],
+        "checks": [result.to_dict() for result in results],
+        "claim": "NO_GENERALIZATION_CLAIM",
+        "completed_at": _utc_now(),
+        "human_gates": {
+            "license_granted": verified_license_status == "MIT-0",
+            "license_expression": verified_license_status,
+            "license_sha256": verified_license_sha256,
+            "official_submission_performed": False,
+            "terms_accepted_by_verifier": False,
+        },
+        "identity": identity,
+        "measurements": measurements,
+        "output_root": str(output_root),
+        "plan": _plan_document(specs, profile=BUILD001_PACKAGE_ONLY_PROFILE),
+        "private_kaggle_surfaces": private_surfaces,
+        "profile": BUILD001_PACKAGE_ONLY_PROFILE,
+        "result_labels": ["synthetic"],
+        "runtime": _runtime_identity(),
+        "schema": SCHEMA,
+        "sealed_artifact_set": sealed_artifact_set,
+        "started_at": started_at,
+        "status": status,
+        "transient_root": {
+            "path": str(transient_root),
+            "role": "unsealed isolated temporary, cache, home, and test state",
+            "sealed": False,
+        },
+        "verification_boundary": {
+            "command_environment": (
+                "strict host-variable allowlist; isolated out-of-tree HOME, USERPROFILE, "
+                "temporary, and caches"
+            ),
+            "dependency_resolution": "locked uv sync and lock check both run offline",
+            "game_source_inspected": False,
+            "official_inventory_planned": False,
+            "public_manifest_semantically_accessed": False,
+            "public_or_holdout_gameplay_attempted": False,
+            "sandbox": "offline gateway-shaped fixture only",
+        },
+    }
+    receipt_path = output_root / "release-verification-receipt.json"
+    write_bytes_atomic(receipt_path, _receipt_bytes(body))
+    verify_release_receipt(receipt_path)
+    curated_path = output_root / "release-verification-evidence.json"
+    write_bytes_atomic(curated_path, _curated_evidence_bytes(body, sha256_file(receipt_path)))
+    verify_release_receipt(receipt_path)
+    return body
+
+
 def run_release_verification(
     *,
     repository: Path,
@@ -1895,13 +2858,24 @@ def run_release_verification(
     expected_commit: str,
     expectation_path: Path,
     uv_command: tuple[str, ...],
-    official_environments: Path,
+    official_environments: Path | None,
+    profile: str = BUILD000_PROFILE,
 ) -> dict[str, object]:
     """Run every achievable Stage 18 check and write one sealed receipt."""
 
     repository = repository.resolve()
     output_root = output_root.resolve()
     transient_root = transient_root.resolve()
+    if profile == BUILD001_PACKAGE_ONLY_PROFILE:
+        return _run_package_only_verification(
+            repository=repository,
+            output_root=output_root,
+            transient_root=transient_root,
+            expected_commit=expected_commit,
+            uv_command=uv_command,
+        )
+    if profile != BUILD000_PROFILE:
+        raise ValueError(f"unsupported release-verification profile: {profile}")
     expectation_path = expectation_path.resolve()
     started_at = _utc_now()
     identity = repository_identity(repository, expected_commit)
@@ -2237,6 +3211,15 @@ def run_release_verification(
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--profile",
+        choices=VERIFICATION_PROFILES,
+        default=BUILD000_PROFILE,
+        help=(
+            "Build 000 retains its historical release path; Build 001 package-only forbids "
+            "official inventory, public manifests, and gameplay"
+        ),
+    )
     parser.add_argument("--root", type=Path, default=REPOSITORY)
     parser.add_argument("--output-root", type=Path, default=Path("artifacts/stage18/rc"))
     parser.add_argument(
@@ -2274,20 +3257,33 @@ def main(argv: Sequence[str] | None = None) -> int:
     transient_root = (
         args.transient_root.resolve()
         if args.transient_root is not None
-        else repository.parent / f".arc3-stage18-{args.expected_commit[:12]}-transient"
+        else repository.parent
+        / (
+            f".arc3-stage13-package-{args.expected_commit[:12]}-transient"
+            if args.profile == BUILD001_PACKAGE_ONLY_PROFILE
+            else f".arc3-stage18-{args.expected_commit[:12]}-transient"
+        )
     ).resolve()
     expectation_path = (
         args.expectation if args.expectation.is_absolute() else repository / args.expectation
     ).resolve()
     official_environments = (
-        args.official_environments_dir
-        if args.official_environments_dir.is_absolute()
-        else repository / args.official_environments_dir
-    ).resolve()
+        None
+        if args.profile == BUILD001_PACKAGE_ONLY_PROFILE
+        else (
+            args.official_environments_dir
+            if args.official_environments_dir.is_absolute()
+            else repository / args.official_environments_dir
+        ).resolve()
+    )
     try:
         if not _COMMIT.fullmatch(args.expected_commit):
             raise ValueError("--expected-commit must be a lowercase full 40-character SHA")
-        expectation = load_benchmark_expectation(expectation_path)
+        expectation = (
+            None
+            if args.profile == BUILD001_PACKAGE_ONLY_PROFILE
+            else load_benchmark_expectation(expectation_path)
+        )
         uv_command = discover_uv_command(
             uv_executable=args.uv_executable,
             uv_python=args.uv_python,
@@ -2301,10 +3297,17 @@ def main(argv: Sequence[str] | None = None) -> int:
                 expectation=expectation,
                 uv_command=uv_command,
                 official_environments=official_environments,
+                profile=args.profile,
             )
         )
         if args.plan_only:
-            print(json.dumps(_plan_document(specs), indent=2, sort_keys=True))
+            print(
+                json.dumps(
+                    _plan_document(specs, profile=args.profile),
+                    indent=2,
+                    sort_keys=True,
+                )
+            )
             return 0
         body = run_release_verification(
             repository=repository,
@@ -2314,6 +3317,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             expectation_path=expectation_path,
             uv_command=uv_command,
             official_environments=official_environments,
+            profile=args.profile,
         )
     except (OSError, ValueError) as error:
         print(f"release verification refused: {error}", file=sys.stderr)

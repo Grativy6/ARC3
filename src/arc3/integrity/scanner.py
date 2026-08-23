@@ -1342,6 +1342,7 @@ def build_integrity_receipt(
     max_candidate_bytes: int = DEFAULT_MAX_CANDIDATE_BYTES,
     include_installed_metadata: bool = True,
     generated_at: str | None = None,
+    semantic_public_manifest_access: bool = True,
 ) -> IntegrityReceipt:
     """Build a deterministic, self-hashed repository integrity receipt.
 
@@ -1352,14 +1353,30 @@ def build_integrity_receipt(
     if max_candidate_bytes <= 0:
         raise ValueError("max_candidate_bytes must be positive")
     repository = Path(os.path.abspath(root))
-    manifest = _repository_input_path(
-        repository,
-        manifest_path or "docs/evaluation/public-game-partitions.v0.1.json",
+    if not semantic_public_manifest_access and (
+        manifest_path is not None
+        or run_state_path is not None
+        or expected_manifest_sha256 is not None
+    ):
+        raise ValueError(
+            "package-only integrity forbids manifest, run-state, and manifest-identity inputs"
+        )
+    manifest = (
+        _repository_input_path(
+            repository,
+            manifest_path or "docs/evaluation/public-game-partitions.v0.1.json",
+        )
+        if semantic_public_manifest_access
+        else None
     )
     dependency_lock = _repository_input_path(repository, lock_path or "uv.lock")
-    run_state = _repository_input_path(
-        repository,
-        run_state_path or "docs/ledger/run-state.json",
+    run_state = (
+        _repository_input_path(
+            repository,
+            run_state_path or "docs/ledger/run-state.json",
+        )
+        if semantic_public_manifest_access
+        else None
     )
     archives = tuple(
         sorted(
@@ -1401,10 +1418,8 @@ def build_integrity_receipt(
         entry_points=entry_points,
     )
 
-    required_paths = (
-        ("manifest", manifest),
+    common_required_paths = (
         ("dependency-lock", dependency_lock),
-        ("run-state", run_state),
         ("first-party-license", repository / "LICENSE"),
         ("pyproject", repository / "pyproject.toml"),
         ("upstream-lock", repository / "upstream.lock.json"),
@@ -1414,55 +1429,75 @@ def build_integrity_receipt(
             for item in entry_points
         ),
     )
+    required_paths = (
+        (
+            ("manifest", manifest),
+            common_required_paths[0],
+            ("run-state", run_state),
+            *common_required_paths[1:],
+        )
+        if manifest is not None and run_state is not None
+        else common_required_paths
+    )
     identity_findings = _required_path_findings(root=repository, required_paths=required_paths)
 
-    try:
-        public = load_public_identifiers(manifest)
-    except (OSError, UnicodeDecodeError, json.JSONDecodeError, ValueError) as error:
-        observed_hash = (
-            sha256_file(manifest) if manifest.is_file() and not manifest.is_symlink() else None
-        )
-        public = PublicIdentifierSet((), observed_hash)
-        identity_findings.append(
-            _finding(
-                root=repository,
-                path=manifest,
-                line=1,
-                category=FindingCategory.SOURCE_IDENTITY,
-                rule_id="manifest-unusable",
-                evidence=type(error).__name__,
-                message="public partition manifest cannot supply a trusted identifier set",
+    if semantic_public_manifest_access:
+        assert manifest is not None
+        assert run_state is not None
+        try:
+            public = load_public_identifiers(manifest)
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError, ValueError) as error:
+            observed_hash = (
+                sha256_file(manifest) if manifest.is_file() and not manifest.is_symlink() else None
             )
-        )
-    binding = _declared_manifest_binding(
-        root=repository,
-        manifest=manifest,
-        run_state=run_state,
-        explicit_expected=expected_manifest_sha256,
-    )
-    if binding.issue is not None or binding.expected_sha256 is None:
-        identity_findings.append(
-            _finding(
-                root=repository,
-                path=run_state if expected_manifest_sha256 is None else manifest,
-                line=1,
-                category=FindingCategory.SOURCE_IDENTITY,
-                rule_id="manifest-identity-unbound",
-                evidence=binding.issue or "missing expected identity",
-                message="public partition manifest has no valid pinned identity",
+            public = PublicIdentifierSet((), observed_hash)
+            identity_findings.append(
+                _finding(
+                    root=repository,
+                    path=manifest,
+                    line=1,
+                    category=FindingCategory.SOURCE_IDENTITY,
+                    rule_id="manifest-unusable",
+                    evidence=type(error).__name__,
+                    message="public partition manifest cannot supply a trusted identifier set",
+                )
             )
+        binding = _declared_manifest_binding(
+            root=repository,
+            manifest=manifest,
+            run_state=run_state,
+            explicit_expected=expected_manifest_sha256,
         )
-    elif public.manifest_hash != binding.expected_sha256:
-        identity_findings.append(
-            _finding(
-                root=repository,
-                path=manifest,
-                line=1,
-                category=FindingCategory.SOURCE_IDENTITY,
-                rule_id="manifest-identity-mismatch",
-                evidence=f"{binding.expected_sha256}:{public.manifest_hash}",
-                message="public partition manifest does not match its declared identity",
+        if binding.issue is not None or binding.expected_sha256 is None:
+            identity_findings.append(
+                _finding(
+                    root=repository,
+                    path=run_state if expected_manifest_sha256 is None else manifest,
+                    line=1,
+                    category=FindingCategory.SOURCE_IDENTITY,
+                    rule_id="manifest-identity-unbound",
+                    evidence=binding.issue or "missing expected identity",
+                    message="public partition manifest has no valid pinned identity",
+                )
             )
+        elif public.manifest_hash != binding.expected_sha256:
+            identity_findings.append(
+                _finding(
+                    root=repository,
+                    path=manifest,
+                    line=1,
+                    category=FindingCategory.SOURCE_IDENTITY,
+                    rule_id="manifest-identity-mismatch",
+                    evidence=f"{binding.expected_sha256}:{public.manifest_hash}",
+                    message="public partition manifest does not match its declared identity",
+                )
+            )
+    else:
+        public = PublicIdentifierSet((), None)
+        binding = ManifestBinding(
+            None,
+            "disabled-package-only",
+            "semantic public-manifest access is prohibited in this profile",
         )
 
     policy_findings = list(
@@ -1643,6 +1678,51 @@ def build_integrity_receipt(
     overall_passed = all(
         (policy_passed, secret_passed, archive_passed, identity_passed, supply_passed)
     )
+    inputs: dict[str, JSONValue] = {
+        "archive_count": len(archives),
+        "archive_paths": [_relative_path(repository, path) for path in archives],
+        "candidate_file_count": len(normalized_candidates),
+        "candidate_paths": [_relative_path(repository, path) for path in normalized_candidates],
+        "candidate_mode": (
+            "git-index-or-conservative-filesystem-fallback"
+            if candidate_files is None
+            else "caller-supplied"
+        ),
+        "dependency_lock": _relative_path(repository, dependency_lock),
+        "entry_points": [Path(item).as_posix() for item in entry_points],
+        "installed_metadata_mode": (
+            "local-enrichment" if include_installed_metadata else "lock-only"
+        ),
+        "manifest": _relative_path(repository, manifest) if manifest is not None else None,
+        "manifest_sha256": public.manifest_hash,
+        "manifest_binding": {
+            "declaration": binding.declaration,
+            "expected_sha256": binding.expected_sha256,
+            "issue": binding.issue,
+        },
+        "max_candidate_bytes": max_candidate_bytes,
+        "policy_file_count": len(policy_files),
+        "policy_excluded_paths": [Path(item).as_posix() for item in excluded_policy_paths],
+        "policy_paths": [Path(item).as_posix() for item in policy_paths],
+        "public_identifier_count": len(public.identifiers),
+        "reachable_policy_file_count": len(reachable_files),
+        "receipt_output_excluded": output_label,
+        "run_state": _relative_path(repository, run_state) if run_state is not None else None,
+    }
+    assurance_scope: dict[str, JSONValue] = {
+        "kind": "static-only",
+        "runtime_socket_denial": "OUT_OF_SCOPE",
+        "scanner_network_mode": "offline-by-construction",
+    }
+    if not semantic_public_manifest_access:
+        inputs["public_identifier_mode"] = "disabled-package-only"
+        inputs["reachable_policy_paths"] = [
+            _relative_path(repository, path) for path in reachable_files
+        ]
+        assurance_scope["public_identifier_scan"] = (
+            "NOT_EVALUATED_PACKAGE_ONLY_NO_SEMANTIC_MANIFEST_ACCESS"
+        )
+
     body: dict[str, JSONValue] = {
         "dependency_inventory": [item.to_dict() for item in dependencies],
         "finding_counts": {
@@ -1656,37 +1736,7 @@ def build_integrity_receipt(
             "commit": commit,
             "dirty_worktree": dirty,
         },
-        "inputs": {
-            "archive_count": len(archives),
-            "archive_paths": [_relative_path(repository, path) for path in archives],
-            "candidate_file_count": len(normalized_candidates),
-            "candidate_paths": [_relative_path(repository, path) for path in normalized_candidates],
-            "candidate_mode": (
-                "git-index-or-conservative-filesystem-fallback"
-                if candidate_files is None
-                else "caller-supplied"
-            ),
-            "dependency_lock": _relative_path(repository, dependency_lock),
-            "entry_points": [Path(item).as_posix() for item in entry_points],
-            "installed_metadata_mode": (
-                "local-enrichment" if include_installed_metadata else "lock-only"
-            ),
-            "manifest": _relative_path(repository, manifest),
-            "manifest_sha256": public.manifest_hash,
-            "manifest_binding": {
-                "declaration": binding.declaration,
-                "expected_sha256": binding.expected_sha256,
-                "issue": binding.issue,
-            },
-            "max_candidate_bytes": max_candidate_bytes,
-            "policy_file_count": len(policy_files),
-            "policy_excluded_paths": [Path(item).as_posix() for item in excluded_policy_paths],
-            "policy_paths": [Path(item).as_posix() for item in policy_paths],
-            "public_identifier_count": len(public.identifiers),
-            "reachable_policy_file_count": len(reachable_files),
-            "receipt_output_excluded": output_label,
-            "run_state": _relative_path(repository, run_state),
-        },
+        "inputs": inputs,
         "license_summary": {
             "dependency_count": len(dependencies),
             "first_party_license_status": next(
@@ -1698,11 +1748,7 @@ def build_integrity_receipt(
             "status": supply_status,
             "unknown_or_missing_metadata_count": len(unknown_dependencies),
         },
-        "assurance_scope": {
-            "kind": "static-only",
-            "runtime_socket_denial": "OUT_OF_SCOPE",
-            "scanner_network_mode": "offline-by-construction",
-        },
+        "assurance_scope": assurance_scope,
         "checks": {
             "archive_static": {"passed": archive_passed},
             "policy_static": {"passed": policy_passed},
@@ -1715,6 +1761,17 @@ def build_integrity_receipt(
         "schema": INTEGRITY_SCHEMA,
         "source_hashes": file_hashes,
     }
+    if not semantic_public_manifest_access:
+        reachable_labels = tuple(_relative_path(repository, path) for path in reachable_files)
+        reachable_hashes = {
+            label: file_hashes[label] for label in reachable_labels if label in file_hashes
+        }
+        continuity_complete = len(reachable_hashes) == len(reachable_labels)
+        body["full_competition_integrity_status"] = "NOT_EVALUATED_PUBLIC_IDENTIFIERS"
+        body["integrity_scope"] = "package-only-no-public-identifiers"
+        body["package_only_passed"] = overall_passed and continuity_complete
+        body["passed"] = False
+        body["reachable_policy_source_hashes"] = reachable_hashes
     return IntegrityReceipt(body=body)
 
 

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import subprocess
 import sys
 from pathlib import Path
@@ -91,3 +92,59 @@ def test_output_collision_refuses_to_overwrite_required_input(
     assert completed.returncode == 2
     assert b"collides" in completed.stderr
     assert lock.read_bytes() == before
+
+
+@pytest.mark.competition
+def test_package_only_cli_excludes_ledger_and_manifest_semantics(
+    integrity_repo: tuple[Path, str, str],
+) -> None:
+    root, _, _ = integrity_repo
+    _initialize_fixture_git(root)
+    completed = subprocess.run(
+        (
+            sys.executable,
+            str(_script()),
+            "--root",
+            str(root),
+            "--package-only",
+            "--lock-only-metadata",
+        ),
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert completed.returncode == 1
+    receipt = json.loads(completed.stdout)
+    assert receipt["passed"] is False
+    assert receipt["package_only_passed"] is False
+    assert receipt["full_competition_integrity_status"] == "NOT_EVALUATED_PUBLIC_IDENTIFIERS"
+    assert receipt["inputs"]["manifest"] is None
+    assert receipt["inputs"]["run_state"] is None
+    assert not any(
+        path.startswith("docs/evaluation/") or path.startswith("docs/ledger/")
+        for path in receipt["inputs"]["candidate_paths"]
+    )
+
+
+@pytest.mark.competition
+def test_package_only_cli_rejects_manifest_argument_before_scanning(
+    integrity_repo: tuple[Path, str, str],
+) -> None:
+    root, _, _ = integrity_repo
+    completed = subprocess.run(
+        (
+            sys.executable,
+            str(_script()),
+            "--root",
+            str(root),
+            "--package-only",
+            "--manifest",
+            "docs/evaluation/public-game-partitions.v0.1.json",
+        ),
+        check=False,
+        capture_output=True,
+    )
+
+    assert completed.returncode == 2
+    assert b"--package-only forbids" in completed.stderr

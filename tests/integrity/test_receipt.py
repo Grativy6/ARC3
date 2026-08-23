@@ -8,6 +8,7 @@ from pathlib import Path
 
 import pytest
 
+import arc3.integrity.scanner as scanner
 from arc3.integrity import IntegrityReceipt, build_integrity_receipt
 
 
@@ -39,6 +40,71 @@ def test_receipt_is_byte_deterministic_and_self_verifying(
     assert first.canonical_bytes() == second.canonical_bytes()
     assert IntegrityReceipt.from_bytes(first.canonical_bytes()) == first
     assert first.body["generated_at"] is None
+    inputs = first.body["inputs"]
+    assurance = first.body["assurance_scope"]
+    assert isinstance(inputs, dict)
+    assert isinstance(assurance, dict)
+    assert "public_identifier_mode" not in inputs
+    assert "public_identifier_scan" not in assurance
+
+
+@pytest.mark.competition
+def test_package_only_receipt_cannot_load_or_hash_public_manifest(
+    integrity_repo: tuple[Path, str, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root, _, _ = integrity_repo
+    policy = root / "policy" / "clean.py"
+    policy.write_text("GENERIC_PRIOR = ('north', 'south')\n", encoding="utf-8")
+
+    def refuse_manifest_access(_path: Path) -> scanner.PublicIdentifierSet:
+        raise AssertionError("semantic manifest loader must be unreachable")
+
+    monkeypatch.setattr(scanner, "load_public_identifiers", refuse_manifest_access)
+    receipt = build_integrity_receipt(
+        root,
+        policy_paths=("policy",),
+        candidate_files=(policy,),
+        include_installed_metadata=False,
+        semantic_public_manifest_access=False,
+    )
+
+    inputs = receipt.body["inputs"]
+    assurance = receipt.body["assurance_scope"]
+    source_hashes = receipt.body["source_hashes"]
+    assert isinstance(inputs, dict)
+    assert isinstance(assurance, dict)
+    assert isinstance(source_hashes, dict)
+    assert inputs["manifest"] is None
+    assert inputs["run_state"] is None
+    assert inputs["public_identifier_count"] == 0
+    assert inputs["public_identifier_mode"] == "disabled-package-only"
+    assert receipt.body["passed"] is False
+    assert receipt.body["package_only_passed"] is False
+    assert receipt.body["full_competition_integrity_status"] == "NOT_EVALUATED_PUBLIC_IDENTIFIERS"
+    reachable = inputs["reachable_policy_paths"]
+    reachable_hashes = receipt.body["reachable_policy_source_hashes"]
+    assert isinstance(reachable, list)
+    assert isinstance(reachable_hashes, dict)
+    assert set(reachable) == set(reachable_hashes)
+    assert (
+        assurance["public_identifier_scan"]
+        == "NOT_EVALUATED_PACKAGE_ONLY_NO_SEMANTIC_MANIFEST_ACCESS"
+    )
+    assert "docs/evaluation/public-game-partitions.v0.1.json" not in source_hashes
+
+
+@pytest.mark.competition
+def test_package_only_receipt_rejects_manifest_identity_inputs(
+    integrity_repo: tuple[Path, str, str],
+) -> None:
+    root, _, _ = integrity_repo
+    manifest = root / "docs" / "evaluation" / "public-game-partitions.v0.1.json"
+    with pytest.raises(ValueError, match="package-only integrity forbids"):
+        build_integrity_receipt(
+            root,
+            manifest_path=manifest,
+            semantic_public_manifest_access=False,
+        )
 
 
 @pytest.mark.competition

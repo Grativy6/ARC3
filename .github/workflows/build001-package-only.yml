@@ -1,0 +1,110 @@
+name: Build 001 package-only clean-clone verification
+
+"on":
+  push:
+    branches:
+      - "build/**"
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: "arc3-build001-package-only-${{ github.ref }}"
+  cancel-in-progress: false
+
+jobs:
+  package-only:
+    name: Package-only / ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+          - windows-latest
+
+    steps:
+      - name: Check out exact source
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install pinned uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.12.5"
+          enable-cache: true
+
+      - name: Install pinned Python
+        run: uv python install 3.12.14
+
+      - name: Seed the clean-clone offline cache and environment
+        run: uv sync --frozen --all-extras --dev --python 3.12.14 --link-mode copy
+
+      - name: Run package-only verifier without public inventory or gameplay
+        id: verify
+        shell: pwsh
+        run: |
+          $expected = (git rev-parse HEAD).Trim()
+          if ($expected -notmatch '^[0-9a-f]{40}$') {
+            throw "Git did not return a full lowercase commit SHA"
+          }
+          $short = $expected.Substring(0, 12)
+          $outputRoot = Join-Path $env:RUNNER_TEMP ("arc3-o-" + $short)
+          $transientRoot = Join-Path $env:RUNNER_TEMP ("arc3-t-" + $short)
+          $python = if ($IsWindows) { ".venv/Scripts/python.exe" } else { ".venv/bin/python" }
+          & $python -m scripts.release_candidate_verifier `
+            --profile build001-package-only `
+            --root . `
+            --output-root $outputRoot `
+            --transient-root $transientRoot `
+            --expected-commit $expected `
+            --uv-executable (Get-Command uv).Source
+          $verifierExit = $LASTEXITCODE
+          if ($verifierExit -ne 1) {
+            throw "Expected the sealed private-surface boundary (exit 1), got $verifierExit"
+          }
+          $receiptPath = Join-Path $outputRoot "release-verification-receipt.json"
+          $receipt = Get-Content -LiteralPath $receiptPath -Raw | ConvertFrom-Json
+          if ($receipt.profile -ne "build001-package-only") {
+            throw "Unexpected verifier profile"
+          }
+          if ($receipt.status -ne "BLOCKED_EXTERNAL") {
+            throw "Missing private Kaggle surfaces must remain BLOCKED_EXTERNAL"
+          }
+          if (-not $receipt.sealed_artifact_set.complete) {
+            throw "The package-only evidence set is not sealed"
+          }
+          if ($receipt.verification_boundary.official_inventory_planned -ne $false -or
+              $receipt.verification_boundary.public_manifest_semantically_accessed -ne $false -or
+              $receipt.verification_boundary.public_or_holdout_gameplay_attempted -ne $false) {
+            throw "The package-only verifier crossed a public semantic boundary"
+          }
+          $receiptHash = (Get-FileHash -LiteralPath $receiptPath -Algorithm SHA256).Hash.ToLowerInvariant()
+          "ARC3_OUTPUT_ROOT=$outputRoot" | Out-File -FilePath $env:GITHUB_ENV -Append
+          "ARC3_CANDIDATE_COMMIT=$expected" | Out-File -FilePath $env:GITHUB_ENV -Append
+          "receipt_sha256=sha256:$receiptHash" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          "### ${{ matrix.os }}`n`nCandidate: ``$expected```n`nReceipt: ``sha256:$receiptHash``" |
+            Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
+
+      - name: Upload hash-bound verifier evidence
+        id: upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: "arc3-build001-package-only-${{ matrix.os }}-${{ env.ARC3_CANDIDATE_COMMIT }}"
+          path: "${{ env.ARC3_OUTPUT_ROOT }}"
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Record archive transport identity
+        shell: pwsh
+        run: |
+          "Uploaded artifact digest: ``${{ steps.upload.outputs.artifact-digest }}``" |
+            Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
+          "Verifier receipt: ``${{ steps.verify.outputs.receipt_sha256 }}``" |
+            Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
