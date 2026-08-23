@@ -222,6 +222,16 @@ def _materialize_cell_chain(
         hash_field="supervision_receipt_hash",
     )
     _write(paths["supervision"], supervision)
+    parent_evidence = harness._parent_evidence(
+        cell,
+        paths=paths,
+        spec=spec,
+        exposure_event=event,
+        supervision=supervision,
+        asset_after=_asset(cell),
+        parent_active_wall_ns=20,
+    )
+    _write(paths["parent_evidence"], parent_evidence)
     receipt = harness._cell_receipt(
         cell,
         spec=spec,
@@ -234,6 +244,7 @@ def _materialize_cell_chain(
         launch_receipt_path=paths["launch"],
         authorization_path=paths["authorization"],
         supervision_receipt_path=paths["supervision"],
+        parent_evidence_path=paths["parent_evidence"],
     )
     _write(paths["receipt"], receipt)
     return receipt, event, {"runtime": runtime, "work_root": work_root, "exposure": exposure}
@@ -530,6 +541,52 @@ def test_rehashed_parent_result_cannot_replace_raw_evidence(
     _write(output, seal_object(terminal, hash_field="artifact_core_hash"))
 
     with pytest.raises(EvaluationError, match=r"changed|does not reconstruct exactly"):
+        harness._load_existing_terminal(
+            output=output,
+            work_root=cast(Path, fixture["work_root"]),
+            exposure=cast(Path, fixture["exposure"]),
+            check=preflight,
+            recordings=tmp_path / "recordings",
+            environments=tmp_path / "environments",
+            build_000_root=tmp_path / "build000",
+            build_001_root=tmp_path / "build001",
+        )
+
+
+def test_rehashed_parent_wall_and_terminal_resource_projection_cannot_promote(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    receipt, _event, fixture = _materialize_cell_chain(tmp_path, monkeypatch)
+    tampered = copy.deepcopy(receipt)
+    resources = cast(dict[str, object], tampered["resources"])
+    resources["parent_active_wall_ns"] = 10
+    tampered = seal_object(tampered, hash_field="cell_receipt_hash")
+    cell = build_matrix()[0]
+    paths = harness._cell_paths(cast(Path, fixture["work_root"]), cell)
+    _write(paths["receipt"], tampered)
+    preflight = seal_object(
+        {
+            "schema": PREFLIGHT_SCHEMA,
+            "status": "READY_NOT_EXECUTED",
+            "gameplay_opened": False,
+            "runtime_identity": fixture["runtime"],
+            "competition_integrity": {},
+            "stage09_exposure_event_count": 1,
+        },
+        hash_field="preflight_hash",
+    )
+    output = tmp_path / "terminal.json"
+    harness._failure_terminal(
+        output=output,
+        check=preflight,
+        receipts=[tampered],
+        exposure=cast(Path, fixture["exposure"]),
+        failed_cell=build_matrix()[1],
+        failure_kind="overall-active-wall-cannot-admit-next-cell",
+        exposure_event_hash=None,
+    )
+
+    with pytest.raises(EvaluationError, match="parent cell receipt does not reconstruct exactly"):
         harness._load_existing_terminal(
             output=output,
             work_root=cast(Path, fixture["work_root"]),

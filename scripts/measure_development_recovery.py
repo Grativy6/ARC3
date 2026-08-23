@@ -116,6 +116,7 @@ WORKER_ABORT_SCHEMA = "arc3.build-001.stage-09-worker-abort.v0.1"
 SUPERVISION_RECEIPT_SCHEMA = "arc3.build-001.stage-09-supervision.v0.1"
 TIMEOUT_TRACE_SCHEMA = "arc3.build-001.stage-09-timeout-trace.v0.1"
 ORPHAN_RECEIPT_SCHEMA = "arc3.build-001.stage-09-orphan-termination.v0.1"
+PARENT_EVIDENCE_SCHEMA = "arc3.build-001.stage-09-parent-evidence.v0.1"
 MECHANISM_FAILURE_KINDS = frozenset(
     {"HypothesisError", "PlanningError", "PolicyError", "WorldModelError"}
 )
@@ -575,6 +576,7 @@ def _cell_paths(work_root: Path, cell: DevelopmentCell) -> dict[str, Path]:
         "cell_root": cell_root,
         "launch": work_root.resolve() / "process-launches" / f"{prefix}.json",
         "orphan": work_root.resolve() / "orphan-terminations" / f"{prefix}.json",
+        "parent_evidence": work_root.resolve() / "parent-evidence" / f"{prefix}.json",
         "raw": cell_root / "raw-worker-result.json",
         "receipt": work_root.resolve() / "parent-receipts" / f"{prefix}.json",
         "spec": work_root.resolve() / "specs" / f"{prefix}.json",
@@ -1049,6 +1051,42 @@ def _mechanism_failure(raw: Mapping[str, object]) -> bool:
     )
 
 
+def _parent_evidence(
+    cell: DevelopmentCell,
+    *,
+    paths: Mapping[str, Path],
+    spec: Mapping[str, object],
+    exposure_event: Mapping[str, object],
+    supervision: Mapping[str, object],
+    asset_after: Mapping[str, object],
+    parent_active_wall_ns: int,
+) -> dict[str, object]:
+    payload = {
+        "schema": PARENT_EVIDENCE_SCHEMA,
+        "cell_id": cell.cell_id,
+        "cell_spec_hash": cell.spec_hash,
+        "exposure_event_hash": exposure_event.get("event_hash"),
+        "worker_spec_hash": spec.get("worker_spec_hash"),
+        "worker_spec_sha256": sha256_file(paths["spec"]),
+        "launch_receipt_hash": supervision.get("launch_receipt_hash"),
+        "launch_receipt_sha256": (
+            sha256_file(paths["launch"]) if paths["launch"].is_file() else None
+        ),
+        "authorization_hash": supervision.get("authorization_hash"),
+        "authorization_sha256": (
+            sha256_file(paths["authorization"]) if paths["authorization"].is_file() else None
+        ),
+        "supervision_receipt_hash": supervision.get("supervision_receipt_hash"),
+        "supervision_receipt_sha256": sha256_file(paths["supervision"]),
+        "raw_receipt_sha256": sha256_file(paths["raw"]) if paths["raw"].is_file() else None,
+        "asset_after": dict(asset_after),
+        "parent_active_wall_ns": parent_active_wall_ns,
+        "supervision_wall_ns": supervision.get("wall_ns"),
+        "worker_wall_seconds": WORKER_WALL_SECONDS,
+    }
+    return cast(dict[str, object], seal_object(payload, hash_field="parent_evidence_hash"))
+
+
 def _cell_receipt(
     cell: DevelopmentCell,
     *,
@@ -1062,6 +1100,7 @@ def _cell_receipt(
     launch_receipt_path: Path | None = None,
     authorization_path: Path | None = None,
     supervision_receipt_path: Path | None = None,
+    parent_evidence_path: Path | None = None,
 ) -> dict[str, object]:
     status = CellStatus.INFRASTRUCTURE_FAILURE
     score_verified = False
@@ -1194,6 +1233,16 @@ def _cell_receipt(
         "supervision_receipt_sha256": (
             sha256_file(supervision_receipt_path)
             if supervision_receipt_path is not None and supervision_receipt_path.is_file()
+            else None
+        ),
+        "parent_evidence_hash": (
+            load_json(parent_evidence_path).get("parent_evidence_hash")
+            if parent_evidence_path is not None and parent_evidence_path.is_file()
+            else None
+        ),
+        "parent_evidence_sha256": (
+            sha256_file(parent_evidence_path)
+            if parent_evidence_path is not None and parent_evidence_path.is_file()
             else None
         ),
         "raw_receipt_hash": raw_hash,
@@ -1487,10 +1536,14 @@ def _reconstruct_cell_receipt(
         launch=launch,
         authorization=authorization,
     )
-    resources = persisted.get("resources")
-    if not isinstance(resources, dict):
-        raise EvaluationError("Stage 09 persisted parent resource receipt is absent")
-    parent_wall = resources.get("parent_active_wall_ns")
+    asset_after = _asset_identity(environments, cell)
+    parent_evidence = _load_canonical_sealed(
+        paths["parent_evidence"],
+        schema=PARENT_EVIDENCE_SCHEMA,
+        hash_field="parent_evidence_hash",
+        label="parent resource evidence",
+    )
+    parent_wall = parent_evidence.get("parent_active_wall_ns")
     supervision_wall = supervision.get("wall_ns")
     if (
         isinstance(parent_wall, bool)
@@ -1500,7 +1553,17 @@ def _reconstruct_cell_receipt(
         or parent_wall < supervision_wall
     ):
         raise EvaluationError("Stage 09 parent/supervision wall semantics changed")
-    asset_after = _asset_identity(environments, cell)
+    expected_parent_evidence = _parent_evidence(
+        cell,
+        paths=paths,
+        spec=spec,
+        exposure_event=exposure_event,
+        supervision=supervision,
+        asset_after=asset_after,
+        parent_active_wall_ns=parent_wall,
+    )
+    if parent_evidence != expected_parent_evidence:
+        raise EvaluationError("Stage 09 parent resource evidence does not reconstruct exactly")
     reconstructed = _cell_receipt(
         cell,
         spec=spec,
@@ -1513,6 +1576,7 @@ def _reconstruct_cell_receipt(
         launch_receipt_path=paths["launch"],
         authorization_path=paths["authorization"],
         supervision_receipt_path=paths["supervision"],
+        parent_evidence_path=paths["parent_evidence"],
     )
     if reconstructed != persisted:
         raise EvaluationError("Stage 09 parent cell receipt does not reconstruct exactly")
@@ -2106,6 +2170,7 @@ def execute(
             paths["abort"],
             paths["authorization"],
             paths["launch"],
+            paths["parent_evidence"],
             paths["raw"],
             paths["receipt"],
             paths["stderr"],
@@ -2150,6 +2215,16 @@ def execute(
         )
         asset_after = _asset_identity(environments, cell)
         parent_active_wall_ns = max(0, time.perf_counter_ns() - cell_started_ns)
+        parent_evidence = _parent_evidence(
+            cell,
+            paths=paths,
+            spec=spec,
+            exposure_event=event,
+            supervision=supervision,
+            asset_after=asset_after,
+            parent_active_wall_ns=parent_active_wall_ns,
+        )
+        _atomic_create(paths["parent_evidence"], canonical_json_bytes(parent_evidence))
         receipt = _cell_receipt(
             cell,
             spec=spec,
@@ -2162,6 +2237,7 @@ def execute(
             launch_receipt_path=paths["launch"],
             authorization_path=paths["authorization"],
             supervision_receipt_path=paths["supervision"],
+            parent_evidence_path=paths["parent_evidence"],
         )
         _atomic_create(receipt_path, canonical_json_bytes(receipt))
         receipt = _reconstruct_cell_receipt(
