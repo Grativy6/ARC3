@@ -6,8 +6,10 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import subprocess
 import sys
+import time
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any, cast
@@ -32,6 +34,99 @@ def _load_object(path: Path) -> dict[str, Any]:
     if not isinstance(value, dict):
         raise ValueError("worker specification must be an object")
     return cast(dict[str, Any], value)
+
+
+def _seal(value: Mapping[str, object], field: str) -> dict[str, object]:
+    result = dict(value)
+    result[field] = _object_hash(result, field)
+    return result
+
+
+def _atomic_create(path: Path, value: Mapping[str, object]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("xb") as stream:
+        stream.write(_canonical_bytes(value))
+        stream.flush()
+        os.fsync(stream.fileno())
+
+
+def _expected_command(args: argparse.Namespace) -> list[str]:
+    return [
+        str(Path(sys.executable).resolve()),
+        "-I",
+        str(Path(__file__).resolve()),
+        "--spec",
+        str(args.spec.resolve()),
+        "--result",
+        str(args.result.resolve()),
+        "--launch-receipt",
+        str(args.launch_receipt.resolve()),
+        "--authorization",
+        str(args.authorization.resolve()),
+        "--abort-receipt",
+        str(args.abort_receipt.resolve()),
+        "--launch-token",
+        str(args.launch_token),
+    ]
+
+
+def _authorization_valid(args: argparse.Namespace, spec: Mapping[str, object]) -> bool:
+    try:
+        launch = _load_object(args.launch_receipt.resolve())
+        authorization = _load_object(args.authorization.resolve())
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError, ValueError):
+        return False
+    command = _expected_command(args)
+    spec_sha = f"sha256:{hashlib.sha256(args.spec.resolve().read_bytes()).hexdigest()}"
+    return bool(
+        launch.get("schema") == "arc3.build-001.stage-09-process-launch.v0.1"
+        and launch.get("launch_receipt_hash") == _object_hash(launch, "launch_receipt_hash")
+        and authorization.get("schema") == "arc3.build-001.stage-09-launch-authorization.v0.1"
+        and authorization.get("authorization_hash")
+        == _object_hash(authorization, "authorization_hash")
+        and launch.get("pid") == os.getpid()
+        and launch.get("launch_token") == args.launch_token
+        and launch.get("authorization_path") == args.authorization.resolve().as_posix()
+        and launch.get("command") == command
+        and launch.get("worker_spec_hash") == spec.get("worker_spec_hash")
+        and launch.get("worker_spec_sha256") == spec_sha
+        and authorization.get("pid") == os.getpid()
+        and authorization.get("launch_token") == args.launch_token
+        and authorization.get("launch_receipt_hash") == launch.get("launch_receipt_hash")
+        and authorization.get("process_creation_token") == launch.get("process_creation_token")
+        and authorization.get("command") == command
+        and authorization.get("worker_spec_hash") == spec.get("worker_spec_hash")
+        and authorization.get("worker_spec_sha256") == spec_sha
+        and authorization.get("raw_path") == args.result.resolve().as_posix()
+        and authorization.get("abort_path") == args.abort_receipt.resolve().as_posix()
+    )
+
+
+def _await_authorization(args: argparse.Namespace, spec: Mapping[str, object]) -> bool:
+    deadline = time.monotonic() + 10.0
+    while time.monotonic() < deadline:
+        if _authorization_valid(args, spec):
+            return True
+        time.sleep(0.02)
+    abort = _seal(
+        {
+            "schema": "arc3.build-001.stage-09-worker-abort.v0.1",
+            "authorization_path": args.authorization.resolve().as_posix(),
+            "cell_id": spec.get("cell_id"),
+            "environment_opened": False,
+            "launch_receipt_path": args.launch_receipt.resolve().as_posix(),
+            "launch_token": args.launch_token,
+            "pid": os.getpid(),
+            "reason": "launch-authorization-unavailable-or-invalid",
+        },
+        "worker_abort_hash",
+    )
+    try:
+        _atomic_create(args.abort_receipt.resolve(), abort)
+    except FileExistsError:
+        if args.abort_receipt.resolve().read_bytes() != _canonical_bytes(abort):
+            raise ValueError("existing Stage 09 worker abort receipt changed") from None
+    return False
 
 
 def _git(root: Path, argument: str) -> str:
@@ -60,12 +155,18 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--spec", required=True, type=Path)
     parser.add_argument("--result", required=True, type=Path)
+    parser.add_argument("--launch-receipt", required=True, type=Path)
+    parser.add_argument("--authorization", required=True, type=Path)
+    parser.add_argument("--abort-receipt", required=True, type=Path)
+    parser.add_argument("--launch-token", required=True)
     args = parser.parse_args(list(argv) if argv is not None else None)
     spec = _load_object(args.spec.resolve())
     if spec.get("schema") != "arc3.build-001.stage-09-worker-spec.v0.2" or spec.get(
         "worker_spec_hash"
     ) != _object_hash(spec, "worker_spec_hash"):
         raise ValueError("Stage 09 worker specification hash/schema is invalid")
+    if not _await_authorization(args, spec):
+        return 73
     source_root = Path(str(spec["source_root"])).resolve()
     expected_commit = str(spec["source_commit"])
     expected_tree = str(spec["source_tree"])

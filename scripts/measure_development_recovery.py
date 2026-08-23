@@ -16,6 +16,7 @@ import signal
 import subprocess
 import sys
 import time
+import uuid
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any, TypeGuard, cast
@@ -25,7 +26,7 @@ SRC = ROOT / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
-from arc3.errors import EvaluationError  # noqa: E402
+from arc3.errors import EvaluationError, TraceError  # noqa: E402
 from arc3.evaluation.artifacts import (  # noqa: E402
     canonical_json_bytes,
     load_json,
@@ -65,7 +66,8 @@ from arc3.evaluation.development_recovery import (  # noqa: E402
     matrix_hash,
     validate_predeclaration_bytes,
 )
-from arc3.evaluation.public import PublicExposureLedger  # noqa: E402
+from arc3.evaluation.public import PublicExposureLedger, _trace_receipt  # noqa: E402
+from arc3.evaluation.public_runner import _receipt_valid  # noqa: E402
 from arc3.integrity import discover_policy_files, scan_policy_files  # noqa: E402
 
 PREDECLARATION = ROOT / "docs/evidence/001-09-development-recovery-predeclaration.json"
@@ -108,6 +110,15 @@ INHERITED_EXPOSURES = (
     ),
 )
 WINDOWS_NEW_GROUP = int(getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0))
+LAUNCH_RECEIPT_SCHEMA = "arc3.build-001.stage-09-process-launch.v0.1"
+LAUNCH_AUTHORIZATION_SCHEMA = "arc3.build-001.stage-09-launch-authorization.v0.1"
+WORKER_ABORT_SCHEMA = "arc3.build-001.stage-09-worker-abort.v0.1"
+SUPERVISION_RECEIPT_SCHEMA = "arc3.build-001.stage-09-supervision.v0.1"
+TIMEOUT_TRACE_SCHEMA = "arc3.build-001.stage-09-timeout-trace.v0.1"
+ORPHAN_RECEIPT_SCHEMA = "arc3.build-001.stage-09-orphan-termination.v0.1"
+MECHANISM_FAILURE_KINDS = frozenset(
+    {"HypothesisError", "PlanningError", "PolicyError", "WorldModelError"}
+)
 
 
 def _is_mapping(value: object) -> TypeGuard[Mapping[str, object]]:
@@ -545,8 +556,190 @@ def _atomic_create(path: Path, content: bytes) -> None:
         os.fsync(stream.fileno())
 
 
+def _atomic_create_or_verify(path: Path, content: bytes, *, label: str) -> None:
+    """Create immutable bytes, accepting an exact pre-exposure crash remnant."""
+
+    try:
+        _atomic_create(path, content)
+    except FileExistsError:
+        if not path.is_file() or path.read_bytes() != content:
+            raise EvaluationError(f"existing Stage 09 {label} bytes changed") from None
+
+
+def _cell_paths(work_root: Path, cell: DevelopmentCell) -> dict[str, Path]:
+    prefix = f"{cell.ordinal:02d}-{cell.cell_id}"
+    cell_root = work_root.resolve() / "cells" / prefix
+    return {
+        "abort": work_root.resolve() / "worker-aborts" / f"{prefix}.json",
+        "authorization": work_root.resolve() / "launch-authorizations" / f"{prefix}.json",
+        "cell_root": cell_root,
+        "launch": work_root.resolve() / "process-launches" / f"{prefix}.json",
+        "orphan": work_root.resolve() / "orphan-terminations" / f"{prefix}.json",
+        "raw": cell_root / "raw-worker-result.json",
+        "receipt": work_root.resolve() / "parent-receipts" / f"{prefix}.json",
+        "spec": work_root.resolve() / "specs" / f"{prefix}.json",
+        "stderr": work_root.resolve() / "parent-streams" / prefix / "stderr.bin",
+        "stdout": work_root.resolve() / "parent-streams" / prefix / "stdout.bin",
+        "supervision": work_root.resolve() / "supervision-receipts" / f"{prefix}.json",
+    }
+
+
+def _worker_command(
+    spec_path: Path,
+    raw_path: Path,
+    *,
+    launch_path: Path,
+    authorization_path: Path,
+    abort_path: Path,
+    launch_token: str,
+) -> tuple[str, ...]:
+    return (
+        str(Path(sys.executable).resolve()),
+        "-I",
+        str(WORKER.resolve()),
+        "--spec",
+        str(spec_path.resolve()),
+        "--result",
+        str(raw_path.resolve()),
+        "--launch-receipt",
+        str(launch_path.resolve()),
+        "--authorization",
+        str(authorization_path.resolve()),
+        "--abort-receipt",
+        str(abort_path.resolve()),
+        "--launch-token",
+        launch_token,
+    )
+
+
+def _recorded_launch_token(command: object) -> str:
+    if not isinstance(command, list) or len(command) < 2:
+        raise EvaluationError("Stage 09 recorded worker command is invalid")
+    try:
+        index = command.index("--launch-token")
+    except ValueError as error:
+        raise EvaluationError("Stage 09 recorded worker command lacks a launch token") from error
+    if (
+        index != len(command) - 2
+        or not isinstance(command[index + 1], str)
+        or not command[index + 1]
+    ):
+        raise EvaluationError("Stage 09 recorded worker launch token is invalid")
+    return cast(str, command[index + 1])
+
+
+def _process_creation_token(pid: int) -> str | None:
+    """Return a restart-comparable OS process creation identity when available."""
+
+    if isinstance(pid, bool) or pid <= 0:
+        return None
+    if os.name == "nt":
+        try:
+            probe = subprocess.run(
+                [
+                    "powershell.exe",
+                    "-NoProfile",
+                    "-NonInteractive",
+                    "-Command",
+                    (
+                        "$p=Get-CimInstance Win32_Process -Filter 'ProcessId = "
+                        f"{pid}';if($null -ne $p){{$p.CreationDate.ToUniversalTime().Ticks}}"
+                    ),
+                ],
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=5.0,
+            )
+        except (OSError, subprocess.TimeoutExpired):
+            return None
+        value = probe.stdout.strip()
+        return f"windows-cim:{value}" if probe.returncode == 0 and value.isdigit() else None
+    stat_path = Path(f"/proc/{pid}/stat")
+    command_path = Path(f"/proc/{pid}/cmdline")
+    if stat_path.is_file() and command_path.is_file():
+        try:
+            stat = stat_path.read_text(encoding="utf-8")
+            # The comm field may contain spaces and parentheses; the fields after
+            # its final ')' begin at field three.  Start time is field 22.
+            suffix = stat[stat.rfind(")") + 2 :].split()
+            start_ticks = suffix[19]
+            command_hash = sha256_bytes(command_path.read_bytes())
+        except (OSError, IndexError):
+            return None
+        return f"linux-proc:{start_ticks}:{command_hash}"
+    return None
+
+
+def _launch_payload(
+    *,
+    process: subprocess.Popen[bytes],
+    command: Sequence[str],
+    cwd: Path,
+    context: Mapping[str, object],
+) -> dict[str, object]:
+    pid = process.pid
+    creation_token = _process_creation_token(pid)
+    if creation_token is None:
+        raise EvaluationError("Stage 09 process creation identity is unavailable")
+    payload = {
+        "schema": LAUNCH_RECEIPT_SCHEMA,
+        "cell_id": context.get("cell_id"),
+        "cell_spec_hash": context.get("cell_spec_hash"),
+        "command": list(command),
+        "command_sha256": sha256_bytes(canonical_json_bytes(list(command))),
+        "cwd": cwd.resolve().as_posix(),
+        "exposure_event_hash": context.get("exposure_event_hash"),
+        "launch_token": context.get("launch_token"),
+        "authorization_path": context.get("authorization_path"),
+        "launched_at_unix_ns": time.time_ns(),
+        "parent_pid": os.getpid(),
+        "pid": pid,
+        "process_creation_token": creation_token,
+        "raw_path": context.get("raw_path"),
+        "stderr_path": context.get("stderr_path"),
+        "stdout_path": context.get("stdout_path"),
+        "worker_spec_hash": context.get("worker_spec_hash"),
+        "worker_spec_sha256": context.get("worker_spec_sha256"),
+    }
+    return cast(dict[str, object], seal_object(payload, hash_field="launch_receipt_hash"))
+
+
+def _authorization_payload(
+    *,
+    launch: Mapping[str, object],
+    command: Sequence[str],
+    context: Mapping[str, object],
+) -> dict[str, object]:
+    payload = {
+        "schema": LAUNCH_AUTHORIZATION_SCHEMA,
+        "abort_path": context.get("abort_path"),
+        "cell_id": context.get("cell_id"),
+        "cell_spec_hash": context.get("cell_spec_hash"),
+        "command": list(command),
+        "command_sha256": sha256_bytes(canonical_json_bytes(list(command))),
+        "exposure_event_hash": context.get("exposure_event_hash"),
+        "launch_receipt_hash": launch.get("launch_receipt_hash"),
+        "launch_token": context.get("launch_token"),
+        "pid": launch.get("pid"),
+        "process_creation_token": launch.get("process_creation_token"),
+        "raw_path": context.get("raw_path"),
+        "worker_spec_hash": context.get("worker_spec_hash"),
+        "worker_spec_sha256": context.get("worker_spec_sha256"),
+    }
+    return cast(dict[str, object], seal_object(payload, hash_field="authorization_hash"))
+
+
 def _supervise(
-    command: Sequence[str], *, cwd: Path, streams: Path, timeout_seconds: float
+    command: Sequence[str],
+    *,
+    cwd: Path,
+    streams: Path,
+    timeout_seconds: float,
+    launch_receipt_path: Path | None = None,
+    authorization_path: Path | None = None,
+    supervision_receipt_path: Path | None = None,
+    launch_context: Mapping[str, object] | None = None,
 ) -> dict[str, object]:
     started = time.perf_counter_ns()
     stdout = b""
@@ -555,6 +748,9 @@ def _supervise(
     launch_error: str | None = None
     termination: dict[str, object] | None = None
     returncode: int | None = None
+    launch_receipt_hash: str | None = None
+    authorization_hash: str | None = None
+    process: subprocess.Popen[bytes] | None = None
     try:
         options: dict[str, object] = {
             "cwd": cwd,
@@ -568,6 +764,26 @@ def _supervise(
         else:
             options["start_new_session"] = True
         process = subprocess.Popen(list(command), **cast(dict[str, Any], options))
+        if launch_receipt_path is not None:
+            if launch_context is None:
+                raise EvaluationError("Stage 09 launch context is absent")
+            launch = _launch_payload(
+                process=process,
+                command=command,
+                cwd=cwd,
+                context=launch_context,
+            )
+            _atomic_create(launch_receipt_path, canonical_json_bytes(launch))
+            launch_receipt_hash = cast(str, launch["launch_receipt_hash"])
+            if authorization_path is None:
+                raise EvaluationError("Stage 09 launch authorization path is absent")
+            authorization = _authorization_payload(
+                launch=launch,
+                command=command,
+                context=launch_context,
+            )
+            _atomic_create(authorization_path, canonical_json_bytes(authorization))
+            authorization_hash = cast(str, authorization["authorization_hash"])
         try:
             stdout, stderr = process.communicate(timeout=timeout_seconds)
         except subprocess.TimeoutExpired as error:
@@ -584,14 +800,26 @@ def _supervise(
                     process.kill()
                 process.wait(timeout=5.0)
         returncode = process.returncode
-    except OSError as error:
+    except (EvaluationError, OSError) as error:
         launch_error = f"{type(error).__name__}: {error}"
+        if process is not None and process.poll() is None:
+            termination = _terminate_tree(process)
+            try:
+                tail_out, tail_err = process.communicate(timeout=10.0)
+                stdout += tail_out
+                stderr += tail_err
+            except (OSError, subprocess.TimeoutExpired):
+                pass
+            returncode = process.returncode
     stdout_path = streams / "stdout.bin"
     stderr_path = streams / "stderr.bin"
     _atomic_create(stdout_path, stdout)
     _atomic_create(stderr_path, stderr)
-    return {
+    payload = {
+        "schema": SUPERVISION_RECEIPT_SCHEMA,
+        "authorization_hash": authorization_hash,
         "command": list(command),
+        "launch_receipt_hash": launch_receipt_hash,
         "launch_error": launch_error,
         "returncode": returncode,
         "stderr_bytes": len(stderr),
@@ -605,6 +833,10 @@ def _supervise(
         "termination": termination,
         "wall_ns": max(0, time.perf_counter_ns() - started),
     }
+    result = cast(dict[str, object], seal_object(payload, hash_field="supervision_receipt_hash"))
+    if supervision_receipt_path is not None:
+        _atomic_create(supervision_receipt_path, canonical_json_bytes(result))
+    return result
 
 
 def _worker_spec(
@@ -709,27 +941,18 @@ def _worker_spec(
 
 
 def _raw_result(
-    raw_path: Path, cell: DevelopmentCell, spec: Mapping[str, object]
+    raw_path: Path,
+    cell: DevelopmentCell,
+    spec: Mapping[str, object],
+    *,
+    asset_after: Mapping[str, object] | None = None,
 ) -> dict[str, object]:
     raw = load_json(raw_path)
     public_spec = cast(dict[str, object], spec["public_worker_spec"])
     specification = cast(dict[str, object], public_spec["specification"])
     identity = cast(dict[str, object], public_spec["identity"])
-    if not verify_object_hash(raw, hash_field="receipt_hash"):
-        raise EvaluationError("Stage 09 raw worker receipt hash is invalid")
-    for field in (
-        "evaluation_id",
-        "run_id",
-        "game_id",
-        "baseline_id",
-        "agent",
-        "seed",
-        "partition",
-    ):
-        if raw.get(field) != specification.get(field):
-            raise EvaluationError(f"Stage 09 raw worker {field} changed")
-    if raw.get("identity_hash") != identity.get("identity_hash"):
-        raise EvaluationError("Stage 09 raw worker identity changed")
+    if not _receipt_valid(raw, specification, identity.get("identity_hash")):
+        raise EvaluationError("Stage 09 raw public worker receipt validation failed")
     score = raw.get("score")
     metrics = raw.get("metrics")
     asset = raw.get("asset_identity_after")
@@ -737,10 +960,93 @@ def _raw_result(
         raise EvaluationError("Stage 09 raw worker evidence is incomplete")
     if asset.get("aggregate_sha256") != cell.game.asset_sha256:
         raise EvaluationError("Stage 09 asset changed during worker execution")
+    if asset_after is not None and asset != asset_after:
+        raise EvaluationError("Stage 09 raw worker asset receipt changed")
     actions = metrics.get("environment_actions")
     if isinstance(actions, bool) or not isinstance(actions, int) or not 0 <= actions <= MAX_ACTIONS:
         raise EvaluationError("Stage 09 raw action count is invalid")
     return cast(dict[str, object], raw)
+
+
+def _timeout_trace_evidence(
+    cell: DevelopmentCell, spec: Mapping[str, object]
+) -> dict[str, object] | None:
+    public = spec.get("public_worker_spec")
+    if not isinstance(public, dict):
+        return None
+    trace_path_value = public.get("trace_path")
+    run_id = public.get("run_id")
+    trace_relative = public.get("trace_relative")
+    if not all(
+        isinstance(value, str) and value for value in (trace_path_value, run_id, trace_relative)
+    ):
+        return None
+    trace_path = Path(cast(str, trace_path_value))
+    if not trace_path.is_dir():
+        return None
+    try:
+        trace = _trace_receipt(
+            trace_path,
+            run_id=cast(str, run_id),
+            relative_path=cast(str, trace_relative),
+        )
+    except (OSError, TraceError, ValueError):
+        return None
+    counts = trace.get("event_type_counts")
+    submitted = trace.get("submitted_action_count")
+    consequences = trace.get("consequence_count")
+    environment_actions = trace.get("environment_action_count")
+    resets = trace.get("reset_count")
+    event_count = trace.get("event_count")
+    if (
+        not isinstance(counts, dict)
+        or trace.get("replay_verified") is not True
+        or trace.get("run_id") != run_id
+        or trace.get("path") != trace_relative
+        or any(
+            isinstance(value, bool) or not isinstance(value, int) or value < 0
+            for value in (submitted, consequences, environment_actions, resets, event_count)
+        )
+    ):
+        return None
+    assert isinstance(submitted, int)
+    assert isinstance(consequences, int)
+    assert isinstance(environment_actions, int)
+    assert isinstance(resets, int)
+    assert isinstance(event_count, int)
+    if (
+        environment_actions + resets != consequences
+        or submitted not in {consequences, consequences + 1}
+        or sum(
+            value
+            for value in counts.values()
+            if isinstance(value, int) and not isinstance(value, bool)
+        )
+        != event_count
+        or int(counts.get("observation.received", 0)) < 1
+    ):
+        return None
+    controller_started = int(counts.get("run.started", 0)) == 1
+    if cell.variant.agent == "full" and not controller_started:
+        return None
+    payload = {
+        "schema": TIMEOUT_TRACE_SCHEMA,
+        "cell_id": cell.cell_id,
+        "controller_started": controller_started,
+        "observation_received": True,
+        "run_id": run_id,
+        "trace": trace,
+    }
+    return cast(dict[str, object], seal_object(payload, hash_field="timeout_trace_hash"))
+
+
+def _mechanism_failure(raw: Mapping[str, object]) -> bool:
+    failure = raw.get("failure")
+    return bool(
+        raw.get("status") == "failure"
+        and isinstance(failure, dict)
+        and failure.get("kind") in MECHANISM_FAILURE_KINDS
+    )
 
 
 def _cell_receipt(
@@ -752,6 +1058,10 @@ def _cell_receipt(
     raw_path: Path,
     asset_after: Mapping[str, object],
     parent_active_wall_ns: int,
+    spec_path: Path | None = None,
+    launch_receipt_path: Path | None = None,
+    authorization_path: Path | None = None,
+    supervision_receipt_path: Path | None = None,
 ) -> dict[str, object]:
     status = CellStatus.INFRASTRUCTURE_FAILURE
     score_verified = False
@@ -762,22 +1072,17 @@ def _cell_receipt(
     child_cpu: float | None = None
     child_rss: int | None = None
     failure: str | None = None
-    if supervision.get("timed_out") is True:
-        termination = supervision.get("termination")
-        if isinstance(termination, dict) and termination.get("passed") is True:
-            status = CellStatus.CONTROLLER_WALL_TIMEOUT
-            actions = MAX_ACTIONS
-        else:
-            failure = "process-tree termination did not verify"
-    elif supervision.get("launch_error") is not None:
-        failure = "worker process launch failed"
-    elif supervision.get("returncode") != 0:
-        failure = "worker exited nonzero"
-    elif not raw_path.is_file():
-        failure = "worker produced no raw receipt"
-    else:
+    timeout_trace: dict[str, object] | None = None
+    raw: dict[str, object] | None = None
+    raw_available = raw_path.is_file()
+    successful_wrapper = (
+        supervision.get("launch_error") is None
+        and supervision.get("returncode") == 0
+        and supervision.get("timed_out") is False
+    )
+    if raw_available and successful_wrapper:
         try:
-            raw = _raw_result(raw_path, cell, spec)
+            raw = _raw_result(raw_path, cell, spec, asset_after=asset_after)
             raw_hash = cast(str, raw["receipt_hash"])
             score = cast(dict[str, object], raw["score"])
             metrics = cast(dict[str, object], raw["metrics"])
@@ -801,18 +1106,61 @@ def _cell_receipt(
             )
             rss = metrics.get("peak_rss_bytes")
             child_rss = rss if isinstance(rss, int) and not isinstance(rss, bool) else None
+            expected_stdout = canonical_json_bytes(
+                {
+                    "cell_id": cell.cell_id,
+                    "raw_receipt_hash": raw_hash,
+                    "status": raw.get("status"),
+                }
+            )
+            stdout_path = supervision.get("stdout_path")
+            if (
+                not isinstance(stdout_path, str)
+                or Path(stdout_path).read_bytes() != expected_stdout
+            ):
+                raise EvaluationError("Stage 09 worker stdout receipt changed")
             if raw.get("status") == "success":
                 status = CellStatus.SUCCESS
+            elif _mechanism_failure(raw):
+                status = CellStatus.MECHANISM_FAILURE
+                raw_failure = cast(dict[str, object], raw["failure"])
+                failure = f"raw controller failure: {raw_failure}"
             else:
                 status = CellStatus.INFRASTRUCTURE_FAILURE
-                raw_failure = raw.get("failure")
+                untyped_failure = raw.get("failure")
                 failure = (
-                    f"raw worker failure: {raw_failure}"
-                    if isinstance(raw_failure, dict)
+                    f"raw worker failure: {untyped_failure}"
+                    if isinstance(untyped_failure, dict)
                     else "raw worker did not terminate successfully"
                 )
         except (EvaluationError, OSError, ValueError) as error:
             failure = f"{type(error).__name__}: {error}"
+    elif supervision.get("timed_out") is True:
+        termination = supervision.get("termination")
+        wall_ns = supervision.get("wall_ns")
+        timeout_trace = _timeout_trace_evidence(cell, spec)
+        timeout_elapsed = (
+            isinstance(wall_ns, int)
+            and not isinstance(wall_ns, bool)
+            and wall_ns >= int(WORKER_WALL_SECONDS * 1_000_000_000)
+        )
+        if (
+            isinstance(termination, dict)
+            and termination.get("passed") is True
+            and timeout_elapsed
+            and timeout_trace is not None
+        ):
+            status = CellStatus.CONTROLLER_WALL_TIMEOUT
+            timeout_receipt = cast(dict[str, object], timeout_trace["trace"])
+            actions = cast(int, timeout_receipt["environment_action_count"])
+        else:
+            failure = "controller timeout lacks verified start, trace, wall, or tree termination"
+    elif supervision.get("launch_error") is not None:
+        failure = "worker process launch failed"
+    elif supervision.get("returncode") != 0:
+        failure = "worker exited nonzero"
+    elif not raw_available:
+        failure = "worker produced no raw receipt"
     if asset_after.get("passed") is not True:
         status = CellStatus.INFRASTRUCTURE_FAILURE
         failure = "development asset identity changed after cell execution"
@@ -829,6 +1177,25 @@ def _cell_receipt(
         "source_commit": cell.variant.source_commit,
         "exposure_event_hash": exposure_event.get("event_hash"),
         "worker_spec_hash": spec.get("worker_spec_hash"),
+        "worker_spec_sha256": sha256_file(spec_path) if spec_path is not None else None,
+        "launch_receipt_hash": supervision.get("launch_receipt_hash"),
+        "launch_receipt_sha256": (
+            sha256_file(launch_receipt_path)
+            if launch_receipt_path is not None and launch_receipt_path.is_file()
+            else None
+        ),
+        "authorization_hash": supervision.get("authorization_hash"),
+        "authorization_sha256": (
+            sha256_file(authorization_path)
+            if authorization_path is not None and authorization_path.is_file()
+            else None
+        ),
+        "supervision_receipt_hash": supervision.get("supervision_receipt_hash"),
+        "supervision_receipt_sha256": (
+            sha256_file(supervision_receipt_path)
+            if supervision_receipt_path is not None and supervision_receipt_path.is_file()
+            else None
+        ),
         "raw_receipt_hash": raw_hash,
         "raw_receipt_sha256": sha256_file(raw_path) if raw_path.is_file() else None,
         "result": {
@@ -845,6 +1212,7 @@ def _cell_receipt(
             "worker_wall_seconds": WORKER_WALL_SECONDS,
         },
         "supervisor": dict(supervision),
+        "timeout_trace": timeout_trace,
         "asset_after": dict(asset_after),
         "failure": failure,
     }
@@ -865,6 +1233,458 @@ def _append_exposure(path: Path, cell: DevelopmentCell) -> dict[str, Any]:
             "variant": cell.variant.value,
         },
     )
+
+
+def _load_canonical_sealed(
+    path: Path, *, schema: str, hash_field: str, label: str
+) -> dict[str, Any]:
+    if not path.is_file():
+        raise EvaluationError(f"Stage 09 {label} is absent")
+    raw_bytes = path.read_bytes()
+    value = load_json(path)
+    if (
+        value.get("schema") != schema
+        or not verify_object_hash(value, hash_field=hash_field)
+        or canonical_json_bytes(value) != raw_bytes
+    ):
+        raise EvaluationError(f"Stage 09 {label} bytes/hash/schema changed")
+    return value
+
+
+def _validate_launch_receipt(
+    path: Path,
+    *,
+    cell: DevelopmentCell,
+    command: Sequence[str],
+    spec: Mapping[str, object],
+    spec_path: Path,
+    exposure_event: Mapping[str, object],
+    paths: Mapping[str, Path],
+) -> dict[str, object]:
+    launch = _load_canonical_sealed(
+        path,
+        schema=LAUNCH_RECEIPT_SCHEMA,
+        hash_field="launch_receipt_hash",
+        label="process launch receipt",
+    )
+    expected = {
+        "cell_id": cell.cell_id,
+        "cell_spec_hash": cell.spec_hash,
+        "command": list(command),
+        "command_sha256": sha256_bytes(canonical_json_bytes(list(command))),
+        "cwd": ROOT.resolve().as_posix(),
+        "authorization_path": paths["authorization"].resolve().as_posix(),
+        "exposure_event_hash": exposure_event.get("event_hash"),
+        "raw_path": paths["raw"].resolve().as_posix(),
+        "stderr_path": paths["stderr"].resolve().as_posix(),
+        "stdout_path": paths["stdout"].resolve().as_posix(),
+        "worker_spec_hash": spec.get("worker_spec_hash"),
+        "worker_spec_sha256": sha256_file(spec_path),
+    }
+    if any(launch.get(key) != value for key, value in expected.items()):
+        raise EvaluationError("Stage 09 process launch binding changed")
+    for field in ("launched_at_unix_ns", "parent_pid", "pid"):
+        value = launch.get(field)
+        if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+            raise EvaluationError(f"Stage 09 process launch {field} is invalid")
+    token = launch.get("process_creation_token")
+    launch_token = launch.get("launch_token")
+    if (
+        not isinstance(token, str)
+        or not token
+        or not isinstance(launch_token, str)
+        or not launch_token
+    ):
+        raise EvaluationError("Stage 09 process launch identity is invalid")
+    return cast(dict[str, object], launch)
+
+
+def _validate_authorization_receipt(
+    path: Path,
+    *,
+    cell: DevelopmentCell,
+    command: Sequence[str],
+    spec: Mapping[str, object],
+    spec_path: Path,
+    exposure_event: Mapping[str, object],
+    paths: Mapping[str, Path],
+    launch: Mapping[str, object],
+) -> dict[str, object]:
+    authorization = _load_canonical_sealed(
+        path,
+        schema=LAUNCH_AUTHORIZATION_SCHEMA,
+        hash_field="authorization_hash",
+        label="worker launch authorization",
+    )
+    expected = {
+        "abort_path": paths["abort"].resolve().as_posix(),
+        "cell_id": cell.cell_id,
+        "cell_spec_hash": cell.spec_hash,
+        "command": list(command),
+        "command_sha256": sha256_bytes(canonical_json_bytes(list(command))),
+        "exposure_event_hash": exposure_event.get("event_hash"),
+        "launch_receipt_hash": launch.get("launch_receipt_hash"),
+        "launch_token": launch.get("launch_token"),
+        "pid": launch.get("pid"),
+        "process_creation_token": launch.get("process_creation_token"),
+        "raw_path": paths["raw"].resolve().as_posix(),
+        "worker_spec_hash": spec.get("worker_spec_hash"),
+        "worker_spec_sha256": sha256_file(spec_path),
+    }
+    if any(authorization.get(key) != value for key, value in expected.items()):
+        raise EvaluationError("Stage 09 worker launch authorization changed")
+    return cast(dict[str, object], authorization)
+
+
+def _validate_supervision_receipt(
+    path: Path,
+    *,
+    command: Sequence[str],
+    paths: Mapping[str, Path],
+    launch: Mapping[str, object] | None,
+    authorization: Mapping[str, object] | None,
+) -> dict[str, object]:
+    supervision = _load_canonical_sealed(
+        path,
+        schema=SUPERVISION_RECEIPT_SCHEMA,
+        hash_field="supervision_receipt_hash",
+        label="supervision receipt",
+    )
+    if (
+        supervision.get("command") != list(command)
+        or supervision.get("timeout_seconds") != WORKER_WALL_SECONDS
+        or supervision.get("stdout_path") != paths["stdout"].resolve().as_posix()
+        or supervision.get("stderr_path") != paths["stderr"].resolve().as_posix()
+    ):
+        raise EvaluationError("Stage 09 supervision invocation changed")
+    for name in ("stdout", "stderr"):
+        stream_path = paths[name]
+        if not stream_path.is_file():
+            raise EvaluationError(f"Stage 09 {name} stream is absent")
+        content = stream_path.read_bytes()
+        if supervision.get(f"{name}_bytes") != len(content) or supervision.get(
+            f"{name}_sha256"
+        ) != sha256_bytes(content):
+            raise EvaluationError(f"Stage 09 {name} stream receipt changed")
+    wall_ns = supervision.get("wall_ns")
+    if isinstance(wall_ns, bool) or not isinstance(wall_ns, int) or wall_ns < 0:
+        raise EvaluationError("Stage 09 supervision wall receipt is invalid")
+    timed_out = supervision.get("timed_out")
+    launch_error = supervision.get("launch_error")
+    returncode = supervision.get("returncode")
+    termination = supervision.get("termination")
+    if not isinstance(timed_out, bool):
+        raise EvaluationError("Stage 09 timeout receipt is invalid")
+    if launch_error is not None and (not isinstance(launch_error, str) or not launch_error):
+        raise EvaluationError("Stage 09 launch error receipt is invalid")
+    if returncode is not None and (isinstance(returncode, bool) or not isinstance(returncode, int)):
+        raise EvaluationError("Stage 09 process return code is invalid")
+    if launch_error is None:
+        if (
+            launch is None
+            or authorization is None
+            or supervision.get("launch_receipt_hash") != launch.get("launch_receipt_hash")
+            or supervision.get("authorization_hash") != authorization.get("authorization_hash")
+        ):
+            raise EvaluationError("Stage 09 supervision lacks its exact launch receipt")
+        if returncode is None:
+            raise EvaluationError("Stage 09 launched process lacks a return code")
+    elif launch is None:
+        if (
+            supervision.get("launch_receipt_hash") is not None
+            or supervision.get("authorization_hash") is not None
+        ):
+            raise EvaluationError("Stage 09 launch-error receipt claims an absent process launch")
+    elif supervision.get("launch_receipt_hash") != launch.get(
+        "launch_receipt_hash"
+    ) or supervision.get("authorization_hash") != (
+        authorization.get("authorization_hash") if authorization is not None else None
+    ):
+        raise EvaluationError("Stage 09 launch-error process evidence changed")
+    if timed_out:
+        if launch_error is not None or not isinstance(termination, dict):
+            raise EvaluationError("Stage 09 timeout supervision semantics changed")
+    elif launch_error is None and termination is not None:
+        raise EvaluationError("Stage 09 non-timeout process has a termination receipt")
+    return cast(dict[str, object], supervision)
+
+
+def _reconstruct_cell_receipt(
+    *,
+    work_root: Path,
+    recordings: Path,
+    environments: Path,
+    build_000_root: Path,
+    build_001_root: Path,
+    runtime_identity: Mapping[str, object],
+    cell: DevelopmentCell,
+    exposure_event: Mapping[str, object],
+) -> dict[str, object]:
+    paths = _cell_paths(work_root, cell)
+    persisted = _load_canonical_sealed(
+        paths["receipt"],
+        schema=CELL_RECEIPT_SCHEMA,
+        hash_field="cell_receipt_hash",
+        label="parent cell receipt",
+    )
+    source_root = build_001_root if cell.variant is Variant.BUILD_001_FULL else build_000_root
+    expected_spec = _worker_spec(
+        cell,
+        source_root=source_root,
+        environments=environments,
+        recordings=recordings,
+        cell_root=paths["cell_root"],
+        runtime_identity=runtime_identity,
+    )
+    expected_spec_bytes = canonical_json_bytes(expected_spec)
+    if not paths["spec"].is_file() or paths["spec"].read_bytes() != expected_spec_bytes:
+        raise EvaluationError("Stage 09 persisted worker specification changed")
+    spec = load_json(paths["spec"])
+    if spec != expected_spec:
+        raise EvaluationError("Stage 09 worker specification does not reconstruct exactly")
+    supervision_preview = _load_canonical_sealed(
+        paths["supervision"],
+        schema=SUPERVISION_RECEIPT_SCHEMA,
+        hash_field="supervision_receipt_hash",
+        label="supervision receipt",
+    )
+    launch_token = _recorded_launch_token(supervision_preview.get("command"))
+    command = _worker_command(
+        paths["spec"],
+        paths["raw"],
+        launch_path=paths["launch"],
+        authorization_path=paths["authorization"],
+        abort_path=paths["abort"],
+        launch_token=launch_token,
+    )
+    launch: dict[str, object] | None = None
+    authorization: dict[str, object] | None = None
+    if paths["launch"].is_file():
+        launch = _validate_launch_receipt(
+            paths["launch"],
+            cell=cell,
+            command=command,
+            spec=spec,
+            spec_path=paths["spec"],
+            exposure_event=exposure_event,
+            paths=paths,
+        )
+        if paths["authorization"].is_file():
+            authorization = _validate_authorization_receipt(
+                paths["authorization"],
+                cell=cell,
+                command=command,
+                spec=spec,
+                spec_path=paths["spec"],
+                exposure_event=exposure_event,
+                paths=paths,
+                launch=launch,
+            )
+    supervision = _validate_supervision_receipt(
+        paths["supervision"],
+        command=command,
+        paths=paths,
+        launch=launch,
+        authorization=authorization,
+    )
+    resources = persisted.get("resources")
+    if not isinstance(resources, dict):
+        raise EvaluationError("Stage 09 persisted parent resource receipt is absent")
+    parent_wall = resources.get("parent_active_wall_ns")
+    supervision_wall = supervision.get("wall_ns")
+    if (
+        isinstance(parent_wall, bool)
+        or not isinstance(parent_wall, int)
+        or parent_wall < 0
+        or not isinstance(supervision_wall, int)
+        or parent_wall < supervision_wall
+    ):
+        raise EvaluationError("Stage 09 parent/supervision wall semantics changed")
+    asset_after = _asset_identity(environments, cell)
+    reconstructed = _cell_receipt(
+        cell,
+        spec=spec,
+        exposure_event=exposure_event,
+        supervision=supervision,
+        raw_path=paths["raw"],
+        asset_after=asset_after,
+        parent_active_wall_ns=parent_wall,
+        spec_path=paths["spec"],
+        launch_receipt_path=paths["launch"],
+        authorization_path=paths["authorization"],
+        supervision_receipt_path=paths["supervision"],
+    )
+    if reconstructed != persisted:
+        raise EvaluationError("Stage 09 parent cell receipt does not reconstruct exactly")
+    Outcome.from_receipt(reconstructed, cell)
+    return reconstructed
+
+
+def _terminate_orphan_pid(pid: int) -> dict[str, object]:
+    method = "windows-taskkill-tree" if os.name == "nt" else "posix-killpg"
+    error: str | None = None
+    returncode: int | None = None
+    try:
+        if os.name == "nt":
+            result = subprocess.run(
+                ["taskkill", "/PID", str(pid), "/T", "/F"],
+                check=False,
+                capture_output=True,
+                timeout=10.0,
+            )
+            returncode = result.returncode
+        else:
+            kill_group = getattr(os, "killpg", None)
+            if not callable(kill_group):
+                raise OSError("process-group termination is unavailable")
+            kill_group(pid, int(getattr(signal, "SIGKILL", signal.SIGTERM)))
+    except (OSError, subprocess.TimeoutExpired) as caught:
+        error = f"{type(caught).__name__}: {caught}"
+    passed = error is None and (
+        (method == "windows-taskkill-tree" and returncode == 0)
+        or (method == "posix-killpg" and returncode is None)
+    )
+    return {
+        "attempted": True,
+        "error": error,
+        "method": method,
+        "passed": passed,
+        "returncode": returncode,
+    }
+
+
+def _seal_orphan_boundary(
+    *,
+    work_root: Path,
+    recordings: Path,
+    environments: Path,
+    build_000_root: Path,
+    build_001_root: Path,
+    runtime_identity: Mapping[str, object],
+    cell: DevelopmentCell,
+    exposure_event: Mapping[str, object],
+) -> dict[str, object]:
+    paths = _cell_paths(work_root, cell)
+    if paths["orphan"].is_file():
+        return cast(
+            dict[str, object],
+            _load_canonical_sealed(
+                paths["orphan"],
+                schema=ORPHAN_RECEIPT_SCHEMA,
+                hash_field="orphan_receipt_hash",
+                label="orphan termination receipt",
+            ),
+        )
+    source_root = build_001_root if cell.variant is Variant.BUILD_001_FULL else build_000_root
+    expected_spec = _worker_spec(
+        cell,
+        source_root=source_root,
+        environments=environments,
+        recordings=recordings,
+        cell_root=paths["cell_root"],
+        runtime_identity=runtime_identity,
+    )
+    if not paths["spec"].is_file() or paths["spec"].read_bytes() != canonical_json_bytes(
+        expected_spec
+    ):
+        raise EvaluationError("Stage 09 orphan worker specification changed")
+    launch: dict[str, object] | None = None
+    authorization: dict[str, object] | None = None
+    if paths["launch"].is_file():
+        launch_preview = _load_canonical_sealed(
+            paths["launch"],
+            schema=LAUNCH_RECEIPT_SCHEMA,
+            hash_field="launch_receipt_hash",
+            label="process launch receipt",
+        )
+        launch_token = launch_preview.get("launch_token")
+        if not isinstance(launch_token, str) or not launch_token:
+            raise EvaluationError("Stage 09 orphan launch token is invalid")
+        command = _worker_command(
+            paths["spec"],
+            paths["raw"],
+            launch_path=paths["launch"],
+            authorization_path=paths["authorization"],
+            abort_path=paths["abort"],
+            launch_token=launch_token,
+        )
+        launch = _validate_launch_receipt(
+            paths["launch"],
+            cell=cell,
+            command=command,
+            spec=expected_spec,
+            spec_path=paths["spec"],
+            exposure_event=exposure_event,
+            paths=paths,
+        )
+        if paths["authorization"].is_file():
+            authorization = _validate_authorization_receipt(
+                paths["authorization"],
+                cell=cell,
+                command=command,
+                spec=expected_spec,
+                spec_path=paths["spec"],
+                exposure_event=exposure_event,
+                paths=paths,
+                launch=launch,
+            )
+    stored_token = launch.get("process_creation_token") if launch is not None else None
+    pid_value = launch.get("pid") if launch is not None else None
+    live_token = _process_creation_token(pid_value) if isinstance(pid_value, int) else None
+    termination: dict[str, object] | None = None
+    if launch is None:
+        if paths["abort"].is_file():
+            abort = _load_canonical_sealed(
+                paths["abort"],
+                schema=WORKER_ABORT_SCHEMA,
+                hash_field="worker_abort_hash",
+                label="pre-environment worker abort receipt",
+            )
+            if (
+                abort.get("cell_id") != cell.cell_id
+                or abort.get("environment_opened") is not False
+                or abort.get("launch_receipt_path") != paths["launch"].resolve().as_posix()
+                or abort.get("authorization_path") != paths["authorization"].resolve().as_posix()
+                or abort.get("reason") != "launch-authorization-unavailable-or-invalid"
+                or isinstance(abort.get("pid"), bool)
+                or not isinstance(abort.get("pid"), int)
+                or cast(int, abort.get("pid")) <= 0
+                or not isinstance(abort.get("launch_token"), str)
+                or not abort.get("launch_token")
+            ):
+                raise EvaluationError("Stage 09 worker abort receipt changed")
+            state = "pre-environment-handshake-aborted"
+            passed = True
+        else:
+            state = "untracked-worker-blocked-at-handshake"
+            passed = False
+    elif live_token is None:
+        state = "not-running"
+        passed = True
+    elif live_token != stored_token:
+        state = "pid-reused-original-not-running"
+        passed = True
+    else:
+        termination = _terminate_orphan_pid(cast(int, pid_value))
+        remaining = _process_creation_token(cast(int, pid_value))
+        state = "terminated" if remaining != stored_token else "still-running"
+        passed = termination.get("passed") is True and state == "terminated"
+    payload = {
+        "schema": ORPHAN_RECEIPT_SCHEMA,
+        "cell_id": cell.cell_id,
+        "exposure_event_hash": exposure_event.get("event_hash"),
+        "launch_receipt_hash": launch.get("launch_receipt_hash") if launch is not None else None,
+        "authorization_hash": (
+            authorization.get("authorization_hash") if authorization is not None else None
+        ),
+        "live_process_token_before": live_token,
+        "passed": passed,
+        "state": state,
+        "termination": termination,
+    }
+    sealed = cast(dict[str, object], seal_object(payload, hash_field="orphan_receipt_hash"))
+    _atomic_create(paths["orphan"], canonical_json_bytes(sealed))
+    return sealed
 
 
 def _resource_summary(
@@ -889,6 +1709,8 @@ def _resource_summary(
             raise EvaluationError("Stage 09 supervision wall is invalid")
         if parent < supervised:
             raise EvaluationError("Stage 09 parent active wall is below supervision wall")
+        if resources.get("worker_wall_seconds") != WORKER_WALL_SECONDS:
+            raise EvaluationError("Stage 09 worker wall limit receipt changed")
         parent_wall_ns += parent
         supervision_wall_ns += supervised
         cpu = resources.get("child_cpu_seconds")
@@ -927,6 +1749,7 @@ def _failure_terminal(
     failed_cell: DevelopmentCell,
     failure_kind: str,
     exposure_event_hash: object,
+    orphan_process: Mapping[str, object] | None = None,
 ) -> dict[str, object]:
     runtime_start = check.get("runtime_identity")
     if not isinstance(runtime_start, dict):
@@ -947,6 +1770,7 @@ def _failure_terminal(
             "exposure_event_hash": exposure_event_hash,
             "kind": failure_kind,
         },
+        "orphan_process": dict(orphan_process) if orphan_process is not None else None,
         "preflight": dict(check),
         "resources": _resource_summary(
             receipts, runtime_start=runtime_start, execution_complete=False
@@ -959,18 +1783,36 @@ def _failure_terminal(
     return final
 
 
-def _load_receipt_prefix(work_root: Path, count: int) -> list[dict[str, object]]:
+def _load_receipt_prefix(
+    *,
+    work_root: Path,
+    count: int,
+    recordings: Path,
+    environments: Path,
+    build_000_root: Path,
+    build_001_root: Path,
+    runtime_identity: Mapping[str, object],
+    exposure_events: Sequence[Mapping[str, object]],
+) -> list[dict[str, object]]:
     matrix = build_matrix()
     if not 0 <= count <= len(matrix):
         raise EvaluationError("Stage 09 terminal cell count is invalid")
+    if len(exposure_events) < count:
+        raise EvaluationError("Stage 09 receipt prefix exceeds its exposure prefix")
     receipts: list[dict[str, object]] = []
     for ordinal, cell in enumerate(matrix[:count]):
-        path = work_root / "parent-receipts" / f"{ordinal:02d}-{cell.cell_id}.json"
-        if not path.is_file():
-            raise EvaluationError("Stage 09 terminal artifact references a missing receipt")
-        receipt = load_json(path)
-        Outcome.from_receipt(receipt, cell)
-        receipts.append(cast(dict[str, object], receipt))
+        receipts.append(
+            _reconstruct_cell_receipt(
+                work_root=work_root,
+                recordings=recordings,
+                environments=environments,
+                build_000_root=build_000_root,
+                build_001_root=build_001_root,
+                runtime_identity=runtime_identity,
+                cell=cell,
+                exposure_event=exposure_events[ordinal],
+            )
+        )
     return receipts
 
 
@@ -980,6 +1822,10 @@ def _load_existing_terminal(
     work_root: Path,
     exposure: Path,
     check: Mapping[str, object],
+    recordings: Path = DEFAULT_RECORDINGS,
+    environments: Path = DEFAULT_ENVIRONMENTS,
+    build_000_root: Path = DEFAULT_BUILD_000_ROOT,
+    build_001_root: Path = DEFAULT_BUILD_001_ROOT,
 ) -> dict[str, object] | None:
     if not output.exists():
         return None
@@ -999,23 +1845,7 @@ def _load_existing_terminal(
     count = prior.get("cell_count")
     if isinstance(count, bool) or not isinstance(count, int):
         raise EvaluationError("existing Stage 09 terminal cell count is invalid")
-    receipts = _load_receipt_prefix(work_root, count)
-    if prior.get("cell_receipt_hashes") != [
-        receipt.get("cell_receipt_hash") for receipt in receipts
-    ]:
-        raise EvaluationError("existing Stage 09 terminal receipt projection changed")
     events = _validate_exposures(exposure)
-    execution_complete = prior.get("execution_complete")
-    runtime_start = check.get("runtime_identity")
-    if not isinstance(runtime_start, dict):
-        raise EvaluationError("current Stage 09 runtime identity is absent")
-    expected_resources = _resource_summary(
-        receipts,
-        runtime_start=runtime_start,
-        execution_complete=execution_complete is True,
-    )
-    if prior.get("resources") != expected_resources:
-        raise EvaluationError("existing Stage 09 resource projection changed")
     embedded_preflight = prior.get("preflight")
     if (
         not isinstance(embedded_preflight, dict)
@@ -1025,6 +1855,47 @@ def _load_existing_terminal(
         or embedded_preflight.get("gameplay_opened") is not False
     ):
         raise EvaluationError("existing Stage 09 preflight evidence changed")
+    embedded_exposure_count = embedded_preflight.get("stage09_exposure_event_count")
+    if (
+        isinstance(embedded_exposure_count, bool)
+        or not isinstance(embedded_exposure_count, int)
+        or not 0 <= embedded_exposure_count <= len(events)
+    ):
+        raise EvaluationError("existing Stage 09 preflight exposure boundary changed")
+    expected_preflight = dict(check)
+    expected_preflight.pop("preflight_hash", None)
+    expected_preflight["stage09_exposure_event_count"] = embedded_exposure_count
+    expected_preflight = seal_object(expected_preflight, hash_field="preflight_hash")
+    if embedded_preflight != expected_preflight:
+        raise EvaluationError("existing Stage 09 preflight does not reconstruct from live evidence")
+    runtime_start = embedded_preflight.get("runtime_identity")
+    if not isinstance(runtime_start, dict):
+        raise EvaluationError("embedded Stage 09 runtime identity is absent")
+    receipts = _load_receipt_prefix(
+        work_root=work_root,
+        count=count,
+        recordings=recordings,
+        environments=environments,
+        build_000_root=build_000_root,
+        build_001_root=build_001_root,
+        runtime_identity=runtime_start,
+        exposure_events=events,
+    )
+    if prior.get("cell_receipt_hashes") != [
+        receipt.get("cell_receipt_hash") for receipt in receipts
+    ]:
+        raise EvaluationError("existing Stage 09 terminal receipt projection changed")
+    execution_complete = prior.get("execution_complete")
+    expected_resources = _resource_summary(
+        receipts,
+        runtime_start=runtime_start,
+        execution_complete=execution_complete is True,
+    )
+    if prior.get("resources") != expected_resources:
+        raise EvaluationError("existing Stage 09 resource projection changed")
+    live_exposure_sha256 = sha256_file(exposure) if exposure.is_file() else None
+    if prior.get("exposure_ledger_sha256") != live_exposure_sha256:
+        raise EvaluationError("existing Stage 09 exposure file projection changed")
     if execution_complete is True:
         if count != EXPECTED_CELL_COUNT or len(events) != EXPECTED_CELL_COUNT:
             raise EvaluationError("existing complete Stage 09 terminal is not matrix-complete")
@@ -1033,14 +1904,53 @@ def _load_existing_terminal(
             isinstance(value, dict) and value.get("passed") is True for value in integrity.values()
         ):
             raise EvaluationError("existing Stage 09 competition integrity does not verify")
+        live_sources = check.get("sources")
+        start_sources = embedded_preflight.get("sources")
+        if not isinstance(live_sources, dict) or not isinstance(start_sources, dict):
+            raise EvaluationError("existing Stage 09 source boundary is absent")
+        source_000 = live_sources.get("build_000")
+        source_001 = live_sources.get("build_001")
+        start_000 = start_sources.get("build_000")
+        start_001 = start_sources.get("build_001")
+        if not all(
+            isinstance(value, dict) for value in (source_000, source_001, start_000, start_001)
+        ):
+            raise EvaluationError("existing Stage 09 source boundary is malformed")
+        source_stable = _source_stable(
+            cast(dict[str, object], start_000), cast(dict[str, object], source_000)
+        ) and _source_stable(
+            cast(dict[str, object], start_001), cast(dict[str, object], source_001)
+        )
+        asset_end = check.get("assets")
+        if not isinstance(asset_end, dict) or asset_end.get("passed") is not True:
+            raise EvaluationError("existing Stage 09 live asset boundary does not verify")
+        evidence_integrity = bool(source_stable and expected_resources["wall_within_limit"] is True)
         expected = aggregate(
             receipts,
-            evidence_integrity=expected_resources["wall_within_limit"] is True,
+            evidence_integrity=evidence_integrity,
             competition_integrity=True,
         )
-        for key, value in expected.items():
-            if prior.get(key) != value:
-                raise EvaluationError("existing complete Stage 09 decision projection changed")
+        expected.update(
+            {
+                "preflight": embedded_preflight,
+                "execution_complete": True,
+                "expected_cell_count": EXPECTED_CELL_COUNT,
+                "resources": expected_resources,
+                "source_end": {
+                    "build_000": source_000,
+                    "build_001": source_001,
+                },
+                "source_stable": source_stable,
+                "asset_end": asset_end,
+                "exposure_ledger_sha256": sha256_file(exposure),
+                "holdout": dict(SEALED_HOLDOUT),
+            }
+        )
+        expected_terminal = seal_object(expected, hash_field="artifact_core_hash")
+        if prior != expected_terminal:
+            raise EvaluationError(
+                "existing complete Stage 09 terminal does not reconstruct exactly"
+            )
     elif execution_complete is False:
         if prior.get("status") != "FAILED_INFRASTRUCTURE" or len(events) not in {
             count,
@@ -1100,7 +2010,14 @@ def execute(
     if check["status"] != "READY_NOT_EXECUTED":
         raise EvaluationError("Stage 09 execution preflight is not ready")
     existing_terminal = _load_existing_terminal(
-        output=output, work_root=work_root, exposure=exposure, check=check
+        output=output,
+        work_root=work_root,
+        exposure=exposure,
+        check=check,
+        recordings=recordings,
+        environments=environments,
+        build_000_root=build_000_root,
+        build_001_root=build_001_root,
     )
     if existing_terminal is not None:
         return existing_terminal
@@ -1108,13 +2025,23 @@ def execute(
     recordings.mkdir(parents=True, exist_ok=True)
     events = _validate_exposures(exposure)
     matrix = build_matrix()
-    receipt_root = work_root / "parent-receipts"
     existing_receipts: list[dict[str, object]] = []
     cumulative_wall_ns = 0
     for ordinal, cell in enumerate(matrix):
-        receipt_path = receipt_root / f"{ordinal:02d}-{cell.cell_id}.json"
+        paths = _cell_paths(work_root, cell)
+        receipt_path = paths["receipt"]
         if ordinal < len(events):
             if not receipt_path.is_file():
+                orphan = _seal_orphan_boundary(
+                    work_root=work_root,
+                    recordings=recordings,
+                    environments=environments,
+                    build_000_root=build_000_root,
+                    build_001_root=build_001_root,
+                    runtime_identity=cast(dict[str, object], check["runtime_identity"]),
+                    cell=cell,
+                    exposure_event=events[ordinal],
+                )
                 return _failure_terminal(
                     output=output,
                     check=check,
@@ -1123,10 +2050,19 @@ def execute(
                     failed_cell=cell,
                     failure_kind="exposed-without-terminal-receipt",
                     exposure_event_hash=events[ordinal].get("event_hash"),
+                    orphan_process=orphan,
                 )
-            receipt = load_json(receipt_path)
-            Outcome.from_receipt(receipt, cell)
-            existing_receipts.append(cast(dict[str, object], receipt))
+            receipt = _reconstruct_cell_receipt(
+                work_root=work_root,
+                recordings=recordings,
+                environments=environments,
+                build_000_root=build_000_root,
+                build_001_root=build_001_root,
+                runtime_identity=cast(dict[str, object], check["runtime_identity"]),
+                cell=cell,
+                exposure_event=events[ordinal],
+            )
+            existing_receipts.append(receipt)
             resources = cast(dict[str, object], receipt["resources"])
             cumulative_wall_ns += cast(int, resources["parent_active_wall_ns"])
             if receipt["status"] == CellStatus.INFRASTRUCTURE_FAILURE.value:
@@ -1153,7 +2089,7 @@ def execute(
             )
         source_root = build_001_root if cell.variant is Variant.BUILD_001_FULL else build_000_root
         cell_started_ns = time.perf_counter_ns()
-        cell_root = work_root / "cells" / f"{ordinal:02d}-{cell.cell_id}"
+        cell_root = paths["cell_root"]
         spec = _worker_spec(
             cell,
             source_root=source_root,
@@ -1162,25 +2098,55 @@ def execute(
             cell_root=cell_root,
             runtime_identity=cast(dict[str, object], check["runtime_identity"]),
         )
-        spec_path = work_root / "specs" / f"{ordinal:02d}-{cell.cell_id}.json"
-        _atomic_create(spec_path, canonical_json_bytes(spec))
+        spec_path = paths["spec"]
+        _atomic_create_or_verify(
+            spec_path, canonical_json_bytes(spec), label="unexposed worker specification"
+        )
+        for path in (
+            paths["abort"],
+            paths["authorization"],
+            paths["launch"],
+            paths["raw"],
+            paths["receipt"],
+            paths["stderr"],
+            paths["stdout"],
+            paths["supervision"],
+        ):
+            if path.exists():
+                raise EvaluationError("unexposed Stage 09 cell already has execution evidence")
         event = _append_exposure(exposure, cell)
-        raw_path = cell_root / "raw-worker-result.json"
-        streams = work_root / "parent-streams" / f"{ordinal:02d}-{cell.cell_id}"
-        command = (
-            str(Path(sys.executable).resolve()),
-            "-I",
-            str(WORKER.resolve()),
-            "--spec",
-            str(spec_path.resolve()),
-            "--result",
-            str(raw_path.resolve()),
+        raw_path = paths["raw"]
+        streams = paths["stdout"].parent
+        launch_token = uuid.uuid4().hex
+        command = _worker_command(
+            spec_path,
+            raw_path,
+            launch_path=paths["launch"],
+            authorization_path=paths["authorization"],
+            abort_path=paths["abort"],
+            launch_token=launch_token,
         )
         supervision = _supervise(
             command,
             cwd=ROOT,
             streams=streams,
             timeout_seconds=WORKER_WALL_SECONDS,
+            launch_receipt_path=paths["launch"],
+            authorization_path=paths["authorization"],
+            supervision_receipt_path=paths["supervision"],
+            launch_context={
+                "cell_id": cell.cell_id,
+                "cell_spec_hash": cell.spec_hash,
+                "exposure_event_hash": event.get("event_hash"),
+                "launch_token": launch_token,
+                "authorization_path": paths["authorization"].resolve().as_posix(),
+                "abort_path": paths["abort"].resolve().as_posix(),
+                "raw_path": raw_path.resolve().as_posix(),
+                "stderr_path": paths["stderr"].resolve().as_posix(),
+                "stdout_path": paths["stdout"].resolve().as_posix(),
+                "worker_spec_hash": spec.get("worker_spec_hash"),
+                "worker_spec_sha256": sha256_file(spec_path),
+            },
         )
         asset_after = _asset_identity(environments, cell)
         parent_active_wall_ns = max(0, time.perf_counter_ns() - cell_started_ns)
@@ -1192,8 +2158,22 @@ def execute(
             raw_path=raw_path,
             asset_after=asset_after,
             parent_active_wall_ns=parent_active_wall_ns,
+            spec_path=spec_path,
+            launch_receipt_path=paths["launch"],
+            authorization_path=paths["authorization"],
+            supervision_receipt_path=paths["supervision"],
         )
         _atomic_create(receipt_path, canonical_json_bytes(receipt))
+        receipt = _reconstruct_cell_receipt(
+            work_root=work_root,
+            recordings=recordings,
+            environments=environments,
+            build_000_root=build_000_root,
+            build_001_root=build_001_root,
+            runtime_identity=cast(dict[str, object], check["runtime_identity"]),
+            cell=cell,
+            exposure_event=event,
+        )
         existing_receipts.append(receipt)
         cumulative_wall_ns += parent_active_wall_ns
         if receipt["status"] == CellStatus.INFRASTRUCTURE_FAILURE.value:
