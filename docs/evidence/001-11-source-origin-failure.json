@@ -1,0 +1,22 @@
+{
+  "artifact_core_hash": "sha256:a2f32a7dc1bf6ee12355cc3abde6dfef9e354fe4cf87e006c727a9217a5b3e64",
+  "claim": "NO_HOLDOUT_OR_GAMEPLAY_ACCESS",
+  "evidence_label": "synthetic",
+  "exact_output": {
+    "kind": "EvaluationError",
+    "message": "Stage 11 first-party module origin is outside the execution source: arc3",
+    "schema": "arc3.build-001.holdout-gate.error.v0.1",
+    "status": "FAILED_INFRASTRUCTURE"
+  },
+  "failure_class": "DETACHED_SOURCE_IMPORT_ORIGIN_MISMATCH",
+  "frozen_commit": "262b5f1c443d2df28b61ecab19ada760943f5f67",
+  "holdout_identity_loaded": false,
+  "holdout_manifest_parsed": false,
+  "output_state_after_failure": {
+    "stage11_gate_exists": false,
+    "stage12_nonconsumption_exists": false
+  },
+  "recorded_at": "2026-08-23T10:40:00Z",
+  "repair": "Bind PYTHONPATH to the exact detached Stage 11 root and src directory; the same frozen commit then produced the verified denial receipts.",
+  "schema": "arc3.build-001.stage-11-source-origin-failure.v0.1"
+}
