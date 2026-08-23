@@ -1172,7 +1172,10 @@ does not erase earlier uncertainty or failed mechanisms.
 - Current evidence: no Stage 09 gameplay has begun. The attempt, work, and exposure-ledger paths
   are absent. An isolated repair is in progress from commit `2a069f3`; decisive execution remains
   blocked until adversarial regressions, strict typing, lint, exact-source preflight, and a second
-  independent audit all pass.
+  independent audit all pass. The second audit additionally found that controller wall timeouts
+  vanished from the frozen 80-action efficiency charge and that a supervisor crash after a durable
+  cell receipt but before finalization left resume unable to seal or reconstruct the terminal cell.
+  Both findings remain launch-blocking until exploit regressions pass.
 - Resolution condition: only raw `SUCCESS` cells may affect decisive metrics; all raw failures are
   infrastructure unless a separately sealed typed mechanism producer exists; every trace and
   action/reset budget is replayed; persisted observations reconstruct exactly; live launch tokens
@@ -1196,7 +1199,10 @@ does not erase earlier uncertainty or failed mechanisms.
   source/evidence drift at the action boundary.
 - Current evidence: Stage 10 has not executed and no holdout environment has been opened. Static
   exploit regressions and isolated repairs are in progress. The ten-game holdout remains
-  `SEALED_UNCONSUMED` with zero gameplay events and zero locally acquired assets.
+  `SEALED_UNCONSUMED` with zero gameplay events and zero locally acquired assets. Continued audit
+  also found a mixed-tree path where a Stage 10 supervisor imported from tree A could validate and
+  execute tree B with tree A's validator logic; explicit supervisor/import-closure origin binding
+  is now required before any decisive launch.
 - Resolution condition: package/production-only integrity never opens semantic public surfaces;
   exact source is bound from preflight through every suite; terminal graphs are canonical and
   non-rerunnable; malformed child evidence is infrastructure; denied paths import no adapter and
