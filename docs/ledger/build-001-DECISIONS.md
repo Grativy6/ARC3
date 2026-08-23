@@ -913,3 +913,22 @@ independent authorities.
 - Reopening condition: any guarded Python operation crosses the declared boundary without a
   recorded failure, any excluded/process-capable test is silently promoted, or a report describes
   the scoped evidence as OS-level offline containment.
+
+## D-001-0047 — Reject unsafe archives and protected package-only candidates before normalization
+
+- Recorded: 2026-08-23T03:51:20.2405029Z
+- Status: accepted
+- Decision: inspect original archive member names and platform attributes before extraction, reject
+  drive-relative, absolute, UNC, backslash, dot-segment, alternate-stream, directory, link, special,
+  and reparse members, and reject each explicit package-only integrity candidate before discovery or
+  receipt-output exclusion. Keep sandbox network evidence explicitly Python-scoped and deny UDP and
+  name-resolution entry points that bypass connect-only guards.
+- Evidence: commits `af65b4058bea714c00040f3ebf87f3e6f8806981` and
+  `129b76b720cefc42f8dca2710b54e90e34eb4a1b`; integrated verification passed 58 focused tests with
+  one Windows symlink-privilege skip, 15 integrity tests with one identical privilege skip, Ruff,
+  and strict mypy over 175 files for Windows and Linux targets.
+- Boundary: hosted exact-source CI and the independent descendant-process/resource audit remain
+  pending. This decision creates no public-game result and does not claim OS containment.
+- Reopening condition: an original archive member can normalize into an accepted unsafe path; an
+  explicitly protected candidate can disappear through discovery/output filtering; a Python UDP or
+  DNS entry point escapes the sandbox guard; or scoped evidence is promoted into native containment.

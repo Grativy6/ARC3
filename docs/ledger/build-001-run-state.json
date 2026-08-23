@@ -11,8 +11,8 @@
   "implementation_branch": "build/001-local-public-recovery",
   "pull_request": "https://github.com/Grativy6/ARC3/pull/5",
   "started_at": "2026-08-21T15:41:02Z",
-  "last_checkpoint_at": "2026-08-23T03:42:21.1696945Z",
-  "last_checkpoint_commit": "24450526ca3c36e9b34fd6f3bc9116555aa37b6f",
+  "last_checkpoint_at": "2026-08-23T03:51:20.2405029Z",
+  "last_checkpoint_commit": "129b76b720cefc42f8dca2710b54e90e34eb4a1b",
   "base": {
     "main_commit": "28c7a00732ce48e5c231211b01bc6eba7d0d71b4",
     "main_tree": "4586299448e9b1b585a0878674ed5f9afa60c384",
@@ -496,6 +496,22 @@
       },
       "public_environment_opened": false,
       "public_holdout_consumed": false
+    },
+    "13": {
+      "status": "PENDING",
+      "label": "synthetic",
+      "claim": "PYTHON_SCOPED_OFFLINE_PACKAGE_EVIDENCE_ONLY",
+      "implementation_status": "P0_AND_ARCHIVE_INTEGRITY_REPAIRS_PUSHED;EXACT_SOURCE_CI_PENDING;FINAL_P1_AUDIT_IN_PROGRESS",
+      "package_boundary_checkpoint_commit": "24450526ca3c36e9b34fd6f3bc9116555aa37b6f",
+      "package_archive_checkpoint_commit": "129b76b720cefc42f8dca2710b54e90e34eb4a1b",
+      "package_archive_checkpoint_tree": "bc3f4d48251328a4058a72b749c449c70a2fda8c",
+      "integrated_verification": "PASS:58-focused+1-windows-privilege-skip;PASS:15-integrity+1-windows-privilege-skip;ruff;strict-mypy-windows-and-linux-175-files",
+      "exact_source_ci": "PENDING:runs-32616332033,32616335138,32616332065,32616335144",
+      "os_containment": "ABSENT",
+      "python_boundary_scope": "Python audit hooks plus guarded selected in-process tests; not OS filesystem/network/process-tree containment",
+      "public_environment_opened": false,
+      "public_holdout_consumed": false,
+      "official_submission": false
     }
   },
   "artifacts": {
@@ -642,7 +658,7 @@
     "B-001-0054: package boundary repairs await exact-source cross-platform CI and remaining P1 closure",
     "B-001-0055: package evidence is Python-audit scoped and lacks OS process-tree containment"
   ],
-  "next_action": "Repair and independently re-audit Stage 09 charged-timeout accounting without changing the frozen matrix or gate, then integrate the completed Stage 10 authority repair; continue Stage 13 exact-source CI without opening public semantic surfaces.",
+  "next_action": "Finish the Stage 09 timeout-charge and crash-window repairs under independent audit, bind Stage 10 and Stage 11 to the repaired terminal graph, and close exact-source Stage 13 CI plus remaining process-tree audit without opening public semantic surfaces.",
   "notes": [
     "Build 000 ledgers and reports are immutable historical evidence and are not overwritten by Build 001.",
     "The owner explicitly approved MIT-0 for ARC3 first-party source in the active Build 001 instruction.",

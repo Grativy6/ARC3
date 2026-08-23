@@ -1237,9 +1237,13 @@ does not erase earlier uncertainty or failed mechanisms.
   `24450526ca3c36e9b34fd6f3bc9116555aa37b6f` explicitly bind isolated imports, canonicalize
   junctions, default-deny external paths, protect the receipt/log, deny child processes and
   destructive operations, and deny all Python socket audit events during startup. Fourteen
-  focused adversarial tests passed; Ruff and strict Windows/Linux mypy passed. Exact-source
-  Windows/Linux package workflow verification remains pending, and additional P1 package audit
-  repairs remain in progress.
+  focused adversarial tests passed. Commits `af65b4058bea714c00040f3ebf87f3e6f8806981` and
+  `129b76b720cefc42f8dca2710b54e90e34eb4a1b` additionally reject cross-platform unsafe archive
+  members, protected explicit candidates before normalization/output exclusion, and UDP/DNS
+  sandbox bypasses. Integrated verification passed 58 focused tests with one Windows privilege
+  skip, 15 integrity tests with the same bounded privilege skip, Ruff, and strict Windows/Linux
+  mypy over 175 files. Exact-source Windows/Linux package workflow verification and the remaining
+  descendant-process audit remain pending.
 - Resolution condition: exact-source CI passes the guarded package subset and startup checks on
   both Windows and Linux; every audit exploit has a failing regression under the vulnerable code
   and a passing denial under the repair; package receipts preserve the scoped claim below; and
@@ -1261,6 +1265,8 @@ does not erase earlier uncertainty or failed mechanisms.
 - Current evidence: the v0.2 guard receipt states verbatim that it is not OS containment; the
   package startup receipt separately names Python audit-hook socket/process enforcement. Fresh
   hosted CI runners and filtered scopes reduce exposure but do not erase this architectural limit.
+  A final isolated audit is testing descendant RSS and timeout termination; until measured repair
+  evidence exists, no receipt or report may promote the direct-process measurements.
 - Resolution condition: either add measured cross-platform OS filesystem/network/process-tree
   containment with adversarial orphan/native tests, or finish Stage 13 honestly as bounded/partial
   and keep the narrower Python-level claim in every receipt, report, and PR summary.
