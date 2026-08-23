@@ -6,6 +6,7 @@ import copy
 import json
 from collections.abc import Mapping
 from pathlib import Path
+from typing import cast
 
 import pytest
 
@@ -23,6 +24,7 @@ from arc3.evaluation.development_recovery import (
     HARNESS_SOURCE_OBSERVATION_SCHEMA,
     HARNESS_SOURCE_PATHS,
     HOLDOUT_NONCONSUMPTION_FILE_SHA256,
+    NORMAL_TERMINATION_DEFINITION,
     OVERALL_ACTIVE_WALL_SECONDS,
     PREDECLARATION_FILE_SHA256,
     PRIOR_AUTHORITY_SCHEMA,
@@ -87,19 +89,68 @@ def _boundaries() -> dict[str, object]:
         "typing-inspection": "0.4.4",
     }
     distributions = {
-        name: {"file_count": 1, "source_sha256": "sha256:" + digit * 64, "version": version}
-        for name, digit, version in (("arc-agi", "2", "0.9.9"), ("arcengine", "3", "0.9.3"))
+        name: {
+            "file_bytes": 1,
+            "file_count": 1,
+            "files_sha256": "sha256:" + digit * 64,
+            "hash_entry_count": 1,
+            "installed_files_sha256": "sha256:" + digit * 64,
+            "record_entry_count": 2,
+            "record_sha256": "sha256:" + digit * 64,
+            "record_verification_passed": True,
+            "verified_hash_entry_count": 1,
+            "version": version,
+        }
+        for name, digit, version in (
+            ("arc-agi", "2", "0.9.9"),
+            ("arcengine", "3", "0.9.3"),
+            ("numpy", "8", "2.5.2"),
+            ("pydantic", "9", "2.13.4"),
+            ("pydantic-core", "a", "2.46.4"),
+        )
     }
+    names_and_versions = [
+        {"name": name, "version": cast(dict[str, object], identity)["version"]}
+        for name, identity in sorted(distributions.items())
+    ]
     runtime_expected = seal_object(
         {
             "schema": RUNTIME_ENVIRONMENT_SCHEMA,
+            "bootstrap_boundary": {
+                "residual": None,
+                "supervisor_pre_first_party_runtime_validation": True,
+                "worker_pre_first_party_runtime_validation": True,
+            },
             "cache_tag": "cpython-312",
             "critical_versions": critical_versions,
             "distributions": distributions,
             "executable": "C:/python.exe",
             "executable_sha256": "sha256:" + "4" * 64,
             "implementation": "CPython",
+            "installed_distribution_inventory": {
+                "distribution_count": len(names_and_versions),
+                "hash_entry_count": len(names_and_versions),
+                "installed_files_sha256": "sha256:" + "c" * 64,
+                "names_and_versions": names_and_versions,
+                "record_verification_passed": True,
+                "records_sha256": "sha256:" + "d" * 64,
+                "verified_hash_entry_count": len(names_and_versions),
+            },
             "python_version": "3.12.14",
+            "python_base": {
+                "base_executable": "C:/base/python.exe",
+                "base_executable_sha256": "sha256:" + "e" * 64,
+                "base_prefix": "C:/base",
+                "dll_file_bytes": 1,
+                "dll_file_count": 1,
+                "dll_files_sha256": "sha256:" + "f" * 64,
+                "stdlib": {
+                    "file_bytes": 1,
+                    "file_count": 1,
+                    "files_sha256": "sha256:" + "0" * 64,
+                    "root": "C:/base/Lib",
+                },
+            },
             "scorer": {
                 "distribution": "arc-agi",
                 "module": "arc_agi/scorecard.py",
@@ -107,6 +158,7 @@ def _boundaries() -> dict[str, object]:
                 "source_version": "fixture",
             },
             "sdk_import_probe": True,
+            "sdk_probe_network_denied": True,
             "upstream_lock_sha256": "sha256:" + "6" * 64,
             "uv_lock_sha256": "sha256:" + "7" * 64,
         },
@@ -226,6 +278,8 @@ def _receipt(
         **_boundaries(),
         "schema": CELL_RECEIPT_SCHEMA,
         "status": status.value,
+        "normal_termination_definition": NORMAL_TERMINATION_DEFINITION,
+        "mechanism_provenance": None,
         "evidence_label": "local-public",
         "cell_id": typed.cell_id,
         "cell_spec_hash": typed.spec_hash,
@@ -235,16 +289,29 @@ def _receipt(
         "asset_sha256": typed.game.asset_sha256,
         "source_commit": typed.variant.source_commit,
         "result": {
-            "completed": completed,
-            "environment_actions": actions,
-            "levels_completed": levels,
+            "completed": completed if status is CellStatus.SUCCESS else False,
+            "environment_actions": actions if status is CellStatus.SUCCESS else 0,
+            "levels_completed": levels if status is CellStatus.SUCCESS else 0,
             "score_verified": status is CellStatus.SUCCESS,
         },
+        "recovered_failure_result": (
+            None
+            if status is CellStatus.SUCCESS
+            else {
+                "claim_status": "non-claim",
+                "completed": False,
+                "environment_actions": actions,
+                "levels_completed": 0,
+                "score_verified": False,
+                "source": "verified-timeout-trace",
+            }
+        ),
         "resources": {
             "child_cpu_seconds": 0.25,
             "child_peak_rss_bytes": 1_000_000,
-            "parent_active_wall_ns": 12_000,
+            "pre_receipt_active_wall_ns": 12_000,
             "supervision_wall_ns": 10_000,
+            "worker_wall_seconds": WORKER_WALL_SECONDS,
         },
     }
     return seal_object(payload, hash_field="cell_receipt_hash")
@@ -359,6 +426,54 @@ def test_infrastructure_cell_cannot_be_promoted_by_other_successes() -> None:
     current = variants["build_001_full"]
     assert isinstance(current, dict)
     assert current["infrastructure_failures"] == 1
+
+
+def test_recovered_failure_score_is_nonclaim_and_cannot_promote_gate() -> None:
+    receipts = _passing_receipts()
+    target = next(
+        (index, cell)
+        for index, cell in enumerate(build_matrix())
+        if cell.variant is Variant.BUILD_001_FULL and cell.game.stable_name == "r11l"
+    )
+    index, cell = target
+    failure = copy.deepcopy(_receipt(cell, status=CellStatus.INFRASTRUCTURE_FAILURE, actions=37))
+    recovered = failure["recovered_failure_result"]
+    assert isinstance(recovered, dict)
+    recovered.update(
+        {
+            "completed": True,
+            "levels_completed": 9,
+            "score_verified": True,
+            "source": "raw-nondecisive-result",
+        }
+    )
+    receipts[index] = seal_object(failure, hash_field="cell_receipt_hash")
+
+    result = aggregate(receipts, evidence_integrity=False, competition_integrity=True)
+
+    assert result["status"] == "FAILED_INFRASTRUCTURE"
+    current = result["build_001_full"]
+    assert isinstance(current, dict)
+    assert current["levels_completed"] == 1
+    assert current["new_completed_game_ids"] == ["tr87-cd924810"]
+    assert current["recovered_failure_levels_completed_nonclaim"] == 9
+
+
+def test_mechanism_failure_requires_typed_bound_provenance() -> None:
+    receipts = _passing_receipts()
+    tampered = copy.deepcopy(receipts[0])
+    tampered["status"] = CellStatus.MECHANISM_FAILURE.value
+    tampered["result"] = {
+        "completed": False,
+        "environment_actions": 0,
+        "levels_completed": 0,
+        "score_verified": False,
+    }
+    tampered["recovered_failure_result"] = None
+    receipts[0] = seal_object(tampered, hash_field="cell_receipt_hash")
+
+    with pytest.raises(EvaluationError, match="typed provenance"):
+        aggregate(receipts, evidence_integrity=True, competition_integrity=True)
 
 
 def test_competition_integrity_failure_is_infrastructure() -> None:

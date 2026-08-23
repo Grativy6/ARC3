@@ -4,13 +4,17 @@
 from __future__ import annotations
 
 import argparse
+import base64
+import csv
 import hashlib
 import importlib.metadata
 import json
 import os
 import platform
+import re
 import subprocess
 import sys
+import sysconfig
 import time
 from collections.abc import Mapping, Sequence
 from pathlib import Path
@@ -32,9 +36,12 @@ def _object_hash(value: Mapping[str, object], field: str) -> str:
 
 
 def _load_object(path: Path) -> dict[str, Any]:
-    value = json.loads(path.read_text(encoding="utf-8"))
+    raw = path.read_bytes()
+    value = json.loads(raw.decode("utf-8"))
     if not isinstance(value, dict):
         raise ValueError("worker specification must be an object")
+    if _canonical_bytes(value) != raw:
+        raise ValueError("worker evidence must use exact canonical JSON bytes")
     return cast(dict[str, Any], value)
 
 
@@ -169,6 +176,7 @@ def _harness_observation(root: Path, expected: Mapping[str, object]) -> dict[str
         or not isinstance(files, dict)
         or set(files)
         != {
+            "scripts/_stage09_supervisor_bootstrap.py",
             "scripts/measure_development_recovery.py",
             "scripts/_stage09_development_worker.py",
             "src/arc3/evaluation/development_recovery.py",
@@ -215,37 +223,218 @@ def _harness_observation(root: Path, expected: Mapping[str, object]) -> dict[str
     return payload
 
 
-def _distribution_source_identity(name: str, prefix: str) -> dict[str, object]:
+def _canonical_distribution_name(name: str) -> str:
+    return re.sub(r"[-_.]+", "-", name).lower()
+
+
+def _distribution_record_identity(
+    distribution: importlib.metadata.Distribution,
+) -> dict[str, object]:
+    record_items = [
+        item
+        for item in distribution.files or ()
+        if str(item).replace("\\", "/").endswith(".dist-info/RECORD")
+    ]
+    if len(record_items) != 1:
+        return {
+            "hash_entry_count": 0,
+            "installed_files_sha256": None,
+            "record_entry_count": 0,
+            "record_sha256": None,
+            "record_verification_passed": False,
+            "verified_hash_entry_count": 0,
+        }
+    record_path = Path(str(distribution.locate_file(record_items[0]))).resolve()
+    if not record_path.is_file():
+        return {
+            "hash_entry_count": 0,
+            "installed_files_sha256": None,
+            "record_entry_count": 0,
+            "record_sha256": None,
+            "record_verification_passed": False,
+            "verified_hash_entry_count": 0,
+        }
+    raw = record_path.read_bytes()
+    try:
+        rows = list(csv.reader(raw.decode("utf-8").splitlines()))
+    except (UnicodeDecodeError, csv.Error):
+        return {
+            "hash_entry_count": 0,
+            "installed_files_sha256": None,
+            "record_entry_count": 0,
+            "record_sha256": None,
+            "record_verification_passed": False,
+            "verified_hash_entry_count": 0,
+        }
+    installed_rows: list[tuple[str, int | None, str | None, str]] = []
+    verified = 0
+    for row in rows:
+        if len(row) < 2 or not row[1]:
+            continue
+        algorithm, separator, encoded = row[1].partition("=")
+        if separator != "=" or algorithm != "sha256" or not encoded:
+            installed_rows.append((row[0], None, None, row[1]))
+            continue
+        installed = Path(str(distribution.locate_file(row[0]))).resolve()
+        if installed.is_file():
+            raw_file = installed.read_bytes()
+            digest = _sha256_bytes(raw_file)
+            declared = base64.urlsafe_b64decode(encoded + "=" * (-len(encoded) % 4)).hex()
+            if digest == f"sha256:{declared}":
+                verified += 1
+            installed_rows.append((row[0].replace("\\", "/"), len(raw_file), digest, row[1]))
+        else:
+            installed_rows.append((row[0].replace("\\", "/"), None, None, row[1]))
+    return {
+        "hash_entry_count": len(installed_rows),
+        "installed_files_sha256": _sha256_bytes(_canonical_bytes(installed_rows)),
+        "record_entry_count": len(rows),
+        "record_sha256": _sha256_bytes(raw),
+        "record_verification_passed": verified == len(installed_rows),
+        "verified_hash_entry_count": verified,
+    }
+
+
+def _sha256_bytes(value: bytes) -> str:
+    return f"sha256:{hashlib.sha256(value).hexdigest()}"
+
+
+def _distribution_file_identity(name: str, prefixes: Sequence[str]) -> dict[str, object]:
     try:
         distribution = importlib.metadata.distribution(name)
     except importlib.metadata.PackageNotFoundError:
-        return {"file_count": 0, "source_sha256": None, "version": None}
+        return {
+            "file_bytes": 0,
+            "file_count": 0,
+            "files_sha256": None,
+            "record_entry_count": 0,
+            "record_sha256": None,
+            "hash_entry_count": 0,
+            "installed_files_sha256": None,
+            "record_verification_passed": False,
+            "verified_hash_entry_count": 0,
+            "version": None,
+        }
     rows: list[tuple[str, int, str]] = []
     for item in sorted(distribution.files or (), key=lambda value: str(value).replace("\\", "/")):
         relative = str(item).replace("\\", "/")
         path = Path(str(distribution.locate_file(item))).resolve()
         if (
-            relative.startswith(prefix)
+            any(relative.startswith(prefix) for prefix in prefixes)
             and path.is_file()
             and "__pycache__" not in path.parts
             and path.suffix != ".pyc"
         ):
             rows.append((relative, path.stat().st_size, _sha256_file(path)))
     return {
+        "file_bytes": sum(row[1] for row in rows),
         "file_count": len(rows),
-        "source_sha256": f"sha256:{hashlib.sha256(_canonical_bytes(rows)).hexdigest()}",
+        "files_sha256": _sha256_bytes(_canonical_bytes(rows)),
+        **_distribution_record_identity(distribution),
         "version": distribution.version,
     }
 
 
+def _installed_distribution_inventory() -> dict[str, object]:
+    names_and_versions: list[dict[str, str]] = []
+    records: list[tuple[str, str, int, str | None, int, int, str | None, bool]] = []
+    for distribution in importlib.metadata.distributions():
+        raw_name = distribution.metadata.get("Name")
+        if not isinstance(raw_name, str) or not raw_name:
+            continue
+        name = _canonical_distribution_name(raw_name)
+        version = distribution.version
+        record = _distribution_record_identity(distribution)
+        names_and_versions.append({"name": name, "version": version})
+        records.append(
+            (
+                name,
+                version,
+                cast(int, record["record_entry_count"]),
+                cast(str | None, record["record_sha256"]),
+                cast(int, record["hash_entry_count"]),
+                cast(int, record["verified_hash_entry_count"]),
+                cast(str | None, record["installed_files_sha256"]),
+                cast(bool, record["record_verification_passed"]),
+            )
+        )
+    names_and_versions.sort(key=lambda item: (item["name"], item["version"]))
+    records.sort()
+    if len({item["name"] for item in names_and_versions}) != len(names_and_versions):
+        raise ValueError("Stage 09 installed distribution inventory contains duplicates")
+    return {
+        "distribution_count": len(names_and_versions),
+        "hash_entry_count": sum(item[4] for item in records),
+        "installed_files_sha256": _sha256_bytes(_canonical_bytes(records)),
+        "names_and_versions": names_and_versions,
+        "record_verification_passed": all(item[7] for item in records),
+        "records_sha256": _sha256_bytes(_canonical_bytes([item[:4] for item in records])),
+        "verified_hash_entry_count": sum(item[5] for item in records),
+    }
+
+
+def _tree_identity(root: Path, *, exclude_site_packages: bool = False) -> dict[str, object]:
+    rows: list[tuple[str, int, str]] = []
+    if root.is_dir():
+        for path in sorted(root.rglob("*")):
+            relative_path = path.relative_to(root)
+            if (
+                not path.is_file()
+                or "__pycache__" in relative_path.parts
+                or path.suffix == ".pyc"
+                or (
+                    exclude_site_packages
+                    and any(
+                        part in {"site-packages", "dist-packages"} for part in relative_path.parts
+                    )
+                )
+            ):
+                continue
+            rows.append((relative_path.as_posix(), path.stat().st_size, _sha256_file(path)))
+    return {
+        "file_bytes": sum(row[1] for row in rows),
+        "file_count": len(rows),
+        "files_sha256": _sha256_bytes(_canonical_bytes(rows)),
+        "root": root.resolve().as_posix(),
+    }
+
+
+def _python_base_identity() -> dict[str, object]:
+    base_prefix = Path(sys.base_prefix).resolve()
+    stdlib_root = Path(sysconfig.get_path("stdlib")).resolve()
+    base_executable = Path(getattr(sys, "_base_executable", sys.executable)).resolve()
+    dll_rows: list[tuple[str, int, str]] = []
+    for path in sorted(base_prefix.glob("*.dll")):
+        if path.is_file():
+            dll_rows.append((path.name, path.stat().st_size, _sha256_file(path)))
+    dll_root = base_prefix / "DLLs"
+    if dll_root.is_dir():
+        for path in sorted(dll_root.rglob("*")):
+            if path.is_file() and "__pycache__" not in path.parts and path.suffix != ".pyc":
+                relative = f"DLLs/{path.relative_to(dll_root).as_posix()}"
+                dll_rows.append((relative, path.stat().st_size, _sha256_file(path)))
+    return {
+        "base_executable": base_executable.as_posix(),
+        "base_executable_sha256": _sha256_file(base_executable),
+        "base_prefix": base_prefix.as_posix(),
+        "dll_file_bytes": sum(row[1] for row in dll_rows),
+        "dll_file_count": len(dll_rows),
+        "dll_files_sha256": _sha256_bytes(_canonical_bytes(dll_rows)),
+        "stdlib": _tree_identity(stdlib_root, exclude_site_packages=True),
+    }
+
+
 def _runtime_observation(root: Path, expected: Mapping[str, object]) -> dict[str, object]:
-    if expected.get("schema") != "arc3.build-001.stage-09-runtime-environment.v0.1" or expected.get(
+    if expected.get("schema") != "arc3.build-001.stage-09-runtime-environment.v0.2" or expected.get(
         "runtime_binding_hash"
     ) != _object_hash(expected, "runtime_binding_hash"):
         raise ValueError("Stage 09 runtime environment binding is invalid")
     distributions = {
-        "arc-agi": _distribution_source_identity("arc-agi", "arc_agi/"),
-        "arcengine": _distribution_source_identity("arcengine", "arcengine/"),
+        "arc-agi": _distribution_file_identity("arc-agi", ("arc_agi/",)),
+        "arcengine": _distribution_file_identity("arcengine", ("arcengine/",)),
+        "numpy": _distribution_file_identity("numpy", ("numpy/", "numpy.libs/")),
+        "pydantic": _distribution_file_identity("pydantic", ("pydantic/",)),
+        "pydantic-core": _distribution_file_identity("pydantic-core", ("pydantic_core/",)),
     }
     raw_versions = expected.get("critical_versions")
     if not isinstance(raw_versions, dict):
@@ -256,39 +445,28 @@ def _runtime_observation(root: Path, expected: Mapping[str, object]) -> dict[str
             critical_versions[name] = importlib.metadata.version(name)
         except importlib.metadata.PackageNotFoundError:
             critical_versions[name] = None
-    sdk_probe = subprocess.run(
-        [
-            str(Path(sys.executable).resolve()),
-            "-I",
-            "-c",
-            (
-                "import sys;from pathlib import Path;"
-                "r=Path(sys.argv[1]).resolve();sys.path.insert(0,str(r/'src'));"
-                "from arc3.adapters.arc_agi import _load_sdk_bindings;"
-                "_load_sdk_bindings();print('PASS')"
-            ),
-            str(root.resolve()),
-        ],
-        cwd=root.resolve(),
-        check=False,
-        capture_output=True,
-        timeout=30.0,
-    )
     try:
         distribution = importlib.metadata.distribution("arc-agi")
         scorecard = Path(str(distribution.locate_file("arc_agi/scorecard.py"))).resolve()
         scorer_hash = _sha256_file(scorecard) if scorecard.is_file() else None
     except importlib.metadata.PackageNotFoundError:
         scorer_hash = None
-    actual = {
+    static_actual = {
+        "bootstrap_boundary": {
+            "residual": None,
+            "supervisor_pre_first_party_runtime_validation": True,
+            "worker_pre_first_party_runtime_validation": True,
+        },
         "cache_tag": sys.implementation.cache_tag,
         "critical_versions": critical_versions,
         "distributions": distributions,
+        "installed_distribution_inventory": _installed_distribution_inventory(),
         "executable": Path(sys.executable).resolve().as_posix(),
         "executable_sha256": _sha256_file(Path(sys.executable).resolve()),
         "implementation": platform.python_implementation(),
         "python_version": platform.python_version(),
-        "sdk_import_probe": sdk_probe.returncode == 0 and sdk_probe.stdout.strip() == b"PASS",
+        "python_base": _python_base_identity(),
+        "sdk_probe_network_denied": True,
         "scorer": {
             "distribution": "arc-agi",
             "module": "arc_agi/scorecard.py",
@@ -301,9 +479,40 @@ def _runtime_observation(root: Path, expected: Mapping[str, object]) -> dict[str
         "upstream_lock_sha256": _sha256_file(root / "upstream.lock.json"),
         "uv_lock_sha256": _sha256_file(root / "uv.lock"),
     }
+    static_expected = {
+        key: value
+        for key, value in expected.items()
+        if key not in {"runtime_binding_hash", "schema", "sdk_import_probe"}
+    }
+    static_pass = static_actual == static_expected
+    sdk_import_probe = False
+    if static_pass:
+        sdk_probe = subprocess.run(
+            [
+                str(Path(sys.executable).resolve()),
+                "-I",
+                "-c",
+                (
+                    "import sys;from pathlib import Path;"
+                    'exec("def _deny(event,args):\\n '
+                    "   if event.startswith('socket.'): raise RuntimeError('network denied')\");"
+                    "sys.addaudithook(_deny);"
+                    "r=Path(sys.argv[1]).resolve();sys.path.insert(0,str(r/'src'));"
+                    "from arc3.adapters.arc_agi import _load_sdk_bindings;"
+                    "_load_sdk_bindings();print('PASS')"
+                ),
+                str(root.resolve()),
+            ],
+            cwd=root.resolve(),
+            check=False,
+            capture_output=True,
+            timeout=30.0,
+        )
+        sdk_import_probe = sdk_probe.returncode == 0 and sdk_probe.stdout.strip() == b"PASS"
+    actual = {**static_actual, "sdk_import_probe": sdk_import_probe}
     predicates = {key: actual[key] == expected.get(key) for key in actual}
     payload: dict[str, object] = {
-        "schema": "arc3.build-001.stage-09-runtime-environment-observation.v0.1",
+        "schema": "arc3.build-001.stage-09-runtime-environment-observation.v0.2",
         "actual": actual,
         "binding_hash": expected["runtime_binding_hash"],
         "passed": all(predicates.values()),
@@ -315,15 +524,44 @@ def _runtime_observation(root: Path, expected: Mapping[str, object]) -> dict[str
 
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--spec", required=True, type=Path)
-    parser.add_argument("--result", required=True, type=Path)
-    parser.add_argument("--launch-receipt", required=True, type=Path)
-    parser.add_argument("--authorization", required=True, type=Path)
-    parser.add_argument("--abort-receipt", required=True, type=Path)
-    parser.add_argument("--launch-token", required=True)
+    parser.add_argument("--spec", type=Path)
+    parser.add_argument("--result", type=Path)
+    parser.add_argument("--launch-receipt", type=Path)
+    parser.add_argument("--authorization", type=Path)
+    parser.add_argument("--abort-receipt", type=Path)
+    parser.add_argument("--launch-token")
+    parser.add_argument("--bootstrap-runtime-binding", type=Path)
+    parser.add_argument("--bootstrap-result", type=Path)
+    parser.add_argument("--bootstrap-harness-root", type=Path)
     args = parser.parse_args(list(argv) if argv is not None else None)
+    bootstrap_values = (
+        args.bootstrap_runtime_binding,
+        args.bootstrap_result,
+        args.bootstrap_harness_root,
+    )
+    if any(value is not None for value in bootstrap_values):
+        if not all(value is not None for value in bootstrap_values):
+            raise ValueError("Stage 09 bootstrap runtime arguments are incomplete")
+        expected = _load_object(cast(Path, args.bootstrap_runtime_binding).resolve())
+        observation = _runtime_observation(
+            cast(Path, args.bootstrap_harness_root).resolve(), expected
+        )
+        _atomic_create(cast(Path, args.bootstrap_result).resolve(), observation)
+        return 0 if observation.get("passed") is True else 74
+    if any(
+        value is None
+        for value in (
+            args.spec,
+            args.result,
+            args.launch_receipt,
+            args.authorization,
+            args.abort_receipt,
+            args.launch_token,
+        )
+    ):
+        raise ValueError("Stage 09 worker invocation arguments are incomplete")
     spec = _load_object(args.spec.resolve())
-    if spec.get("schema") != "arc3.build-001.stage-09-worker-spec.v0.3" or spec.get(
+    if spec.get("schema") != "arc3.build-001.stage-09-worker-spec.v0.4" or spec.get(
         "worker_spec_hash"
     ) != _object_hash(spec, "worker_spec_hash"):
         raise ValueError("Stage 09 worker specification hash/schema is invalid")

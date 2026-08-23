@@ -17,19 +17,22 @@ from arc3.errors import EvaluationError
 from arc3.evaluation.artifacts import canonical_json_bytes, sha256_bytes, verify_object_hash
 
 PREDECLARATION_SCHEMA = "arc3.build-001.stage-09-predeclaration.v0.2"
-PREFLIGHT_SCHEMA = "arc3.build-001.stage-09-preflight.v0.3"
-WORKER_SPEC_SCHEMA = "arc3.build-001.stage-09-worker-spec.v0.3"
-CELL_RECEIPT_SCHEMA = "arc3.build-001.stage-09-cell-receipt.v0.3"
-AGGREGATE_SCHEMA = "arc3.build-001.stage-09-aggregate.v0.3"
+PREFLIGHT_SCHEMA = "arc3.build-001.stage-09-preflight.v0.4"
+WORKER_SPEC_SCHEMA = "arc3.build-001.stage-09-worker-spec.v0.4"
+CELL_RECEIPT_SCHEMA = "arc3.build-001.stage-09-cell-receipt.v0.4"
+CELL_FINALIZATION_SCHEMA = "arc3.build-001.stage-09-cell-finalization.v0.1"
+MECHANISM_PROVENANCE_SCHEMA = "arc3.build-001.stage-09-mechanism-provenance.v0.1"
+AGGREGATE_SCHEMA = "arc3.build-001.stage-09-aggregate.v0.4"
 HARNESS_SOURCE_BINDING_SCHEMA = "arc3.build-001.stage-09-harness-source-binding.v0.1"
 HARNESS_SOURCE_OBSERVATION_SCHEMA = "arc3.build-001.stage-09-harness-source-observation.v0.1"
-RUNTIME_ENVIRONMENT_SCHEMA = "arc3.build-001.stage-09-runtime-environment.v0.1"
+RUNTIME_ENVIRONMENT_SCHEMA = "arc3.build-001.stage-09-runtime-environment.v0.2"
 RUNTIME_ENVIRONMENT_OBSERVATION_SCHEMA = (
-    "arc3.build-001.stage-09-runtime-environment-observation.v0.1"
+    "arc3.build-001.stage-09-runtime-environment-observation.v0.2"
 )
 PRIOR_AUTHORITY_SCHEMA = "arc3.build-001.stage-09-prior-authority.v0.1"
 ENVIRONMENT_CACHE_SCHEMA = "arc3.build-001.stage-09-environment-cache.v0.1"
 HARNESS_SOURCE_PATHS = (
+    "scripts/_stage09_supervisor_bootstrap.py",
     "scripts/measure_development_recovery.py",
     "scripts/_stage09_development_worker.py",
     "src/arc3/evaluation/development_recovery.py",
@@ -80,6 +83,9 @@ MAX_RESETS = 8
 WORKER_WALL_SECONDS = 120.0
 OVERALL_ACTIVE_WALL_SECONDS = 14_400.0
 EXPECTED_CELL_COUNT = 96
+CELL_ADMISSION_CHARGE_NS = int(OVERALL_ACTIVE_WALL_SECONDS * 1_000_000_000 / EXPECTED_CELL_COUNT)
+NORMAL_TERMINATION_DEFINITION = "cell_status_success_only"
+GENERIC_MECHANISM_CATEGORIES = frozenset({"hypothesis", "planning", "policy", "world-model"})
 
 
 def _is_sha256(value: object) -> bool:
@@ -193,17 +199,21 @@ def validate_runtime_environment_binding(value: Mapping[str, object]) -> dict[st
 
     binding = dict(value)
     required = {
+        "bootstrap_boundary",
         "cache_tag",
         "critical_versions",
         "distributions",
         "executable",
         "executable_sha256",
         "implementation",
+        "installed_distribution_inventory",
         "python_version",
+        "python_base",
         "runtime_binding_hash",
         "schema",
         "scorer",
         "sdk_import_probe",
+        "sdk_probe_network_denied",
         "upstream_lock_sha256",
         "uv_lock_sha256",
     }
@@ -218,18 +228,145 @@ def validate_runtime_environment_binding(value: Mapping[str, object]) -> dict[st
         for field in ("executable_sha256", "upstream_lock_sha256", "uv_lock_sha256")
     ):
         raise EvaluationError("Stage 09 runtime environment hash is malformed")
+    if binding.get("bootstrap_boundary") != {
+        "residual": None,
+        "supervisor_pre_first_party_runtime_validation": True,
+        "worker_pre_first_party_runtime_validation": True,
+    }:
+        raise EvaluationError("Stage 09 runtime bootstrap boundary changed")
     distributions = binding.get("distributions")
     critical_versions = binding.get("critical_versions")
     scorer = binding.get("scorer")
-    if not isinstance(distributions, dict) or set(distributions) != {"arc-agi", "arcengine"}:
+    if not isinstance(distributions, dict) or set(distributions) != {
+        "arc-agi",
+        "arcengine",
+        "numpy",
+        "pydantic",
+        "pydantic-core",
+    }:
         raise EvaluationError("Stage 09 runtime distribution set changed")
     for distribution in distributions.values():
         if (
             not isinstance(distribution, dict)
-            or set(distribution) != {"file_count", "source_sha256", "version"}
-            or not _is_sha256(distribution.get("source_sha256"))
+            or set(distribution)
+            != {
+                "file_bytes",
+                "file_count",
+                "files_sha256",
+                "hash_entry_count",
+                "installed_files_sha256",
+                "record_entry_count",
+                "record_sha256",
+                "record_verification_passed",
+                "verified_hash_entry_count",
+                "version",
+            }
+            or not _is_sha256(distribution.get("files_sha256"))
+            or not _is_sha256(distribution.get("installed_files_sha256"))
+            or not _is_sha256(distribution.get("record_sha256"))
+            or any(
+                isinstance(distribution.get(field), bool)
+                or not isinstance(distribution.get(field), int)
+                or cast(int, distribution[field]) < 0
+                for field in (
+                    "file_bytes",
+                    "file_count",
+                    "hash_entry_count",
+                    "record_entry_count",
+                    "verified_hash_entry_count",
+                )
+            )
+            or distribution.get("record_verification_passed") is not True
+            or distribution.get("verified_hash_entry_count") != distribution.get("hash_entry_count")
+            or not isinstance(distribution.get("version"), str)
         ):
             raise EvaluationError("Stage 09 runtime distribution identity is malformed")
+    inventory = binding.get("installed_distribution_inventory")
+    if not isinstance(inventory, dict) or set(inventory) != {
+        "distribution_count",
+        "hash_entry_count",
+        "installed_files_sha256",
+        "names_and_versions",
+        "record_verification_passed",
+        "records_sha256",
+        "verified_hash_entry_count",
+    }:
+        raise EvaluationError("Stage 09 installed distribution inventory changed")
+    names = inventory.get("names_and_versions")
+    if (
+        isinstance(inventory.get("distribution_count"), bool)
+        or not isinstance(inventory.get("distribution_count"), int)
+        or not isinstance(names, list)
+        or inventory.get("distribution_count") != len(names)
+        or not _is_sha256(inventory.get("installed_files_sha256"))
+        or not _is_sha256(inventory.get("records_sha256"))
+        or any(
+            isinstance(inventory.get(field), bool)
+            or not isinstance(inventory.get(field), int)
+            or cast(int, inventory[field]) < 0
+            for field in ("hash_entry_count", "verified_hash_entry_count")
+        )
+        or inventory.get("record_verification_passed") is not True
+        or inventory.get("verified_hash_entry_count") != inventory.get("hash_entry_count")
+        or any(
+            not isinstance(item, dict)
+            or set(item) != {"name", "version"}
+            or not all(isinstance(item.get(field), str) and item.get(field) for field in item)
+            for item in names
+        )
+        or names
+        != sorted(
+            names,
+            key=lambda item: (
+                cast(dict[str, str], item)["name"],
+                cast(dict[str, str], item)["version"],
+            ),
+        )
+        or len({cast(dict[str, str], item)["name"] for item in names}) != len(names)
+    ):
+        raise EvaluationError("Stage 09 installed distribution inventory is malformed")
+    python_base = binding.get("python_base")
+    if not isinstance(python_base, dict) or set(python_base) != {
+        "base_executable",
+        "base_executable_sha256",
+        "base_prefix",
+        "dll_file_bytes",
+        "dll_file_count",
+        "dll_files_sha256",
+        "stdlib",
+    }:
+        raise EvaluationError("Stage 09 Python base identity changed")
+    stdlib = python_base.get("stdlib")
+    if (
+        not isinstance(stdlib, dict)
+        or set(stdlib) != {"file_bytes", "file_count", "files_sha256", "root"}
+        or not all(
+            _is_sha256(item)
+            for item in (
+                python_base.get("base_executable_sha256"),
+                python_base.get("dll_files_sha256"),
+                stdlib.get("files_sha256"),
+            )
+        )
+        or any(
+            isinstance(item, bool) or not isinstance(item, int) or item < 0
+            for item in (
+                python_base.get("dll_file_bytes"),
+                python_base.get("dll_file_count"),
+                stdlib.get("file_bytes"),
+                stdlib.get("file_count"),
+            )
+        )
+        or not all(
+            isinstance(item, str) and item
+            for item in (
+                python_base.get("base_executable"),
+                python_base.get("base_prefix"),
+                stdlib.get("root"),
+            )
+        )
+    ):
+        raise EvaluationError("Stage 09 Python base identity is malformed")
     if (
         not isinstance(critical_versions, dict)
         or set(critical_versions)
@@ -244,7 +381,10 @@ def validate_runtime_environment_binding(value: Mapping[str, object]) -> dict[st
         or not all(isinstance(version, str) for version in critical_versions.values())
     ):
         raise EvaluationError("Stage 09 critical runtime version set changed")
-    if binding.get("sdk_import_probe") is not True:
+    if (
+        binding.get("sdk_import_probe") is not True
+        or binding.get("sdk_probe_network_denied") is not True
+    ):
         raise EvaluationError("Stage 09 official SDK import requirement changed")
     if (
         not isinstance(scorer, dict)
@@ -279,15 +419,19 @@ def validate_runtime_environment_observation(
         raise EvaluationError("Stage 09 runtime environment observation hash/schema is invalid")
     predicates = observation.get("predicates")
     if not isinstance(predicates, dict) or set(predicates) != {
+        "bootstrap_boundary",
         "cache_tag",
         "critical_versions",
         "distributions",
         "executable",
         "executable_sha256",
         "implementation",
+        "installed_distribution_inventory",
         "python_version",
+        "python_base",
         "scorer",
         "sdk_import_probe",
+        "sdk_probe_network_denied",
         "upstream_lock_sha256",
         "uv_lock_sha256",
     }:
@@ -814,6 +958,10 @@ class Outcome:
     completed: bool
     environment_actions: int
     receipt_hash: str
+    recovered_failure_score_verified: bool
+    recovered_failure_levels_completed: int
+    recovered_failure_completed: bool
+    recovered_failure_environment_actions: int
 
     @classmethod
     def from_receipt(cls, value: Mapping[str, object], cell: DevelopmentCell) -> Outcome:
@@ -838,6 +986,28 @@ class Outcome:
         if not isinstance(raw_status, str):
             raise EvaluationError("Stage 09 cell status is invalid")
         status = CellStatus(raw_status)
+        if receipt.get("normal_termination_definition") != NORMAL_TERMINATION_DEFINITION:
+            raise EvaluationError("Stage 09 normal-termination definition changed")
+        mechanism_provenance = receipt.get("mechanism_provenance")
+        if status is CellStatus.MECHANISM_FAILURE:
+            if not isinstance(mechanism_provenance, dict) or set(mechanism_provenance) != {
+                "category",
+                "provenance_hash",
+                "raw_receipt_hash",
+                "schema",
+                "source",
+            }:
+                raise EvaluationError("Stage 09 mechanism failure lacks typed provenance")
+            if (
+                mechanism_provenance.get("schema") != MECHANISM_PROVENANCE_SCHEMA
+                or not verify_object_hash(mechanism_provenance, hash_field="provenance_hash")
+                or mechanism_provenance.get("category") not in GENERIC_MECHANISM_CATEGORIES
+                or mechanism_provenance.get("raw_receipt_hash") != receipt.get("raw_receipt_hash")
+                or mechanism_provenance.get("source") != "typed-generic-controller-boundary"
+            ):
+                raise EvaluationError("Stage 09 mechanism provenance changed")
+        elif mechanism_provenance is not None:
+            raise EvaluationError("Stage 09 non-mechanism cell claims mechanism provenance")
         harness = receipt.get("harness_source")
         if not isinstance(harness, dict) or set(harness) != {
             "after",
@@ -936,8 +1106,52 @@ class Outcome:
             raise EvaluationError("Stage 09 action count exceeds its frozen budget")
         if status is CellStatus.SUCCESS and not score_verified:
             raise EvaluationError("Stage 09 successful cell lacks a verified score")
+        if status is not CellStatus.SUCCESS and (
+            score_verified or levels != 0 or completed or actions != 0
+        ):
+            raise EvaluationError("Stage 09 non-success cell contributes decisive metrics")
         if not score_verified and (levels or completed):
             raise EvaluationError("Stage 09 unverified score claims completion")
+        recovered = receipt.get("recovered_failure_result")
+        recovered_score_verified = False
+        recovered_levels = 0
+        recovered_completed = False
+        recovered_actions = 0
+        if status is CellStatus.SUCCESS:
+            if recovered is not None:
+                raise EvaluationError("Stage 09 successful cell contains failure-only evidence")
+        elif recovered is not None:
+            if not isinstance(recovered, dict) or set(recovered) != {
+                "claim_status",
+                "completed",
+                "environment_actions",
+                "levels_completed",
+                "score_verified",
+                "source",
+            }:
+                raise EvaluationError("Stage 09 recovered failure result is malformed")
+            recovered_score_verified = recovered.get("score_verified") is True
+            recovered_completed_value = recovered.get("completed")
+            if not isinstance(recovered_completed_value, bool):
+                raise EvaluationError("Stage 09 recovered completion flag is invalid")
+            recovered_completed = recovered_completed_value
+            recovered_levels = _nonnegative_int(
+                recovered.get("levels_completed"), field="recovered failure levels completed"
+            )
+            recovered_actions = _nonnegative_int(
+                recovered.get("environment_actions"), field="recovered failure actions"
+            )
+            if (
+                recovered.get("claim_status") != "non-claim"
+                or recovered.get("source")
+                not in {
+                    "raw-nondecisive-result",
+                    "verified-timeout-trace",
+                }
+                or recovered_actions > MAX_ACTIONS
+                or (not recovered_score_verified and (recovered_levels or recovered_completed))
+            ):
+                raise EvaluationError("Stage 09 recovered failure result changed")
         receipt_hash = receipt.get("cell_receipt_hash")
         if not isinstance(receipt_hash, str):
             raise EvaluationError("Stage 09 cell receipt hash is absent")
@@ -945,14 +1159,28 @@ class Outcome:
         if not isinstance(resources, dict):
             raise EvaluationError("Stage 09 resource receipt is absent")
         _nonnegative_int(resources.get("supervision_wall_ns"), field="supervision wall")
-        _nonnegative_int(resources.get("parent_active_wall_ns"), field="parent active wall")
+        _nonnegative_int(
+            resources.get("pre_receipt_active_wall_ns"), field="pre-receipt active wall"
+        )
         cpu = resources.get("child_cpu_seconds")
         rss = resources.get("child_peak_rss_bytes")
         if cpu is not None:
             _finite_nonnegative(cpu, field="child CPU")
         if rss is not None:
             _nonnegative_int(rss, field="child peak RSS")
-        return cls(cell, status, score_verified, levels, completed, actions, receipt_hash)
+        return cls(
+            cell,
+            status,
+            score_verified,
+            levels,
+            completed,
+            actions,
+            receipt_hash,
+            recovered_score_verified,
+            recovered_levels,
+            recovered_completed,
+            recovered_actions,
+        )
 
 
 def _summary(outcomes: Sequence[Outcome], variant: Variant) -> dict[str, object]:
@@ -960,21 +1188,40 @@ def _summary(outcomes: Sequence[Outcome], variant: Variant) -> dict[str, object]
     if len(selected) != 24:
         raise EvaluationError(f"Stage 09 {variant.value} does not contain 24 cells")
     return {
-        "completed_runs": sum(outcome.completed for outcome in selected),
+        "completed_runs": sum(
+            outcome.completed for outcome in selected if outcome.status is CellStatus.SUCCESS
+        ),
         "controller_wall_timeouts": sum(
             outcome.status is CellStatus.CONTROLLER_WALL_TIMEOUT for outcome in selected
         ),
         "environment_actions": sum(
-            MAX_ACTIONS
-            if outcome.status is CellStatus.CONTROLLER_WALL_TIMEOUT
-            else outcome.environment_actions
+            outcome.environment_actions
             for outcome in selected
+            if outcome.status is CellStatus.SUCCESS
         ),
         "infrastructure_failures": sum(
             outcome.status is CellStatus.INFRASTRUCTURE_FAILURE for outcome in selected
         ),
-        "levels_completed": sum(outcome.levels_completed for outcome in selected),
+        "levels_completed": sum(
+            outcome.levels_completed for outcome in selected if outcome.status is CellStatus.SUCCESS
+        ),
         "normal_terminations": sum(outcome.status is CellStatus.SUCCESS for outcome in selected),
+        "normal_termination_definition": NORMAL_TERMINATION_DEFINITION,
+        "recovered_failure_completed_runs_nonclaim": sum(
+            outcome.recovered_failure_completed
+            for outcome in selected
+            if outcome.status is not CellStatus.SUCCESS
+        ),
+        "recovered_failure_environment_actions_nonclaim": sum(
+            outcome.recovered_failure_environment_actions
+            for outcome in selected
+            if outcome.status is not CellStatus.SUCCESS
+        ),
+        "recovered_failure_levels_completed_nonclaim": sum(
+            outcome.recovered_failure_levels_completed
+            for outcome in selected
+            if outcome.status is not CellStatus.SUCCESS
+        ),
         "runs": len(selected),
     }
 
@@ -997,12 +1244,16 @@ def aggregate(
     old_full_games = {
         outcome.cell.game.game_id
         for outcome in outcomes
-        if outcome.cell.variant is Variant.BUILD_000_FULL and outcome.levels_completed > 0
+        if outcome.cell.variant is Variant.BUILD_000_FULL
+        and outcome.status is CellStatus.SUCCESS
+        and outcome.levels_completed > 0
     }
     new_full_games = {
         outcome.cell.game.game_id
         for outcome in outcomes
-        if outcome.cell.variant is Variant.BUILD_001_FULL and outcome.levels_completed > 0
+        if outcome.cell.variant is Variant.BUILD_001_FULL
+        and outcome.status is CellStatus.SUCCESS
+        and outcome.levels_completed > 0
     }
     distinct_new_games = sorted(new_full_games - old_full_games)
     current = summaries[Variant.BUILD_001_FULL]
@@ -1042,6 +1293,7 @@ def aggregate(
         "matrix_hash": matrix_hash(),
         "cell_count": len(outcomes),
         "cell_receipt_hashes": [outcome.receipt_hash for outcome in outcomes],
+        "normal_termination_definition": NORMAL_TERMINATION_DEFINITION,
         "variants": {variant.value: summaries[variant] for variant in VARIANTS},
         "build_001_full": {
             **current,
@@ -1052,6 +1304,7 @@ def aggregate(
             "b0_completion_count_win": completion_count_win,
             "b0_completion_normalized_action_efficiency_win": efficiency_win,
             "equal_per_run_action_budget": True,
+            "metric_scope": "cell_status_success_only",
         },
         "gate": gate,
     }
@@ -1063,6 +1316,8 @@ __all__ = [
     "BUILD_000_INTEGRITY_RECEIPT_SHA256",
     "BUILD_001_INTEGRITY_FILE_SHA256",
     "BUILD_001_INTEGRITY_RECEIPT_SHA256",
+    "CELL_ADMISSION_CHARGE_NS",
+    "CELL_FINALIZATION_SCHEMA",
     "CELL_RECEIPT_SCHEMA",
     "DEVELOPMENT_GAMES",
     "ENVIRONMENT_CACHE_SCHEMA",
@@ -1079,6 +1334,8 @@ __all__ = [
     "HOLDOUT_NONCONSUMPTION_FILE_SHA256",
     "MAX_ACTIONS",
     "MAX_RESETS",
+    "MECHANISM_PROVENANCE_SCHEMA",
+    "NORMAL_TERMINATION_DEFINITION",
     "OVERALL_ACTIVE_WALL_SECONDS",
     "PREDECLARATION_CORE_HASH",
     "PREDECLARATION_FILE_SHA256",
