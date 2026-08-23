@@ -12,6 +12,7 @@ from typing import Any, NoReturn, cast
 import pytest
 import scripts._stage09_development_worker as worker
 import scripts.measure_development_recovery as harness
+from tests.unit.test_development_recovery import _boundaries
 
 from arc3.errors import EvaluationError
 from arc3.evaluation.artifacts import (
@@ -34,6 +35,62 @@ from arc3.evaluation.development_recovery import (
 )
 from arc3.evaluation.public import PUBLIC_RUN_SCHEMA, PublicExposureLedger
 from arc3.evaluation.public_runner import _asset_identity_check
+
+
+def _execution_identity() -> dict[str, object]:
+    return _boundaries()
+
+
+def _worker_identity_keywords() -> dict[str, object]:
+    boundaries = _execution_identity()
+    harness_source = cast(dict[str, object], boundaries["harness_source"])
+    runtime_environment = cast(dict[str, object], boundaries["runtime_environment"])
+    return {
+        "harness_source_expected": harness_source["expected"],
+        "harness_source_before": harness_source["before"],
+        "runtime_environment_expected": runtime_environment["expected"],
+        "runtime_environment_before": runtime_environment["before"],
+    }
+
+
+def _cell_identity_keywords() -> dict[str, object]:
+    boundaries = _execution_identity()
+    harness_source = cast(dict[str, object], boundaries["harness_source"])
+    runtime_environment = cast(dict[str, object], boundaries["runtime_environment"])
+    prior_authority = cast(dict[str, object], boundaries["prior_authority"])
+    environment_cache = cast(dict[str, object], boundaries["environment_cache"])
+    return {
+        "harness_source_expected": harness_source["expected"],
+        "harness_source_before": harness_source["before"],
+        "harness_source_after": harness_source["after"],
+        "runtime_environment_expected": runtime_environment["expected"],
+        "runtime_environment_before": runtime_environment["before"],
+        "runtime_environment_after": runtime_environment["after"],
+        "prior_authority_before": prior_authority["before"],
+        "prior_authority_after": prior_authority["after"],
+        "environment_cache_before": environment_cache["before"],
+        "environment_cache_after": environment_cache["after"],
+    }
+
+
+def _preflight_execution_identity() -> dict[str, object]:
+    boundaries = _execution_identity()
+    harness_source = cast(dict[str, object], boundaries["harness_source"])
+    runtime_environment = cast(dict[str, object], boundaries["runtime_environment"])
+    prior_authority = cast(dict[str, object], boundaries["prior_authority"])
+    environment_cache = cast(dict[str, object], boundaries["environment_cache"])
+    return {
+        "harness_source": {
+            "expected": harness_source["expected"],
+            "start": harness_source["before"],
+        },
+        "runtime_environment": {
+            "expected": runtime_environment["expected"],
+            "start": runtime_environment["before"],
+        },
+        "prior_authority": prior_authority["before"],
+        "environment_cache": {"start": environment_cache["before"]},
+    }
 
 
 def _asset(cell: DevelopmentCell) -> dict[str, object]:
@@ -140,6 +197,7 @@ def _materialize_cell_chain(
         recordings=recordings,
         cell_root=paths["cell_root"],
         runtime_identity=runtime,
+        **_worker_identity_keywords(),
     )
     _write(paths["spec"], spec)
     exposure = tmp_path / "exposure.jsonl"
@@ -194,8 +252,24 @@ def _materialize_cell_chain(
     _write(paths["authorization"], authorization)
     raw = _raw_receipt(spec, cell, failure_kind=failure_kind)
     _write(paths["raw"], raw)
+    harness_source = cast(dict[str, object], _execution_identity()["harness_source"])
+    runtime_environment = cast(dict[str, object], _execution_identity()["runtime_environment"])
+    expected_harness = cast(dict[str, object], harness_source["expected"])
+    harness_before = cast(dict[str, object], harness_source["before"])
+    expected_runtime = cast(dict[str, object], runtime_environment["expected"])
+    runtime_before = cast(dict[str, object], runtime_environment["before"])
     stdout = canonical_json_bytes(
-        {"cell_id": cell.cell_id, "raw_receipt_hash": raw["receipt_hash"], "status": raw["status"]}
+        {
+            "cell_id": cell.cell_id,
+            "harness_binding_hash": expected_harness["binding_hash"],
+            "harness_source_before_hash": harness_before["observation_hash"],
+            "harness_source_after_hash": harness_before["observation_hash"],
+            "raw_receipt_hash": raw["receipt_hash"],
+            "runtime_binding_hash": expected_runtime["runtime_binding_hash"],
+            "runtime_environment_before_hash": runtime_before["observation_hash"],
+            "runtime_environment_after_hash": runtime_before["observation_hash"],
+            "status": raw["status"],
+        }
     )
     paths["stdout"].parent.mkdir(parents=True, exist_ok=True)
     paths["stdout"].write_bytes(stdout)
@@ -245,9 +319,19 @@ def _materialize_cell_chain(
         authorization_path=paths["authorization"],
         supervision_receipt_path=paths["supervision"],
         parent_evidence_path=paths["parent_evidence"],
+        **_cell_identity_keywords(),
     )
     _write(paths["receipt"], receipt)
-    return receipt, event, {"runtime": runtime, "work_root": work_root, "exposure": exposure}
+    return (
+        receipt,
+        event,
+        {
+            "check": _preflight_execution_identity(),
+            "runtime": runtime,
+            "work_root": work_root,
+            "exposure": exposure,
+        },
+    )
 
 
 def test_exposure_ledger_accepts_only_exact_contiguous_matrix_prefix(tmp_path: Path) -> None:
@@ -299,6 +383,7 @@ def test_worker_spec_binds_source_asset_and_public_worker_identity(
         recordings=tmp_path / "recordings",
         cell_root=tmp_path / "cell",
         runtime_identity={"cpu": "test", "cpu_count": 1},
+        **_worker_identity_keywords(),
     )
 
     assert spec["schema"] == WORKER_SPEC_SCHEMA
@@ -452,6 +537,7 @@ def test_timeout_requires_verified_process_tree_termination(
         recordings=tmp_path / "recordings",
         cell_root=tmp_path / "cell",
         runtime_identity={},
+        **_worker_identity_keywords(),
     )
     receipt = harness._cell_receipt(
         cell,
@@ -465,6 +551,7 @@ def test_timeout_requires_verified_process_tree_termination(
         raw_path=tmp_path / "missing.json",
         asset_after=_asset(cell),
         parent_active_wall_ns=120_000_010_000,
+        **_cell_identity_keywords(),
     )
 
     assert receipt["schema"] == CELL_RECEIPT_SCHEMA
@@ -490,6 +577,7 @@ def test_validated_policy_failure_is_mechanism_and_reconstructs(
         build_000_root=tmp_path / "build000",
         build_001_root=tmp_path / "build001",
         runtime_identity=cast(dict[str, object], fixture["runtime"]),
+        check=cast(dict[str, object], fixture["check"]),
         cell=cell,
         exposure_event=event,
     )
@@ -524,6 +612,7 @@ def test_rehashed_parent_result_cannot_replace_raw_evidence(
             "runtime_identity": fixture["runtime"],
             "competition_integrity": {},
             "stage09_exposure_event_count": 1,
+            **_preflight_execution_identity(),
         },
         hash_field="preflight_hash",
     )
@@ -572,6 +661,7 @@ def test_rehashed_parent_wall_and_terminal_resource_projection_cannot_promote(
             "runtime_identity": fixture["runtime"],
             "competition_integrity": {},
             "stage09_exposure_event_count": 1,
+            **_preflight_execution_identity(),
         },
         hash_field="preflight_hash",
     )
@@ -626,6 +716,7 @@ def test_restart_revalidates_exact_worker_evidence_bytes(
             build_000_root=tmp_path / "build000",
             build_001_root=tmp_path / "build001",
             runtime_identity=cast(dict[str, object], fixture["runtime"]),
+            check=cast(dict[str, object], fixture["check"]),
             cell=cell,
             exposure_event=event,
         )
@@ -651,6 +742,7 @@ def test_orphan_pid_reuse_is_not_terminated(
         build_000_root=tmp_path / "build000",
         build_001_root=tmp_path / "build001",
         runtime_identity=cast(dict[str, object], fixture["runtime"]),
+        check=cast(dict[str, object], fixture["check"]),
         cell=cell,
         exposure_event=event,
     )
@@ -690,6 +782,7 @@ def test_resume_validates_pre_environment_worker_abort(
         build_000_root=tmp_path / "build000",
         build_001_root=tmp_path / "build001",
         runtime_identity=cast(dict[str, object], fixture["runtime"]),
+        check=cast(dict[str, object], fixture["check"]),
         cell=cell,
         exposure_event=event,
     )
@@ -723,6 +816,7 @@ def test_rehashed_partial_terminal_cannot_be_promoted_to_pass(tmp_path: Path) ->
             "runtime_identity": runtime,
             "competition_integrity": {},
             "stage09_exposure_event_count": 1,
+            **_preflight_execution_identity(),
         },
         hash_field="preflight_hash",
     )
@@ -777,6 +871,10 @@ def test_exposed_cell_without_terminal_receipt_is_never_relaunched(
     monkeypatch.setattr(harness, "_supervise", forbidden)
 
     result = harness.execute(
+        harness_source_expected=cast(
+            dict[str, object],
+            cast(dict[str, object], _execution_identity()["harness_source"])["expected"],
+        ),
         output=tmp_path / "output.json",
         work_root=tmp_path / "work",
         exposure=tmp_path / "exposure.jsonl",
@@ -805,6 +903,7 @@ def _aggregate_receipts() -> list[dict[str, object]]:
         )
         receipt = seal_object(
             {
+                **_execution_identity(),
                 "schema": CELL_RECEIPT_SCHEMA,
                 "status": CellStatus.SUCCESS.value,
                 "evidence_label": "local-public",
@@ -869,6 +968,7 @@ def _complete_terminal_fixture(
         "assets": {"passed": True, "identities": []},
         "competition_integrity": {"build_000": {"passed": True}},
         "stage09_exposure_event_count": 96,
+        **_preflight_execution_identity(),
     }
     check = seal_object(check_payload, hash_field="preflight_hash")
     embedded_payload = dict(check_payload)
@@ -970,3 +1070,59 @@ def test_worker_refuses_rehashed_wrong_source_before_environment_import(tmp_path
 
     assert result.returncode != 0
     assert not (tmp_path / "result.json").exists()
+
+
+def test_preflight_source_mismatch_stops_before_runtime_or_environment_import(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    identity = _execution_identity()
+    harness_boundary = identity["harness_source"]
+    assert isinstance(harness_boundary, dict)
+    expected = harness_boundary["expected"]
+    observed = copy.deepcopy(harness_boundary["before"])
+    assert isinstance(expected, dict)
+    assert isinstance(observed, dict)
+    predicates = observed["predicates"]
+    assert isinstance(predicates, dict)
+    predicates["files"] = False
+    observed["passed"] = False
+    observed = seal_object(observed, hash_field="observation_hash")
+    monkeypatch.setattr(harness, "_harness_source_identity", lambda _expected: observed)
+
+    def forbidden(*_args: object, **_kwargs: object) -> NoReturn:
+        raise AssertionError("source mismatch crossed the pre-import boundary")
+
+    for name in (
+        "_runtime_environment_identity",
+        "_prior_authority",
+        "_environment_cache_identity",
+        "validate_predeclaration_bytes",
+        "_source_identity",
+        "_all_assets",
+        "_validate_exposures",
+    ):
+        monkeypatch.setattr(harness, name, forbidden)
+
+    result = harness.preflight(
+        harness_source_expected=expected,
+        output=tmp_path / "result.json",
+        work_root=tmp_path / "work",
+        exposure=tmp_path / "exposure.jsonl",
+        recordings=tmp_path / "recordings",
+        environments=tmp_path / "environments",
+        build_000_root=tmp_path / "build000",
+        build_001_root=tmp_path / "build001",
+        stage08_result=tmp_path / "stage08.json",
+        stage08_exposure=tmp_path / "stage08-exposure.jsonl",
+        prior_integrity_receipt=tmp_path / "integrity-001.json",
+        build_000_integrity_receipt=tmp_path / "integrity-000.json",
+        enforce_official_paths=False,
+    )
+
+    assert result["status"] == "FAILED_INFRASTRUCTURE"
+    assert result["gameplay_opened"] is False
+    assert result["runtime_environment"] == {
+        "expected": harness.EXPECTED_RUNTIME_ENVIRONMENT,
+        "start": None,
+        "status": "NOT_EVALUATED_HARNESS_SOURCE_FAILED",
+    }

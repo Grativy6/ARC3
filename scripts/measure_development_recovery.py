@@ -9,6 +9,8 @@ partition manifest as metadata and has no holdout identities.
 from __future__ import annotations
 
 import argparse
+import ctypes
+import importlib.metadata
 import json
 import os
 import platform
@@ -39,6 +41,7 @@ from arc3.evaluation.development_recovery import (  # noqa: E402
     AGGREGATE_SCHEMA,
     CELL_RECEIPT_SCHEMA,
     DEVELOPMENT_GAMES,
+    ENVIRONMENT_CACHE_SCHEMA,
     EXPECTED_CELL_COUNT,
     FROZEN_BUILD_000_COMMIT,
     FROZEN_BUILD_000_SOURCE_SHA256,
@@ -46,12 +49,18 @@ from arc3.evaluation.development_recovery import (  # noqa: E402
     FROZEN_BUILD_001_COMMIT,
     FROZEN_BUILD_001_SOURCE_SHA256,
     FROZEN_BUILD_001_TREE,
+    HARNESS_SOURCE_BINDING_SCHEMA,
+    HARNESS_SOURCE_OBSERVATION_SCHEMA,
+    HARNESS_SOURCE_PATHS,
     MAX_ACTIONS,
     MAX_RESETS,
     OVERALL_ACTIVE_WALL_SECONDS,
     PREDECLARATION_FILE_SHA256,
     PREFLIGHT_SCHEMA,
+    PRIOR_AUTHORITY_SCHEMA,
     PUBLIC_PARTITION_MANIFEST_SHA256,
+    RUNTIME_ENVIRONMENT_OBSERVATION_SCHEMA,
+    RUNTIME_ENVIRONMENT_SCHEMA,
     STAGE08_EXPOSURE_SHA256,
     STAGE08_RESULT_CORE_HASH,
     STAGE08_RESULT_FILE_SHA256,
@@ -63,8 +72,18 @@ from arc3.evaluation.development_recovery import (  # noqa: E402
     Variant,
     aggregate,
     build_matrix,
+    environment_cache_stable,
+    harness_source_stable,
     matrix_hash,
+    prior_authority_stable,
+    runtime_environment_stable,
+    validate_environment_cache_observation,
+    validate_harness_source_binding,
+    validate_harness_source_observation,
     validate_predeclaration_bytes,
+    validate_prior_authority_observation,
+    validate_runtime_environment_binding,
+    validate_runtime_environment_observation,
 )
 from arc3.evaluation.public import PublicExposureLedger, _trace_receipt  # noqa: E402
 from arc3.evaluation.public_runner import _receipt_valid  # noqa: E402
@@ -82,6 +101,28 @@ DEFAULT_STAGE08_RESULT = Path(
     "C:/a/arc3-b001/artifacts/stage08/two-speed-controller-attempt-01.json"
 )
 DEFAULT_STAGE08_EXPOSURE = Path("C:/a/arc3-b001/artifacts/stage08/public-exposure.jsonl")
+DEFAULT_PRIOR_INTEGRITY_RECEIPT = Path(
+    "C:/a/arc3-b001/artifacts/stage09/policy-integrity-2e78c258-full.json"
+)
+DEFAULT_BUILD_000_INTEGRITY_RECEIPT = Path(
+    "C:/a/arc3-b001/artifacts/stage09/policy-integrity-build000-90ecf726-full.json"
+)
+HOLDOUT_NONCONSUMPTION_RECEIPT = ROOT / "docs/evidence/001-08-two-speed-controller.json"
+PRIOR_INTEGRITY_RECEIPT_SHA256 = (
+    "sha256:9fd255b3a32549fd09c12247863319e8662805ed43f874b46e52eb3cb675834f"
+)
+PRIOR_INTEGRITY_SELF_HASH = (
+    "sha256:6926149cafda4248a2dc92b042ab6f087888133daf60d7de0b1f1070f6203e9b"
+)
+BUILD_000_INTEGRITY_RECEIPT_SHA256 = (
+    "sha256:b63ea29913a042930b01ace640c283dd0febce3597b637c3d8433fc981579349"
+)
+BUILD_000_INTEGRITY_SELF_HASH = (
+    "sha256:3545f69c786ed8268d2e3948769a976db920f2b2e79851cb6bb5c6e922601643"
+)
+HOLDOUT_NONCONSUMPTION_RECEIPT_SHA256 = (
+    "sha256:0134c9e5b7acea716f790088cb59109eded7857ce83fda004ea1b88be2eb92ac"
+)
 PUBLIC_MANIFEST_RELATIVE = Path("docs/evaluation/public-game-partitions.v0.1.json")
 WORKER = ROOT / "scripts/_stage09_development_worker.py"
 CLAIM_BOUNDARY = "development recovery only; no public-holdout or hidden-game generalization claim"
@@ -90,6 +131,66 @@ SEALED_HOLDOUT = {
     "manifest_loaded_as_metadata": False,
     "public_holdout_gameplay_events": 0,
     "status": "SEALED_UNCONSUMED",
+}
+
+EXPECTED_RUNTIME_ENVIRONMENT = seal_object(
+    {
+        "schema": RUNTIME_ENVIRONMENT_SCHEMA,
+        "executable": "C:/a/arc3-b001-28c7a00/Scripts/python.exe",
+        "executable_sha256": (
+            "sha256:99bbec125a2d2ce19b6257324a5a5b70539a64c9fd7b9724c6b65dcba8a6d276"
+        ),
+        "implementation": "CPython",
+        "python_version": "3.12.14",
+        "cache_tag": "cpython-312",
+        "upstream_lock_sha256": (
+            "sha256:67e1d937e213bbcc25783784d04c4fa349b85dc09b94855256916ca6b96e808a"
+        ),
+        "uv_lock_sha256": (
+            "sha256:3bf42dcbe45720f71b7433584f56a5d5982ec1c687c341ad2626222fa5de285b"
+        ),
+        "distributions": {
+            "arc-agi": {
+                "version": "0.9.9",
+                "file_count": 10,
+                "source_sha256": (
+                    "sha256:486e1e6a08ba8a1feca2bb1633d456a8b5eb7113847a959c8b01aa1e44c0fcaa"
+                ),
+            },
+            "arcengine": {
+                "version": "0.9.3",
+                "file_count": 10,
+                "source_sha256": (
+                    "sha256:516dd546cc5913a0f6cb4edc3f85cdd52a7dc1ce4cddaca500c2a1ee3b012205"
+                ),
+            },
+        },
+        "critical_versions": {
+            "annotated-types": "0.8.0",
+            "numpy": "2.5.2",
+            "pydantic": "2.13.4",
+            "pydantic-core": "2.46.4",
+            "typing-extensions": "4.16.0",
+            "typing-inspection": "0.4.4",
+        },
+        "sdk_import_probe": True,
+        "scorer": {
+            "distribution": "arc-agi",
+            "module": "arc_agi/scorecard.py",
+            "sha256": ("sha256:1cc830e48008bec60b8a98ae14d3e9312e8408f102a9878bad42744aa9e489b7"),
+            "source_version": ("arc-agi==0.9.9 local ScorecardManager; arcengine==0.9.3"),
+        },
+    },
+    hash_field="runtime_binding_hash",
+)
+EXPECTED_ENVIRONMENT_CACHE = {
+    "aggregate_sha256": ("sha256:6f8618674e4f974cca144c94c7a2632dfbe8dddf36b0654e1d0564246932d3b2"),
+    "directory_count": 30,
+    "entry_count": 60,
+    "recursive_bytes": 2_784_922,
+    "recursive_file_count": 30,
+    "root_file_count": 0,
+    "top_level_directory_count": 15,
 }
 
 INHERITED_EXPOSURES = (
@@ -120,6 +221,7 @@ PARENT_EVIDENCE_SCHEMA = "arc3.build-001.stage-09-parent-evidence.v0.1"
 MECHANISM_FAILURE_KINDS = frozenset(
     {"HypothesisError", "PlanningError", "PolicyError", "WorldModelError"}
 )
+_SDK_IMPORT_PROBE_CACHE: bool | None = None
 
 
 def _is_mapping(value: object) -> TypeGuard[Mapping[str, object]]:
@@ -142,13 +244,500 @@ def _git(root: Path, *arguments: str) -> str:
 
 
 def _runtime_identity() -> dict[str, object]:
+    gpu: list[dict[str, object]] = []
+    try:
+        query = subprocess.run(
+            [
+                "nvidia-smi",
+                "--query-gpu=name,driver_version,memory.total",
+                "--format=csv,noheader,nounits",
+            ],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=5.0,
+        )
+        if query.returncode == 0:
+            for row in query.stdout.splitlines():
+                fields = [field.strip() for field in row.split(",")]
+                if len(fields) == 3:
+                    try:
+                        memory_mib: int | None = int(fields[2])
+                    except ValueError:
+                        memory_mib = None
+                    gpu.append({"driver": fields[1], "memory_mib": memory_mib, "name": fields[0]})
+    except (OSError, subprocess.TimeoutExpired):
+        pass
+    ram_total: int | None = None
+    if os.name == "nt":
+
+        class _MemoryStatusEx(ctypes.Structure):
+            _fields_ = (
+                ("dwLength", ctypes.c_ulong),
+                ("dwMemoryLoad", ctypes.c_ulong),
+                ("ullTotalPhys", ctypes.c_ulonglong),
+                ("ullAvailPhys", ctypes.c_ulonglong),
+                ("ullTotalPageFile", ctypes.c_ulonglong),
+                ("ullAvailPageFile", ctypes.c_ulonglong),
+                ("ullTotalVirtual", ctypes.c_ulonglong),
+                ("ullAvailVirtual", ctypes.c_ulonglong),
+                ("ullAvailExtendedVirtual", ctypes.c_ulonglong),
+            )
+
+        memory = _MemoryStatusEx()
+        memory.dwLength = ctypes.sizeof(_MemoryStatusEx)
+        loader = getattr(ctypes, "windll", None)
+        kernel32 = getattr(loader, "kernel32", None)
+        global_memory_status = getattr(kernel32, "GlobalMemoryStatusEx", None)
+        if callable(global_memory_status) and global_memory_status(ctypes.byref(memory)):
+            ram_total = int(memory.ullTotalPhys)
+    else:
+        try:
+            sysconf = getattr(os, "sysconf", None)
+            if callable(sysconf):
+                ram_total = int(sysconf("SC_PAGE_SIZE") * sysconf("SC_PHYS_PAGES"))
+        except (AttributeError, OSError, ValueError):
+            pass
     return {
         "cpu": platform.processor() or platform.machine() or None,
         "cpu_count": os.cpu_count(),
+        "cpu_physical_count": None,
         "executable": Path(sys.executable).resolve().as_posix(),
+        "gpu": gpu,
         "platform": platform.platform(),
         "python": platform.python_version(),
+        "ram_total_bytes": ram_total,
     }
+
+
+def _harness_source_binding(
+    *, git_commit: str, git_tree: str, files: Mapping[str, str]
+) -> dict[str, object]:
+    payload = {
+        "schema": HARNESS_SOURCE_BINDING_SCHEMA,
+        "git_commit": git_commit,
+        "git_tree": git_tree,
+        "files": dict(files),
+    }
+    binding = cast(dict[str, object], seal_object(payload, hash_field="binding_hash"))
+    return validate_harness_source_binding(binding)
+
+
+def _harness_source_identity(expected: Mapping[str, object]) -> dict[str, object]:
+    binding = validate_harness_source_binding(expected)
+    resolved = ROOT.resolve()
+    commit = _git(resolved, "rev-parse", "HEAD")
+    tree = _git(resolved, "rev-parse", "HEAD^{tree}")
+    branch = _git(resolved, "branch", "--show-current")
+    status = _git(resolved, "status", "--porcelain=v1", "--untracked-files=all")
+    top_level = Path(_git(resolved, "rev-parse", "--show-toplevel")).resolve()
+    observed_files: dict[str, object] = {}
+    for relative in HARNESS_SOURCE_PATHS:
+        path = resolved / relative
+        observed_files[relative] = sha256_file(path) if path.is_file() else None
+    predicates = {
+        "clean": status == "",
+        "commit": commit == binding["git_commit"],
+        "detached": branch == "",
+        "files": observed_files == binding["files"],
+        "root": top_level == resolved,
+        "tree": tree == binding["git_tree"],
+    }
+    return cast(
+        dict[str, object],
+        seal_object(
+            {
+                "schema": HARNESS_SOURCE_OBSERVATION_SCHEMA,
+                "binding_hash": binding["binding_hash"],
+                "branch": branch,
+                "dirty_worktree": bool(status),
+                "files": observed_files,
+                "git_commit": commit,
+                "git_tree": tree,
+                "passed": all(predicates.values()),
+                "predicates": predicates,
+                "root": resolved.as_posix(),
+            },
+            hash_field="observation_hash",
+        ),
+    )
+
+
+def _distribution_source_identity(name: str, package_prefix: str) -> dict[str, object]:
+    try:
+        distribution = importlib.metadata.distribution(name)
+    except importlib.metadata.PackageNotFoundError:
+        return {"file_count": 0, "source_sha256": None, "version": None}
+    rows: list[tuple[str, int, str]] = []
+    for item in sorted(distribution.files or (), key=lambda value: str(value).replace("\\", "/")):
+        relative = str(item).replace("\\", "/")
+        path = Path(str(distribution.locate_file(item))).resolve()
+        if (
+            relative.startswith(package_prefix)
+            and path.is_file()
+            and "__pycache__" not in path.parts
+            and path.suffix != ".pyc"
+        ):
+            rows.append((relative, path.stat().st_size, sha256_file(path)))
+    return {
+        "file_count": len(rows),
+        "source_sha256": sha256_bytes(canonical_json_bytes(rows)),
+        "version": distribution.version,
+    }
+
+
+def _runtime_environment_identity(
+    expected: Mapping[str, object] = EXPECTED_RUNTIME_ENVIRONMENT,
+) -> dict[str, object]:
+    binding = validate_runtime_environment_binding(expected)
+    distributions = {
+        "arc-agi": _distribution_source_identity("arc-agi", "arc_agi/"),
+        "arcengine": _distribution_source_identity("arcengine", "arcengine/"),
+    }
+    critical_versions: dict[str, str | None] = {}
+    for name in cast(dict[str, str], binding["critical_versions"]):
+        try:
+            critical_versions[name] = importlib.metadata.version(name)
+        except importlib.metadata.PackageNotFoundError:
+            critical_versions[name] = None
+    global _SDK_IMPORT_PROBE_CACHE
+    if _SDK_IMPORT_PROBE_CACHE is None:
+        probe = subprocess.run(
+            [
+                str(Path(sys.executable).resolve()),
+                "-I",
+                "-c",
+                (
+                    "import sys;from pathlib import Path;"
+                    "r=Path(sys.argv[1]).resolve();sys.path.insert(0,str(r/'src'));"
+                    "from arc3.adapters.arc_agi import _load_sdk_bindings;"
+                    "_load_sdk_bindings();print('PASS')"
+                ),
+                str(ROOT.resolve()),
+            ],
+            cwd=ROOT.resolve(),
+            check=False,
+            capture_output=True,
+            timeout=30.0,
+        )
+        _SDK_IMPORT_PROBE_CACHE = probe.returncode == 0 and probe.stdout.strip() == b"PASS"
+    try:
+        scorecard_distribution = importlib.metadata.distribution("arc-agi")
+        scorecard = Path(str(scorecard_distribution.locate_file("arc_agi/scorecard.py"))).resolve()
+        scorer_sha256 = sha256_file(scorecard) if scorecard.is_file() else None
+    except importlib.metadata.PackageNotFoundError:
+        scorer_sha256 = None
+    actual = {
+        "cache_tag": sys.implementation.cache_tag,
+        "critical_versions": critical_versions,
+        "distributions": distributions,
+        "executable": Path(sys.executable).resolve().as_posix(),
+        "executable_sha256": sha256_file(Path(sys.executable).resolve()),
+        "implementation": platform.python_implementation(),
+        "python_version": platform.python_version(),
+        "sdk_import_probe": _SDK_IMPORT_PROBE_CACHE,
+        "scorer": {
+            "distribution": "arc-agi",
+            "module": "arc_agi/scorecard.py",
+            "sha256": scorer_sha256,
+            "source_version": (
+                f"arc-agi=={distributions['arc-agi']['version']} local ScorecardManager; "
+                f"arcengine=={distributions['arcengine']['version']}"
+            ),
+        },
+        "upstream_lock_sha256": sha256_file(ROOT / "upstream.lock.json"),
+        "uv_lock_sha256": sha256_file(ROOT / "uv.lock"),
+    }
+    predicates = {key: actual[key] == binding[key] for key in actual}
+    return cast(
+        dict[str, object],
+        seal_object(
+            {
+                "schema": RUNTIME_ENVIRONMENT_OBSERVATION_SCHEMA,
+                "actual": actual,
+                "binding_hash": binding["runtime_binding_hash"],
+                "passed": all(predicates.values()),
+                "predicates": predicates,
+            },
+            hash_field="observation_hash",
+        ),
+    )
+
+
+def _integrity_authority(
+    path: Path, *, expected_file_hash: str, expected_self_hash: str, expected_commit: str
+) -> tuple[dict[str, object], dict[str, bool]]:
+    file_hash = sha256_file(path) if path.is_file() else None
+    receipt = load_json(path) if path.is_file() else {}
+    checks = receipt.get("checks")
+    finding_counts = receipt.get("finding_counts")
+    checks_pass = bool(
+        isinstance(checks, dict)
+        and all(
+            isinstance(checks.get(name), dict)
+            and cast(dict[str, object], checks[name]).get("passed") is True
+            for name in (
+                "archive_static",
+                "policy_static",
+                "secret_scan",
+                "source_identity",
+                "supply_chain",
+            )
+        )
+    )
+    predicates = {
+        "checks": checks_pass,
+        "clean_source": isinstance(receipt.get("git"), dict)
+        and cast(dict[str, object], receipt["git"]).get("commit") == expected_commit
+        and cast(dict[str, object], receipt["git"]).get("dirty_worktree") is False,
+        "file_hash": file_hash == expected_file_hash,
+        "findings": isinstance(finding_counts, dict)
+        and finding_counts.get("blocking") == 0
+        and finding_counts.get("warnings") == 0
+        and finding_counts.get("total") == 0,
+        "manifest_hash": isinstance(receipt.get("inputs"), dict)
+        and cast(dict[str, object], receipt["inputs"]).get("manifest_sha256")
+        == PUBLIC_PARTITION_MANIFEST_SHA256,
+        "passed": receipt.get("passed") is True,
+        "self_hash": receipt.get("receipt_sha256") == expected_self_hash
+        and verify_object_hash(receipt, hash_field="receipt_sha256"),
+    }
+    projection = {
+        "file_sha256": file_hash,
+        "git_commit": cast(dict[str, object], receipt.get("git", {})).get("commit"),
+        "path": path.resolve().as_posix(),
+        "receipt_sha256": receipt.get("receipt_sha256"),
+    }
+    return projection, predicates
+
+
+def _prior_authority(
+    integrity_receipt: Path = DEFAULT_PRIOR_INTEGRITY_RECEIPT,
+    build_000_integrity_receipt: Path = DEFAULT_BUILD_000_INTEGRITY_RECEIPT,
+    holdout_receipt: Path = HOLDOUT_NONCONSUMPTION_RECEIPT,
+) -> dict[str, object]:
+    integrity_001, integrity_001_predicates = _integrity_authority(
+        integrity_receipt,
+        expected_file_hash=PRIOR_INTEGRITY_RECEIPT_SHA256,
+        expected_self_hash=PRIOR_INTEGRITY_SELF_HASH,
+        expected_commit=FROZEN_BUILD_001_COMMIT,
+    )
+    integrity_000, integrity_000_predicates = _integrity_authority(
+        build_000_integrity_receipt,
+        expected_file_hash=BUILD_000_INTEGRITY_RECEIPT_SHA256,
+        expected_self_hash=BUILD_000_INTEGRITY_SELF_HASH,
+        expected_commit=FROZEN_BUILD_000_COMMIT,
+    )
+    holdout_hash = sha256_file(holdout_receipt) if holdout_receipt.is_file() else None
+    holdout = load_json(holdout_receipt) if holdout_receipt.is_file() else {}
+    holdout_projection = holdout.get("integrity")
+    predicates = {
+        "build_000_integrity": all(integrity_000_predicates.values()),
+        "build_001_integrity": all(integrity_001_predicates.values()),
+        "holdout_file_hash": holdout_hash == HOLDOUT_NONCONSUMPTION_RECEIPT_SHA256,
+        "holdout_manifest_hash": isinstance(holdout_projection, dict)
+        and holdout_projection.get("holdout_manifest_sha256") == PUBLIC_PARTITION_MANIFEST_SHA256,
+        "holdout_nonconsumption": isinstance(holdout_projection, dict)
+        and holdout_projection.get("holdout_sealed") is True
+        and holdout_projection.get("public_holdout_game_ids_selected") == 0
+        and holdout_projection.get("public_holdout_gameplay_events") == 0
+        and holdout_projection.get("holdout_manifest_loaded_as_gameplay_metadata") is False,
+    }
+    authority = cast(
+        dict[str, object],
+        seal_object(
+            {
+                "schema": PRIOR_AUTHORITY_SCHEMA,
+                "holdout": {
+                    "file_sha256": holdout_hash,
+                    "identities_loaded": 0,
+                    "manifest_loaded_as_metadata": False,
+                    "path": holdout_receipt.resolve().as_posix(),
+                    "status": "SEALED_UNCONSUMED"
+                    if predicates["holdout_nonconsumption"]
+                    else "UNVERIFIED",
+                },
+                "integrity": {
+                    "build_000": integrity_000,
+                    "build_001": integrity_001,
+                },
+                "passed": all(predicates.values()),
+                "predicates": predicates,
+            },
+            hash_field="authority_hash",
+        ),
+    )
+    return validate_prior_authority_observation(authority)
+
+
+def _prior_authority_stable(before: Mapping[str, object], after: Mapping[str, object]) -> bool:
+    return prior_authority_stable(before, after)
+
+
+def _environment_cache_identity(root: Path) -> dict[str, object]:
+    resolved = root.resolve()
+    rows: list[tuple[str, str, int, str | None]] = []
+    directory_count = 0
+    file_count = 0
+    file_bytes = 0
+    symlink_count = 0
+    if resolved.is_dir():
+        for path in sorted(resolved.rglob("*")):
+            relative = path.relative_to(resolved).as_posix()
+            if path.is_symlink():
+                symlink_count += 1
+                rows.append(("symlink", relative, 0, None))
+            elif path.is_dir():
+                directory_count += 1
+                rows.append(("directory", relative, 0, None))
+            elif path.is_file():
+                length = path.stat().st_size
+                file_count += 1
+                file_bytes += length
+                rows.append(("file", relative, length, sha256_file(path)))
+    actual = {
+        "aggregate_sha256": sha256_bytes(canonical_json_bytes(rows)),
+        "directory_count": directory_count,
+        "entry_count": len(rows),
+        "recursive_bytes": file_bytes,
+        "recursive_file_count": file_count,
+        "root_file_count": (
+            sum(path.is_file() for path in resolved.iterdir()) if resolved.is_dir() else 0
+        ),
+        "top_level_directory_count": (
+            sum(path.is_dir() for path in resolved.iterdir()) if resolved.is_dir() else 0
+        ),
+    }
+    predicates = {
+        **{key: actual[key] == value for key, value in EXPECTED_ENVIRONMENT_CACHE.items()},
+        "root_present": resolved.is_dir(),
+        "symlinks_absent": symlink_count == 0,
+    }
+    cache = cast(
+        dict[str, object],
+        seal_object(
+            {
+                "schema": ENVIRONMENT_CACHE_SCHEMA,
+                "actual": actual,
+                "expected": EXPECTED_ENVIRONMENT_CACHE,
+                "holdout_identities_loaded": 0,
+                "passed": all(predicates.values()),
+                "predicates": predicates,
+                "root": resolved.as_posix(),
+            },
+            hash_field="cache_identity_hash",
+        ),
+    )
+    return validate_environment_cache_observation(cache)
+
+
+def _environment_cache_stable(before: Mapping[str, object], after: Mapping[str, object]) -> bool:
+    return environment_cache_stable(before, after)
+
+
+def _observe_execution_boundaries(
+    *,
+    harness_source_expected: Mapping[str, object],
+    environments: Path,
+    prior_integrity_receipt: Path,
+    build_000_integrity_receipt: Path,
+    short_circuit_on_harness_failure: bool = True,
+) -> tuple[
+    dict[str, object],
+    dict[str, object] | None,
+    dict[str, object] | None,
+    dict[str, object] | None,
+]:
+    harness = _harness_source_identity(harness_source_expected)
+    if harness.get("passed") is not True and short_circuit_on_harness_failure:
+        return harness, None, None, None
+    runtime = _runtime_environment_identity()
+    authority = _prior_authority(
+        prior_integrity_receipt,
+        build_000_integrity_receipt,
+        HOLDOUT_NONCONSUMPTION_RECEIPT,
+    )
+    cache = _environment_cache_identity(environments)
+    return harness, runtime, authority, cache
+
+
+def _execution_boundaries_ready(
+    observations: tuple[
+        Mapping[str, object],
+        Mapping[str, object] | None,
+        Mapping[str, object] | None,
+        Mapping[str, object] | None,
+    ],
+) -> bool:
+    return all(item is not None and item.get("passed") is True for item in observations)
+
+
+def _preflight_boundary_snapshot(
+    check: Mapping[str, object],
+) -> tuple[
+    dict[str, object],
+    dict[str, object],
+    dict[str, object],
+    dict[str, object],
+    dict[str, object],
+    dict[str, object],
+]:
+    """Recover the exact externally bound identities used to reconstruct a cell."""
+
+    raw_harness = check.get("harness_source")
+    raw_runtime = check.get("runtime_environment")
+    raw_authority = check.get("prior_authority")
+    raw_cache = check.get("environment_cache")
+    if not all(isinstance(item, dict) for item in (raw_harness, raw_runtime, raw_cache)):
+        raise EvaluationError("Stage 09 preflight execution identity is absent")
+    harness = cast(dict[str, object], raw_harness)
+    runtime = cast(dict[str, object], raw_runtime)
+    cache = cast(dict[str, object], raw_cache)
+    expected_harness = harness.get("expected")
+    harness_start = harness.get("start")
+    expected_runtime = runtime.get("expected")
+    runtime_start = runtime.get("start")
+    cache_start = cache.get("start")
+    if not all(
+        isinstance(item, dict)
+        for item in (
+            expected_harness,
+            harness_start,
+            expected_runtime,
+            runtime_start,
+            raw_authority,
+            cache_start,
+        )
+    ):
+        raise EvaluationError("Stage 09 preflight execution identity is malformed")
+    typed_harness = validate_harness_source_binding(cast(dict[str, object], expected_harness))
+    typed_harness_start = validate_harness_source_observation(
+        cast(dict[str, object], harness_start), expected=typed_harness
+    )
+    typed_runtime = validate_runtime_environment_binding(cast(dict[str, object], expected_runtime))
+    typed_runtime_start = validate_runtime_environment_observation(
+        cast(dict[str, object], runtime_start), expected=typed_runtime
+    )
+    typed_authority = validate_prior_authority_observation(cast(dict[str, object], raw_authority))
+    typed_cache = validate_environment_cache_observation(cast(dict[str, object], cache_start))
+    if any(
+        item.get("passed") is not True
+        for item in (
+            typed_harness_start,
+            typed_runtime_start,
+            typed_authority,
+            typed_cache,
+        )
+    ):
+        raise EvaluationError("Stage 09 preflight execution identity does not pass")
+    return (
+        typed_harness,
+        typed_harness_start,
+        typed_runtime,
+        typed_runtime_start,
+        typed_authority,
+        typed_cache,
+    )
 
 
 def _source_identity(
@@ -374,6 +963,8 @@ def _official_paths(
     build_001_root: Path,
     stage08_result: Path,
     stage08_exposure: Path,
+    prior_integrity_receipt: Path,
+    build_000_integrity_receipt: Path,
 ) -> None:
     supplied = (
         output,
@@ -385,6 +976,8 @@ def _official_paths(
         build_001_root,
         stage08_result,
         stage08_exposure,
+        prior_integrity_receipt,
+        build_000_integrity_receipt,
     )
     expected = (
         DEFAULT_OUTPUT,
@@ -396,6 +989,8 @@ def _official_paths(
         DEFAULT_BUILD_001_ROOT,
         DEFAULT_STAGE08_RESULT,
         DEFAULT_STAGE08_EXPOSURE,
+        DEFAULT_PRIOR_INTEGRITY_RECEIPT,
+        DEFAULT_BUILD_000_INTEGRITY_RECEIPT,
     )
     if any(
         left.resolve() != right.resolve() for left, right in zip(supplied, expected, strict=True)
@@ -415,6 +1010,7 @@ def _official_paths(
 
 def preflight(
     *,
+    harness_source_expected: Mapping[str, object],
     output: Path = DEFAULT_OUTPUT,
     work_root: Path = DEFAULT_WORK_ROOT,
     exposure: Path = DEFAULT_EXPOSURE,
@@ -424,6 +1020,8 @@ def preflight(
     build_001_root: Path = DEFAULT_BUILD_001_ROOT,
     stage08_result: Path = DEFAULT_STAGE08_RESULT,
     stage08_exposure: Path = DEFAULT_STAGE08_EXPOSURE,
+    prior_integrity_receipt: Path = DEFAULT_PRIOR_INTEGRITY_RECEIPT,
+    build_000_integrity_receipt: Path = DEFAULT_BUILD_000_INTEGRITY_RECEIPT,
     enforce_official_paths: bool = True,
 ) -> dict[str, object]:
     """Validate every boundary without opening an environment."""
@@ -439,6 +1037,84 @@ def preflight(
             build_001_root=build_001_root,
             stage08_result=stage08_result,
             stage08_exposure=stage08_exposure,
+            prior_integrity_receipt=prior_integrity_receipt,
+            build_000_integrity_receipt=build_000_integrity_receipt,
+        )
+    expected_harness = validate_harness_source_binding(harness_source_expected)
+    harness_start = _harness_source_identity(expected_harness)
+    if harness_start["passed"] is not True:
+        return cast(
+            dict[str, object],
+            seal_object(
+                {
+                    "schema": PREFLIGHT_SCHEMA,
+                    "status": "FAILED_INFRASTRUCTURE",
+                    "gameplay_opened": False,
+                    "holdout": {
+                        "identities_loaded": 0,
+                        "manifest_loaded_as_metadata": False,
+                        "public_holdout_gameplay_events": 0,
+                        "status": "UNVERIFIED",
+                    },
+                    "harness_source": {
+                        "expected": expected_harness,
+                        "start": harness_start,
+                    },
+                    "runtime_environment": {
+                        "expected": EXPECTED_RUNTIME_ENVIRONMENT,
+                        "start": None,
+                        "status": "NOT_EVALUATED_HARNESS_SOURCE_FAILED",
+                    },
+                    "prior_authority": None,
+                    "environment_cache": None,
+                    "runtime_identity": _runtime_identity(),
+                    "predicates": {"harness_source": False},
+                },
+                hash_field="preflight_hash",
+            ),
+        )
+    runtime_start = _runtime_environment_identity()
+    authority_start = _prior_authority(
+        prior_integrity_receipt,
+        build_000_integrity_receipt,
+        HOLDOUT_NONCONSUMPTION_RECEIPT,
+    )
+    cache_start = _environment_cache_identity(environments)
+    identity_predicates = {
+        "environment_cache": cache_start["passed"] is True,
+        "harness_source": harness_start["passed"] is True,
+        "prior_authority": authority_start["passed"] is True,
+        "runtime_environment": runtime_start["passed"] is True,
+    }
+    if not all(identity_predicates.values()):
+        return cast(
+            dict[str, object],
+            seal_object(
+                {
+                    "schema": PREFLIGHT_SCHEMA,
+                    "status": "FAILED_INFRASTRUCTURE",
+                    "gameplay_opened": False,
+                    "holdout": {
+                        "identities_loaded": 0,
+                        "manifest_loaded_as_metadata": False,
+                        "public_holdout_gameplay_events": 0,
+                        "status": "UNVERIFIED",
+                    },
+                    "harness_source": {
+                        "expected": expected_harness,
+                        "start": harness_start,
+                    },
+                    "runtime_environment": {
+                        "expected": EXPECTED_RUNTIME_ENVIRONMENT,
+                        "start": runtime_start,
+                    },
+                    "prior_authority": authority_start,
+                    "environment_cache": {"start": cache_start},
+                    "runtime_identity": _runtime_identity(),
+                    "predicates": identity_predicates,
+                },
+                hash_field="preflight_hash",
+            ),
         )
     declaration = validate_predeclaration_bytes(
         PREDECLARATION.read_bytes(), expected_file_sha256=PREDECLARATION_FILE_SHA256
@@ -478,6 +1154,7 @@ def preflight(
         "matrix": len(build_matrix()) == EXPECTED_CELL_COUNT,
         "predecessor": predecessor["passed"] is True,
         "worker": WORKER.is_file(),
+        **identity_predicates,
     }
     payload = {
         "schema": PREFLIGHT_SCHEMA,
@@ -500,6 +1177,13 @@ def preflight(
         "public_manifest_hashes": manifest_hashes,
         "competition_integrity": integrity,
         "runtime_identity": _runtime_identity(),
+        "harness_source": {"expected": expected_harness, "start": harness_start},
+        "runtime_environment": {
+            "expected": EXPECTED_RUNTIME_ENVIRONMENT,
+            "start": runtime_start,
+        },
+        "prior_authority": authority_start,
+        "environment_cache": {"start": cache_start},
         "paths": {
             "build_000_root": build_000_root.resolve().as_posix(),
             "build_001_root": build_001_root.resolve().as_posix(),
@@ -849,6 +1533,10 @@ def _worker_spec(
     recordings: Path,
     cell_root: Path,
     runtime_identity: Mapping[str, object],
+    harness_source_expected: Mapping[str, object],
+    harness_source_before: Mapping[str, object],
+    runtime_environment_expected: Mapping[str, object],
+    runtime_environment_before: Mapping[str, object],
 ) -> dict[str, Any]:
     declaration = {
         "agent": cell.variant.agent,
@@ -934,7 +1622,12 @@ def _worker_spec(
         "cell_id": cell.cell_id,
         "cell_spec_hash": cell.spec_hash,
         "first_party_source_sha256": cell.variant.source_sha256,
+        "harness_root": ROOT.resolve().as_posix(),
+        "harness_source_expected": dict(harness_source_expected),
+        "harness_source_before": dict(harness_source_before),
         "public_worker_spec": public_worker_spec,
+        "runtime_environment_expected": dict(runtime_environment_expected),
+        "runtime_environment_before": dict(runtime_environment_before),
         "source_commit": cell.variant.source_commit,
         "source_root": source_root.resolve().as_posix(),
         "source_tree": cell.variant.source_tree,
@@ -1087,6 +1780,44 @@ def _parent_evidence(
     return cast(dict[str, object], seal_object(payload, hash_field="parent_evidence_hash"))
 
 
+def _worker_boundary(
+    supervision: Mapping[str, object],
+    spec: Mapping[str, object],
+    *,
+    raw_receipt_hash: str,
+    harness_after: Mapping[str, object],
+    runtime_after: Mapping[str, object],
+) -> dict[str, object]:
+    stdout_path = supervision.get("stdout_path")
+    if not isinstance(stdout_path, str) or not Path(stdout_path).is_file():
+        raise EvaluationError("Stage 09 worker boundary stdout is absent")
+    try:
+        value = json.loads(Path(stdout_path).read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as error:
+        raise EvaluationError("Stage 09 worker boundary stdout is invalid") from error
+    if not isinstance(value, dict):
+        raise EvaluationError("Stage 09 worker boundary receipt must be an object")
+    expected_harness = cast(dict[str, object], spec["harness_source_expected"])
+    harness_before = cast(dict[str, object], spec["harness_source_before"])
+    expected_runtime = cast(dict[str, object], spec["runtime_environment_expected"])
+    runtime_before = cast(dict[str, object], spec["runtime_environment_before"])
+    expected = {
+        "cell_id": spec["cell_id"],
+        "harness_binding_hash": expected_harness["binding_hash"],
+        "harness_source_before_hash": harness_before["observation_hash"],
+        "harness_source_after_hash": harness_after["observation_hash"],
+        "raw_receipt_hash": raw_receipt_hash,
+        "runtime_binding_hash": expected_runtime["runtime_binding_hash"],
+        "runtime_environment_before_hash": runtime_before["observation_hash"],
+        "runtime_environment_after_hash": runtime_after["observation_hash"],
+    }
+    if any(value.get(key) != item for key, item in expected.items()):
+        raise EvaluationError("Stage 09 worker source/runtime boundary changed")
+    if value.get("status") not in {"success", "failure"}:
+        raise EvaluationError("Stage 09 worker boundary status is invalid")
+    return cast(dict[str, object], value)
+
+
 def _cell_receipt(
     cell: DevelopmentCell,
     *,
@@ -1101,6 +1832,16 @@ def _cell_receipt(
     authorization_path: Path | None = None,
     supervision_receipt_path: Path | None = None,
     parent_evidence_path: Path | None = None,
+    harness_source_expected: Mapping[str, object],
+    harness_source_before: Mapping[str, object],
+    harness_source_after: Mapping[str, object],
+    runtime_environment_expected: Mapping[str, object],
+    runtime_environment_before: Mapping[str, object],
+    runtime_environment_after: Mapping[str, object],
+    prior_authority_before: Mapping[str, object],
+    prior_authority_after: Mapping[str, object],
+    environment_cache_before: Mapping[str, object],
+    environment_cache_after: Mapping[str, object],
 ) -> dict[str, object]:
     status = CellStatus.INFRASTRUCTURE_FAILURE
     score_verified = False
@@ -1113,6 +1854,19 @@ def _cell_receipt(
     failure: str | None = None
     timeout_trace: dict[str, object] | None = None
     raw: dict[str, object] | None = None
+    worker_boundary: dict[str, object] | None = None
+    harness_stable = harness_source_stable(
+        harness_source_before,
+        harness_source_after,
+        expected=harness_source_expected,
+    )
+    runtime_stable = runtime_environment_stable(
+        runtime_environment_before,
+        runtime_environment_after,
+        expected=runtime_environment_expected,
+    )
+    authority_stable = _prior_authority_stable(prior_authority_before, prior_authority_after)
+    cache_stable = _environment_cache_stable(environment_cache_before, environment_cache_after)
     raw_available = raw_path.is_file()
     successful_wrapper = (
         supervision.get("launch_error") is None
@@ -1123,6 +1877,13 @@ def _cell_receipt(
         try:
             raw = _raw_result(raw_path, cell, spec, asset_after=asset_after)
             raw_hash = cast(str, raw["receipt_hash"])
+            worker_boundary = _worker_boundary(
+                supervision,
+                spec,
+                raw_receipt_hash=raw_hash,
+                harness_after=harness_source_after,
+                runtime_after=runtime_environment_after,
+            )
             score = cast(dict[str, object], raw["score"])
             metrics = cast(dict[str, object], raw["metrics"])
             score_verified = score.get("verified") is True
@@ -1145,19 +1906,6 @@ def _cell_receipt(
             )
             rss = metrics.get("peak_rss_bytes")
             child_rss = rss if isinstance(rss, int) and not isinstance(rss, bool) else None
-            expected_stdout = canonical_json_bytes(
-                {
-                    "cell_id": cell.cell_id,
-                    "raw_receipt_hash": raw_hash,
-                    "status": raw.get("status"),
-                }
-            )
-            stdout_path = supervision.get("stdout_path")
-            if (
-                not isinstance(stdout_path, str)
-                or Path(stdout_path).read_bytes() != expected_stdout
-            ):
-                raise EvaluationError("Stage 09 worker stdout receipt changed")
             if raw.get("status") == "success":
                 status = CellStatus.SUCCESS
             elif _mechanism_failure(raw):
@@ -1203,6 +1951,18 @@ def _cell_receipt(
     if asset_after.get("passed") is not True:
         status = CellStatus.INFRASTRUCTURE_FAILURE
         failure = "development asset identity changed after cell execution"
+    if not harness_stable:
+        status = CellStatus.INFRASTRUCTURE_FAILURE
+        failure = "Stage 09 harness source changed during cell execution"
+    if not runtime_stable:
+        status = CellStatus.INFRASTRUCTURE_FAILURE
+        failure = "Stage 09 runtime environment changed during cell execution"
+    if not authority_stable:
+        status = CellStatus.INFRASTRUCTURE_FAILURE
+        failure = "Stage 09 prior authority changed during cell execution"
+    if not cache_stable:
+        status = CellStatus.INFRASTRUCTURE_FAILURE
+        failure = "Stage 09 opaque public cache changed during cell execution"
     payload = {
         "schema": CELL_RECEIPT_SCHEMA,
         "status": status.value,
@@ -1214,6 +1974,28 @@ def _cell_receipt(
         "variant": cell.variant.value,
         "asset_sha256": cell.game.asset_sha256,
         "source_commit": cell.variant.source_commit,
+        "harness_source": {
+            "expected": dict(harness_source_expected),
+            "before": dict(harness_source_before),
+            "after": dict(harness_source_after),
+            "stable": harness_stable,
+        },
+        "runtime_environment": {
+            "expected": dict(runtime_environment_expected),
+            "before": dict(runtime_environment_before),
+            "after": dict(runtime_environment_after),
+            "stable": runtime_stable,
+        },
+        "prior_authority": {
+            "before": dict(prior_authority_before),
+            "after": dict(prior_authority_after),
+            "stable": authority_stable,
+        },
+        "environment_cache": {
+            "before": dict(environment_cache_before),
+            "after": dict(environment_cache_after),
+            "stable": cache_stable,
+        },
         "exposure_event_hash": exposure_event.get("event_hash"),
         "worker_spec_hash": spec.get("worker_spec_hash"),
         "worker_spec_sha256": sha256_file(spec_path) if spec_path is not None else None,
@@ -1262,6 +2044,7 @@ def _cell_receipt(
         },
         "supervisor": dict(supervision),
         "timeout_trace": timeout_trace,
+        "worker_boundary": worker_boundary,
         "asset_after": dict(asset_after),
         "failure": failure,
     }
@@ -1466,6 +2249,7 @@ def _reconstruct_cell_receipt(
     build_000_root: Path,
     build_001_root: Path,
     runtime_identity: Mapping[str, object],
+    check: Mapping[str, object],
     cell: DevelopmentCell,
     exposure_event: Mapping[str, object],
 ) -> dict[str, object]:
@@ -1476,6 +2260,14 @@ def _reconstruct_cell_receipt(
         hash_field="cell_receipt_hash",
         label="parent cell receipt",
     )
+    (
+        harness_expected,
+        harness_observation,
+        runtime_expected,
+        runtime_observation,
+        authority_observation,
+        cache_observation,
+    ) = _preflight_boundary_snapshot(check)
     source_root = build_001_root if cell.variant is Variant.BUILD_001_FULL else build_000_root
     expected_spec = _worker_spec(
         cell,
@@ -1484,6 +2276,10 @@ def _reconstruct_cell_receipt(
         recordings=recordings,
         cell_root=paths["cell_root"],
         runtime_identity=runtime_identity,
+        harness_source_expected=harness_expected,
+        harness_source_before=harness_observation,
+        runtime_environment_expected=runtime_expected,
+        runtime_environment_before=runtime_observation,
     )
     expected_spec_bytes = canonical_json_bytes(expected_spec)
     if not paths["spec"].is_file() or paths["spec"].read_bytes() != expected_spec_bytes:
@@ -1577,6 +2373,16 @@ def _reconstruct_cell_receipt(
         authorization_path=paths["authorization"],
         supervision_receipt_path=paths["supervision"],
         parent_evidence_path=paths["parent_evidence"],
+        harness_source_expected=harness_expected,
+        harness_source_before=harness_observation,
+        harness_source_after=harness_observation,
+        runtime_environment_expected=runtime_expected,
+        runtime_environment_before=runtime_observation,
+        runtime_environment_after=runtime_observation,
+        prior_authority_before=authority_observation,
+        prior_authority_after=authority_observation,
+        environment_cache_before=cache_observation,
+        environment_cache_after=cache_observation,
     )
     if reconstructed != persisted:
         raise EvaluationError("Stage 09 parent cell receipt does not reconstruct exactly")
@@ -1625,6 +2431,7 @@ def _seal_orphan_boundary(
     build_000_root: Path,
     build_001_root: Path,
     runtime_identity: Mapping[str, object],
+    check: Mapping[str, object],
     cell: DevelopmentCell,
     exposure_event: Mapping[str, object],
 ) -> dict[str, object]:
@@ -1639,6 +2446,14 @@ def _seal_orphan_boundary(
                 label="orphan termination receipt",
             ),
         )
+    (
+        harness_expected,
+        harness_observation,
+        runtime_expected,
+        runtime_observation,
+        _authority_observation,
+        _cache_observation,
+    ) = _preflight_boundary_snapshot(check)
     source_root = build_001_root if cell.variant is Variant.BUILD_001_FULL else build_000_root
     expected_spec = _worker_spec(
         cell,
@@ -1647,6 +2462,10 @@ def _seal_orphan_boundary(
         recordings=recordings,
         cell_root=paths["cell_root"],
         runtime_identity=runtime_identity,
+        harness_source_expected=harness_expected,
+        harness_source_before=harness_observation,
+        runtime_environment_expected=runtime_expected,
+        runtime_environment_before=runtime_observation,
     )
     if not paths["spec"].is_file() or paths["spec"].read_bytes() != canonical_json_bytes(
         expected_spec
@@ -1804,6 +2623,83 @@ def _resource_summary(
     }
 
 
+def _execution_boundaries(
+    check: Mapping[str, object],
+    *,
+    harness_end: Mapping[str, object] | None,
+    runtime_end: Mapping[str, object] | None,
+    authority_end: Mapping[str, object] | None,
+    cache_end: Mapping[str, object] | None,
+) -> dict[str, object]:
+    raw_harness = check.get("harness_source")
+    harness = raw_harness if isinstance(raw_harness, dict) else {}
+    raw_runtime = check.get("runtime_environment")
+    runtime = raw_runtime if isinstance(raw_runtime, dict) else {}
+    raw_cache = check.get("environment_cache")
+    cache = raw_cache if isinstance(raw_cache, dict) else {}
+    expected_harness = harness.get("expected")
+    harness_start = harness.get("start")
+    expected_runtime = runtime.get("expected")
+    runtime_start = runtime.get("start")
+    authority_start = check.get("prior_authority")
+    cache_start = cache.get("start")
+    harness_stable = bool(
+        isinstance(expected_harness, dict)
+        and isinstance(harness_start, dict)
+        and harness_end is not None
+        and harness_source_stable(
+            harness_start,
+            harness_end,
+            expected=expected_harness,
+        )
+    )
+    runtime_stable = bool(
+        isinstance(expected_runtime, dict)
+        and isinstance(runtime_start, dict)
+        and runtime_end is not None
+        and runtime_environment_stable(
+            runtime_start,
+            runtime_end,
+            expected=expected_runtime,
+        )
+    )
+    authority_stable = bool(
+        isinstance(authority_start, dict)
+        and authority_end is not None
+        and _prior_authority_stable(authority_start, authority_end)
+    )
+    cache_stable = bool(
+        isinstance(cache_start, dict)
+        and cache_end is not None
+        and _environment_cache_stable(cache_start, cache_end)
+    )
+    return {
+        "harness_source": {
+            "expected": expected_harness,
+            "start": harness_start,
+            "end": dict(harness_end) if harness_end is not None else None,
+            "stable": harness_stable,
+        },
+        "runtime_environment": {
+            "expected": expected_runtime,
+            "start": runtime_start,
+            "end": dict(runtime_end) if runtime_end is not None else None,
+            "stable": runtime_stable,
+        },
+        "prior_authority": {
+            "start": authority_start,
+            "end": dict(authority_end) if authority_end is not None else None,
+            "stable": authority_stable,
+        },
+        "environment_cache": {
+            "start": cache_start,
+            "end": dict(cache_end) if cache_end is not None else None,
+            "stable": cache_stable,
+        },
+        "passed": harness_stable and runtime_stable and authority_stable and cache_stable,
+    }
+
+
 def _failure_terminal(
     *,
     output: Path,
@@ -1814,6 +2710,10 @@ def _failure_terminal(
     failure_kind: str,
     exposure_event_hash: object,
     orphan_process: Mapping[str, object] | None = None,
+    harness_end: Mapping[str, object] | None = None,
+    runtime_end: Mapping[str, object] | None = None,
+    authority_end: Mapping[str, object] | None = None,
+    cache_end: Mapping[str, object] | None = None,
 ) -> dict[str, object]:
     runtime_start = check.get("runtime_identity")
     if not isinstance(runtime_start, dict):
@@ -1836,6 +2736,13 @@ def _failure_terminal(
         },
         "orphan_process": dict(orphan_process) if orphan_process is not None else None,
         "preflight": dict(check),
+        "execution_boundaries": _execution_boundaries(
+            check,
+            harness_end=harness_end,
+            runtime_end=runtime_end,
+            authority_end=authority_end,
+            cache_end=cache_end,
+        ),
         "resources": _resource_summary(
             receipts, runtime_start=runtime_start, execution_complete=False
         ),
@@ -1856,6 +2763,7 @@ def _load_receipt_prefix(
     build_000_root: Path,
     build_001_root: Path,
     runtime_identity: Mapping[str, object],
+    check: Mapping[str, object],
     exposure_events: Sequence[Mapping[str, object]],
 ) -> list[dict[str, object]]:
     matrix = build_matrix()
@@ -1873,6 +2781,7 @@ def _load_receipt_prefix(
                 build_000_root=build_000_root,
                 build_001_root=build_001_root,
                 runtime_identity=runtime_identity,
+                check=check,
                 cell=cell,
                 exposure_event=exposure_events[ordinal],
             )
@@ -1943,6 +2852,7 @@ def _load_existing_terminal(
         build_000_root=build_000_root,
         build_001_root=build_001_root,
         runtime_identity=runtime_start,
+        check=check,
         exposure_events=events,
     )
     if prior.get("cell_receipt_hashes") != [
@@ -1988,7 +2898,28 @@ def _load_existing_terminal(
         asset_end = check.get("assets")
         if not isinstance(asset_end, dict) or asset_end.get("passed") is not True:
             raise EvaluationError("existing Stage 09 live asset boundary does not verify")
-        evidence_integrity = bool(source_stable and expected_resources["wall_within_limit"] is True)
+        (
+            _harness_expected,
+            harness_end,
+            _runtime_expected,
+            runtime_end,
+            authority_end,
+            cache_end,
+        ) = _preflight_boundary_snapshot(check)
+        execution_boundaries = _execution_boundaries(
+            embedded_preflight,
+            harness_end=harness_end,
+            runtime_end=runtime_end,
+            authority_end=authority_end,
+            cache_end=cache_end,
+        )
+        evidence_integrity = bool(
+            source_stable
+            and execution_boundaries["passed"] is True
+            and asset_end["passed"] is True
+            and len(events) == EXPECTED_CELL_COUNT
+            and expected_resources["wall_within_limit"] is True
+        )
         expected = aggregate(
             receipts,
             evidence_integrity=evidence_integrity,
@@ -1999,6 +2930,7 @@ def _load_existing_terminal(
                 "preflight": embedded_preflight,
                 "execution_complete": True,
                 "expected_cell_count": EXPECTED_CELL_COUNT,
+                "execution_boundaries": execution_boundaries,
                 "resources": expected_resources,
                 "source_end": {
                     "build_000": source_000,
@@ -2037,6 +2969,7 @@ def _load_existing_terminal(
 
 def execute(
     *,
+    harness_source_expected: Mapping[str, object],
     output: Path = DEFAULT_OUTPUT,
     work_root: Path = DEFAULT_WORK_ROOT,
     exposure: Path = DEFAULT_EXPOSURE,
@@ -2046,6 +2979,8 @@ def execute(
     build_001_root: Path = DEFAULT_BUILD_001_ROOT,
     stage08_result: Path = DEFAULT_STAGE08_RESULT,
     stage08_exposure: Path = DEFAULT_STAGE08_EXPOSURE,
+    prior_integrity_receipt: Path = DEFAULT_PRIOR_INTEGRITY_RECEIPT,
+    build_000_integrity_receipt: Path = DEFAULT_BUILD_000_INTEGRITY_RECEIPT,
 ) -> dict[str, object]:
     """Execute exactly once; exposed cells are never relaunched."""
 
@@ -2059,8 +2994,11 @@ def execute(
         build_001_root=build_001_root,
         stage08_result=stage08_result,
         stage08_exposure=stage08_exposure,
+        prior_integrity_receipt=prior_integrity_receipt,
+        build_000_integrity_receipt=build_000_integrity_receipt,
     )
     check = preflight(
+        harness_source_expected=harness_source_expected,
         output=output,
         work_root=work_root,
         exposure=exposure,
@@ -2070,6 +3008,8 @@ def execute(
         build_001_root=build_001_root,
         stage08_result=stage08_result,
         stage08_exposure=stage08_exposure,
+        prior_integrity_receipt=prior_integrity_receipt,
+        build_000_integrity_receipt=build_000_integrity_receipt,
     )
     if check["status"] != "READY_NOT_EXECUTED":
         raise EvaluationError("Stage 09 execution preflight is not ready")
@@ -2103,6 +3043,7 @@ def execute(
                     build_000_root=build_000_root,
                     build_001_root=build_001_root,
                     runtime_identity=cast(dict[str, object], check["runtime_identity"]),
+                    check=check,
                     cell=cell,
                     exposure_event=events[ordinal],
                 )
@@ -2123,6 +3064,7 @@ def execute(
                 build_000_root=build_000_root,
                 build_001_root=build_001_root,
                 runtime_identity=cast(dict[str, object], check["runtime_identity"]),
+                check=check,
                 cell=cell,
                 exposure_event=events[ordinal],
             )
@@ -2151,6 +3093,30 @@ def execute(
                 failure_kind="overall-active-wall-cannot-admit-next-cell",
                 exposure_event_hash=None,
             )
+        boundary_before = _observe_execution_boundaries(
+            harness_source_expected=harness_source_expected,
+            environments=environments,
+            prior_integrity_receipt=prior_integrity_receipt,
+            build_000_integrity_receipt=build_000_integrity_receipt,
+        )
+        if not _execution_boundaries_ready(boundary_before):
+            return _failure_terminal(
+                output=output,
+                check=check,
+                receipts=existing_receipts,
+                exposure=exposure,
+                failed_cell=cell,
+                failure_kind="pre-cell-source-runtime-authority-boundary-failed",
+                exposure_event_hash=None,
+                harness_end=boundary_before[0],
+                runtime_end=boundary_before[1],
+                authority_end=boundary_before[2],
+                cache_end=boundary_before[3],
+            )
+        harness_before = boundary_before[0]
+        runtime_before = cast(dict[str, object], boundary_before[1])
+        authority_before = cast(dict[str, object], boundary_before[2])
+        cache_before = cast(dict[str, object], boundary_before[3])
         source_root = build_001_root if cell.variant is Variant.BUILD_001_FULL else build_000_root
         cell_started_ns = time.perf_counter_ns()
         cell_root = paths["cell_root"]
@@ -2161,6 +3127,10 @@ def execute(
             recordings=recordings,
             cell_root=cell_root,
             runtime_identity=cast(dict[str, object], check["runtime_identity"]),
+            harness_source_expected=harness_source_expected,
+            harness_source_before=harness_before,
+            runtime_environment_expected=EXPECTED_RUNTIME_ENVIRONMENT,
+            runtime_environment_before=runtime_before,
         )
         spec_path = paths["spec"]
         _atomic_create_or_verify(
@@ -2213,6 +3183,17 @@ def execute(
                 "worker_spec_sha256": sha256_file(spec_path),
             },
         )
+        boundary_after = _observe_execution_boundaries(
+            harness_source_expected=harness_source_expected,
+            environments=environments,
+            prior_integrity_receipt=prior_integrity_receipt,
+            build_000_integrity_receipt=build_000_integrity_receipt,
+            short_circuit_on_harness_failure=False,
+        )
+        harness_after = boundary_after[0]
+        runtime_after = cast(dict[str, object], boundary_after[1])
+        authority_after = cast(dict[str, object], boundary_after[2])
+        cache_after = cast(dict[str, object], boundary_after[3])
         asset_after = _asset_identity(environments, cell)
         parent_active_wall_ns = max(0, time.perf_counter_ns() - cell_started_ns)
         parent_evidence = _parent_evidence(
@@ -2238,6 +3219,16 @@ def execute(
             authorization_path=paths["authorization"],
             supervision_receipt_path=paths["supervision"],
             parent_evidence_path=paths["parent_evidence"],
+            harness_source_expected=harness_source_expected,
+            harness_source_before=harness_before,
+            harness_source_after=harness_after,
+            runtime_environment_expected=EXPECTED_RUNTIME_ENVIRONMENT,
+            runtime_environment_before=runtime_before,
+            runtime_environment_after=runtime_after,
+            prior_authority_before=authority_before,
+            prior_authority_after=authority_after,
+            environment_cache_before=cache_before,
+            environment_cache_after=cache_after,
         )
         _atomic_create(receipt_path, canonical_json_bytes(receipt))
         receipt = _reconstruct_cell_receipt(
@@ -2247,6 +3238,7 @@ def execute(
             build_000_root=build_000_root,
             build_001_root=build_001_root,
             runtime_identity=cast(dict[str, object], check["runtime_identity"]),
+            check=check,
             cell=cell,
             exposure_event=event,
         )
@@ -2261,7 +3253,25 @@ def execute(
                 failed_cell=cell,
                 failure_kind="terminal-cell-infrastructure-failure",
                 exposure_event_hash=event.get("event_hash"),
+                harness_end=harness_after,
+                runtime_end=runtime_after,
+                authority_end=authority_after,
+                cache_end=cache_after,
             )
+    boundary_end = _observe_execution_boundaries(
+        harness_source_expected=harness_source_expected,
+        environments=environments,
+        prior_integrity_receipt=prior_integrity_receipt,
+        build_000_integrity_receipt=build_000_integrity_receipt,
+        short_circuit_on_harness_failure=False,
+    )
+    execution_boundaries = _execution_boundaries(
+        check,
+        harness_end=boundary_end[0],
+        runtime_end=boundary_end[1],
+        authority_end=boundary_end[2],
+        cache_end=boundary_end[3],
+    )
     end_000 = _source_identity(
         build_000_root,
         expected_commit=FROZEN_BUILD_000_COMMIT,
@@ -2282,6 +3292,7 @@ def execute(
     exposures_end = _validate_exposures(exposure)
     evidence_integrity = bool(
         source_stable
+        and execution_boundaries["passed"] is True
         and asset_end["passed"] is True
         and len(exposures_end) == EXPECTED_CELL_COUNT
         and cumulative_wall_ns <= int(OVERALL_ACTIVE_WALL_SECONDS * 1_000_000_000)
@@ -2298,6 +3309,7 @@ def execute(
             "preflight": check,
             "execution_complete": True,
             "expected_cell_count": EXPECTED_CELL_COUNT,
+            "execution_boundaries": execution_boundaries,
             "resources": _resource_summary(
                 existing_receipts,
                 runtime_start=cast(dict[str, object], check["runtime_identity"]),
@@ -2317,6 +3329,11 @@ def execute(
 
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--expected-harness-commit", required=True)
+    parser.add_argument("--expected-harness-tree", required=True)
+    parser.add_argument("--expected-supervisor-sha256", required=True)
+    parser.add_argument("--expected-worker-sha256", required=True)
+    parser.add_argument("--expected-protocol-sha256", required=True)
     parser.add_argument("--output", type=Path, default=DEFAULT_OUTPUT)
     parser.add_argument("--work-root", type=Path, default=DEFAULT_WORK_ROOT)
     parser.add_argument("--exposure-ledger", type=Path, default=DEFAULT_EXPOSURE)
@@ -2332,7 +3349,17 @@ def _parser() -> argparse.ArgumentParser:
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = _parser().parse_args(list(argv) if argv is not None else None)
+    harness_source_expected = _harness_source_binding(
+        git_commit=args.expected_harness_commit,
+        git_tree=args.expected_harness_tree,
+        files={
+            "scripts/measure_development_recovery.py": args.expected_supervisor_sha256,
+            "scripts/_stage09_development_worker.py": args.expected_worker_sha256,
+            "src/arc3/evaluation/development_recovery.py": args.expected_protocol_sha256,
+        },
+    )
     keywords = {
+        "harness_source_expected": harness_source_expected,
         "output": args.output,
         "work_root": args.work_root,
         "exposure": args.exposure_ledger,
