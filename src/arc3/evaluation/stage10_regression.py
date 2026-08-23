@@ -19,10 +19,10 @@ from typing import TypeGuard, cast
 from arc3.evaluation.artifacts import canonical_object_hash, verify_object_hash
 from arc3.types import JSONValue
 
-PREDECLARATION_PATH = Path("docs/evidence/001-10-robustness-regression-predeclaration.json")
+PREDECLARATION_PATH = Path("docs/evidence/001-10-robustness-regression-predeclaration-v0.2.json")
 # Updated only when the frozen declaration is first sealed.  Runtime validation
 # refuses any later byte drift.
-PREDECLARATION_SHA256 = "sha256:02ad73f25cd6c21459cf425a29de0b830fa27bd660c58777b272ac57116d26e3"
+PREDECLARATION_SHA256 = "sha256:e056eea0d4a6664996ae9078e15b4cdddb5f6c40d5b770540b8e9068cc224613"
 SOURCE_FLOOR_COMMIT = "2e78c258cfbee8be62462f61ed08ad04c00a8934"
 SOURCE_FLOOR_TREE = "4145356c116944bbd7c0c412771de9179ba22efe"
 BUILD_000_PRODUCTION_COMMIT = "90ecf7267d5bb23d751d6f7ce3e8aa75f2f1a130"
@@ -33,10 +33,12 @@ PUBLIC_PARTITION_MANIFEST_SHA256 = (
 STAGE13_EVIDENCE_SHA256 = "sha256:ab354deec3ef4f7a84d285a8e7603dbe357afcf6c6bbff7862fe94979b94780e"
 STAGE14_PROTOCOL_SHA256 = "sha256:b00c45337f451ecde9af097ce68c8eb60203a7516bff55d9ed7c40868700b369"
 
-STAGE10_PREFLIGHT_SCHEMA = "arc3.build-001.stage-10-preflight.v0.1"
-STAGE10_PARENT_RECEIPT_SCHEMA = "arc3.build-001.stage-10-parent-receipt.v0.1"
-STAGE10_RESULT_SCHEMA = "arc3.build-001.stage-10-robustness-regression.v0.1"
+STAGE10_PREFLIGHT_SCHEMA = "arc3.build-001.stage-10-preflight.v0.2"
+STAGE10_PARENT_RECEIPT_SCHEMA = "arc3.build-001.stage-10-parent-receipt.v0.2"
+STAGE10_RESULT_SCHEMA = "arc3.build-001.stage-10-robustness-regression.v0.2"
 STAGE10_CHECKPOINT_SCHEMA = "arc3.build-001.stage-10-checkpoint-replay.v0.1"
+STAGE10_SOCKET_DENIAL_SCHEMA = "arc3.build-001.stage-10-socket-denial.v0.1"
+UV_LOCK_SHA256 = "sha256:3bf42dcbe45720f71b7433584f56a5d5982ec1c687c341ad2626222fa5de285b"
 
 MAX_PEAK_RSS_BYTES = 2_147_483_648
 MAX_TRACE_BYTES_PER_RUN = 268_435_456
@@ -68,6 +70,7 @@ class SuiteSpec:
     timeout_seconds: float
     allowed_returncodes: tuple[int, ...]
     artifact_path: Path | None
+    network_guard_path: Path | None = None
 
     def to_dict(self) -> dict[str, JSONValue]:
         return {
@@ -76,6 +79,11 @@ class SuiteSpec:
                 self.artifact_path.resolve().as_posix() if self.artifact_path is not None else None
             ),
             "command": list(self.command),
+            "network_guard_path": (
+                self.network_guard_path.resolve().as_posix()
+                if self.network_guard_path is not None
+                else None
+            ),
             "suite_id": self.suite_id,
             "timeout_seconds": self.timeout_seconds,
         }
@@ -151,6 +159,11 @@ def _boolean_acceptance_passes(value: object) -> bool:
     return bool(booleans) and all(booleans)
 
 
+def _boolean_acceptance_is_typed(value: object) -> bool:
+    fields = _object(value)
+    return bool(fields) and all(isinstance(item, bool) for item in fields.values())
+
+
 def _load_json_object(path: Path) -> dict[str, object]:
     value: object = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(value, dict):
@@ -190,8 +203,8 @@ def validate_predeclaration_bytes(content: bytes) -> dict[str, object]:
     declaration = cast(dict[str, object], value)
     if actual != PREDECLARATION_SHA256:
         raise ValueError("Stage 10 predeclaration bytes do not match the frozen hash")
-    if declaration.get("schema") != "arc3.build-001.stage-10-predeclaration.v0.1":
-        raise ValueError("Stage 10 predeclaration schema is not frozen v0.1")
+    if declaration.get("schema") != "arc3.build-001.stage-10-predeclaration.v0.2":
+        raise ValueError("Stage 10 predeclaration schema is not frozen v0.2")
     if declaration.get("status") != "FROZEN_PREMEASUREMENT":
         raise ValueError("Stage 10 predeclaration is not frozen")
     return declaration
@@ -213,13 +226,70 @@ def build_suite_plan(
     evaluation_id = f"build001-stage10-stage13-{short}"
     evaluation_root = attempt / "stage13"
     evaluation_dir = evaluation_root / evaluation_id
-    return (
-        SuiteSpec(
-            suite_id="stage13-evaluate",
+    wrapper = root / "scripts/_stage10_offline_child.py"
+
+    def guarded_spec(
+        *,
+        suite_id: str,
+        target_kind: str,
+        target: str,
+        arguments: tuple[str, ...],
+        timeout_seconds: float,
+        allowed_returncodes: tuple[int, ...],
+        artifact_path: Path | None,
+    ) -> SuiteSpec:
+        guard_path = attempt / "network" / f"{suite_id}.json"
+        selector = "--module" if target_kind == "module" else "--script"
+        return SuiteSpec(
+            suite_id=suite_id,
             command=(
                 executable,
-                "-m",
-                "arc3",
+                str(wrapper),
+                "--receipt",
+                str(guard_path),
+                "--suite-id",
+                suite_id,
+                "--frozen-commit",
+                frozen_commit,
+                selector,
+                target,
+                "--",
+                *arguments,
+            ),
+            timeout_seconds=timeout_seconds,
+            allowed_returncodes=allowed_returncodes,
+            artifact_path=artifact_path,
+            network_guard_path=guard_path,
+        )
+
+    return (
+        guarded_spec(
+            suite_id="competition-integrity",
+            target_kind="script",
+            target=str(root / "scripts/check_competition_integrity.py"),
+            arguments=(
+                "--root",
+                str(root),
+                "--manifest",
+                str(root / "docs/evaluation/public-game-partitions.v0.1.json"),
+                "--lock",
+                str(root / "uv.lock"),
+                "--run-state",
+                str(root / "docs/ledger/build-001-run-state.json"),
+                "--expected-manifest-sha256",
+                PUBLIC_PARTITION_MANIFEST_SHA256,
+                "--output",
+                str(attempt / "integrity.json"),
+            ),
+            timeout_seconds=600.0,
+            allowed_returncodes=(0, 1),
+            artifact_path=attempt / "integrity.json",
+        ),
+        guarded_spec(
+            suite_id="stage13-evaluate",
+            target_kind="module",
+            target="arc3",
+            arguments=(
                 "evaluate",
                 "--partition",
                 "smoke",
@@ -242,12 +312,11 @@ def build_suite_plan(
             allowed_returncodes=(0, 1),
             artifact_path=evaluation_dir / "summary.json",
         ),
-        SuiteSpec(
+        guarded_spec(
             suite_id="stage13-verify",
-            command=(
-                executable,
-                "-m",
-                "arc3",
+            target_kind="module",
+            target="arc3",
+            arguments=(
                 "verify-artifacts",
                 "--evaluation",
                 evaluation_id,
@@ -258,11 +327,11 @@ def build_suite_plan(
             allowed_returncodes=(0, 1),
             artifact_path=evaluation_dir / "manifest.json",
         ),
-        SuiteSpec(
+        guarded_spec(
             suite_id="stage14-ablations",
-            command=(
-                executable,
-                str(root / "scripts/measure_ablations.py"),
+            target_kind="script",
+            target=str(root / "scripts/measure_ablations.py"),
+            arguments=(
                 "--output",
                 str(attempt / "stage14.json"),
                 "--work-root",
@@ -272,11 +341,11 @@ def build_suite_plan(
             allowed_returncodes=(0, 1),
             artifact_path=attempt / "stage14.json",
         ),
-        SuiteSpec(
+        guarded_spec(
             suite_id="palette-equivariance",
-            command=(
-                executable,
-                str(root / "scripts/measure_palette_equivariance.py"),
+            target_kind="script",
+            target=str(root / "scripts/measure_palette_equivariance.py"),
+            arguments=(
                 "--output",
                 str(attempt / "palette.json"),
                 "--work-root",
@@ -286,11 +355,11 @@ def build_suite_plan(
             allowed_returncodes=(0, 1),
             artifact_path=attempt / "palette.json",
         ),
-        SuiteSpec(
+        guarded_spec(
             suite_id="action-equivariance",
-            command=(
-                executable,
-                str(root / "scripts/measure_action_equivariance.py"),
+            target_kind="script",
+            target=str(root / "scripts/measure_action_equivariance.py"),
+            arguments=(
                 "--output",
                 str(attempt / "action.json"),
                 "--work-root",
@@ -300,11 +369,11 @@ def build_suite_plan(
             allowed_returncodes=(0, 1),
             artifact_path=attempt / "action.json",
         ),
-        SuiteSpec(
+        guarded_spec(
             suite_id="rule-change",
-            command=(
-                executable,
-                str(root / "scripts/measure_rule_change_reopening.py"),
+            target_kind="script",
+            target=str(root / "scripts/measure_rule_change_reopening.py"),
+            arguments=(
                 "--output",
                 str(attempt / "rule-change.json"),
                 "--work-root",
@@ -314,11 +383,11 @@ def build_suite_plan(
             allowed_returncodes=(0, 1),
             artifact_path=attempt / "rule-change.json",
         ),
-        SuiteSpec(
+        guarded_spec(
             suite_id="checkpoint-replay",
-            command=(
-                executable,
-                str(root / "scripts/_stage10_checkpoint_worker.py"),
+            target_kind="script",
+            target=str(root / "scripts/_stage10_checkpoint_worker.py"),
+            arguments=(
                 "--output",
                 str(attempt / "checkpoint-replay.json"),
                 "--work-root",
@@ -330,11 +399,11 @@ def build_suite_plan(
             allowed_returncodes=(0, 1),
             artifact_path=attempt / "checkpoint-replay.json",
         ),
-        SuiteSpec(
+        guarded_spec(
             suite_id="resource-profile",
-            command=(
-                executable,
-                str(root / "scripts/profile_competition.py"),
+            target_kind="script",
+            target=str(root / "scripts/profile_competition.py"),
+            arguments=(
                 "--root",
                 str(root),
                 "--output",
@@ -347,28 +416,6 @@ def build_suite_plan(
             timeout_seconds=1_800.0,
             allowed_returncodes=(0, 1),
             artifact_path=attempt / "resource.json",
-        ),
-        SuiteSpec(
-            suite_id="competition-integrity",
-            command=(
-                executable,
-                str(root / "scripts/check_competition_integrity.py"),
-                "--root",
-                str(root),
-                "--manifest",
-                str(root / "docs/evaluation/public-game-partitions.v0.1.json"),
-                "--lock",
-                str(root / "uv.lock"),
-                "--run-state",
-                str(root / "docs/ledger/build-001-run-state.json"),
-                "--expected-manifest-sha256",
-                PUBLIC_PARTITION_MANIFEST_SHA256,
-                "--output",
-                str(attempt / "integrity.json"),
-            ),
-            timeout_seconds=600.0,
-            allowed_returncodes=(0, 1),
-            artifact_path=attempt / "integrity.json",
         ),
     )
 
@@ -405,22 +452,29 @@ def classify_stage(validations: Sequence[SuiteValidation]) -> Stage10Status:
 def _validation(
     suite_id: str,
     *,
-    predicates: Mapping[str, bool],
+    infrastructure_predicates: Mapping[str, bool],
+    metric_predicates: Mapping[str, bool],
     measurements: Mapping[str, JSONValue],
     infrastructure_errors: Sequence[str] = (),
 ) -> SuiteValidation:
-    if infrastructure_errors:
+    failed_infrastructure = tuple(
+        f"infrastructure-predicate-failed:{name}"
+        for name, passed in infrastructure_predicates.items()
+        if not passed
+    )
+    errors = (*infrastructure_errors, *failed_infrastructure)
+    if errors:
         disposition = SuiteDisposition.FAILED_INFRASTRUCTURE
-    elif all(predicates.values()):
+    elif all(metric_predicates.values()):
         disposition = SuiteDisposition.PASS
     else:
         disposition = SuiteDisposition.FAILED_MECHANISM
     return SuiteValidation(
         suite_id=suite_id,
         disposition=disposition,
-        predicates=dict(predicates),
+        predicates={**infrastructure_predicates, **metric_predicates},
         measurements=dict(measurements),
-        errors=tuple(infrastructure_errors),
+        errors=errors,
     )
 
 
@@ -474,21 +528,25 @@ def validate_stage13(
         > 0
         for item in full
     )
-    predicates = {
+    infrastructure_predicates = {
         "checkpoint_receipts_verified": checkpoints_verified,
         "exact_full_rows": len(full) == 2
         and {_integer(item.get("seed")) for item in full} == {7, 11},
+        "exact_result_rows": len(results) == 10,
+        "source_clean_and_exact": source_bound,
+        "summary_schema": summary.get("schema") == "arc3.evaluation.summary.v0.1",
+        "trace_and_scores_verified": traces_verified,
+    }
+    metric_predicates = {
         "full_completed_2_of_2": full_completed == 2,
         "full_total_actions_at_most_8": full_actions <= 8,
-        "source_clean_and_exact": source_bound,
-        "summary_pass": summary.get("schema") == "arc3.evaluation.summary.v0.1"
-        and summary.get("status") == "PASS"
+        "summary_has_no_failures": summary.get("status") == "PASS"
         and summary.get("failure_count") == 0,
-        "trace_and_scores_verified": traces_verified,
     }
     return _validation(
         "stage13-evaluate",
-        predicates=predicates,
+        infrastructure_predicates=infrastructure_predicates,
+        metric_predicates=metric_predicates,
         measurements={
             "full_actions": full_actions if full else None,
             "full_completed": full_completed,
@@ -515,14 +573,15 @@ def validate_stage13_verification(stdout: bytes, returncode: int | None) -> Suit
         errors.append(f"invalid-verifier-output:{type(error).__name__}")
         payload = {}
     report = _object(payload)
-    predicates = {
+    infrastructure_predicates = {
         "returncode_zero": returncode == 0,
         "sealed_artifacts_verified": report.get("verified") is True,
         "verification_has_no_errors": _array(report.get("errors")) == [],
     }
     return _validation(
         "stage13-verify",
-        predicates=predicates,
+        infrastructure_predicates=infrastructure_predicates,
+        metric_predicates={},
         measurements={"returncode": returncode},
         infrastructure_errors=errors,
     )
@@ -547,25 +606,27 @@ def validate_ablations(path: Path, *, frozen_commit: str) -> SuiteValidation:
     full_actions = _integer(full.get("total_actions"))
     a4_completed = _integer(a4.get("completed"))
     a5_completed = _integer(a5.get("completed"))
-    predicates = {
+    infrastructure_predicates = {
         "artifact_self_hash": _verify_hash_without_newline(report, hash_field="artifact_core_hash"),
         "exact_protocol": report.get("protocol_manifest_hash") == STAGE14_PROTOCOL_SHA256
         and report.get("protocol_manifest_matches_run") is True,
+        "schema": report.get("schema") == "arc3.ablations.paired.v0.1",
+        "source_clean_and_exact": report.get("git_commit") == frozen_commit
+        and report.get("dirty_worktree") is False,
+        "typed_rows_verified": report.get("verified") is True and report.get("status") == "PASS",
+    }
+    metric_predicates = {
         "full_actions_at_most_157": 0 <= full_actions <= 157,
         "full_at_least_8_of_14": full_completed >= 8,
         "full_gap_over_a4_at_least_7": full_completed - a4_completed >= 7,
         "full_gap_over_a5_at_least_8": full_completed - a5_completed >= 8,
         "no_world_model_at_most_1": 0 <= a4_completed <= 1,
         "no_goal_exactly_0": a5_completed == 0,
-        "source_clean_and_exact": report.get("git_commit") == frozen_commit
-        and report.get("dirty_worktree") is False,
-        "typed_rows_verified": report.get("schema") == "arc3.ablations.paired.v0.1"
-        and report.get("verified") is True
-        and report.get("status") == "PASS",
     }
     return _validation(
         "stage14-ablations",
-        predicates=predicates,
+        infrastructure_predicates=infrastructure_predicates,
+        metric_predicates=metric_predicates,
         measurements={
             "a4_completed": a4_completed,
             "a5_completed": a5_completed,
@@ -585,21 +646,26 @@ def validate_palette(path: Path, *, frozen_commit: str) -> SuiteValidation:
         report = {}
     procedural = _object(report.get("procedural_paired_suite"))
     checkpoint = _object(report.get("checkpoint_resume_suite"))
-    predicates = {
+    infrastructure_predicates = {
         "artifact_self_hash": verify_object_hash(report, hash_field="artifact_core_hash"),
+        "acceptance_is_typed": _boolean_acceptance_is_typed(report.get("acceptance")),
+        "schema": report.get("schema") == "arc3.build-001.stage-04-palette-equivariance.v0.1",
+        "source_clean_and_exact": _source_commit(report) == frozen_commit
+        and _object(report.get("source_identity")).get("dirty_worktree") is False,
+        "typed_child_status": report.get("status") in {"PASS", "FAILED_MECHANISM"},
+    }
+    metric_predicates = {
         "checkpoint_16_of_16": checkpoint.get("case_count") == 16
         and checkpoint.get("passed_cases") == 16,
         "full_child_acceptance": report.get("status") == "PASS"
         and _boolean_acceptance_passes(report.get("acceptance")),
         "procedural_256_of_256": procedural.get("pair_count") == 256
         and procedural.get("passed_pairs") == 256,
-        "schema": report.get("schema") == "arc3.build-001.stage-04-palette-equivariance.v0.1",
-        "source_clean_and_exact": _source_commit(report) == frozen_commit
-        and _object(report.get("source_identity")).get("dirty_worktree") is False,
     }
     return _validation(
         "palette-equivariance",
-        predicates=predicates,
+        infrastructure_predicates=infrastructure_predicates,
+        metric_predicates=metric_predicates,
         measurements={
             "checkpoint_passed": _integer(checkpoint.get("passed_cases")),
             "procedural_passed": _integer(procedural.get("passed_pairs")),
@@ -619,8 +685,15 @@ def validate_action(path: Path, *, frozen_commit: str) -> SuiteValidation:
     checkpoint = _object(report.get("checkpoint_resume_suite"))
     inverse = _integer(procedural.get("post_calibration_inverse_request_denominator"))
     inverse_pass = _integer(procedural.get("post_calibration_inverse_request_numerator"))
-    predicates = {
+    infrastructure_predicates = {
         "artifact_self_hash": verify_object_hash(report, hash_field="artifact_core_hash"),
+        "acceptance_is_typed": _boolean_acceptance_is_typed(report.get("acceptance")),
+        "schema": report.get("schema") == "arc3.build-001.stage-05-action-equivariance.v0.1",
+        "source_clean_and_exact": _source_commit(report) == frozen_commit
+        and _object(report.get("source_identity")).get("dirty_worktree") is False,
+        "typed_child_status": report.get("status") in {"PASS", "FAILED_MECHANISM"},
+    }
+    metric_predicates = {
         "checkpoint_16_of_16": checkpoint.get("case_count") == 16
         and checkpoint.get("passed_cases") == 16,
         "full_child_acceptance": report.get("status") == "PASS"
@@ -628,13 +701,11 @@ def validate_action(path: Path, *, frozen_commit: str) -> SuiteValidation:
         "inverse_528_of_528": inverse == 528 and inverse_pass == 528,
         "procedural_128_of_128": procedural.get("pair_count") == 128
         and procedural.get("passed_pairs") == 128,
-        "schema": report.get("schema") == "arc3.build-001.stage-05-action-equivariance.v0.1",
-        "source_clean_and_exact": _source_commit(report) == frozen_commit
-        and _object(report.get("source_identity")).get("dirty_worktree") is False,
     }
     return _validation(
         "action-equivariance",
-        predicates=predicates,
+        infrastructure_predicates=infrastructure_predicates,
+        metric_predicates=metric_predicates,
         measurements={
             "checkpoint_passed": _integer(checkpoint.get("passed_cases")),
             "inverse_passed": inverse_pass,
@@ -670,14 +741,9 @@ def validate_rule_change(
     action_passed = sum(row.get("case_passed") is True for row in action_rows)
     if returncode not in {0, 1}:
         errors.append(f"invalid-rule-child-returncode:{returncode}")
-    predicates = {
-        "action_effect_rotation_32_of_32": len(action_rows) == 32 and action_passed == 32,
+    infrastructure_predicates = {
         "artifact_self_hash": verify_object_hash(report, hash_field="artifact_core_hash"),
-        "all_interventions_exercised": intervention.get("case_count") == 64
-        and intervention.get("exercised_cases") == 64,
-        "known_failures_retained": _integer(intervention.get("passed_cases")) >= 32
-        and noise.get("case_count") == 32
-        and _is_nonnegative_int(noise.get("passed_cases")),
+        "acceptance_is_typed": _boolean_acceptance_is_typed(report.get("acceptance")),
         "no_infrastructure_failure": decision.get("infrastructure_failure_count") == 0,
         "nonzero_child_is_typed": returncode in {0, 1}
         and report.get("status") in {"PASS", "FAILED_MECHANISM"},
@@ -692,13 +758,22 @@ def validate_rule_change(
         and _object(report.get("acceptance")).get("competition_integrity") is True
         and _object(report.get("acceptance")).get("holdout_integrity") is True,
     }
+    metric_predicates = {
+        "action_effect_rotation_32_of_32": len(action_rows) == 32 and action_passed == 32,
+        "all_interventions_exercised": intervention.get("case_count") == 64
+        and intervention.get("exercised_cases") == 64,
+        "known_failures_retained": _integer(intervention.get("passed_cases")) >= 32
+        and noise.get("case_count") == 32
+        and _is_nonnegative_int(noise.get("passed_cases")),
+    }
     # The current Stage 06 failed traversability/noise mechanisms remain a
     # separately visible measurement.  They do not erase the frozen Stage 10
     # regression floor, which requires exact action-effect preservation and
     # complete exposure rather than retroactive relabeling.
     return _validation(
         "rule-change",
-        predicates=predicates,
+        infrastructure_predicates=infrastructure_predicates,
+        metric_predicates=metric_predicates,
         measurements={
             "action_effect_rotation_passed": action_passed,
             "child_status": _string(report.get("status")),
@@ -719,22 +794,26 @@ def validate_checkpoint_replay(path: Path, *, frozen_commit: str) -> SuiteValida
         errors.append(f"unreadable-checkpoint-artifact:{type(error).__name__}:{error}")
         report = {}
     acceptance = _object(report.get("acceptance"))
-    predicates = {
+    infrastructure_predicates = {
         "artifact_self_hash": verify_object_hash(report, hash_field="artifact_core_hash"),
-        "deep_exact_continuation": acceptance.get("deep_exact_continuation") is True,
-        "deterministic_repeat": acceptance.get("deterministic_seed_repeatability") is True,
-        "fast_exact_continuation": acceptance.get("fast_exact_continuation") is True,
+        "acceptance_is_typed": _boolean_acceptance_is_typed(report.get("acceptance")),
         "schema": report.get("schema") == STAGE10_CHECKPOINT_SCHEMA,
         "source_clean_and_exact": _object(report.get("source_identity")).get("git_commit")
         == frozen_commit
         and _object(report.get("source_identity")).get("dirty_worktree") is False,
+    }
+    metric_predicates = {
+        "deep_exact_continuation": acceptance.get("deep_exact_continuation") is True,
+        "deterministic_repeat": acceptance.get("deterministic_seed_repeatability") is True,
+        "fast_exact_continuation": acceptance.get("fast_exact_continuation") is True,
         "trace_replay": acceptance.get("trace_replay") is True,
         "trace_tamper_rejected": acceptance.get("trace_tamper_rejected") is True,
         "checkpoint_tamper_rejected": acceptance.get("checkpoint_tamper_rejected") is True,
     }
     return _validation(
         "checkpoint-replay",
-        predicates=predicates,
+        infrastructure_predicates=infrastructure_predicates,
+        metric_predicates=metric_predicates,
         measurements={
             "deep_path": _string(_object(report.get("deep_continuation")).get("path")),
             "fast_path": _string(_object(report.get("fast_continuation")).get("path")),
@@ -760,31 +839,35 @@ def validate_resource_profile(
     receipt_hash = report.get("receipt_sha256")
     if returncode not in {0, 1}:
         errors.append(f"invalid-resource-child-returncode:{returncode}")
-    predicates = {
+    infrastructure_predicates = {
         "artifact_self_hash": isinstance(receipt_hash, str)
         and _verify_hash_without_newline(report, hash_field="receipt_sha256"),
-        "decision_max_at_most_2_seconds": 0.0
-        <= _number(decision.get("maximum"))
-        <= MAX_DECISION_SECONDS,
         "profile_valid": profile.get("verified") is True,
-        "rss_at_most_2_gib": 0
-        <= _integer(_object(profile.get("kernel_memory_after")).get("peak_rss_bytes"))
-        <= MAX_PEAK_RSS_BYTES,
         "schema": report.get("schema") == "arc3.stage16.profile.v0.1",
         "source_clean_and_exact": report.get("git_commit") == frozen_commit
         and _object(report.get("source_identity")).get("verified") is True,
+        "typed_child_status": report.get("status") in {"PASS", "PARTIAL", "FAILED_MECHANISM"},
+        "valid_child_return": returncode in {0, 1},
+    }
+    metric_predicates = {
+        "decision_max_at_most_2_seconds": 0.0
+        <= _number(decision.get("maximum"))
+        <= MAX_DECISION_SECONDS,
+        "rss_at_most_2_gib": 0
+        <= _integer(_object(profile.get("kernel_memory_after")).get("peak_rss_bytes"))
+        <= MAX_PEAK_RSS_BYTES,
         "trace_at_most_256_mib": 0
         <= _integer(profile.get("trace_bytes"))
         <= MAX_TRACE_BYTES_PER_RUN,
-        "valid_child_return": returncode in {0, 1},
     }
     peak = _integer(_object(profile.get("kernel_memory_after")).get("peak_rss_bytes"))
     if peak < 0:
         peak = _integer(_object(profile.get("kernel_memory_after")).get("working_set_peak_bytes"))
-        predicates["rss_at_most_2_gib"] = 0 <= peak <= MAX_PEAK_RSS_BYTES
+        metric_predicates["rss_at_most_2_gib"] = 0 <= peak <= MAX_PEAK_RSS_BYTES
     return _validation(
         "resource-profile",
-        predicates=predicates,
+        infrastructure_predicates=infrastructure_predicates,
+        metric_predicates=metric_predicates,
         measurements={
             "child_status": _string(report.get("status")),
             "decision_max_seconds": _number(decision.get("maximum")),
@@ -809,25 +892,39 @@ def validate_integrity(path: Path, *, frozen_commit: str) -> SuiteValidation:
     inputs = _object(report.get("inputs"))
     assurance = _object(report.get("assurance_scope"))
     git = _object(report.get("git"))
-    predicates = {
+    expected_checks = (
+        "archive_static",
+        "policy_static",
+        "secret_scan",
+        "source_identity",
+        "supply_chain",
+    )
+    checks_typed = all(
+        isinstance(checks.get(name), Mapping)
+        and isinstance(_object(checks.get(name)).get("passed"), bool)
+        for name in expected_checks
+    )
+    infrastructure_predicates = {
         "artifact_self_hash": isinstance(receipt_hash, str)
         and _verify_hash_without_newline(report, hash_field="receipt_sha256"),
+        "checks_are_typed": checks_typed,
         "manifest_hash_bound": inputs.get("manifest_sha256") == PUBLIC_PARTITION_MANIFEST_SHA256,
-        "offline_policy": report.get("passed") is True
-        and assurance.get("scanner_network_mode") == "offline-by-construction"
-        and _object(checks.get("policy_static")).get("passed") is True
-        and _object(checks.get("secret_scan")).get("passed") is True
-        and _object(checks.get("source_identity")).get("passed") is True
-        and _object(checks.get("supply_chain")).get("passed") is True,
+        "offline_scanner_contract": assurance.get("kind") == "static-only"
+        and assurance.get("scanner_network_mode") == "offline-by-construction",
         "schema": report.get("schema") == "arc3.integrity.receipt.v0.2",
         "source_clean_and_exact": git.get("commit") == frozen_commit
         and git.get("dirty_worktree") is False,
+    }
+    metric_predicates = {
+        "offline_policy": report.get("passed") is True
+        and all(_object(checks.get(name)).get("passed") is True for name in expected_checks),
         "zero_blocking_findings": finding_counts.get("blocking") == 0,
         "zero_total_findings": finding_counts.get("total") == 0,
     }
     return _validation(
         "competition-integrity",
-        predicates=predicates,
+        infrastructure_predicates=infrastructure_predicates,
+        metric_predicates=metric_predicates,
         measurements={
             "blocking_findings": _integer(finding_counts.get("blocking")),
             "total_findings": _integer(finding_counts.get("total")),
@@ -851,8 +948,10 @@ __all__ = [
     "STAGE10_PARENT_RECEIPT_SCHEMA",
     "STAGE10_PREFLIGHT_SCHEMA",
     "STAGE10_RESULT_SCHEMA",
+    "STAGE10_SOCKET_DENIAL_SCHEMA",
     "STAGE13_EVIDENCE_SHA256",
     "STAGE14_PROTOCOL_SHA256",
+    "UV_LOCK_SHA256",
     "Stage10Status",
     "SuiteDisposition",
     "SuiteSpec",

@@ -33,6 +33,10 @@ if str(ROOT) not in sys.path:
 from arc3.adapters import Observation  # noqa: E402
 from arc3.config import ARC3Config, BudgetConfig  # noqa: E402
 from arc3.evaluation.artifacts import atomic_write_json, seal_object  # noqa: E402
+from arc3.evaluation.holdout_authority import (  # noqa: E402
+    OpaqueHoldoutInputs,
+    build_opaque_holdout_authority,
+)
 from arc3.integrity.hashes import (  # noqa: E402
     canonical_json_bytes,
     sha256_bytes,
@@ -5004,29 +5008,6 @@ def _checkpoint_suite(work_root: Path, git_commit: str) -> dict[str, object]:
     }
 
 
-def _jsonl_objects(path: Path) -> list[dict[str, object]]:
-    values: list[dict[str, object]] = []
-    with path.open("r", encoding="utf-8") as handle:
-        for line_number, line in enumerate(handle, start=1):
-            if not line.strip():
-                continue
-            value = json.loads(line)
-            if not isinstance(value, dict):
-                raise ValueError(f"{path}:{line_number} is not a JSON object")
-            values.append(value)
-    return values
-
-
-def _contains_exact_string(value: object, targets: frozenset[str]) -> bool:
-    if isinstance(value, str):
-        return value in targets
-    if isinstance(value, Mapping):
-        return any(_contains_exact_string(item, targets) for item in value.values())
-    if isinstance(value, Sequence) and not isinstance(value, (str, bytes)):
-        return any(_contains_exact_string(item, targets) for item in value)
-    return False
-
-
 def _holdout_source_bindings(
     *,
     manifest_bytes: bytes,
@@ -5067,109 +5048,11 @@ def _holdout_source_bindings(
     }
 
 
-def _holdout_integrity() -> dict[str, object]:
-    manifest_path = ROOT / "docs/evaluation/public-game-partitions.v0.1.json"
-    manifest_bytes = manifest_path.read_bytes()
-    manifest = json.loads(manifest_bytes)
-    if not isinstance(manifest, dict):
-        raise ValueError("public partition manifest is not an object")
-    identities = frozenset(
-        str(game["game_id"])
-        for game in cast(list[dict[str, object]], manifest["games"])
-        if game.get("partition") == "public-holdout"
-    )
-    ledgers = (
-        (
-            "build-000",
-            Path("C:/a/arc3-s15-6a0f6e5/artifacts/stage15/public-exposure.jsonl"),
-            "sha256:cd9af42ed3a5ef9fa0dc201ddb10e32d2bcccee9df729aa0c7d53077c04c9ad4",
-        ),
-        (
-            "stage-03",
-            Path("C:/a/arc3-b001/artifacts/stage03/public-exposure.jsonl"),
-            "sha256:e02a9fa71206170a6fe2aeefb6935ae25141e2759937657475cead4389bb17aa",
-        ),
-    )
-    exposure_reports: list[dict[str, object]] = []
-    holdout_events = 0
-    for label, path, expected_hash in ledgers:
-        measured_hash = sha256_file(path) if path.is_file() else None
-        values = _jsonl_objects(path) if path.is_file() else []
-        matches = sum(_contains_exact_string(value, identities) for value in values)
-        holdout_events += matches
-        exposure_reports.append(
-            {
-                "entry_count": len(values),
-                "expected_sha256": expected_hash,
-                "holdout_event_count": matches,
-                "label": label,
-                "path": str(path),
-                "sha256": measured_hash,
-                "verified": measured_hash == expected_hash,
-            }
-        )
-    inherited_path = ROOT / STAGE05_EVIDENCE_PATH
-    inherited_bytes = inherited_path.read_bytes()
-    inherited = json.loads(inherited_bytes)
-    inherited_holdout = _mapping(_mapping(inherited).get("holdout"))
-    inherited_assets = inherited_holdout.get("locally_acquired_holdout_assets")
-    inherited_holdout_predicates = {
-        "accepted_stage05_status": inherited.get("status") == "PASS",
-        "build000_exposure_hash": inherited_holdout.get("build_000_exposure_ledger_sha256")
-        == ledgers[0][2],
-        "holdout_status": inherited_holdout.get("status") == "SEALED_UNCONSUMED",
-        "locally_acquired_holdout_assets": inherited_assets == 0,
-        "public_holdout_gameplay_events": (
-            inherited_holdout.get("public_holdout_gameplay_events") == 0
-        ),
-        "public_partition_manifest_sha256": (
-            inherited_holdout.get("public_partition_manifest_sha256")
-            == PUBLIC_PARTITION_MANIFEST_SHA256
-        ),
-        "stage03_exposure_hash": inherited_holdout.get("stage_03_exposure_ledger_sha256")
-        == ledgers[1][2],
-        "stage05_public_gameplay_events": (
-            inherited_holdout.get("stage_05_public_gameplay_events") == 0
-        ),
-    }
-    accepted_stage05_object = f"{STAGE05_ACCEPTANCE_COMMIT}:{STAGE05_EVIDENCE_PATH.as_posix()}"
-    source_bindings = _holdout_source_bindings(
-        manifest_bytes=manifest_bytes,
-        stage05_bytes=inherited_bytes,
-        accepted_stage05_bytes=_git_bytes("cat-file", "blob", accepted_stage05_object),
-        accepted_stage05_blob_oid=_git_value("rev-parse", accepted_stage05_object),
-    )
-    status = (
-        "SEALED_UNCONSUMED"
-        if len(identities) == 10
-        and holdout_events == 0
-        and inherited_assets == 0
-        and all(inherited_holdout_predicates.values())
-        and all(report["verified"] is True for report in exposure_reports)
-        and source_bindings["passed"] is True
-        else "INTEGRITY_FAILURE"
-    )
-    return {
-        "exposure_ledgers": exposure_reports,
-        "holdout_identity_count": len(identities),
-        "inherited_asset_check": {
-            "locally_acquired_holdout_assets": inherited_assets,
-            "path": inherited_path.relative_to(ROOT).as_posix(),
-            "passed": all(inherited_holdout_predicates.values()),
-            "predicates": inherited_holdout_predicates,
-            "sha256": sha256_file(inherited_path),
-        },
-        "locally_acquired_holdout_assets": inherited_assets,
-        "manifest_path": manifest_path.relative_to(ROOT).as_posix(),
-        "manifest_sha256": sha256_file(manifest_path),
-        "note": (
-            "No public asset directory was listed or opened; Stage 06 revalidated only "
-            "the sealed manifest, existing exposure ledgers, and inherited Stage 05 metadata."
-        ),
-        "public_holdout_gameplay_events": holdout_events,
-        "source_bindings": source_bindings,
-        "status": status,
-    }
+def _holdout_integrity(
+    *,
+    inputs: OpaqueHoldoutInputs | None = None,
+) -> dict[str, object]:
+    return build_opaque_holdout_authority(ROOT, inputs=inputs)
 
 
 def _execution_records(

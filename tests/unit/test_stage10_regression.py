@@ -1,10 +1,15 @@
 from __future__ import annotations
 
+import copy
+import hashlib
+import json
 from pathlib import Path
 
 from arc3.evaluation.artifacts import atomic_write_json, seal_object
 from arc3.evaluation.stage10_regression import (
     PREDECLARATION_PATH,
+    PUBLIC_PARTITION_MANIFEST_SHA256,
+    STAGE10_CHECKPOINT_SCHEMA,
     STAGE14_PROTOCOL_SHA256,
     Stage10Status,
     SuiteDisposition,
@@ -13,8 +18,14 @@ from arc3.evaluation.stage10_regression import (
     classify_stage,
     validate_ablations,
     validate_action,
+    validate_checkpoint_replay,
+    validate_integrity,
+    validate_palette,
     validate_predeclaration_bytes,
+    validate_resource_profile,
     validate_rule_change,
+    validate_stage13,
+    validate_stage13_verification,
 )
 from arc3.trace import sha256_json
 
@@ -34,6 +45,20 @@ def _validation(suite_id: str, disposition: SuiteDisposition) -> SuiteValidation
 def test_predeclaration_bytes_and_non_playing_plan_are_frozen(tmp_path: Path) -> None:
     declaration = validate_predeclaration_bytes((ROOT / PREDECLARATION_PATH).read_bytes())
     assert declaration["status"] == "FROZEN_PREMEASUREMENT"
+    original = ROOT / "docs/evidence/001-10-robustness-regression-predeclaration.json"
+    original_hash = f"sha256:{hashlib.sha256(original.read_bytes()).hexdigest()}"
+    assert original_hash == (
+        "sha256:02ad73f25cd6c21459cf425a29de0b830fa27bd660c58777b272ac57116d26e3"
+    )
+    assert declaration["supersedes"] == {
+        "path": "docs/evidence/001-10-robustness-regression-predeclaration.json",
+        "reason": (
+            "Pre-execution safety audit required opaque nonconsumption authority, "
+            "integrity-first ordering, exact runtime binding, process socket denial, "
+            "and fail-closed structural classification."
+        ),
+        "sha256": original_hash,
+    }
     plan = build_suite_plan(
         python=Path("C:/Python/python.exe"),
         source_root=ROOT,
@@ -41,6 +66,7 @@ def test_predeclaration_bytes_and_non_playing_plan_are_frozen(tmp_path: Path) ->
         frozen_commit=COMMIT,
     )
     assert [suite.suite_id for suite in plan] == [
+        "competition-integrity",
         "stage13-evaluate",
         "stage13-verify",
         "stage14-ablations",
@@ -49,11 +75,12 @@ def test_predeclaration_bytes_and_non_playing_plan_are_frozen(tmp_path: Path) ->
         "rule-change",
         "checkpoint-replay",
         "resource-profile",
-        "competition-integrity",
     ]
-    stage13 = plan[0].command
+    stage13 = plan[1].command
     assert stage13[stage13.index("--partition") + 1] == "smoke"
     assert "evaluate-public" not in " ".join(item for suite in plan for item in suite.command)
+    assert all("_stage10_offline_child.py" in suite.command[1] for suite in plan)
+    assert all(suite.network_guard_path is not None for suite in plan)
 
 
 def test_fail_closed_classification_preserves_mechanism_failure() -> None:
@@ -171,3 +198,342 @@ def test_stage14_floor_verifies_trace_style_hash_and_total_actions(tmp_path: Pat
     failed = validate_ablations(path, frozen_commit=COMMIT)
     assert failed.disposition is SuiteDisposition.FAILED_MECHANISM
     assert failed.predicates["full_actions_at_most_157"] is False
+
+
+def _write_hash_style(
+    path: Path,
+    report: dict[str, object],
+    *,
+    hash_field: str,
+    trace_style: bool,
+) -> None:
+    unsigned = {key: value for key, value in report.items() if key != hash_field}
+    if trace_style:
+        unsigned[hash_field] = sha256_json(unsigned)
+        atomic_write_json(path, unsigned)
+    else:
+        atomic_write_json(path, seal_object(unsigned, hash_field=hash_field))
+
+
+def test_structural_tamper_is_infrastructure_across_self_hashed_validators(
+    tmp_path: Path,
+) -> None:
+    action = {
+        "acceptance": {"all": True},
+        "checkpoint_resume_suite": {"case_count": 16, "passed_cases": 16},
+        "procedural_paired_suite": {
+            "pair_count": 128,
+            "passed_pairs": 128,
+            "post_calibration_inverse_request_denominator": 528,
+            "post_calibration_inverse_request_numerator": 528,
+        },
+        "schema": "arc3.build-001.stage-05-action-equivariance.v0.1",
+        "source_identity": {"dirty_worktree": False, "git_commit": COMMIT},
+        "status": "PASS",
+    }
+    palette = {
+        "acceptance": {"all": True},
+        "checkpoint_resume_suite": {"case_count": 16, "passed_cases": 16},
+        "procedural_paired_suite": {"pair_count": 256, "passed_pairs": 256},
+        "schema": "arc3.build-001.stage-04-palette-equivariance.v0.1",
+        "source_identity": {"dirty_worktree": False, "git_commit": COMMIT},
+        "status": "PASS",
+    }
+    rule_cases = [
+        {"case": {"family": "action_effect_rotation"}, "case_passed": True} for _ in range(32)
+    ]
+    rule_cases.extend(
+        {"case": {"family": "traversability"}, "case_passed": False} for _ in range(32)
+    )
+    rule = {
+        "acceptance": {
+            "aggregate_trace_replay_and_immutability": True,
+            "competition_integrity": True,
+            "holdout_integrity": True,
+        },
+        "decision_rule": {"infrastructure_failure_count": 0},
+        "intervention_suite": {
+            "case_count": 64,
+            "cases": rule_cases,
+            "exercised_cases": 64,
+            "passed_cases": 32,
+        },
+        "schema": "arc3.build-001.stage-06-rule-change-reopening.v0.1",
+        "source_identity": {"dirty_worktree": False, "git_commit": COMMIT},
+        "source_identity_stability": {"passed": True},
+        "stationary_noise_control_suite": {
+            "case_count": 32,
+            "passed_cases": 0,
+            "resolved_as_noise": 0,
+        },
+        "status": "FAILED_MECHANISM",
+    }
+    checkpoint = {
+        "acceptance": {
+            "checkpoint_tamper_rejected": True,
+            "deep_exact_continuation": True,
+            "deterministic_seed_repeatability": True,
+            "fast_exact_continuation": True,
+            "trace_replay": True,
+            "trace_tamper_rejected": True,
+        },
+        "deep_continuation": {"path": "DELIBERATIVE"},
+        "fast_continuation": {"path": "FAST"},
+        "schema": STAGE10_CHECKPOINT_SCHEMA,
+        "source_identity": {"dirty_worktree": False, "git_commit": COMMIT},
+    }
+    ablations = {
+        "dirty_worktree": False,
+        "git_commit": COMMIT,
+        "protocol_manifest_hash": STAGE14_PROTOCOL_SHA256,
+        "protocol_manifest_matches_run": True,
+        "schema": "arc3.ablations.paired.v0.1",
+        "status": "PASS",
+        "variants": {
+            "A4": {"aggregate": {"completed": 1}},
+            "A5": {"aggregate": {"completed": 0}},
+            "FULL": {"aggregate": {"completed": 8, "total_actions": 157}},
+        },
+        "verified": True,
+    }
+    resource = {
+        "git_commit": COMMIT,
+        "profile": {
+            "decision_latency_seconds": {"maximum": 1.0},
+            "kernel_memory_after": {"peak_rss_bytes": 1000},
+            "trace_bytes": 1000,
+            "verified": True,
+        },
+        "schema": "arc3.stage16.profile.v0.1",
+        "source_identity": {"verified": True},
+        "status": "PASS",
+    }
+    checks = {
+        name: {"passed": True}
+        for name in (
+            "archive_static",
+            "policy_static",
+            "secret_scan",
+            "source_identity",
+            "supply_chain",
+        )
+    }
+    integrity = {
+        "assurance_scope": {
+            "kind": "static-only",
+            "scanner_network_mode": "offline-by-construction",
+        },
+        "checks": checks,
+        "finding_counts": {"blocking": 0, "total": 0},
+        "git": {"commit": COMMIT, "dirty_worktree": False},
+        "inputs": {"manifest_sha256": PUBLIC_PARTITION_MANIFEST_SHA256},
+        "passed": True,
+        "schema": "arc3.integrity.receipt.v0.2",
+    }
+
+    def integrity_metric_miss(report: dict[str, object]) -> None:
+        report["passed"] = False
+        cast_checks = report["checks"]
+        assert isinstance(cast_checks, dict)
+        cast_checks["policy_static"] = {"passed": False}
+        report["finding_counts"] = {"blocking": 1, "total": 1}
+
+    cases = (
+        (
+            "action",
+            action,
+            "artifact_core_hash",
+            False,
+            lambda path: validate_action(path, frozen_commit=COMMIT),
+            lambda report: report["source_identity"].__setitem__("git_commit", "b" * 40),
+            lambda report: report["procedural_paired_suite"].__setitem__("passed_pairs", 127),
+        ),
+        (
+            "palette",
+            palette,
+            "artifact_core_hash",
+            False,
+            lambda path: validate_palette(path, frozen_commit=COMMIT),
+            lambda report: report["source_identity"].__setitem__("git_commit", "b" * 40),
+            lambda report: report["procedural_paired_suite"].__setitem__("passed_pairs", 255),
+        ),
+        (
+            "rule",
+            rule,
+            "artifact_core_hash",
+            False,
+            lambda path: validate_rule_change(path, frozen_commit=COMMIT, returncode=1),
+            lambda report: report["source_identity"].__setitem__("git_commit", "b" * 40),
+            lambda report: report["intervention_suite"]["cases"][0].__setitem__(
+                "case_passed", False
+            ),
+        ),
+        (
+            "checkpoint",
+            checkpoint,
+            "artifact_core_hash",
+            False,
+            lambda path: validate_checkpoint_replay(path, frozen_commit=COMMIT),
+            lambda report: report["source_identity"].__setitem__("git_commit", "b" * 40),
+            lambda report: report["acceptance"].__setitem__("trace_replay", False),
+        ),
+        (
+            "ablations",
+            ablations,
+            "artifact_core_hash",
+            True,
+            lambda path: validate_ablations(path, frozen_commit=COMMIT),
+            lambda report: report.__setitem__("git_commit", "b" * 40),
+            lambda report: report["variants"]["FULL"]["aggregate"].__setitem__(
+                "total_actions", 158
+            ),
+        ),
+        (
+            "resource",
+            resource,
+            "receipt_sha256",
+            True,
+            lambda path: validate_resource_profile(path, frozen_commit=COMMIT, returncode=0),
+            lambda report: report.__setitem__("git_commit", "b" * 40),
+            lambda report: report["profile"]["decision_latency_seconds"].__setitem__(
+                "maximum", 3.0
+            ),
+        ),
+        (
+            "integrity",
+            integrity,
+            "receipt_sha256",
+            True,
+            lambda path: validate_integrity(path, frozen_commit=COMMIT),
+            lambda report: report["git"].__setitem__("commit", "b" * 40),
+            integrity_metric_miss,
+        ),
+    )
+    for name, report, hash_field, trace_style, validator, source_tamper, metric_miss in cases:
+        path = tmp_path / f"{name}.json"
+        _write_hash_style(path, report, hash_field=hash_field, trace_style=trace_style)
+        assert validator(path).disposition is SuiteDisposition.PASS
+
+        original_schema = report["schema"]
+        report["schema"] = "tampered.schema"
+        _write_hash_style(path, report, hash_field=hash_field, trace_style=trace_style)
+        structurally_tampered = validator(path)
+        assert structurally_tampered.disposition is SuiteDisposition.FAILED_INFRASTRUCTURE
+        assert any("schema" in error for error in structurally_tampered.errors)
+
+        report["schema"] = original_schema
+        _write_hash_style(path, report, hash_field=hash_field, trace_style=trace_style)
+        loaded = json.loads(path.read_text(encoding="utf-8"))
+        loaded[hash_field] = "sha256:" + "0" * 64
+        atomic_write_json(path, loaded)
+        assert validator(path).disposition is SuiteDisposition.FAILED_INFRASTRUCTURE
+
+        source_report = copy.deepcopy(report)
+        source_tamper(source_report)
+        _write_hash_style(
+            path,
+            source_report,
+            hash_field=hash_field,
+            trace_style=trace_style,
+        )
+        assert validator(path).disposition is SuiteDisposition.FAILED_INFRASTRUCTURE
+
+        metric_report = copy.deepcopy(report)
+        metric_miss(metric_report)
+        _write_hash_style(
+            path,
+            metric_report,
+            hash_field=hash_field,
+            trace_style=trace_style,
+        )
+        assert validator(path).disposition is SuiteDisposition.FAILED_MECHANISM
+
+
+def test_stage13_structural_and_verifier_tamper_are_infrastructure(
+    tmp_path: Path,
+) -> None:
+    directory = tmp_path / "evaluation"
+    directory.mkdir()
+    rows: list[dict[str, object]] = []
+    for agent in ("random", "cycle", "novelty", "trace", "full"):
+        for seed in (7, 11):
+            rows.append(
+                {
+                    "agent": agent,
+                    "identity": {"dirty_worktree": False, "git_commit": COMMIT},
+                    "metrics": {"environment_actions": 4},
+                    "score": {"completed": agent == "full", "verified": True},
+                    "seed": seed,
+                    "status": "success",
+                    "trace": {
+                        "event_type_counts": {"run.checkpoint_written": 1},
+                        "replay_verified": True,
+                    },
+                }
+            )
+    (directory / "results.jsonl").write_text(
+        "".join(json.dumps(row, sort_keys=True) + "\n" for row in rows),
+        encoding="utf-8",
+    )
+    atomic_write_json(
+        directory / "summary.json",
+        {"failure_count": 0, "schema": "arc3.evaluation.summary.v0.1", "status": "PASS"},
+    )
+    assert validate_stage13(directory, frozen_commit=COMMIT).disposition is SuiteDisposition.PASS
+
+    full_row = next(row for row in rows if row["agent"] == "full")
+    full_score = full_row["score"]
+    assert isinstance(full_score, dict)
+    full_score["completed"] = False
+    (directory / "results.jsonl").write_text(
+        "".join(json.dumps(row, sort_keys=True) + "\n" for row in rows),
+        encoding="utf-8",
+    )
+    assert (
+        validate_stage13(directory, frozen_commit=COMMIT).disposition
+        is SuiteDisposition.FAILED_MECHANISM
+    )
+    full_score["completed"] = True
+    rows[0]["identity"] = {"dirty_worktree": False, "git_commit": "b" * 40}
+    (directory / "results.jsonl").write_text(
+        "".join(json.dumps(row, sort_keys=True) + "\n" for row in rows),
+        encoding="utf-8",
+    )
+    assert (
+        validate_stage13(directory, frozen_commit=COMMIT).disposition
+        is SuiteDisposition.FAILED_INFRASTRUCTURE
+    )
+
+    good_verifier = json.dumps({"errors": [], "verified": True}).encode("utf-8")
+    assert validate_stage13_verification(good_verifier, 0).disposition is SuiteDisposition.PASS
+    assert (
+        validate_stage13_verification(
+            json.dumps({"errors": [], "verified": False}).encode(), 0
+        ).disposition
+        is SuiteDisposition.FAILED_INFRASTRUCTURE
+    )
+    assert (
+        validate_stage13_verification(b"not-json", 0).disposition
+        is SuiteDisposition.FAILED_INFRASTRUCTURE
+    )
+
+
+def test_reused_stage10_children_have_no_semantic_holdout_path() -> None:
+    forbidden = (
+        "holdout_ids",
+        'manifest["games"]',
+        "public-environments",
+        "_contains_exact_string",
+        "acquisition_roots",
+    )
+    for relative in (
+        "scripts/measure_action_equivariance.py",
+        "scripts/measure_rule_change_reopening.py",
+    ):
+        content = (ROOT / relative).read_text(encoding="utf-8")
+        assert not any(fragment in content for fragment in forbidden)
+        assert "build_opaque_holdout_authority" in content
+    authority = (ROOT / "src/arc3/evaluation/holdout_authority.py").read_text(encoding="utf-8")
+    assert "manifest_path" not in authority
+    assert '"holdout_path_accesses": 0' in authority
+    assert '"manifest_bytes_accessed": False' in authority

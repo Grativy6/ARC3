@@ -30,6 +30,8 @@ from arc3.evaluation.stage10_regression import (
     STAGE10_PARENT_RECEIPT_SCHEMA,
     STAGE10_PREFLIGHT_SCHEMA,
     STAGE10_RESULT_SCHEMA,
+    STAGE10_SOCKET_DENIAL_SCHEMA,
+    UV_LOCK_SHA256,
     Stage10Status,
     SuiteDisposition,
     SuiteSpec,
@@ -63,6 +65,29 @@ _SENSITIVE_ENV_MARKERS = (
     "SECRET",
     "TOKEN",
 )
+_RUNTIME_PROBE = """
+import importlib.util
+import json
+import os
+import platform
+import sys
+from pathlib import Path
+
+source = Path(sys.argv[1]).resolve()
+sys.path.insert(0, str(source))
+arc3 = importlib.util.find_spec("arc3")
+stage10 = importlib.util.find_spec("arc3.evaluation.stage10_regression")
+print(json.dumps({
+    "arc3_origin": str(Path(arc3.origin).resolve()) if arc3 and arc3.origin else None,
+    "implementation": platform.python_implementation(),
+    "machine": platform.machine(),
+    "platform": platform.platform(),
+    "python_executable": str(Path(sys.executable).resolve()),
+    "python_version": list(sys.version_info[:3]),
+    "stage10_origin": str(Path(stage10.origin).resolve()) if stage10 and stage10.origin else None,
+    "sys_prefix": str(Path(sys.prefix).resolve()),
+}, sort_keys=True, separators=(",", ":")))
+"""
 
 
 def _utc_now() -> str:
@@ -128,6 +153,63 @@ def _source_identity(source_root: Path, frozen_commit: str) -> dict[str, JSONVal
     }
 
 
+def _runtime_identity(source_root: Path, python: Path) -> dict[str, object]:
+    executable = python.resolve()
+    expected_arc3 = (source_root / "src/arc3/__init__.py").resolve()
+    expected_stage10 = (source_root / "src/arc3/evaluation/stage10_regression.py").resolve()
+    observed: dict[str, object] = {}
+    error: str | None = None
+    try:
+        completed = subprocess.run(
+            (str(executable), "-I", "-c", _RUNTIME_PROBE, str((source_root / "src").resolve())),
+            cwd=source_root,
+            check=False,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=30,
+        )
+        if completed.returncode != 0:
+            raise RuntimeError(
+                f"runtime probe exited {completed.returncode}: {completed.stderr[:200]}"
+            )
+        value: object = json.loads(completed.stdout)
+        if not isinstance(value, dict):
+            raise ValueError("runtime probe did not return an object")
+        observed = cast(dict[str, object], value)
+    except (OSError, RuntimeError, ValueError, json.JSONDecodeError) as caught:
+        error = f"{type(caught).__name__}:{caught}"
+    lock_path = source_root / "uv.lock"
+    executable_hash = sha256_file(executable) if executable.is_file() else None
+    lock_hash = sha256_file(lock_path) if lock_path.is_file() else None
+    version_value = observed.get("python_version")
+    python_3_12 = (
+        isinstance(version_value, list)
+        and len(version_value) == 3
+        and version_value[:2] == [3, 12]
+        and all(isinstance(item, int) and not isinstance(item, bool) for item in version_value)
+    )
+    predicates = {
+        "arc3_import_origin_exact": observed.get("arc3_origin") == str(expected_arc3),
+        "executable_exists": executable.is_file(),
+        "executable_reported_exact": observed.get("python_executable") == str(executable),
+        "python_3_12": python_3_12,
+        "stage10_import_origin_exact": observed.get("stage10_origin") == str(expected_stage10),
+        "uv_lock_exact": lock_hash == UV_LOCK_SHA256,
+    }
+    report: dict[str, object] = {
+        "error": error,
+        "executable_sha256": executable_hash,
+        "observed": observed,
+        "predicates": predicates,
+        "schema": "arc3.build-001.stage-10-runtime-identity.v0.1",
+        "uv_lock_sha256": lock_hash,
+        "verified": error is None and all(predicates.values()),
+    }
+    return seal_object(report, hash_field="runtime_identity_sha256")
+
+
 def _outside_source(source_root: Path, candidate: Path) -> bool:
     try:
         candidate.resolve().relative_to(source_root.resolve())
@@ -150,6 +232,7 @@ def build_preflight(
     declaration = validate_predeclaration_bytes(declaration_path.read_bytes())
     manifest_path = source_root / _MANIFEST
     identity = _source_identity(source_root, frozen_commit)
+    runtime_identity = _runtime_identity(source_root, python)
     plan = build_suite_plan(
         python=python,
         source_root=source_root,
@@ -168,8 +251,10 @@ def build_preflight(
             source_root / "scripts/measure_action_equivariance.py",
             source_root / "scripts/measure_rule_change_reopening.py",
             source_root / "scripts/_stage10_checkpoint_worker.py",
+            source_root / "scripts/_stage10_offline_child.py",
             source_root / "scripts/profile_competition.py",
             source_root / "scripts/check_competition_integrity.py",
+            source_root / "src/arc3/evaluation/holdout_authority.py",
         )
     )
     predicates = {
@@ -189,9 +274,11 @@ def build_preflight(
                     for suffix in ("stdout", "stderr")
                 ),
                 *(attempt_root / "receipts" / f"{item.suite_id}.json" for item in plan),
+                *(item.network_guard_path for item in plan if item.network_guard_path is not None),
             )
         },
         "required_paths_exist": all(path.exists() for path in required_paths),
+        "runtime_identity": runtime_identity.get("verified") is True,
         "source_identity": identity.get("verified") is True,
     }
     report: dict[str, object] = {
@@ -202,6 +289,7 @@ def build_preflight(
         "plan_hash": suite_plan_hash(plan),
         "predeclaration_sha256": PREDECLARATION_SHA256,
         "predicates": predicates,
+        "runtime_identity": runtime_identity,
         "schema": STAGE10_PREFLIGHT_SCHEMA,
         "source_identity": identity,
         "status": "PASS" if all(predicates.values()) else "FAILED_INFRASTRUCTURE",
@@ -351,12 +439,19 @@ def _run_child(
     stdout_path: Path,
     stderr_path: Path,
 ) -> tuple[int | None, bool, str | None, int]:
-    if stdout_path.exists() or stderr_path.exists():
+    guard_path = suite.network_guard_path
+    if (
+        stdout_path.exists()
+        or stderr_path.exists()
+        or (guard_path is not None and guard_path.exists())
+    ):
         stdout_path.parent.mkdir(parents=True, exist_ok=True)
         stdout_path.touch(exist_ok=True)
         stderr_path.touch(exist_ok=True)
         return None, False, "raw stream path already exists", 0
     stdout_path.parent.mkdir(parents=True, exist_ok=True)
+    if guard_path is not None:
+        guard_path.parent.mkdir(parents=True, exist_ok=True)
     started = time.perf_counter_ns()
     creationflags = _WINDOWS_CREATE_NEW_PROCESS_GROUP if os.name == "nt" else 0
     try:
@@ -414,6 +509,107 @@ def _artifact_status(path: Path | None) -> str:
     return str(value.get("status", "")) if isinstance(value, dict) else ""
 
 
+def _network_guard_validation(
+    suite: SuiteSpec,
+    *,
+    frozen_commit: str,
+    returncode: int | None,
+) -> tuple[tuple[str, ...], int]:
+    path = suite.network_guard_path
+    if path is None or not path.is_file():
+        return ("socket-denial-receipt-missing",), -1
+    try:
+        value: object = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+        return (f"socket-denial-receipt-unreadable:{type(error).__name__}",), -1
+    if not isinstance(value, dict):
+        return ("socket-denial-receipt-not-object",), -1
+    receipt = cast(dict[str, object], value)
+    expected_fields = {
+        "attempts",
+        "failure_kind",
+        "frozen_commit",
+        "installed_operations",
+        "network_attempt_count",
+        "process_id",
+        "receipt_sha256",
+        "schema",
+        "suite_id",
+        "target_exit_code",
+        "target_kind",
+        "target_sha256",
+    }
+    attempts_raw = receipt.get("attempts")
+    attempts = attempts_raw if isinstance(attempts_raw, Mapping) else {}
+    counts_typed = set(attempts) == {
+        "connect",
+        "connect_ex",
+        "create_connection",
+        "getaddrinfo",
+        "send",
+        "sendall",
+        "sendto",
+    } and all(
+        isinstance(item, int) and not isinstance(item, bool) and item >= 0
+        for item in attempts.values()
+    )
+    measured_attempts = sum(cast(int, item) for item in attempts.values()) if counts_typed else -1
+    errors: list[str] = []
+    predicates = {
+        "fields_exact": set(receipt) == expected_fields,
+        "hash_valid": verify_object_hash(receipt, hash_field="receipt_sha256"),
+        "identity_exact": receipt.get("frozen_commit") == frozen_commit
+        and receipt.get("suite_id") == suite.suite_id,
+        "operations_exact": counts_typed
+        and receipt.get("installed_operations")
+        == [
+            "create_connection",
+            "getaddrinfo",
+            "connect",
+            "connect_ex",
+            "send",
+            "sendall",
+            "sendto",
+        ],
+        "returncode_bound": receipt.get("target_exit_code") == returncode,
+        "schema": receipt.get("schema") == STAGE10_SOCKET_DENIAL_SCHEMA,
+        "total_exact": receipt.get("network_attempt_count") == measured_attempts,
+    }
+    errors.extend(
+        f"socket-denial-predicate-failed:{name}"
+        for name, passed in predicates.items()
+        if not passed
+    )
+    return tuple(errors), measured_attempts
+
+
+def _with_network_guard(
+    validation: SuiteValidation,
+    *,
+    structural_errors: Sequence[str],
+    network_attempts: int,
+) -> SuiteValidation:
+    predicates = {
+        **validation.predicates,
+        "socket_denial_receipt_valid": not structural_errors,
+        "socket_network_attempts_zero": network_attempts == 0,
+    }
+    errors = (*validation.errors, *structural_errors)
+    if errors:
+        disposition = SuiteDisposition.FAILED_INFRASTRUCTURE
+    elif network_attempts != 0:
+        disposition = SuiteDisposition.FAILED_MECHANISM
+    else:
+        disposition = validation.disposition
+    return SuiteValidation(
+        suite_id=validation.suite_id,
+        disposition=disposition,
+        predicates=predicates,
+        measurements={**validation.measurements, "socket_network_attempts": network_attempts},
+        errors=errors,
+    )
+
+
 def _validate_suite(
     suite: SuiteSpec,
     *,
@@ -465,6 +661,17 @@ def _validate_suite(
     else:  # pragma: no cover - the plan constructor is closed
         raise ValueError(f"unknown Stage 10 suite {suite.suite_id}")
 
+    guard_errors, network_attempts = _network_guard_validation(
+        suite,
+        frozen_commit=frozen_commit,
+        returncode=returncode,
+    )
+    validation = _with_network_guard(
+        validation,
+        structural_errors=guard_errors,
+        network_attempts=network_attempts,
+    )
+
     errors: list[str] = []
     if timed_out:
         errors.append("child-timeout")
@@ -498,6 +705,7 @@ def _parent_receipt(
     suite: SuiteSpec,
     plan_hash: str,
     source_identity: Mapping[str, JSONValue],
+    runtime_identity: Mapping[str, object],
     returncode: int | None,
     timed_out: bool,
     launch_error: str | None,
@@ -513,9 +721,15 @@ def _parent_receipt(
         else None,
         "command": list(suite.command),
         "launch_error": launch_error,
+        "network_guard": (
+            _file_receipt(suite.network_guard_path)
+            if suite.network_guard_path is not None and suite.network_guard_path.is_file()
+            else None
+        ),
         "plan_hash": plan_hash,
         "predeclaration_sha256": PREDECLARATION_SHA256,
         "returncode": returncode,
+        "runtime_identity": dict(runtime_identity),
         "schema": STAGE10_PARENT_RECEIPT_SCHEMA,
         "source_identity": dict(source_identity),
         "stderr": _file_receipt(stderr_path),
@@ -545,6 +759,7 @@ def _resume_receipt(
     attempt_root: Path,
     plan_hash: str,
     source_identity: Mapping[str, JSONValue],
+    runtime_identity: Mapping[str, object],
 ) -> SuiteValidation:
     value: object = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(value, dict):
@@ -554,10 +769,12 @@ def _resume_receipt(
         "artifact",
         "command",
         "launch_error",
+        "network_guard",
         "plan_hash",
         "predeclaration_sha256",
         "receipt_sha256",
         "returncode",
+        "runtime_identity",
         "schema",
         "source_identity",
         "stderr",
@@ -577,6 +794,7 @@ def _resume_receipt(
         or receipt.get("plan_hash") != plan_hash
         or receipt.get("predeclaration_sha256") != PREDECLARATION_SHA256
         or receipt.get("source_identity") != dict(source_identity)
+        or receipt.get("runtime_identity") != dict(runtime_identity)
         or not isinstance(receipt.get("timed_out"), bool)
         or (
             receipt.get("launch_error") is not None
@@ -588,6 +806,10 @@ def _resume_receipt(
         or not verify_object_hash(receipt, hash_field="receipt_sha256")
         or not _verify_file_receipt(receipt.get("stdout"), stdout_path)
         or not _verify_file_receipt(receipt.get("stderr"), stderr_path)
+        or (
+            suite.network_guard_path is not None
+            and not _verify_file_receipt(receipt.get("network_guard"), suite.network_guard_path)
+        )
         or (
             suite.artifact_path is not None
             and not _verify_file_receipt(receipt.get("artifact"), suite.artifact_path)
@@ -640,10 +862,21 @@ def _execute(
     if started_ids != plan_ids[: len(started_ids)]:
         raise ValueError("invocation ledger is not an exact serial plan prefix")
     source_start = _source_identity(source_root, frozen_commit)
+    runtime_start = _runtime_identity(source_root, Path(plan[0].command[0])) if plan else {}
     validations: list[SuiteValidation] = []
     terminal_infrastructure: str | None = None
+    if (
+        runtime_start.get("verified") is not True
+        or preflight.get("runtime_identity") != runtime_start
+    ):
+        terminal_infrastructure = "runtime-identity-disagrees-with-preflight"
 
     for suite in plan:
+        if terminal_infrastructure is not None:
+            break
+        if _runtime_identity(source_root, Path(suite.command[0])) != runtime_start:
+            terminal_infrastructure = f"runtime-identity-changed-before-suite:{suite.suite_id}"
+            break
         state = states.get(suite.suite_id)
         receipt_path = attempt_root / "receipts" / f"{suite.suite_id}.json"
         if state is not None:
@@ -657,6 +890,7 @@ def _execute(
                     attempt_root=attempt_root,
                     plan_hash=plan_hash,
                     source_identity=source_start,
+                    runtime_identity=runtime_start,
                 )
             except (OSError, ValueError, json.JSONDecodeError) as error:
                 terminal_infrastructure = (
@@ -700,15 +934,22 @@ def _execute(
             stdout_path=stdout_path,
         )
         source_after = _source_identity(source_root, frozen_commit)
+        runtime_after = _runtime_identity(source_root, Path(suite.command[0]))
         if source_after != source_start:
             validation = _with_infrastructure_errors(
                 validation,
                 ("source-identity-changed-during-suite",),
             )
+        if runtime_after != runtime_start:
+            validation = _with_infrastructure_errors(
+                validation,
+                ("runtime-identity-changed-during-suite",),
+            )
         receipt = _parent_receipt(
             suite=suite,
             plan_hash=plan_hash,
             source_identity=source_start,
+            runtime_identity=runtime_start,
             returncode=returncode,
             timed_out=timed_out,
             launch_error=launch_error,
@@ -741,9 +982,13 @@ def _execute(
     if terminal_infrastructure is not None:
         status = Stage10Status.FAILED_INFRASTRUCTURE
     source_end = _source_identity(source_root, frozen_commit)
+    runtime_end = _runtime_identity(source_root, Path(plan[0].command[0])) if plan else {}
     if source_end != source_start:
         status = Stage10Status.FAILED_INFRASTRUCTURE
         terminal_infrastructure = "source-identity-changed-during-stage"
+    if runtime_end != runtime_start:
+        status = Stage10Status.FAILED_INFRASTRUCTURE
+        terminal_infrastructure = "runtime-identity-changed-during-stage"
     report: dict[str, object] = {
         "claim": "NO_GENERALIZATION_CLAIM",
         "evidence_label": "synthetic",
@@ -752,6 +997,8 @@ def _execute(
         "plan_hash": plan_hash,
         "predeclaration_sha256": PREDECLARATION_SHA256,
         "schema": STAGE10_RESULT_SCHEMA,
+        "runtime_identity_end": runtime_end,
+        "runtime_identity_start": runtime_start,
         "source_identity_end": source_end,
         "source_identity_start": source_start,
         "status": status.value,

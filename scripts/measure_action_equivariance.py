@@ -10,7 +10,6 @@ from the explicitly named inverse-request numerator.
 from __future__ import annotations
 
 import argparse
-import json
 import os
 import platform
 import statistics
@@ -38,6 +37,10 @@ from arc3.evaluation.artifacts import (
     seal_object,
     sha256_bytes,
     sha256_file,
+)
+from arc3.evaluation.holdout_authority import (
+    OpaqueHoldoutInputs,
+    build_opaque_holdout_authority,
 )
 from arc3.exploration.action_registry import (
     ActionEffectRegistry,
@@ -88,16 +91,6 @@ CHECKPOINT_SEEDS = tuple(range(16))
 HISTORICAL_SEEDS = (7, 11)
 GAME_ID = GameId("synthetic-stage05-toroidal-action-v1")
 _WIRE_RANK = {action: index for index, action in enumerate(ActionName)}
-_BUILD_000_EXPOSURE_LEDGER = Path("C:/a/arc3-s15-6a0f6e5/artifacts/stage15/public-exposure.jsonl")
-_STAGE_03_EXPOSURE_LEDGER = Path("C:/a/arc3-b001/artifacts/stage03/public-exposure.jsonl")
-_KNOWN_PUBLIC_ENVIRONMENT_ROOTS = (
-    Path("C:/a/arc3-s15-6a0f6e5/artifacts/stage15/public-environments"),
-    ROOT / "artifacts/stage15/public-environments",
-)
-_FROZEN_EXPOSURE_HASHES = {
-    "build-000": "sha256:cd9af42ed3a5ef9fa0dc201ddb10e32d2bcccee9df729aa0c7d53077c04c9ad4",
-    "stage-03": "sha256:e02a9fa71206170a6fe2aeefb6935ae25141e2759937657475cead4389bb17aa",
-}
 
 _FULL_PERMUTATIONS: tuple[tuple[str, dict[ActionName, ActionName]], ...] = (
     (
@@ -1539,129 +1532,11 @@ def _checkpoint_suite(
     }
 
 
-def _jsonl_objects(path: Path) -> list[dict[str, object]]:
-    if not path.is_file():
-        return []
-    objects: list[dict[str, object]] = []
-    for line in path.read_text(encoding="utf-8").splitlines():
-        value = json.loads(line)
-        if isinstance(value, dict):
-            objects.append(cast(dict[str, object], value))
-    return objects
-
-
-def _contains_exact_string(value: object, targets: frozenset[str]) -> bool:
-    if isinstance(value, str):
-        return value in targets
-    if isinstance(value, Mapping):
-        return any(_contains_exact_string(item, targets) for item in value.values())
-    if isinstance(value, Sequence) and not isinstance(value, (str, bytes)):
-        return any(_contains_exact_string(item, targets) for item in value)
-    return False
-
-
 def _holdout_integrity(
     *,
-    manifest_path: Path | None = None,
-    exposure_ledgers: Sequence[tuple[str, Path]] | None = None,
-    acquisition_roots: Sequence[Path] | None = None,
+    inputs: OpaqueHoldoutInputs | None = None,
 ) -> dict[str, object]:
-    selected_manifest = manifest_path or (ROOT / "docs/evaluation/public-game-partitions.v0.1.json")
-    manifest = json.loads(selected_manifest.read_text(encoding="utf-8"))
-    games = manifest.get("games", []) if isinstance(manifest, dict) else []
-    holdout_ids = frozenset(
-        str(item["game_id"])
-        for item in games
-        if isinstance(item, dict)
-        and item.get("partition") == "public-holdout"
-        and isinstance(item.get("game_id"), str)
-    )
-    using_frozen_ledgers = exposure_ledgers is None
-    selected_ledgers = tuple(
-        exposure_ledgers
-        or (
-            ("build-000", _BUILD_000_EXPOSURE_LEDGER),
-            ("stage-03", _STAGE_03_EXPOSURE_LEDGER),
-        )
-    )
-    ledger_receipts: list[dict[str, object]] = []
-    holdout_events = 0
-    for label, path in selected_ledgers:
-        events = _jsonl_objects(path)
-        ledger_holdout_events = sum(_contains_exact_string(event, holdout_ids) for event in events)
-        holdout_events += ledger_holdout_events
-        digest = sha256_file(path) if path.is_file() else None
-        expected_digest = _FROZEN_EXPOSURE_HASHES.get(label) if using_frozen_ledgers else None
-        ledger_receipts.append(
-            {
-                "event_count": len(events),
-                "exists": path.is_file(),
-                "frozen_sha256": expected_digest,
-                "holdout_event_count": ledger_holdout_events,
-                "label": label,
-                "path": str(path),
-                "sha256": digest,
-                "sha256_matches_frozen": (
-                    digest == expected_digest if expected_digest is not None else None
-                ),
-            }
-        )
-
-    roots = tuple(
-        dict.fromkeys(
-            path.resolve() for path in (acquisition_roots or _KNOWN_PUBLIC_ENVIRONMENT_ROOTS)
-        )
-    )
-    asset_presence = [
-        {
-            "holdout_asset_directories_present": sum(
-                (root / game_id).exists() for game_id in holdout_ids
-            ),
-            "path": str(root),
-        }
-        for root in roots
-    ]
-    acquired = sum(cast(int, item["holdout_asset_directories_present"]) for item in asset_presence)
-    ledgers_present = all(item["exists"] is True for item in ledger_receipts)
-    frozen_hashes_match = all(
-        item["sha256_matches_frozen"] in {True, None} for item in ledger_receipts
-    )
-    build000_receipt = next(
-        (item for item in ledger_receipts if item["label"] == "build-000"), None
-    )
-    stage03_receipt = next((item for item in ledger_receipts if item["label"] == "stage-03"), None)
-    return {
-        "acquisition_roots": asset_presence,
-        "build_000_exposure_ledger": (
-            build000_receipt["path"] if build000_receipt is not None else None
-        ),
-        "build_000_exposure_ledger_sha256": (
-            build000_receipt["sha256"] if build000_receipt is not None else None
-        ),
-        "exposure_ledgers": ledger_receipts,
-        "frozen_exposure_hashes_match": frozen_hashes_match,
-        "locally_acquired_holdout_assets": acquired,
-        "manifest_holdout_count": len(holdout_ids),
-        "public_holdout_gameplay_events": holdout_events,
-        "public_partition_manifest": str(selected_manifest),
-        "public_partition_manifest_sha256": sha256_file(selected_manifest),
-        "stage_03_exposure_ledger": (
-            stage03_receipt["path"] if stage03_receipt is not None else None
-        ),
-        "stage_03_exposure_ledger_sha256": (
-            stage03_receipt["sha256"] if stage03_receipt is not None else None
-        ),
-        "stage_05_public_gameplay_events": 0,
-        "status": (
-            "SEALED_UNCONSUMED"
-            if len(holdout_ids) == 10
-            and holdout_events == 0
-            and acquired == 0
-            and ledgers_present
-            and frozen_hashes_match
-            else "INTEGRITY_FAILURE"
-        ),
-    }
+    return build_opaque_holdout_authority(ROOT, inputs=inputs)
 
 
 def _walk_named_values(value: object, name: str) -> list[object]:

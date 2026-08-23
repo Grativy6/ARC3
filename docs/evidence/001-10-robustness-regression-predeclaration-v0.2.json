@@ -1,0 +1,159 @@
+{
+  "boundaries": {
+    "environment_label": "synthetic",
+    "game_source_available_to_policy": false,
+    "hosted_inference_allowed": false,
+    "network_allowed": false,
+    "public_environment_execution_allowed": false,
+    "public_holdout": "SEALED_UNCONSUMED",
+    "public_holdout_asset_enumeration_allowed": false,
+    "public_holdout_game_id_selection_allowed": false
+  },
+  "child_outcome_contract": {
+    "allowed_exit_codes": [
+      0,
+      1
+    ],
+    "exit_0": "The child must emit a structurally valid self-hashed artifact and satisfy its typed measured floors.",
+    "exit_1": "The child may emit structurally valid bounded FAILED_MECHANISM evidence. The supervisor preserves it and continues independent suites.",
+    "structural_or_verifier_failure": "FAILED_INFRASTRUCTURE",
+    "timeout_missing_or_source_drift": "FAILED_INFRASTRUCTURE"
+  },
+  "claim": "NO_GENERALIZATION_CLAIM",
+  "evidence_label": "synthetic",
+  "execution": {
+    "concurrency": 1,
+    "default_mode": "NON_PLAYING_PREFLIGHT",
+    "decisive_mode_requires": "--execute plus an exact 40-hex frozen source commit",
+    "dirty_source_allowed": false,
+    "integrity_first": true,
+    "invocation_ledger": "append-only canonical JSONL with STARTED and COMPLETED records",
+    "network_denial": "Every direct synthetic child is launched inside scripts/_stage10_offline_child.py after process-local socket connect, DNS, send, and sendto denial is installed. A self-hashed denial receipt is mandatory.",
+    "order": [
+      "competition-integrity",
+      "stage13-evaluate",
+      "stage13-verify",
+      "stage14-ablations",
+      "palette-equivariance",
+      "action-equivariance",
+      "rule-change",
+      "checkpoint-replay",
+      "resource-profile"
+    ],
+    "resume": "A completed suite is skipped only after exact revalidation of parent receipt, child bytes, denial receipt, runtime, source, schema, self-hash, return code, and frozen floors. STARTED without valid COMPLETED is terminal FAILED_INFRASTRUCTURE and is never silently rerun.",
+    "runtime_identity": "Before any child and around every child, bind exact interpreter path and bytes, Python 3.12 version, uv.lock bytes, and exact arc3 and Stage 10 import origins. Any drift is FAILED_INFRASTRUCTURE.",
+    "source_change_during_run": "FAILED_INFRASTRUCTURE",
+    "source_identity": "Every decisive child and parent receipt is bound to the same exact clean frozen commit containing source floor 2e78c258cfbee8be62462f61ed08ad04c00a8934 as an ancestor."
+  },
+  "frozen_inputs": {
+    "build_000_production_commit": "90ecf7267d5bb23d751d6f7ce3e8aa75f2f1a130",
+    "build_000_production_tree": "0cf6e00b2fcc399e7a99a62c20e91bb84d485f13",
+    "inherited_stage_08_predeclaration_sha256": "sha256:3342b6e2635c0606391c9aea02b2fec0cf4c5642a3d38b95768a1b77b4520878",
+    "public_partition_manifest_sha256": "sha256:682d5891c2aface54803d9bd1173c55ed21e89856e13b8a478fb9276ee963f2f",
+    "source_floor_commit": "2e78c258cfbee8be62462f61ed08ad04c00a8934",
+    "source_floor_tree": "4145356c116944bbd7c0c412771de9179ba22efe",
+    "stage_13_build_000_evidence_sha256": "sha256:ab354deec3ef4f7a84d285a8e7603dbe357afcf6c6bbff7862fe94979b94780e",
+    "stage_14_protocol_sha256": "sha256:b00c45337f451ecde9af097ce68c8eb60203a7516bff55d9ed7c40868700b369",
+    "uv_lock_sha256": "sha256:3bf42dcbe45720f71b7433584f56a5d5982ec1c687c341ad2626222fa5de285b"
+  },
+  "frozen_regression_floors": {
+    "action_equivariance": {
+      "checkpoint_passed": 16,
+      "checkpoint_total": 16,
+      "post_calibration_inverse_passed": 528,
+      "post_calibration_inverse_total": 528,
+      "procedural_passed": 128,
+      "procedural_total": 128
+    },
+    "checkpoint_replay": {
+      "checkpoint_tamper_rejected": true,
+      "deep_exact_next_path_action_and_rationale": true,
+      "deterministic_seed_repeatability": true,
+      "fast_exact_next_path_action_and_rationale": true,
+      "trace_replay": true,
+      "trace_tamper_rejected": true
+    },
+    "integrity": {
+      "blocking_findings": 0,
+      "hosted_inference": 0,
+      "known_game_id_or_action_table_findings": 0,
+      "network_mode": "offline-by-construction",
+      "opaque_nonconsumption_authority": "PASS"
+    },
+    "palette_equivariance": {
+      "checkpoint_passed": 16,
+      "checkpoint_total": 16,
+      "procedural_passed": 256,
+      "procedural_total": 256
+    },
+    "resource": {
+      "maximum_decision_seconds": 2.0,
+      "maximum_peak_rss_bytes": 2147483648,
+      "maximum_trace_bytes_per_run": 268435456
+    },
+    "rule_change": {
+      "action_effect_rotation_passed": 32,
+      "action_effect_rotation_total": 32,
+      "all_declared_interventions_exercised": true,
+      "causal_gates_may_be_weakened": false,
+      "frozen_noise_and_traversability_failures_reported_honestly": true
+    },
+    "stage_13_build_000_exact": {
+      "full_completions": 2,
+      "full_rows": 2,
+      "maximum_total_actions": 8,
+      "semantic_checkpoint_verified": true,
+      "semantic_replay_verified": true,
+      "semantic_trace_verified": true
+    },
+    "stage_14": {
+      "a4_maximum_completions": 1,
+      "a5_exact_completions": 0,
+      "full_a4_minimum_completion_gap": 7,
+      "full_a5_minimum_completion_gap": 8,
+      "full_maximum_total_actions": 157,
+      "full_minimum_completions": 8,
+      "total_cases": 14
+    }
+  },
+  "holdout_authority": {
+    "anchor_file_hashes": [
+      "sha256:65eb293aff43fb50f7ab5b52bef3af99331fd5f02f8b5197e1f8a10e2a2a68ff",
+      "sha256:7d9a72d9e222944a60cf92cb2b3bd5db2e33f46d5a64be4d22f91df224adf85a",
+      "sha256:35555cc69e9f35091dd3a18ead1822b0b2afde5847f045d4901b7491227425e4",
+      "sha256:0134c9e5b7acea716f790088cb59109eded7857ce83fda004ea1b88be2eb92ac"
+    ],
+    "asset_paths_touched": 0,
+    "exposure_ledger_hashes": [
+      "sha256:cd9af42ed3a5ef9fa0dc201ddb10e32d2bcccee9df729aa0c7d53077c04c9ad4",
+      "sha256:e02a9fa71206170a6fe2aeefb6935ae25141e2759937657475cead4389bb17aa",
+      "sha256:4f924df44b11decb392022a927b3296e0248a02edac2c87c53899d374045f0c7",
+      "sha256:be73b837805a66ed172b20573aa31c41fe6ba16ced4d471929b6018e22a5d52e"
+    ],
+    "exposure_ledger_semantics_loaded": false,
+    "holdout_paths_touched": 0,
+    "identity_values_emitted": 0,
+    "manifest_bytes_accessed": false,
+    "manifest_loaded_as_metadata": false,
+    "manifest_sha256": "sha256:682d5891c2aface54803d9bd1173c55ed21e89856e13b8a478fb9276ee963f2f"
+  },
+  "planned_outputs": {
+    "attempt_root": "caller-supplied external directory",
+    "child_artifacts": "one immutable child artifact, denial receipt, stdout, and stderr for each suite",
+    "invocation_ledger": "<attempt-root>/invocations.jsonl",
+    "parent_receipts": "<attempt-root>/receipts/<suite-id>.json",
+    "result": "caller-supplied external JSON path"
+  },
+  "schema": "arc3.build-001.stage-10-predeclaration.v0.2",
+  "status": "FROZEN_PREMEASUREMENT",
+  "status_rule": {
+    "FAILED_INFRASTRUCTURE": "Any absent, interrupted, timed-out, malformed, unsealed, source/runtime-mismatched, receipt-invalid, verifier-invalid, or structurally tampered required suite. This has precedence.",
+    "FAILED_MECHANISM": "All required evidence is structurally valid and exactly bound, but at least one predeclared measured mechanism, resource, offline, or integrity floor fails.",
+    "PASS": "Every required suite has exact valid evidence and every frozen floor passes."
+  },
+  "supersedes": {
+    "path": "docs/evidence/001-10-robustness-regression-predeclaration.json",
+    "reason": "Pre-execution safety audit required opaque nonconsumption authority, integrity-first ordering, exact runtime binding, process socket denial, and fail-closed structural classification.",
+    "sha256": "sha256:02ad73f25cd6c21459cf425a29de0b830fa27bd660c58777b272ac57116d26e3"
+  }
+}

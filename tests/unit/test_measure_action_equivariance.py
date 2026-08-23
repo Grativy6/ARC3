@@ -22,6 +22,13 @@ from scripts.measure_action_equivariance import (
     action_suite_schedule,
 )
 
+from arc3.evaluation.holdout_authority import (
+    JsonAssertion,
+    NonconsumptionAnchor,
+    OpaqueExposureBinding,
+    OpaqueHoldoutInputs,
+)
+from arc3.integrity.hashes import sha256_file
 from arc3.types import ActionName, ActionRequest, Coordinate, GameStateName
 
 
@@ -152,39 +159,56 @@ def test_registry_bounds_are_measured_from_projection_contents() -> None:
     assert failed["violations"]
 
 
-def test_holdout_identity_aggregation_descends_into_both_ledgers(
+def test_holdout_authority_hashes_opaque_bytes_without_loading_semantics(
     tmp_path: Path,
 ) -> None:
-    manifest = tmp_path / "partition.json"
-    manifest.write_text(
-        json.dumps(
-            {
-                "games": [
-                    {"game_id": f"holdout-{index:08x}", "partition": "public-holdout"}
-                    for index in range(10)
-                ]
-            }
+    anchor = tmp_path / "anchor.json"
+    manifest_hash = "sha256:" + "a" * 64
+    anchor.write_text(
+        json.dumps({"manifest_sha256": manifest_hash, "state": "sealed"}),
+        encoding="utf-8",
+    )
+    exposure = tmp_path / "exposure.bin"
+    exposure.write_bytes(b"opaque exposure bytes\n")
+    inputs = OpaqueHoldoutInputs(
+        expected_manifest_sha256=manifest_hash,
+        anchors=(
+            NonconsumptionAnchor(
+                role="fixture-anchor",
+                path=anchor,
+                expected_sha256=sha256_file(anchor),
+                assertions=(
+                    JsonAssertion(("manifest_sha256",), manifest_hash),
+                    JsonAssertion(("state",), "sealed"),
+                ),
+            ),
+            NonconsumptionAnchor(
+                role="fixture-anchor-second-link",
+                path=anchor,
+                expected_sha256=sha256_file(anchor),
+                assertions=(JsonAssertion(("manifest_sha256",), manifest_hash),),
+            ),
         ),
-        encoding="utf-8",
+        exposures=(
+            OpaqueExposureBinding(
+                role="fixture-exposure",
+                path=exposure,
+                expected_sha256=sha256_file(exposure),
+            ),
+        ),
     )
-    build000 = tmp_path / "build000.jsonl"
-    stage03 = tmp_path / "stage03.jsonl"
-    build000.write_text(
-        json.dumps({"payload": {"game_id": "holdout-00000000"}}) + "\n",
-        encoding="utf-8",
-    )
-    stage03.write_text(
-        json.dumps({"payload": {"game_id": "holdout-00000001"}}) + "\n",
-        encoding="utf-8",
-    )
-    report = _holdout_integrity(
-        manifest_path=manifest,
-        exposure_ledgers=(("build-000", build000), ("stage-03", stage03)),
-        acquisition_roots=(tmp_path / "environments-a", tmp_path / "environments-b"),
-    )
-    assert report["public_holdout_gameplay_events"] == 2
-    assert [item["holdout_event_count"] for item in report["exposure_ledgers"]] == [1, 1]
-    assert report["status"] == "INTEGRITY_FAILURE"
+    report = _holdout_integrity(inputs=inputs)
+    assert report["status"] == "SEALED_UNCONSUMED"
+    assert report["constraints"] == {
+        "asset_path_accesses": 0,
+        "exposure_ledger_semantics_loaded": False,
+        "holdout_path_accesses": 0,
+        "identity_values_emitted": 0,
+        "manifest_bytes_accessed": False,
+        "manifest_loaded_as_metadata": False,
+    }
+    exposure.write_bytes(b"tampered\n")
+    assert _holdout_integrity(inputs=inputs)["status"] == "INTEGRITY_FAILURE"
 
 
 def test_resource_summary_always_exposes_peak_and_episode_limit_keys() -> None:
