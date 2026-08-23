@@ -11,8 +11,8 @@
   "implementation_branch": "build/001-local-public-recovery",
   "pull_request": "https://github.com/Grativy6/ARC3/pull/5",
   "started_at": "2026-08-21T15:41:02Z",
-  "last_checkpoint_at": "2026-08-22T23:15:54.0238006Z",
-  "last_checkpoint_commit": "7c4ea86fda1fc5900b3c37b204e8c60c476cbab8",
+  "last_checkpoint_at": "2026-08-23T00:07:42.2375858Z",
+  "last_checkpoint_commit": "5b6643f3e9330b12740f8b24f4b8f12bb3a024c3",
   "base": {
     "main_commit": "28c7a00732ce48e5c231211b01bc6eba7d0d71b4",
     "main_tree": "4586299448e9b1b585a0878674ed5f9afa60c384",
@@ -405,7 +405,10 @@
       "legacy_migration_repair_verification": "PASS:21-legacy+controller-checkpoint-replay+ruff+format+mypy-strict;real-df961c7-artifact-requires-final-committed-identity-rerun",
       "measurement_contract_audit_commit": "2646cd3cb6923107a7e8e817b1072497e2094ad9",
       "measurement_contract_audit_verification": "PASS:37-unit+whole-controller-checkpoint-inclusive-timing+exact-behavior-parity+resource-gates+typed-cadence-receipts+ruff+format+mypy-strict",
+      "process_harness_checkpoint_commit": "5b6643f3e9330b12740f8b24f4b8f12bb3a024c3",
+      "process_harness_checkpoint_tree": "e9103914bc58de5c934134ed753c7523b9ca8d89",
       "process_harness_verification": "PASS:111-contract+worker+parent-supervisor+exact-live-cadence-binding+immutable-returned-consequence-binding+prefix-wide-resume-validation+process-tree-timeout+instrumentation-exclusion+parent-domain-recomputation+interim-integrity-stop+ruff+format+mypy-strict;no-public-environment-opened",
+      "process_harness_secret_scan": "PASS:9-tests+0-findings",
       "process_harness_source_sha256": {
         "typed_contract": "sha256:d3ee67c9238dbda905045edef91de1a59d764169f4eb85dec19aa89a147b7300",
         "worker": "sha256:2bc77bdf3280dd8c216094f7363f4ef1e2106342150969f182461b0b80a94dcb",
