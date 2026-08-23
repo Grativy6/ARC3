@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import io
 import json
+import os
 import subprocess
 import sys
 import zipfile
@@ -545,6 +546,51 @@ def test_discovered_uv_command_survives_release_environment(
     assert environment["PYTHONNOUSERSITE"] == "1"
     assert completed.returncode == 0
     assert completed.stdout.startswith(b"uv ")
+
+
+def test_isolated_interpreter_origin_probe_uses_explicit_source_and_denies_network(
+    tmp_path: Path,
+) -> None:
+    trusted = tmp_path / "trusted"
+    rogue = tmp_path / "rogue"
+    for root, marker in ((trusted, "trusted"), (rogue, "rogue")):
+        package = root / "arc3"
+        package.mkdir(parents=True)
+        (package / "__init__.py").write_text(f"MARKER = {marker!r}\n", encoding="utf-8")
+    environment = dict(os.environ)
+    environment["PYTHONPATH"] = str(rogue)
+    command = verifier._interpreter_origin_probe_argv(Path(sys.executable), trusted.resolve())
+
+    completed = subprocess.run(
+        command,
+        cwd=rogue,
+        env=environment,
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    payload = json.loads(completed.stdout)
+    assert Path(payload["source_root"]).resolve() == trusted.resolve()
+    assert Path(payload["arc3_origin"]).resolve() == (trusted / "arc3" / "__init__.py").resolve()
+
+    (trusted / "arc3" / "__init__.py").write_text(
+        "import socket\nsocket.socket()\n",
+        encoding="utf-8",
+    )
+    denied = subprocess.run(
+        command,
+        cwd=rogue,
+        env=environment,
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert denied.returncode != 0
+    assert "network disabled during interpreter origin probe" in denied.stderr
 
 
 def test_command_runner_allowlists_environment_and_redacts_logs(

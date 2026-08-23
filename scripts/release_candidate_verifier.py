@@ -779,6 +779,34 @@ def prepare_fresh_transient_root(repository: Path, output_root: Path, transient_
     transient_root.mkdir(parents=True, exist_ok=False)
 
 
+_INTERPRETER_ORIGIN_PROBE_PROGRAM = (
+    "import json,sys\n"
+    "from pathlib import Path\n"
+    "source_root=Path(sys.argv[1])\n"
+    "if not source_root.is_absolute():\n"
+    "    raise RuntimeError('candidate source root must be absolute')\n"
+    "source_root=source_root.resolve(strict=True)\n"
+    "def deny_network(event,args):\n"
+    "    if event.startswith('socket.'):\n"
+    "        raise PermissionError('network disabled during interpreter origin probe')\n"
+    "sys.addaudithook(deny_network)\n"
+    "sys.path.insert(0,str(source_root))\n"
+    "import arc3\n"
+    "print(json.dumps({'executable':sys.executable,'prefix':sys.prefix,"
+    "'source_root':str(source_root),'arc3_origin':arc3.__file__},sort_keys=True))\n"
+)
+
+
+def _interpreter_origin_probe_argv(executable: Path, source_root: Path) -> tuple[str, ...]:
+    return (
+        str(executable),
+        "-I",
+        "-c",
+        _INTERPRETER_ORIGIN_PROBE_PROGRAM,
+        str(source_root),
+    )
+
+
 def interpreter_source_identity(repository: Path, transient_root: Path) -> dict[str, object]:
     """Prove the verifier and its isolated subprocess import ARC3 from this clone."""
 
@@ -798,17 +826,9 @@ def interpreter_source_identity(repository: Path, transient_root: Path) -> dict[
     if in_process_origin != expected_origin:
         raise ValueError(f"arc3 import origin is outside the candidate source: {in_process_origin}")
     environment, removed = _sanitized_environment(transient_root, "interpreter-origin")
+    source_root = (repository / "src").resolve()
     probe = subprocess.run(
-        (
-            str(executable),
-            "-I",
-            "-c",
-            (
-                "import arc3,json,sys;"
-                "print(json.dumps({'executable':sys.executable,'prefix':sys.prefix,"
-                "'arc3_origin':arc3.__file__},sort_keys=True))"
-            ),
-        ),
+        _interpreter_origin_probe_argv(executable, source_root),
         cwd=repository,
         env=environment,
         check=False,
@@ -828,10 +848,12 @@ def interpreter_source_identity(repository: Path, transient_root: Path) -> dict[
         raise ValueError(f"interpreter origin probe did not return JSON: {error}") from error
     probed_executable = Path(str(payload.get("executable"))).resolve()
     probed_prefix = Path(str(payload.get("prefix"))).resolve()
+    probed_source_root = Path(str(payload.get("source_root"))).resolve()
     probed_origin = Path(str(payload.get("arc3_origin"))).resolve()
-    if (probed_executable, probed_prefix, probed_origin) != (
+    if (probed_executable, probed_prefix, probed_source_root, probed_origin) != (
         executable,
         expected_prefix,
+        source_root,
         expected_origin,
     ):
         raise ValueError("isolated interpreter origin disagrees with the candidate runtime")
@@ -840,6 +862,8 @@ def interpreter_source_identity(repository: Path, transient_root: Path) -> dict[
         "arc3_origin_sha256": sha256_file(expected_origin),
         "clone_local_virtual_environment": True,
         "isolated_probe": True,
+        "isolated_probe_source_root": source_root.relative_to(repository).as_posix(),
+        "network_denied_during_probe": True,
         "non_allowlisted_environment_variables_removed": removed,
         "python_executable": _path_for_receipt(executable, repository),
         "python_executable_sha256": sha256_file(executable),
