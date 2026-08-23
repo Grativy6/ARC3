@@ -96,6 +96,22 @@ def test_missing_private_surface_keeps_package_profile_blocked() -> None:
     assert _overall_status((passing, blocked)) == "FAILED_MECHANISM"
 
 
+def test_package_workflow_normalizes_expected_blocked_exit_only_after_receipt_checks() -> None:
+    repository = Path(__file__).resolve().parents[2]
+    workflow = (repository / ".github/workflows/build001-package-only.yml").read_text(
+        encoding="utf-8"
+    )
+
+    expected_exit = workflow.index("if ($verifierExit -ne 1)")
+    blocked_status = workflow.index('$receipt.status -ne "BLOCKED_EXTERNAL"')
+    sealed_boundary = workflow.index("$receipt.sealed_artifact_set.complete")
+    normalized_exit = workflow.index("exit 0", sealed_boundary)
+
+    assert expected_exit < blocked_status < sealed_boundary < normalized_exit
+    assert 'push:\n    branches:\n      - "build/**"' in workflow
+    assert "pull_request:\n    branches:\n      - main" in workflow
+
+
 def test_package_runtime_format_metrics_bind_archive_and_wheel_inventory(
     tmp_path: Path,
 ) -> None:

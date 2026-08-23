@@ -91,6 +91,9 @@ jobs:
           "receipt_sha256=sha256:$receiptHash" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
           "### ${{ matrix.os }}`n`nCandidate: ``$expected```n`nReceipt: ``sha256:$receiptHash``" |
             Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
+          # The verified BLOCKED_EXTERNAL result intentionally exits 1.  Clear
+          # that native exit code only after every receipt assertion above.
+          exit 0
 
       - name: Upload hash-bound verifier evidence
         id: upload
