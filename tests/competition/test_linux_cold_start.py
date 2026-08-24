@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 import io
+import json
+import subprocess
 import zipfile
 from pathlib import Path
 from typing import Any
 
 import pytest
+from scripts import verify_build002_cold_start
 
 from arc3.packaging import cold_start
 from arc3.packaging.cold_start import (
@@ -30,6 +33,69 @@ class _Download(io.BytesIO):
 
     def geturl(self) -> str:
         return self._url
+
+
+@pytest.mark.competition
+def test_build002_failed_subprocess_preserves_only_a_bounded_diagnostic_tail(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    stderr = "discard-me" + ("x" * 5000) + "useful-tail"
+    monkeypatch.setattr(
+        cold_start.subprocess,
+        "run",
+        lambda *_args, **_kwargs: subprocess.CompletedProcess(
+            args=["probe"], returncode=7, stdout="", stderr=stderr
+        ),
+    )
+
+    with pytest.raises(PackagingError) as caught:
+        cold_start._run_checked(
+            ["probe"],
+            environment={},
+            timeout_seconds=1.0,
+            label="fixture probe",
+        )
+
+    message = str(caught.value)
+    assert "fixture probe failed with exit 7" in message
+    assert "useful-tail" in message
+    assert "discard-me" not in message
+    assert "stderr_sha256=sha256:" in message
+
+
+@pytest.mark.competition
+def test_build002_cli_writes_failure_receipt_before_returning_nonzero(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    package = tmp_path / "package"
+    package.mkdir()
+    (package / "package-manifest.json").write_text(
+        json.dumps({"source": {"git_commit": "1" * 40}}), encoding="utf-8"
+    )
+    monkeypatch.setattr(
+        verify_build002_cold_start,
+        "run_linux_cold_start",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(PackagingError("linux import failed")),
+    )
+    receipt = tmp_path / "receipt.json"
+
+    exit_code = verify_build002_cold_start.main(
+        [
+            "--package-dir",
+            str(package),
+            "--wheelhouse",
+            str(tmp_path / "wheels"),
+            "--receipt",
+            str(receipt),
+        ]
+    )
+
+    document = json.loads(receipt.read_text(encoding="utf-8"))
+    assert exit_code == 1
+    assert document["status"] == "FAILED_INFRASTRUCTURE"
+    assert document["error"] == "linux import failed"
+    assert document["public_environment_interactions"] == 0
+    assert document["kaggle_accessed"] is False
 
 
 def _fixture_manifest(tmp_path: Path) -> tuple[Path, Path, str, bytes]:

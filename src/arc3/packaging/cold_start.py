@@ -653,8 +653,15 @@ def _run_checked(
     )
     if completed.returncode != 0:
         stderr_digest = sha256_bytes(completed.stderr.encode("utf-8", errors="replace"))
+        stdout_digest = sha256_bytes(completed.stdout.encode("utf-8", errors="replace"))
+        # The child receives a deliberately minimal environment with no repository or
+        # CI credentials.  Preserve a bounded tail so Linux-only import failures can
+        # be repaired from a receipt instead of reducing the evidence to a hash.
+        stderr_tail = completed.stderr[-4096:].replace("\x00", "\\0")
         raise PackagingError(
-            f"{label} failed with exit {completed.returncode}; stderr_sha256={stderr_digest}"
+            f"{label} failed with exit {completed.returncode}; "
+            f"stdout_sha256={stdout_digest}; stderr_sha256={stderr_digest}; "
+            f"stderr_tail={stderr_tail!r}"
         )
     return completed
 

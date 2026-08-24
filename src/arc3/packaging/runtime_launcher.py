@@ -676,9 +676,7 @@ def _write_launch_failure_receipt(
             stream.write(encoded)
     except FileExistsError:
         if path.read_bytes() != encoded:
-            raise PackagingError(
-                "competition launch failure receipt identity collision"
-            ) from None
+            raise PackagingError("competition launch failure receipt identity collision") from None
     return path
 
 
@@ -770,9 +768,7 @@ def launch_competition_framework(
         if normalized_notebook_start > launcher_started_at:
             raise PackagingError("notebook_started_at_seconds cannot be in the future")
     runtime_anchor = (
-        normalized_notebook_start
-        if normalized_notebook_start is not None
-        else launcher_started_at
+        normalized_notebook_start if normalized_notebook_start is not None else launcher_started_at
     )
     hard_deadline_seconds = (
         runtime_anchor

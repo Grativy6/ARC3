@@ -71,6 +71,7 @@ jobs:
           }
 
       - name: Upload exact package and cold-start receipts
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: "arc3-build002-linux-${{ github.sha }}"

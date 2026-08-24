@@ -73,7 +73,16 @@ def main(argv: Sequence[str] | None = None) -> int:
             source_commit=_package_source_commit(package_manifest),
         ).to_dict()
     except PackagingError as error:
-        print(json.dumps({"error": str(error), "status": "FAILED"}, sort_keys=True))
+        failure_result: dict[str, JSONValue] = {
+            "acquisition": acquisition,
+            "error": str(error),
+            "kaggle_accessed": False,
+            "public_environment_interactions": 0,
+            "schema": "arc3.build-002-cold-start-command.v0.1",
+            "status": "FAILED_INFRASTRUCTURE",
+        }
+        write_bytes_atomic(receipt_path, canonical_json_bytes(failure_result))
+        print(json.dumps(failure_result, indent=2, sort_keys=True))
         return 1
 
     result: dict[str, JSONValue] = {

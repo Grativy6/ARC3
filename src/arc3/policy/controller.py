@@ -3784,12 +3784,7 @@ class ARC3Controller:
         level_due = boundary == "evidence-fold" and (
             self._level_index != self._last_sparse_checkpoint_level
         )
-        if not (
-            policy.automatic_per_action_checkpoints
-            or force
-            or sparse_due
-            or level_due
-        ):
+        if not (policy.automatic_per_action_checkpoints or force or sparse_due or level_due):
             return
         self._last_checkpoint = self.checkpoint()
         self._last_sparse_checkpoint_level = self._level_index

@@ -362,9 +362,7 @@ def config_from_mapping(data: Mapping[str, object]) -> ARC3Config:
         try:
             execution_mode = ExecutionMode(str(raw_execution_mode))
         except ValueError as error:
-            raise ConfigurationError(
-                f"unknown execution mode: {raw_execution_mode!r}"
-            ) from error
+            raise ConfigurationError(f"unknown execution mode: {raw_execution_mode!r}") from error
 
     raw_budgets = data.get("budgets", {})
     if isinstance(raw_budgets, BudgetConfig):

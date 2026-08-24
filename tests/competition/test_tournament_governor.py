@@ -137,9 +137,7 @@ def test_future_notebook_start_anchor_fails_closed() -> None:
 @pytest.mark.competition
 def test_legal_action_enforcement_and_coordinate_safe_fallback() -> None:
     clock = FakeClock()
-    governor = TournamentGovernor(
-        _config(environments=1, minimum=1.0, game_actions=5), clock=clock
-    )
+    governor = TournamentGovernor(_config(environments=1, minimum=1.0, game_actions=5), clock=clock)
     governor.start_tournament()
     governor.begin_game("only")
 
@@ -412,12 +410,9 @@ def test_elapsed_tournament_still_registers_and_finalizes_every_environment() ->
     governor.begin_game("game-1")
     clock.advance(15.0)
     assert (
-        governor.stop_decision("game-1").reason
-        is GovernorStopReason.TOURNAMENT_PLAYABLE_TIME_LIMIT
+        governor.stop_decision("game-1").reason is GovernorStopReason.TOURNAMENT_PLAYABLE_TIME_LIMIT
     )
-    governor.finalize_game(
-        "game-1", reason=GovernorStopReason.TOURNAMENT_PLAYABLE_TIME_LIMIT
-    )
+    governor.finalize_game("game-1", reason=GovernorStopReason.TOURNAMENT_PLAYABLE_TIME_LIMIT)
 
     for game_id in ("game-2", "game-3"):
         allocation = governor.begin_game(game_id)
