@@ -411,10 +411,13 @@ def _validate_package(
         raise EvaluationError("candidate archive validator did not return PASS")
     receipt = _load_object(paths["build-receipt"], label="Kaggle build receipt")
     manifest = _load_object(paths["package-manifest"], label="Kaggle package manifest")
-    expected_status = "PACKAGING_PREACCEPTANCE" if allow_test_fixtures else "PACKAGING_PASS"
+    package_status = receipt.get("status")
+    allowed_statuses = (
+        {"PACKAGING_PASS", "PACKAGING_PREACCEPTANCE"} if allow_test_fixtures else {"PACKAGING_PASS"}
+    )
     if (
         receipt.get("schema") != _PACKAGE_RECEIPT_SCHEMA
-        or receipt.get("status") != expected_status
+        or package_status not in allowed_statuses
         or receipt.get("official_submission_performed") is not False
     ):
         raise EvaluationError("Kaggle build receipt is not valid for this evidence class")
@@ -475,10 +478,10 @@ def _validate_package(
     secret_scan = manifest.get("secret_scan")
     if (
         manifest.get("schema") != _PACKAGE_MANIFEST_SCHEMA
-        or manifest.get("build_status") != expected_status
+        or manifest.get("build_status") != package_status
         or not isinstance(source, dict)
         or source.get("git_commit") != commit
-        or source.get("git_dirty") is not allow_test_fixtures
+        or source.get("git_dirty") is not (package_status == "PACKAGING_PREACCEPTANCE")
         or not isinstance(competition, dict)
         or competition.get("internet_enabled") is not False
         or competition.get("official_submission_performed") is not False
