@@ -1,0 +1,56 @@
+{
+  "schema": "arc3.build-002.holdout-authority-transition.v0.1",
+  "generated_at": "2026-08-24T03:26:38Z",
+  "status": "AUTHORIZED_ONCE_NOT_YET_CONSUMED",
+  "evidence_label": "authority-boundary",
+  "claim_boundary": "authorization and historical separation only; no gameplay or score",
+  "owner_authority": {
+    "build": "002",
+    "authorized_runs": 1,
+    "authorized_partition": "previously sealed ten-game public holdout",
+    "precondition": "every offline, source-identity, packaging, and competition-mode preflight passes",
+    "official_submission_authorized": false
+  },
+  "build_001_historical_record": {
+    "overall_status": "PARTIAL",
+    "holdout_gate": "HOLDOUT_NOT_EARNED",
+    "holdout_status": "SEALED_UNCONSUMED",
+    "gameplay_events": 0,
+    "identities_loaded": 0,
+    "manifest_parsed": false,
+    "nonconsumption_receipt": "docs/evidence/001-12-holdout-nonconsumption.json",
+    "nonconsumption_file_sha256": "sha256:52005ea16e7f0413f33ad61fed651ee7d8f79ee7493553a6b1aedff34a69709c",
+    "nonconsumption_core_hash": "sha256:ec9dfe6ffea40c4ecec42888c3872247392768bdbacfa663b484011d774bb24b",
+    "immutable": true,
+    "revised_by_build_002": false
+  },
+  "build_002_authority": {
+    "partition_manifest": "docs/evaluation/public-game-partitions.v0.1.json",
+    "partition_manifest_sha256": "sha256:682d5891c2aface54803d9bd1173c55ed21e89856e13b8a478fb9276ee963f2f",
+    "declared_game_count": 10,
+    "maximum_runs": 1,
+    "runs_started": 0,
+    "runs_completed": 0,
+    "environment_make_interactions": 0,
+    "environment_actions": 0,
+    "consumption_boundary": "first attempted environment open/make interaction after the frozen preflight receipt",
+    "failure_after_boundary_consumes_authority": true,
+    "retry_authorized": false,
+    "result_label": null,
+    "official_rhae": null
+  },
+  "required_preflight_gates": {
+    "official_source_identity": "PENDING_FINAL_SEAL",
+    "dependency_and_config_identity": "PENDING",
+    "competition_lifecycle": "PENDING",
+    "offline_cold_start": "PENDING",
+    "complete_package_and_license_inventory": "PENDING",
+    "deterministic_startup_and_replay": "PENDING",
+    "notebook_build_and_offline_entry_point": "PENDING",
+    "submission_parquet_structure": "PENDING",
+    "secret_and_integrity_scan": "PENDING",
+    "frozen_source_config_artifact_hashes": "PENDING"
+  },
+  "transition_rule": "Build 001 remains permanently unconsumed historical evidence. Only the separate Build 002 evidence record transitions to intentionally consumed when its one authorized run crosses the consumption boundary.",
+  "current_transition": "NO_CONSUMPTION"
+}

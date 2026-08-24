@@ -1,0 +1,115 @@
+{
+  "schema": "arc3.build-002-run-state.v0.1",
+  "workflow": "docs/workflows/002-kaggle-competition-adapter-first-rhae.md",
+  "workflow_version": "0.1",
+  "repository": "Grativy6/ARC3",
+  "owner": "Christopher D. Pang",
+  "build_status": "IN_PROGRESS",
+  "status": "IN_PROGRESS",
+  "current_stage": "00",
+  "current_task": "Implement and verify the competition adapter before freezing the one-shot public run",
+  "implementation_branch": "build/002-kaggle-competition-adapter",
+  "pull_request": null,
+  "started_at": "2026-08-24T03:10:13Z",
+  "last_checkpoint_at": "2026-08-24T03:26:38Z",
+  "last_checkpoint_commit": null,
+  "base": {
+    "origin_main_commit": "a1931c673b90923e1af78127229667544802a096",
+    "origin_main_tree": "7ddc02a03908e43caeda31edaf09bea9bd426cfd",
+    "build_001_final_commit": "8a42e43c96ac1edada21725746cdedcee24e68f9",
+    "build_001_final_tree": "7ddc02a03908e43caeda31edaf09bea9bd426cfd",
+    "build_001_ancestral_to_origin_main": true,
+    "origin_main_parents": [
+      "28c7a00732ce48e5c231211b01bc6eba7d0d71b4",
+      "8a42e43c96ac1edada21725746cdedcee24e68f9"
+    ],
+    "origin_main_subject": "Merge pull request #5 from Grativy6/build/001-local-public-recovery"
+  },
+  "prior_build_boundary": {
+    "build_001_status": "PARTIAL",
+    "build_001_holdout_status": "SEALED_UNCONSUMED",
+    "build_001_claim_boundary": "NO_GENERALIZATION_CLAIM",
+    "retroactive_revision_permitted": false
+  },
+  "build_002_holdout": {
+    "authority": "OWNER_AUTHORIZED_EXACTLY_ONE_RUN_AFTER_ALL_PREFLIGHTS_PASS",
+    "status": "AUTHORIZED_ONCE_NOT_YET_CONSUMED",
+    "manifest": "docs/evaluation/public-game-partitions.v0.1.json",
+    "manifest_sha256": "sha256:682d5891c2aface54803d9bd1173c55ed21e89856e13b8a478fb9276ee963f2f",
+    "declared_game_count": 10,
+    "maximum_runs": 1,
+    "runs_started": 0,
+    "runs_completed": 0,
+    "environment_make_interactions": 0,
+    "environment_actions": 0,
+    "consumption_boundary": "first attempted environment open/make interaction after the frozen preflight receipt",
+    "result_label_if_local": "local-public",
+    "official_rhae": null
+  },
+  "completed_stages": [],
+  "stage_status": {
+    "00": "IN_PROGRESS",
+    "01": "PENDING",
+    "02": "PENDING",
+    "03": "PENDING",
+    "04": "PENDING",
+    "05": "PENDING",
+    "06": "PENDING",
+    "07": "PENDING",
+    "08": "PENDING",
+    "09": "PENDING",
+    "10": "PENDING"
+  },
+  "evidence": {
+    "00": {
+      "status": "PASS",
+      "label": "source-identity",
+      "source_identity": "docs/evidence/002-00-official-source-identities.json",
+      "holdout_authority": "docs/evidence/002-00-holdout-authority-transition.json",
+      "report": "docs/reports/002-00-source-identity-and-authority.md",
+      "available_public_sources_verified": true,
+      "project_lock_updated_and_verified": true,
+      "project_lock_sha256": "sha256:b5474a8f36bda80bb629f204591610325045411bd5aac65f6765261b7fab6b0b",
+      "exact_private_kaggle_surfaces": "BLOCKED_EXTERNAL"
+    }
+  },
+  "runtime_boundary": {
+    "generic_notebook_limit_seconds": 43200,
+    "competition_specific_limit_seconds": 32400,
+    "effective_limit_seconds": 32400,
+    "planned_reserve_seconds": 6000,
+    "frozen_configuration": null,
+    "claim": "The competition-specific nine-hour limit controls the generic twelve-hour ceiling"
+  },
+  "validation": {
+    "ledger": "docs/ledger/build-002-VALIDATION.md",
+    "full_repository_suite": "PENDING",
+    "offline_cold_start": "PENDING",
+    "notebook_execution": "PENDING",
+    "submission_parquet": "PENDING",
+    "one_shot_public_run": "NOT_STARTED"
+  },
+  "blocked_items": [
+    "B-002-0001: exact private Kaggle execution and scorer surfaces are unavailable",
+    "B-002-0002: current local scorer and Kaggle data-page score caps conflict",
+    "B-002-0003: public toolkit and staff-sample package versions differ",
+    "B-002-0004: exact private submission schema parity cannot be established locally"
+  ],
+  "human_gates": {
+    "terms_accepted": false,
+    "kaggle_credentials_used": false,
+    "notebook_uploaded": false,
+    "official_submission": false,
+    "pull_request_merged": false,
+    "release_or_doi_published": false,
+    "money_spent_or_paid_compute_activated": false,
+    "secrets_disclosed": false
+  },
+  "next_action": "Finish implementation and every frozen preflight; do not consume the one-shot public authority yet",
+  "notes": [
+    "Build 000 and Build 001 ledgers, reports, evidence, and claims are immutable historical evidence.",
+    "A Build 002 run cannot retroactively earn Build 001's holdout gate or change Build 001 from PARTIAL.",
+    "Starting the first public environment consumes the Build 002 one-run authority even if the run later fails.",
+    "No synthetic, fixture, local-public, or approximate scorer output may be labeled official RHAE."
+  ]
+}

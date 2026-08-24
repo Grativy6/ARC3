@@ -203,6 +203,69 @@
     "daily_submission_limit_reported_by_starter": 5,
     "legal_terms_access": "human-gated; anonymous rules API returned HTTP 401; no terms accepted"
   },
+  "build_002_refresh": {
+    "schema": "arc3.upstream-lock.build-002.v0.1",
+    "accessed_at": "2026-08-24T03:10:13.3556365Z",
+    "repository_base": {
+      "origin_main": "a1931c673b90923e1af78127229667544802a096",
+      "origin_main_tree": "7ddc02a03908e43caeda31edaf09bea9bd426cfd",
+      "build_001_final": "8a42e43c96ac1edada21725746cdedcee24e68f9",
+      "build_001_ancestral": true,
+      "implementation_branch": "build/002-kaggle-competition-adapter"
+    },
+    "public_repository_heads": {
+      "arcprize/ARC-AGI": "f12822c4d550121c35a275008d964afbbed47d2f",
+      "arcprize/ARCEngine": "b495c6acaf253c9681cd7b75c4299d352e9ce6f8",
+      "arcprize/ARC-AGI-3-Agents": "4743e7d0aaae0ded0d98a89a7e282e63564cd58b",
+      "arcprize/ARC-AGI-3-Kaggle-Starter": "eeb1535404f321d280a8f9194bbc1d7aca5f05fc",
+      "arcprize/docs": "a5dfc0b64c625fb4a19cf074af845ebe0bb88ff8"
+    },
+    "controlling_file_sha256": {
+      "arcprize/docs:actions.mdx": "sha256:a0125637f035b1f4e5f445ec939d0cce848e1b95b310fe1afb34b14421667662",
+      "arcprize/docs:toolkit/competition_mode.mdx": "sha256:07c6eb36e407cd1e6557f8e7ea2d6848a4645f95574e7098328099f7dc2285c6",
+      "arcprize/docs:methodology.mdx": "sha256:c799ee8b7e1d2f8196fdc2c2409a6395b1a88290b222857a29e4f596d79a44e0",
+      "arcprize/ARC-AGI:arc_agi/scorecard.py": "sha256:5eea296343ad086c5f8d3e6626bf6ea25e1c635400ed431b1db85bdab899cc9b",
+      "arcprize/ARC-AGI-3-Agents:agents/agent.py": "sha256:500a9b9055aa5023a84b2b19bc9a41cb53dff03b3224b8d1ceb00e738709256f",
+      "arcprize/ARC-AGI-3-Agents:agents/swarm.py": "sha256:c1d35066acfccb0b982bc33bb07a732d70da4d938c80ce3cdafd67b1018212cc",
+      "arcprize/ARC-AGI-3-Agents:main.py": "sha256:b13c6b932eb7b34e57d549c4b11f19646a09430544106d556d99576a41b2f07f",
+      "arcprize/ARC-AGI-3-Kaggle-Starter:agent/my_agent.py": "sha256:229091656932824543bd63165c9607463a9cf0fc0108f534e70e6fe932158f58",
+      "arcprize/ARC-AGI-3-Kaggle-Starter:scripts/build_notebook.py": "sha256:1eac7fbc51befce507fb3708d8187881849c0285753af313535b4647e00092c6"
+    },
+    "kaggle_competition_metadata": {
+      "endpoint": "https://www.kaggle.com/api/i/competitions.CompetitionService/GetCompetition?competitionName=arc-prize-2026-arc-agi-3",
+      "http_status": 200,
+      "response_sha256": "sha256:de323841e87991d99d3a33fe49b639c53c34037940ef18a3ed5108e8df286c57",
+      "competition_id": 133468,
+      "cpu_runtime_limit_minutes": 540,
+      "gpu_runtime_limit_minutes": 540,
+      "internet_enabled": false,
+      "required_submission_file": "submission.parquet",
+      "daily_submission_limit": 1,
+      "scored_submission_limit": 2,
+      "legal_terms_accepted": false,
+      "credentials_used": false
+    },
+    "competition_adapter_interface_grants": {
+      "scope": "COMPETITION_BOUNDED only",
+      "fixed": {
+        "ACTION1": "up",
+        "ACTION2": "down",
+        "ACTION3": "left",
+        "ACTION4": "right",
+        "ACTION7": "undo"
+      },
+      "evidence_driven": [
+        "ACTION5",
+        "coordinate-dependent ACTION6"
+      ],
+      "research_mode_opaque_action_mechanism_preserved": true
+    },
+    "fail_closed_discrepancies": [
+      "ARC-AGI 0.9.9 local 1.15 score cap versus current Kaggle data-page 1.0 cap",
+      "public toolkit 0.9.9 versus latest observed staff-sample 0.9.6",
+      "private wheel, gateway, scorer, and submission-schema parity unavailable"
+    ]
+  },
   "external_access": {
     "arc_api_key_present": false,
     "kaggle_credentials_present": false,

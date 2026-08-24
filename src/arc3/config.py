@@ -13,9 +13,9 @@ from pathlib import Path
 from typing import cast
 
 from arc3.errors import CompetitionIntegrityError, ConfigurationError
-from arc3.types import ConfigHash, EnvironmentMode, JSONValue
+from arc3.types import ConfigHash, EnvironmentMode, ExecutionMode, JSONValue
 
-CONFIG_SCHEMA = "arc3.config.v0.1"
+CONFIG_SCHEMA = "arc3.config.v0.2"
 
 
 @dataclass(frozen=True, slots=True)
@@ -54,10 +54,53 @@ class BudgetConfig:
 
 
 @dataclass(frozen=True, slots=True)
+class RuntimePolicyConfig:
+    """Execution-cost policy kept separate from persistent research mechanisms."""
+
+    allocator_tracing_enabled: bool = True
+    automatic_per_action_checkpoints: bool = True
+    sparse_checkpoint_interval_actions: int = 1
+    compact_trace_capacity: int = 0
+
+    def __post_init__(self) -> None:
+        for name, value in (
+            ("allocator_tracing_enabled", self.allocator_tracing_enabled),
+            ("automatic_per_action_checkpoints", self.automatic_per_action_checkpoints),
+        ):
+            if not isinstance(value, bool):
+                raise ConfigurationError(f"{name} must be a boolean")
+        if (
+            isinstance(self.sparse_checkpoint_interval_actions, bool)
+            or self.sparse_checkpoint_interval_actions <= 0
+        ):
+            raise ConfigurationError("sparse_checkpoint_interval_actions must be positive")
+        if isinstance(self.compact_trace_capacity, bool) or self.compact_trace_capacity < 0:
+            raise ConfigurationError("compact_trace_capacity must be non-negative")
+
+    @classmethod
+    def research_unbounded(cls) -> RuntimePolicyConfig:
+        """Preserve the historical research defaults exactly."""
+
+        return cls()
+
+    @classmethod
+    def competition_bounded(cls) -> RuntimePolicyConfig:
+        """Return the frozen low-overhead competition persistence policy."""
+
+        return cls(
+            allocator_tracing_enabled=False,
+            automatic_per_action_checkpoints=False,
+            sparse_checkpoint_interval_actions=16,
+            compact_trace_capacity=512,
+        )
+
+
+@dataclass(frozen=True, slots=True)
 class ARC3Config:
     """Configuration whose full canonical form is suitable for run identity."""
 
     mode: EnvironmentMode = EnvironmentMode.SYNTHETIC
+    execution_mode: ExecutionMode = ExecutionMode.RESEARCH_UNBOUNDED
     seed: int = 0
     network_enabled: bool = False
     profile: str = "foundation"
@@ -65,6 +108,7 @@ class ARC3Config:
     artifact_root: str = "artifacts"
     trace_root: str = "recordings"
     budgets: BudgetConfig = BudgetConfig()
+    runtime_policy: RuntimePolicyConfig = RuntimePolicyConfig()
     schema: str = CONFIG_SCHEMA
 
     def __post_init__(self) -> None:
@@ -74,6 +118,14 @@ class ARC3Config:
                 object.__setattr__(self, "mode", EnvironmentMode(str(raw_mode)))
             except ValueError as error:
                 raise ConfigurationError(f"unknown environment mode: {raw_mode!r}") from error
+        raw_execution_mode: object = self.execution_mode
+        if not isinstance(raw_execution_mode, ExecutionMode):
+            try:
+                object.__setattr__(self, "execution_mode", ExecutionMode(str(raw_execution_mode)))
+            except ValueError as error:
+                raise ConfigurationError(
+                    f"unknown execution mode: {raw_execution_mode!r}"
+                ) from error
         if isinstance(self.seed, bool) or not -(2**63) <= self.seed < 2**63:
             raise ConfigurationError("seed must be a signed 64-bit integer")
         if not isinstance(self.network_enabled, bool):
@@ -92,6 +144,22 @@ class ARC3Config:
             raise CompetitionIntegrityError(
                 "competition mode forbids network access; set network_enabled=false"
             )
+        expected_policy = (
+            RuntimePolicyConfig.competition_bounded()
+            if self.execution_mode is ExecutionMode.COMPETITION_BOUNDED
+            else RuntimePolicyConfig.research_unbounded()
+        )
+        if self.runtime_policy != expected_policy:
+            raise ConfigurationError(
+                f"{self.execution_mode.value} requires its frozen runtime policy"
+            )
+        if (
+            self.execution_mode is ExecutionMode.COMPETITION_BOUNDED
+            and self.mode is not EnvironmentMode.COMPETITION
+        ):
+            raise CompetitionIntegrityError(
+                "COMPETITION_BOUNDED requires the competition environment surface"
+            )
         if not self.artifact_root.strip() or not self.trace_root.strip():
             raise ConfigurationError("artifact and trace roots must not be empty")
 
@@ -102,6 +170,7 @@ class ARC3Config:
         *,
         seed: int = 0,
         network_enabled: bool | None = None,
+        execution_mode: ExecutionMode | str | None = None,
         profile: str = "foundation",
         log_level: str = "INFO",
         budgets: BudgetConfig | None = None,
@@ -115,13 +184,38 @@ class ARC3Config:
             raise ConfigurationError(f"unknown mode {mode!r}; expected one of {choices}") from error
         default_network = parsed_mode is EnvironmentMode.ONLINE
         resolved_network = default_network if network_enabled is None else network_enabled
+        if execution_mode is None:
+            resolved_execution_mode = (
+                ExecutionMode.COMPETITION_BOUNDED
+                if parsed_mode is EnvironmentMode.COMPETITION
+                else ExecutionMode.RESEARCH_UNBOUNDED
+            )
+        else:
+            try:
+                resolved_execution_mode = (
+                    execution_mode
+                    if isinstance(execution_mode, ExecutionMode)
+                    else ExecutionMode(execution_mode)
+                )
+            except ValueError as error:
+                choices = ", ".join(item.value for item in ExecutionMode)
+                raise ConfigurationError(
+                    f"unknown execution mode {execution_mode!r}; expected one of {choices}"
+                ) from error
+        runtime_policy = (
+            RuntimePolicyConfig.competition_bounded()
+            if resolved_execution_mode is ExecutionMode.COMPETITION_BOUNDED
+            else RuntimePolicyConfig.research_unbounded()
+        )
         return cls(
             mode=parsed_mode,
+            execution_mode=resolved_execution_mode,
             seed=seed,
             network_enabled=resolved_network,
             profile=profile,
             log_level=log_level,
             budgets=budgets or BudgetConfig(),
+            runtime_policy=runtime_policy,
         )
 
     def to_dict(self) -> dict[str, JSONValue]:
@@ -239,6 +333,7 @@ def config_from_mapping(data: Mapping[str, object]) -> ARC3Config:
     allowed = {
         "schema",
         "mode",
+        "execution_mode",
         "seed",
         "network_enabled",
         "profile",
@@ -246,6 +341,7 @@ def config_from_mapping(data: Mapping[str, object]) -> ARC3Config:
         "artifact_root",
         "trace_root",
         "budgets",
+        "runtime_policy",
     }
     unknown = sorted(set(data) - allowed)
     if unknown:
@@ -255,6 +351,20 @@ def config_from_mapping(data: Mapping[str, object]) -> ARC3Config:
         mode = EnvironmentMode(str(raw_mode))
     except ValueError as error:
         raise ConfigurationError(f"unknown environment mode: {raw_mode!r}") from error
+    raw_execution_mode = data.get("execution_mode")
+    if raw_execution_mode is None:
+        execution_mode = (
+            ExecutionMode.COMPETITION_BOUNDED
+            if mode is EnvironmentMode.COMPETITION
+            else ExecutionMode.RESEARCH_UNBOUNDED
+        )
+    else:
+        try:
+            execution_mode = ExecutionMode(str(raw_execution_mode))
+        except ValueError as error:
+            raise ConfigurationError(
+                f"unknown execution mode: {raw_execution_mode!r}"
+            ) from error
 
     raw_budgets = data.get("budgets", {})
     if isinstance(raw_budgets, BudgetConfig):
@@ -271,6 +381,27 @@ def config_from_mapping(data: Mapping[str, object]) -> ARC3Config:
     else:
         raise ConfigurationError("budgets must be an object")
 
+    raw_runtime_policy = data.get("runtime_policy")
+    if raw_runtime_policy is None:
+        runtime_policy = (
+            RuntimePolicyConfig.competition_bounded()
+            if execution_mode is ExecutionMode.COMPETITION_BOUNDED
+            else RuntimePolicyConfig.research_unbounded()
+        )
+    elif isinstance(raw_runtime_policy, RuntimePolicyConfig):
+        runtime_policy = raw_runtime_policy
+    elif isinstance(raw_runtime_policy, Mapping):
+        policy_allowed = set(RuntimePolicyConfig.__dataclass_fields__)
+        policy_unknown = sorted(set(str(key) for key in raw_runtime_policy) - policy_allowed)
+        if policy_unknown:
+            raise ConfigurationError(f"unknown runtime policy keys: {', '.join(policy_unknown)}")
+        try:
+            runtime_policy = RuntimePolicyConfig(**dict(raw_runtime_policy))
+        except TypeError as error:
+            raise ConfigurationError(f"invalid runtime policy configuration: {error}") from error
+    else:
+        raise ConfigurationError("runtime_policy must be an object")
+
     raw_network = data.get("network_enabled")
     network_enabled = (
         mode is EnvironmentMode.ONLINE
@@ -279,6 +410,7 @@ def config_from_mapping(data: Mapping[str, object]) -> ARC3Config:
     )
     return ARC3Config(
         mode=mode,
+        execution_mode=execution_mode,
         seed=_parse_int(data.get("seed", 0), name="seed"),
         network_enabled=network_enabled,
         profile=str(data.get("profile", "foundation")),
@@ -286,6 +418,7 @@ def config_from_mapping(data: Mapping[str, object]) -> ARC3Config:
         artifact_root=str(data.get("artifact_root", "artifacts")),
         trace_root=str(data.get("trace_root", "recordings")),
         budgets=budgets,
+        runtime_policy=runtime_policy,
         schema=str(data.get("schema", CONFIG_SCHEMA)),
     )
 
@@ -315,6 +448,7 @@ def load_config(
     overrides: dict[str, object] = {}
     environment_keys = {
         "ARC3_MODE": "mode",
+        "ARC3_EXECUTION_MODE": "execution_mode",
         "ARC3_SEED": "seed",
         "ARC3_NETWORK_ENABLED": "network_enabled",
         "ARC3_PROFILE": "profile",

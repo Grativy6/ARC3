@@ -35,6 +35,13 @@ class EnvironmentMode(StrEnum):
     COMPETITION = "competition"
 
 
+class ExecutionMode(StrEnum):
+    """Controller resource contract, independent of the environment surface."""
+
+    RESEARCH_UNBOUNDED = "RESEARCH_UNBOUNDED"
+    COMPETITION_BOUNDED = "COMPETITION_BOUNDED"
+
+
 class ActionName(StrEnum):
     """First-party names for the official variable action vocabulary."""
 

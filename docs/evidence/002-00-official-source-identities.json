@@ -1,0 +1,215 @@
+{
+  "schema": "arc3.build-002.official-source-identities.v0.1",
+  "generated_at": "2026-08-24T03:26:38Z",
+  "status": "PARTIAL",
+  "evidence_label": "source-identity",
+  "claim_boundary": "available public source identity and discrepancy record only; private Kaggle compatibility and official scoring remain unmeasured",
+  "repository": {
+    "identity": "Grativy6/ARC3",
+    "implementation_branch": "build/002-kaggle-competition-adapter",
+    "base_commit": "a1931c673b90923e1af78127229667544802a096",
+    "base_tree": "7ddc02a03908e43caeda31edaf09bea9bd426cfd",
+    "build_001_final_commit": "8a42e43c96ac1edada21725746cdedcee24e68f9",
+    "build_001_final_tree": "7ddc02a03908e43caeda31edaf09bea9bd426cfd",
+    "build_001_ancestor_check": "PASS",
+    "history_rewritten": false
+  },
+  "repositories": [
+    {
+      "name": "arcprize/ARC-AGI",
+      "url": "https://github.com/arcprize/ARC-AGI",
+      "ref": "refs/heads/main",
+      "commit": "f12822c4d550121c35a275008d964afbbed47d2f",
+      "tree": "9ee140e4183df0df109cec50b7cd0d2531c47168"
+    },
+    {
+      "name": "arcprize/ARCEngine",
+      "url": "https://github.com/arcprize/ARCEngine",
+      "ref": "refs/heads/main",
+      "commit": "b495c6acaf253c9681cd7b75c4299d352e9ce6f8",
+      "tree": "6677025cc6afbb74b5da332f6808015b903d73ee"
+    },
+    {
+      "name": "arcprize/ARC-AGI-3-Agents",
+      "url": "https://github.com/arcprize/ARC-AGI-3-Agents",
+      "ref": "refs/heads/main",
+      "commit": "4743e7d0aaae0ded0d98a89a7e282e63564cd58b",
+      "tree": "6878fdfdd0156059323b541fc229b6329ad4fd28"
+    },
+    {
+      "name": "arcprize/ARC-AGI-3-Kaggle-Starter",
+      "url": "https://github.com/arcprize/ARC-AGI-3-Kaggle-Starter",
+      "ref": "refs/heads/main",
+      "commit": "eeb1535404f321d280a8f9194bbc1d7aca5f05fc",
+      "tree": "332ff438d9b092c95e58a07eace6194379de06b4"
+    },
+    {
+      "name": "arcprize/docs",
+      "url": "https://github.com/arcprize/docs",
+      "ref": "refs/heads/main",
+      "commit": "a5dfc0b64c625fb4a19cf074af845ebe0bb88ff8",
+      "tree": "87ca00ac975faaad8884db70150856e6673c2ade"
+    }
+  ],
+  "controlling_files": [
+    {
+      "repository": "arcprize/docs",
+      "path": "actions.mdx",
+      "blob": "2ebe7dc536e07aabf4f52727e6012ca0df485c30",
+      "sha256": "a0125637f035b1f4e5f445ec939d0cce848e1b95b310fe1afb34b14421667662",
+      "controls": "ACTION1-4 directional meanings, ACTION7 undo, ACTION5 variability, ACTION6 coordinate domain, game-over RESET legality"
+    },
+    {
+      "repository": "arcprize/docs",
+      "path": "toolkit/competition_mode.mdx",
+      "blob": "6c696083ac6adf97d2485a2ba8487cc70345c6c3",
+      "sha256": "07c6eb36e407cd1e6557f8e7ea2d6848a4645f95574e7098328099f7dc2285c6",
+      "controls": "competition scorecard lifecycle and reset behavior"
+    },
+    {
+      "repository": "arcprize/docs",
+      "path": "methodology.mdx",
+      "blob": "0c684b8fd81d772d8a51ae71a674a24dd9f6232e",
+      "sha256": "c799ee8b7e1d2f8196fdc2c2409a6395b1a88290b222857a29e4f596d79a44e0",
+      "controls": "public toolkit scoring methodology"
+    },
+    {
+      "repository": "arcprize/ARC-AGI",
+      "path": "arc_agi/scorecard.py",
+      "blob": "87e9cfdcbfc3c450eb75216c38e874e985137453",
+      "sha256": "5eea296343ad086c5f8d3e6626bf6ea25e1c635400ed431b1db85bdab899cc9b",
+      "controls": "pinned executable local scorecard behavior"
+    },
+    {
+      "repository": "arcprize/ARC-AGI-3-Agents",
+      "path": "agents/agent.py",
+      "blob": "50e3a03652226d2775779bfba90bc745256a44c5",
+      "sha256": "500a9b9055aa5023a84b2b19bc9a41cb53dff03b3224b8d1ceb00e738709256f",
+      "controls": "agent interface"
+    },
+    {
+      "repository": "arcprize/ARC-AGI-3-Agents",
+      "path": "agents/swarm.py",
+      "blob": "bb3a376220f636099dd910653db3e1918935f30f",
+      "sha256": "c1d35066acfccb0b982bc33bb07a732d70da4d938c80ce3cdafd67b1018212cc",
+      "controls": "multi-environment orchestration and action loop"
+    },
+    {
+      "repository": "arcprize/ARC-AGI-3-Agents",
+      "path": "main.py",
+      "blob": "4a071bc3a4ce1dab94f754a617e5c1e70d9f907b",
+      "sha256": "b13c6b932eb7b34e57d549c4b11f19646a09430544106d556d99576a41b2f07f",
+      "controls": "official agents entry point"
+    },
+    {
+      "repository": "arcprize/ARC-AGI-3-Kaggle-Starter",
+      "path": "agent/my_agent.py",
+      "blob": "ae583247bd1bf7f238097ba07b67fa84fe3f8d13",
+      "sha256": "229091656932824543bd63165c9607463a9cf0fc0108f534e70e6fe932158f58",
+      "controls": "starter MyAgent surface"
+    },
+    {
+      "repository": "arcprize/ARC-AGI-3-Kaggle-Starter",
+      "path": "scripts/build_notebook.py",
+      "blob": "e5c13e87fac5f6a3acfe2d9a32bf621a16407e16",
+      "sha256": "1eac7fbc51befce507fb3708d8187881849c0285753af313535b4647e00092c6",
+      "controls": "starter notebook assembly"
+    },
+    {
+      "repository": "arcprize/ARC-AGI-3-Kaggle-Starter",
+      "path": "README.md",
+      "blob": "73e58bc5d45ad3623a2edea6931bf68ab6ceb393",
+      "sha256": "df1bc11fbf67ff69076158fe0a03cd463e439b2ea4c362be009bf40090706d91",
+      "controls": "starter packaging and submission guidance"
+    }
+  ],
+  "packages": {
+    "python_required": ">=3.12",
+    "local_python": "3.12.14",
+    "arc_agi": {
+      "version": "0.9.9",
+      "wheel": "arc_agi-0.9.9-py3-none-any.whl",
+      "wheel_sha256": "a0536df47b5ab93af16ba708083f74261cd1b7801bb2e0802824623c04d59e50"
+    },
+    "arcengine": {
+      "version": "0.9.3",
+      "wheel_sha256": "5f9739d6d0055780a4581fd6fe09066bb08775c4c8212c9adcca2eb008aef59c"
+    }
+  },
+  "project_lock": {
+    "path": "upstream.lock.json",
+    "sha256": "sha256:b5474a8f36bda80bb629f204591610325045411bd5aac65f6765261b7fab6b0b",
+    "build_002_overlay_schema": "arc3.upstream-lock.build-002.v0.1",
+    "json_validation": "PASS",
+    "prior_build_sections_preserved": true
+  },
+  "kaggle_competition_snapshot": {
+    "endpoint": "https://www.kaggle.com/api/i/competitions.CompetitionService/GetCompetition?competitionName=arc-prize-2026-arc-agi-3",
+    "accessed_at": "2026-08-24T03:10:13.3556365Z",
+    "http_status": 200,
+    "response_sha256": "de323841ab53bc7f0378a632a3176566111c8a4060009e7952b826661896e09e",
+    "competition_id": 133468,
+    "cpu_runtime_limit_minutes": 540,
+    "gpu_runtime_limit_minutes": 540,
+    "required_submission_file": "submission.parquet",
+    "notebook_only": true,
+    "internet_enabled": false,
+    "daily_submission_limit": 1,
+    "scored_submission_limit": 2,
+    "synchronous_rerun": true,
+    "gateway_kernel_id": 110953907,
+    "legal_terms_accepted": false,
+    "credentials_used": false
+  },
+  "lifecycle_contract": {
+    "scorecards": 1,
+    "all_available_environments_included": true,
+    "make_interactions_per_environment": 1,
+    "level_resets_only": true,
+    "game_resets": 0,
+    "internet_dependency_during_evaluation": false,
+    "status": "REQUIRES_IMPLEMENTATION_AND_TEST_VERIFICATION"
+  },
+  "observed_discrepancies": [
+    {
+      "id": "RUNTIME-LIMIT",
+      "observation": "Generic Kaggle notebook guidance allows twelve hours, while current competition-specific metadata reports nine hours.",
+      "policy": "The narrower nine-hour competition limit controls; reserve safely inside it."
+    },
+    {
+      "id": "SCORE-CAP",
+      "observation": "ARC-AGI 0.9.9 methodology/code use a 1.15 per-level ratio cap, while the current Kaggle data-page formula describes a 1.0 cap before squaring.",
+      "policy": "Bind local results to the exact toolkit scorer and never label them official Kaggle RHAE."
+    },
+    {
+      "id": "TOOLKIT-VERSION",
+      "observation": "The current public toolkit is 0.9.9 while the latest observed official staff sample used 0.9.6.",
+      "policy": "Test the pinned public version and retain private compatibility as BLOCKED_EXTERNAL."
+    },
+    {
+      "id": "STARTER-SUBMISSION-LIMIT",
+      "observation": "The pinned starter reports five daily submissions while current competition metadata reports one daily submission and two scored submissions.",
+      "policy": "Current competition-specific metadata controls; Build 002 performs no upload or submission."
+    },
+    {
+      "id": "AGENTS-ACTION-LOOP",
+      "observation": "The pinned Agents loop uses an inclusive action-counter condition that can permit an eighty-first iteration unless MyAgent stops deterministically.",
+      "policy": "Enforce the exact action budget inside MyAgent and the global governor."
+    },
+    {
+      "id": "ACTION7-TYPE-VS-DOC",
+      "observation": "Official documentation grants ACTION7 as undo while ARCEngine 0.9.3 exposes a generic simple-action type.",
+      "policy": "Use the documented grant only in COMPETITION_BOUNDED; retain generic opaque learning in RESEARCH_UNBOUNDED."
+    }
+  ],
+  "blocked_external": [
+    "exact private competition wheel set",
+    "exact private framework input",
+    "exact private gateway",
+    "exact private scorer",
+    "accepted-terms notebook execution",
+    "hidden/private environments"
+  ],
+  "official_result": null,
+  "public_holdout_consumed": false
+}

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import math
 import random
-from collections import Counter
+from collections import Counter, deque
 from collections.abc import Callable, Mapping, Sequence
 from contextlib import AbstractContextManager
 from dataclasses import asdict, dataclass, replace
@@ -13,6 +13,10 @@ from pathlib import Path
 from typing import Literal, NoReturn, Protocol, TypeVar, cast
 
 from arc3.adapters import GridFrame, Observation, validate_action_request
+from arc3.adapters.interface_semantics import (
+    OFFICIAL_COMPETITION_INTERFACE,
+    InterfaceSemantics,
+)
 from arc3.config import derive_seed
 from arc3.errors import (
     ARC3ValidationError,
@@ -123,6 +127,7 @@ from arc3.types import (
     ActionRequest,
     Coordinate,
     DisplacementEvidenceKind,
+    ExecutionMode,
     FrameHash,
     GameId,
     GameStateName,
@@ -564,6 +569,10 @@ class ARC3Controller:
         self._traced_goal_events = 0
         self._fault_count = 0
         self._last_checkpoint: ControllerCheckpoint | None = None
+        self._last_sparse_checkpoint_level = -1
+        self._interface_semantics: InterfaceSemantics | None = None
+        self._interface_semantics_emitted_levels: set[int] = set()
+        self._compact_trace: deque[dict[str, JSONValue]] = deque(maxlen=0)
 
     @property
     def phase(self) -> ControllerPhase:
@@ -587,6 +596,25 @@ class ARC3Controller:
 
         profiler = self._hot_path_profiler
         return profiler.summary() if profiler is not None and profiler.enabled else None
+
+    @property
+    def compact_trace_projection(self) -> tuple[dict[str, JSONValue], ...]:
+        """Return bounded in-memory competition receipts without raw frames."""
+
+        return tuple(dict(item) for item in self._compact_trace)
+
+    @property
+    def interface_semantics_projection(self) -> dict[str, JSONValue] | None:
+        """Expose the source-bound competition interface grant, when active."""
+
+        semantics = self._interface_semantics
+        return semantics.to_dict() if semantics is not None else None
+
+    @property
+    def search_time_budget_enforced(self) -> bool:
+        """Report whether wall-clock search termination is authoritative in this mode."""
+
+        return self.context.config.execution_mode is ExecutionMode.COMPETITION_BOUNDED
 
     @property
     def retrodiction_config(self) -> RetrodictionConfig:
@@ -645,6 +673,19 @@ class ARC3Controller:
                 self._calibration_pending_handle.value
                 if self._calibration_pending_handle is not None
                 else None
+            ),
+            **(
+                {
+                    "granted_handles": [
+                        item.value
+                        for item in ActionName
+                        if self._interface_semantics is not None
+                        and self._interface_semantics.is_granted(item)
+                    ],
+                    "interface_semantics": self.interface_semantics_projection,
+                }
+                if self._interface_semantics is not None
+                else {}
             ),
         }
 
@@ -917,6 +958,12 @@ class ARC3Controller:
                 raise CompetitionIntegrityError(
                     "competition preset requires a competition-mode ARC3Config"
                 )
+            if context.config.execution_mode is not ExecutionMode.COMPETITION_BOUNDED:
+                raise CompetitionIntegrityError(
+                    "competition preset requires COMPETITION_BOUNDED execution mode"
+                )
+            if context.config.runtime_policy.allocator_tracing_enabled:
+                raise CompetitionIntegrityError("competition execution forbids allocator tracing")
         proposal_provider = self._local_proposals
         selected_features = self.features
         profiler = self._hot_path_profiler
@@ -945,6 +992,8 @@ class ARC3Controller:
             {
                 "preset": self.preset.value,
                 "network_enabled": context.config.network_enabled,
+                "execution_mode": context.config.execution_mode.value,
+                "runtime_policy": asdict(context.config.runtime_policy),
                 "features": self.features.to_dict(),
                 "retrodiction_config": self._retrodiction_runtime.config.to_dict(),
                 "retrodiction_configuration_hash": sha256_json(
@@ -959,6 +1008,9 @@ class ARC3Controller:
 
     def _initialize_context(self, context: RunContext) -> None:
         self._context = context
+        if context.config.execution_mode is ExecutionMode.COMPETITION_BOUNDED:
+            self._interface_semantics = OFFICIAL_COMPETITION_INTERFACE
+        self._compact_trace = deque(maxlen=context.config.runtime_policy.compact_trace_capacity)
         self._mechanics = MechanicsLifecycle(
             level_index=0,
             maximum_transitions_per_epoch=context.config.budgets.max_actions,
@@ -975,6 +1027,13 @@ class ARC3Controller:
                 ),
                 "cadence_config": self._cadence_config.to_dict(),
                 "cadence_configuration_hash": self._cadence_config.configuration_hash,
+                "execution_mode": context.config.execution_mode.value,
+                "interface_semantics": (
+                    self._interface_semantics.to_dict()
+                    if self._interface_semantics is not None
+                    else None
+                ),
+                "runtime_policy": asdict(context.config.runtime_policy),
             },
         )
         self._code = CodeIdentity(
@@ -1060,6 +1119,16 @@ class ARC3Controller:
                 }:
                     self._reasoning_budget_exhaustions.append(str(status))
                     self._reasoning_terminal_status = DeliberationStatus.BUDGET_EXHAUSTED
+        if self._compact_trace.maxlen:
+            self._compact_trace.append(
+                {
+                    "event_hash": event.event_hash,
+                    "event_id": event.event_id,
+                    "event_type": event.event_type,
+                    "level_index": event.level_index,
+                    "step_index": event.step_index,
+                }
+            )
         return event
 
     def _policy_events(self) -> tuple[TraceEvent, ...]:
@@ -1070,6 +1139,23 @@ class ARC3Controller:
             for event in authoritative_events(self.journal.verify_manifest())
             if event.event_id not in self._abandoned_trace_event_ids
         )
+
+    def _rebuild_compact_trace(self) -> None:
+        """Rehydrate the bounded receipt view from the immutable journal."""
+
+        if not self._compact_trace.maxlen:
+            return
+        self._compact_trace.clear()
+        for event in self.journal.verify_manifest():
+            self._compact_trace.append(
+                {
+                    "event_hash": event.event_hash,
+                    "event_id": event.event_id,
+                    "event_type": event.event_type,
+                    "level_index": event.level_index,
+                    "step_index": event.step_index,
+                }
+            )
 
     def _validated_abandoned_trace_event_ids(
         self,
@@ -1232,7 +1318,10 @@ class ARC3Controller:
             # Persist the complete always-on evidence fold while cadence is
             # checkpointable.  Deliberation may be recomputed after recovery;
             # a half-completed path is never serialized as finished work.
-            self._last_checkpoint = self.checkpoint()
+            self._maybe_automatic_checkpoint(
+                boundary="evidence-fold",
+                force=initial or observation.state is GameStateName.WIN,
+            )
         if observation.state is GameStateName.WIN:
             self._collect_cadence_trigger_events = False
             self._cadence_reopening_event_ids.clear()
@@ -1824,6 +1913,30 @@ class ARC3Controller:
             self._calibration_pending_handle = None
             self._recent_frame_hashes.clear()
         self._action_effects.register_handles(observation.available_actions)
+        if (
+            self._interface_semantics is not None
+            and self._level_index not in self._interface_semantics_emitted_levels
+        ):
+            advertised = set(observation.available_actions)
+            self._append(
+                str(observation.game_id),
+                "interface.semantics_granted",
+                {
+                    "granted_available_actions": [
+                        item.value
+                        for item in ActionName
+                        if item in advertised and self._interface_semantics.is_granted(item)
+                    ],
+                    "semantics": self._interface_semantics.to_dict(),
+                    "variable_available_actions": [
+                        item.value
+                        for item in self._interface_semantics.evidence_driven_actions
+                        if item in advertised
+                    ],
+                },
+                scope=StateScope.LEVEL,
+            )
+            self._interface_semantics_emitted_levels.add(self._level_index)
         if not self._calibration_handles and observation.state not in {
             GameStateName.NOT_PLAYED,
             GameStateName.GAME_OVER,
@@ -1831,7 +1944,14 @@ class ARC3Controller:
         }:
             advertised = set(observation.available_actions)
             self._calibration_handles = tuple(
-                item for item in ActionName if item is not ActionName.RESET and item in advertised
+                item
+                for item in ActionName
+                if item is not ActionName.RESET
+                and item in advertised
+                and (
+                    self._interface_semantics is None
+                    or item in self._interface_semantics.evidence_driven_actions
+                )
             )
 
     def _remember_frame(self, digest: FrameHash) -> None:
@@ -1866,6 +1986,12 @@ class ARC3Controller:
         if translation is None:
             translation = self._active_action_translation(action.name)
             if translation is not None:
+                resolution_kind = (
+                    "official-interface-direction-grant"
+                    if self._interface_semantics is not None
+                    and self._interface_semantics.translation_for(action.name) is not None
+                    else "active-controlled-translation-binding"
+                )
                 return (
                     CanonicalActionEffect(
                         CanonicalEffectKind.TRANSLATION,
@@ -1874,7 +2000,7 @@ class ARC3Controller:
                         None,
                         condition,
                     ),
-                    "active-controlled-translation-binding",
+                    resolution_kind,
                 )
         if translation is None:
             return None, None
@@ -1901,6 +2027,10 @@ class ARC3Controller:
     ) -> tuple[int, int] | None:
         """Return one accepted mover-scoped translation in the active mechanics epoch."""
 
+        if self._interface_semantics is not None:
+            granted = self._interface_semantics.translation_for(action)
+            if granted is not None:
+                return granted
         target_epoch_id = epoch_id or self._mechanics.active_epoch(self._level_index).epoch_id
         allowed_statuses = {HypothesisStatus.ACTIVE}
         if (
@@ -3640,6 +3770,30 @@ class ARC3Controller:
                 actions.append(ActionRequest(name))
         return tuple(actions)
 
+    def _maybe_automatic_checkpoint(self, *, boundary: str, force: bool = False) -> None:
+        """Apply the execution-mode persistence schedule without disabling memory."""
+
+        if not self.features.use_memory:
+            return
+        policy = self.context.config.runtime_policy
+        sparse_due = (
+            boundary == "evidence-fold"
+            and self._step_index > 0
+            and self._step_index % policy.sparse_checkpoint_interval_actions == 0
+        )
+        level_due = boundary == "evidence-fold" and (
+            self._level_index != self._last_sparse_checkpoint_level
+        )
+        if not (
+            policy.automatic_per_action_checkpoints
+            or force
+            or sparse_due
+            or level_due
+        ):
+            return
+        self._last_checkpoint = self.checkpoint()
+        self._last_sparse_checkpoint_level = self._level_index
+
     def _fail_budget(self, *, budget: str, used: int, limit: int) -> None:
         """Enter a durable fault instead of silently overspending an action budget."""
 
@@ -3675,8 +3829,7 @@ class ARC3Controller:
             self._pending_change_candidate_id = None
             self._pending_reexploration_candidate_id = None
             self._transient_fold_boundary = None
-        if self.features.use_memory:
-            self._last_checkpoint = self.checkpoint()
+        self._maybe_automatic_checkpoint(boundary="failure", force=True)
         raise PolicyError(f"{budget} budget exhausted ({used}/{limit})")
 
     def _ensure_budget_available(self, action: ActionRequest) -> None:
@@ -3931,14 +4084,14 @@ class ARC3Controller:
             budget=SearchBudget(
                 max_nodes=self.context.config.budgets.max_search_nodes,
                 max_depth=self.context.config.budgets.max_search_depth,
-                # Retained in the typed budget and trace for compatibility;
-                # this production call disables elapsed-time termination below.
+                # Research mode preserves its deterministic node/depth boundary.
+                # Competition mode additionally enforces the elapsed boundary.
                 max_time_ms=max(
                     1,
                     math.ceil(self.context.config.budgets.decision_seconds * 1_000),
                 ),
             ),
-            enforce_time_budget=False,
+            enforce_time_budget=self.search_time_budget_enforced,
         )
         payload = result.to_trace_payload()
         payload.update(
@@ -4087,7 +4240,15 @@ class ARC3Controller:
             ProbeOption(
                 candidate.action,
                 progress=candidate.expected_progress,
-                reversibility=(1.0 if candidate.action.name is ActionName.RESET else 0.0),
+                reversibility=(
+                    1.0
+                    if candidate.action.name is ActionName.RESET
+                    or (
+                        self._interface_semantics is not None
+                        and candidate.action.name is self._interface_semantics.undo_action
+                    )
+                    else 0.0
+                ),
                 novelty=min(1.0, 1.0 / (1.0 + self._action_counts[candidate.action])),
                 failure_risk=candidate.failure_risk,
             )
@@ -4103,7 +4264,15 @@ class ARC3Controller:
                     exploration=IntrinsicExplorationUtility(
                         novelty=min(1.0, 1.0 / (1.0 + self._action_counts[candidate.action])),
                         information_gain=candidate.information,
-                        reversibility=(1.0 if candidate.action.name is ActionName.RESET else 0.0),
+                        reversibility=(
+                            1.0
+                            if candidate.action.name is ActionName.RESET
+                            or (
+                                self._interface_semantics is not None
+                                and candidate.action.name is self._interface_semantics.undo_action
+                            )
+                            else 0.0
+                        ),
                     ),
                     failure_risk_rank=int(candidate.failure_risk > 0),
                 )
@@ -4738,8 +4907,7 @@ class ARC3Controller:
             rationale_category=rationale_category,
             rationale_summary=rationale,
         )
-        if self.features.use_memory:
-            self._last_checkpoint = self.checkpoint()
+        self._maybe_automatic_checkpoint(boundary="action-submitted")
         return decision
 
     @_profiled("controller_orchestration", "apply_consequence")
@@ -4852,8 +5020,7 @@ class ARC3Controller:
                 CacheInvalidationReason.ACTION_SPACE_OR_CALIBRATION_CHANGE
             )
             self._transient_fold_boundary = None
-            if self.features.use_memory:
-                self._last_checkpoint = self.checkpoint()
+            self._maybe_automatic_checkpoint(boundary="failure", force=True)
             raise PolicyError(
                 "returned consequence does not match the pending action; "
                 f"raw receipt preserved as {rejected.event_id}"
@@ -6831,6 +6998,9 @@ class ARC3Controller:
                     else None
                 ),
                 "pending_resolution_kind": self._pending_resolution_kind,
+                "interface_semantics_emitted_levels": cast(
+                    list[JSONValue], sorted(self._interface_semantics_emitted_levels)
+                ),
                 "recent_frame_hashes": [str(item) for item in self._recent_frame_hashes],
                 "action_counts": [
                     {"action": _action_payload(action), "count": count}
@@ -7219,6 +7389,7 @@ class ARC3Controller:
         controller._restore_planner_state(state.planner_state)
         controller._validate_restored_evidence_state(state)
         controller._checkpoint_manager.validate_restored_commitment(restored)
+        controller._rebuild_compact_trace()
         controller._last_checkpoint = ControllerCheckpoint(
             Path(checkpoint_path)
             if checkpoint_path is not None
@@ -7226,6 +7397,7 @@ class ARC3Controller:
             restored.envelope,
             controller._phase,
         )
+        controller._last_sparse_checkpoint_level = controller._level_index
         wrote_recovery_receipt = False
         if restored.abandoned_suffix_events:
             suffix = restored.abandoned_suffix_events
@@ -7849,6 +8021,10 @@ class ARC3Controller:
                     for action in ActionName
                     if action is not ActionName.RESET
                     and action in start_observation.available_actions
+                    and (
+                        self._interface_semantics is None
+                        or action in self._interface_semantics.evidence_driven_actions
+                    )
                 )
                 if start_observation.state
                 not in {GameStateName.NOT_PLAYED, GameStateName.GAME_OVER, GameStateName.WIN}
@@ -7940,6 +8116,48 @@ class ARC3Controller:
                 "checkpoint action semantics/calibration are not trace-derived: "
                 + ", ".join(action_semantics_mismatches)
             )
+
+        semantics_events = tuple(
+            event for event in events if event.event_type == "interface.semantics_granted"
+        )
+        if self._interface_semantics is None:
+            if semantics_events or self._interface_semantics_emitted_levels:
+                raise PolicyError("research checkpoint contains competition interface grants")
+        else:
+            expected_semantics = self._interface_semantics.to_dict()
+            observed_levels: set[int] = set()
+            for event in semantics_events:
+                prior_observations = tuple(
+                    observation_event
+                    for observation_event in observation_events
+                    if observation_event.level_index == event.level_index
+                    and event_order[observation_event.event_id] < event_order[event.event_id]
+                )
+                if not prior_observations or event.level_index in observed_levels:
+                    raise PolicyError(
+                        "competition interface grant is duplicated or lacks its observation"
+                    )
+                advertised = set(
+                    replayed_observations[prior_observations[-1].event_id].available_actions
+                )
+                expected_payload: dict[str, object] = {
+                    "granted_available_actions": [
+                        item.value
+                        for item in ActionName
+                        if item in advertised and self._interface_semantics.is_granted(item)
+                    ],
+                    "semantics": expected_semantics,
+                    "variable_available_actions": [
+                        item.value
+                        for item in self._interface_semantics.evidence_driven_actions
+                        if item in advertised
+                    ],
+                }
+                if event.payload != expected_payload:
+                    raise PolicyError("competition interface grant disagrees with its source")
+                observed_levels.add(event.level_index)
+            if observed_levels != self._interface_semantics_emitted_levels:
+                raise PolicyError("checkpoint interface grant levels are not trace-derived")
 
         pending_action = self._pending_action
         pending_selected = (
@@ -8945,6 +9163,18 @@ class ARC3Controller:
             raise PolicyError("checkpoint action calibration order is invalid")
         self._calibration_handles = calibration
         self._calibrated_handles = set(calibrated)
+
+        raw_semantics_levels = value.get("interface_semantics_emitted_levels", [])
+        if (
+            not isinstance(raw_semantics_levels, list)
+            or any(
+                isinstance(item, bool) or not isinstance(item, int) or item < 0
+                for item in raw_semantics_levels
+            )
+            or len(set(cast(list[int], raw_semantics_levels))) != len(raw_semantics_levels)
+        ):
+            raise PolicyError("checkpoint interface semantics levels are malformed")
+        self._interface_semantics_emitted_levels = set(cast(list[int], raw_semantics_levels))
 
         raw_pending_handle = value.get("calibration_pending_handle")
         if raw_pending_handle is None:
@@ -10972,7 +11202,7 @@ class ARC3Controller:
             == self._last_checkpoint.envelope.checkpoint_hash
         )
         if self.features.use_memory and not checkpoint_is_current:
-            self._last_checkpoint = self.checkpoint()
+            self._maybe_automatic_checkpoint(boundary="finalize", force=True)
         self.journal.close()
         self._phase = ControllerPhase.CLOSED
 

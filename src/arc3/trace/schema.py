@@ -86,6 +86,7 @@ CORE_EVENT_TYPES: Final[frozenset[str]] = frozenset(
         "goal.target_bound",
         "action.candidates_generated",
         "action.effect_observed",
+        "interface.semantics_granted",
         "action.controlled_effect_interpreted",
         "action.selected",
         "action.validated",

@@ -2,11 +2,18 @@
 
 from __future__ import annotations
 
-from arc3.config import ARC3Config, BudgetConfig, config_hash, default_config
+from arc3.config import (
+    ARC3Config,
+    BudgetConfig,
+    RuntimePolicyConfig,
+    config_hash,
+    default_config,
+)
 from arc3.types import (
     ActionName,
     EnvironmentMode,
     EvaluationSurface,
+    ExecutionMode,
     GameStateName,
     HypothesisStatus,
     StateScope,
@@ -18,8 +25,10 @@ __all__ = [
     "BudgetConfig",
     "EnvironmentMode",
     "EvaluationSurface",
+    "ExecutionMode",
     "GameStateName",
     "HypothesisStatus",
+    "RuntimePolicyConfig",
     "StateScope",
     "config_hash",
     "default_config",
