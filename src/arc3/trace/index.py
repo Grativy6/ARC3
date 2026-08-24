@@ -9,6 +9,7 @@ from dataclasses import dataclass, field
 from arc3.errors import TraceIntegrityError
 from arc3.types import JSONValue
 
+from .authority import authoritative_events
 from .canonical import canonical_json
 from .schema import TraceEvent
 
@@ -197,7 +198,7 @@ def rebuild_index(events: Iterable[TraceEvent]) -> DerivedIndex:
     frame_events: defaultdict[str, list[str]] = defaultdict(list)
     hypothesis_registry: dict[str, _MutableHypothesis] = {}
 
-    for offset, event in enumerate(events):
+    for offset, event in enumerate(authoritative_events(tuple(events))):
         if event.event_id in event_offsets:
             raise TraceIntegrityError(
                 f"duplicate event_id while rebuilding index: {event.event_id}"

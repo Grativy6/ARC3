@@ -24,6 +24,7 @@ from .canonical import (
 
 EVENT_SCHEMA: Final = "arc3.trace.event.v0.1"
 CHECKPOINT_SCHEMA: Final = "arc3.checkpoint.v0.1"
+CHECKPOINT_COMMITMENT_SCHEMA: Final = "arc3.memory.checkpoint-commitment.v0.1"
 SUMMARY_SCHEMA: Final = "arc3.trace.summary.v0.1"
 MANIFEST_SCHEMA: Final = "arc3.trace.manifest.v0.1"
 MIGRATION_SCHEMA: Final = "arc3.trace.migration.v0.1"
@@ -57,18 +58,35 @@ CORE_EVENT_TYPES: Final[frozenset[str]] = frozenset(
         "hypothesis.superseded",
         "hypothesis.scope_changed",
         "model.retrodiction_started",
+        "model.retrodiction_reused",
         "model.retrodiction_completed",
         "model.rule_promoted",
         "model.rule_demoted",
+        "mechanics.change_candidate_created",
+        "mechanics.successor_evidence_supported",
+        "mechanics.predecessor_recovery_supported",
+        "mechanics.change_candidate_resolved",
+        "mechanics.change_confirmed",
+        "mechanics.epoch_opened",
         "simulation.plan_evaluated",
+        "simulation.plan_invalidated",
         "simulation.prediction_emitted",
+        "reasoning.path_selected",
+        "reasoning.deliberation_completed",
+        "reasoning.fallback_used",
+        "reasoning.checkpoint_state",
+        "reasoning.cadence_activated",
+        "reasoning.interruption_reopened",
         "goal.candidate_created",
         "goal.supported",
         "goal.contradicted",
         "goal.selected_for_planning",
         "goal.reopened",
         "goal.retired",
+        "goal.target_bound",
         "action.candidates_generated",
+        "action.effect_observed",
+        "action.controlled_effect_interpreted",
         "action.selected",
         "action.validated",
         "action.submitted",
@@ -332,6 +350,301 @@ def _validate_action_selected_payload(payload: dict[str, JSONValue]) -> None:
     summary = payload.get("rationale_summary")
     if summary is not None and (not isinstance(summary, str) or len(summary) > 512):
         raise ARC3ValidationError("rationale_summary must be a string of at most 512 characters")
+    reasoning_event_id = payload.get("reasoning_completed_event_id")
+    if reasoning_event_id is not None and (
+        not isinstance(reasoning_event_id, str) or not reasoning_event_id
+    ):
+        raise ARC3ValidationError("reasoning_completed_event_id must be a non-empty string or null")
+
+
+def _validate_reasoning_selected_payload(payload: dict[str, JSONValue]) -> None:
+    required = {
+        "action_registry_identity",
+        "budget_limits",
+        "cache_projection_hash",
+        "cadence_mode",
+        "configuration_hash",
+        "goal_id",
+        "goal_revision",
+        "mechanics_epoch_id",
+        "observation_event_id",
+        "ordered_triggers",
+        "path",
+        "plan_id",
+        "schema",
+        "state_id",
+        "trigger_source_event_ids",
+        "trigger_sources",
+    }
+    missing = sorted(required - set(payload))
+    if missing:
+        raise ARC3ValidationError(f"reasoning.path_selected payload missing: {', '.join(missing)}")
+    if payload.get("path") not in {"FAST", "DEEP"}:
+        raise ARC3ValidationError("reasoning path must be FAST or DEEP")
+    ordered = require_array(payload.get("ordered_triggers"), field="ordered_triggers")
+    trigger_priority = (
+        "STARTUP_UNKNOWN_ACTION",
+        "REOPENING",
+        "MEANINGFUL_CONTRADICTION",
+        "STRUCTURAL_NOVELTY",
+        "NO_VALID_PLAN",
+        "HIGH_GOAL_UNCERTAINTY",
+        "REPEATED_NO_PROGRESS",
+        "MAX_FAST_STREAK",
+    )
+    if (
+        not all(isinstance(item, str) and item in trigger_priority for item in ordered)
+        or list(dict.fromkeys(ordered)) != ordered
+        or tuple(item for item in trigger_priority if item in ordered) != tuple(ordered)
+    ):
+        raise ARC3ValidationError("reasoning triggers must be unique and priority ordered")
+    if payload.get("path") == "FAST" and ordered:
+        raise ARC3ValidationError("FAST reasoning cannot carry a deep trigger")
+    cadence_mode = payload.get("cadence_mode")
+    if cadence_mode not in {"TWO_SPEED", "LEGACY_ALWAYS_DEEP"}:
+        raise ARC3ValidationError("reasoning cadence mode is unsupported")
+    if cadence_mode == "TWO_SPEED" and payload.get("path") == "DEEP" and not ordered:
+        raise ARC3ValidationError("TWO_SPEED DEEP reasoning requires a typed trigger")
+    trigger_sources = require_array(payload.get("trigger_sources"), field="trigger_sources")
+    if len(trigger_sources) != len(ordered):
+        raise ARC3ValidationError("trigger sources must align with ordered triggers")
+    flattened_sources: list[str] = []
+    seen_sources: set[str] = set()
+    for expected_trigger, raw_source in zip(ordered, trigger_sources, strict=True):
+        source = require_object(raw_source, field="trigger source")
+        if set(source) != {"source_event_ids", "trigger"}:
+            raise ARC3ValidationError("trigger source fields are not canonical")
+        if source.get("trigger") != expected_trigger:
+            raise ARC3ValidationError("trigger source ordering disagrees with triggers")
+        source_ids = require_string_sequence(
+            source.get("source_event_ids"), field="trigger source_event_ids"
+        )
+        if not source_ids or list(source_ids) != sorted(set(source_ids)):
+            raise ARC3ValidationError("trigger source IDs must be non-empty, unique, and sorted")
+        for source_id in source_ids:
+            if source_id not in seen_sources:
+                seen_sources.add(source_id)
+                flattened_sources.append(source_id)
+    declared_sources = require_string_sequence(
+        payload.get("trigger_source_event_ids"), field="trigger_source_event_ids"
+    )
+    if list(declared_sources) != flattened_sources:
+        raise ARC3ValidationError("flattened trigger sources disagree with typed sources")
+    for field_name in (
+        "action_registry_identity",
+        "configuration_hash",
+        "mechanics_epoch_id",
+        "observation_event_id",
+        "state_id",
+    ):
+        _require_text(payload, field_name)
+    if payload.get("schema") != "arc3.reasoning-cadence-selection.v0.1":
+        raise ARC3ValidationError("reasoning cadence selection schema is unsupported")
+    for field_name in ("goal_id", "plan_id"):
+        value = payload.get(field_name)
+        if value is not None and (not isinstance(value, str) or not value):
+            raise ARC3ValidationError(f"{field_name} must be a non-empty string or null")
+    if _require_int(payload, "goal_revision") < 0:
+        raise ARC3ValidationError("goal_revision must be non-negative")
+    budget_limits = require_object(payload.get("budget_limits"), field="budget_limits")
+    if any(
+        isinstance(value, bool) or not isinstance(value, int) or value < 0
+        for value in budget_limits.values()
+    ):
+        raise ARC3ValidationError("reasoning budget limits must be non-negative integers")
+    for field_name in (
+        "action_registry_identity",
+        "cache_projection_hash",
+        "configuration_hash",
+    ):
+        require_sha256(_require_text(payload, field_name), field=field_name)
+
+
+def _validate_reasoning_terminal_payload(payload: dict[str, JSONValue], *, fallback: bool) -> None:
+    required = {
+        "artifact_projection_hash",
+        "budget_exhaustions",
+        "cache_hits",
+        "cache_invalidation_counts",
+        "cache_misses",
+        "integer_work_counts",
+        "path",
+        "path_selected_event_id",
+        "produced_goal_ids",
+        "produced_model_ids",
+        "produced_plan_ids",
+        "status",
+    }
+    missing = sorted(required - set(payload))
+    if missing:
+        raise ARC3ValidationError(f"reasoning terminal payload missing: {', '.join(missing)}")
+    _require_text(payload, "path_selected_event_id")
+    if payload.get("path") not in {"FAST", "DEEP"}:
+        raise ARC3ValidationError("reasoning terminal path must be FAST or DEEP")
+    allowed_statuses = {"COMPLETED", "FALLBACK_USED", "BUDGET_EXHAUSTED", "FAILED"}
+    status = payload.get("status")
+    if (
+        status not in allowed_statuses
+        or (fallback and status != "FALLBACK_USED")
+        or (not fallback and status == "FALLBACK_USED")
+    ):
+        raise ARC3ValidationError("reasoning terminal status is invalid")
+    work = require_object(payload.get("integer_work_counts"), field="integer_work_counts")
+    required_work_counts = {
+        "compilation_invocations",
+        "prediction_invocations",
+        "retrodicted_transitions",
+        "simulation_invocations",
+        "search_expanded_nodes",
+    }
+    missing_work_counts = sorted(required_work_counts - set(work))
+    if missing_work_counts:
+        raise ARC3ValidationError(
+            "reasoning work counts missing: " + ", ".join(missing_work_counts)
+        )
+    if any(
+        isinstance(value, bool) or not isinstance(value, int) or value < 0
+        for value in work.values()
+    ):
+        raise ARC3ValidationError("reasoning work counts must be non-negative integers")
+    for field_name in ("cache_hits", "cache_misses"):
+        if _require_int(payload, field_name) < 0:
+            raise ARC3ValidationError(f"{field_name} must be non-negative")
+    invalidations = require_object(
+        payload.get("cache_invalidation_counts"),
+        field="cache_invalidation_counts",
+    )
+    expected_invalidation_reasons = {
+        "ACTION_SPACE_OR_CALIBRATION_CHANGE",
+        "GOAL_REVISION",
+        "HYPOTHESIS_CONTRADICTION_OR_REOPENING",
+        "LEVEL_TRANSITION_OR_RESET",
+        "MECHANICS_EPOCH_CHANGE",
+        "MODEL_STATUS_CHANGE",
+        "PREDICTION_MISMATCH",
+        "SOURCE_OR_CONFIGURATION_CHANGE",
+    }
+    if set(invalidations) != expected_invalidation_reasons or any(
+        isinstance(value, bool) or not isinstance(value, int) or value < 0
+        for value in invalidations.values()
+    ):
+        raise ARC3ValidationError(
+            "cache_invalidation_counts must contain every typed non-negative count"
+        )
+    require_string_sequence(payload.get("budget_exhaustions"), field="budget_exhaustions")
+    for field_name in ("produced_model_ids", "produced_goal_ids", "produced_plan_ids"):
+        require_string_sequence(payload.get(field_name), field=field_name)
+    require_sha256(
+        _require_text(payload, "artifact_projection_hash"),
+        field="artifact_projection_hash",
+    )
+
+
+def _validate_reasoning_checkpoint_payload(payload: dict[str, JSONValue]) -> None:
+    required = {
+        "cadence_activation_event_id",
+        "cadence_configuration_hash",
+        "cadence_folded_observation_event_id",
+        "cadence_state",
+        "pending_goal_transitions_hash",
+        "prediction_cache_projection_hash",
+        "prediction_cache_telemetry_hash",
+        "pending_submitted_event_id",
+        "reasoning_completed_event_id",
+        "reasoning_selected_event_id",
+        "reasoning_selection",
+    }
+    missing = sorted(required - set(payload))
+    if missing:
+        raise ARC3ValidationError(
+            f"reasoning.checkpoint_state payload missing: {', '.join(missing)}"
+        )
+    require_sha256(
+        _require_text(payload, "cadence_configuration_hash"),
+        field="cadence_configuration_hash",
+    )
+    require_sha256(
+        _require_text(payload, "pending_goal_transitions_hash"),
+        field="pending_goal_transitions_hash",
+    )
+    require_sha256(
+        _require_text(payload, "prediction_cache_projection_hash"),
+        field="prediction_cache_projection_hash",
+    )
+    require_sha256(
+        _require_text(payload, "prediction_cache_telemetry_hash"),
+        field="prediction_cache_telemetry_hash",
+    )
+    require_object(payload.get("cadence_state"), field="cadence_state")
+    _require_text(payload, "cadence_activation_event_id")
+    selection = payload.get("reasoning_selection")
+    if selection is not None:
+        require_object(selection, field="reasoning_selection")
+    for field_name in (
+        "cadence_folded_observation_event_id",
+        "reasoning_completed_event_id",
+        "reasoning_selected_event_id",
+    ):
+        value = payload.get(field_name)
+        if value is not None and (not isinstance(value, str) or not value):
+            raise ARC3ValidationError(f"{field_name} must be a non-empty string or null")
+    pending_submitted_event_id = payload.get("pending_submitted_event_id")
+    if pending_submitted_event_id is not None and (
+        not isinstance(pending_submitted_event_id, str) or not pending_submitted_event_id
+    ):
+        raise ARC3ValidationError("pending_submitted_event_id must be a non-empty string or null")
+
+
+def _validate_reasoning_interruption_payload(payload: dict[str, JSONValue]) -> None:
+    required = {
+        "abandoned_event_hashes",
+        "abandoned_event_ids",
+        "abandoned_tail_hash",
+        "checkpoint_commitment_event_id",
+        "recovery_policy",
+    }
+    missing = sorted(required - set(payload))
+    if missing:
+        raise ARC3ValidationError(
+            "reasoning.interruption_reopened payload missing: " + ", ".join(missing)
+        )
+    _require_text(payload, "checkpoint_commitment_event_id")
+    _require_text(payload, "recovery_policy")
+    ids = require_string_sequence(payload.get("abandoned_event_ids"), field="abandoned_event_ids")
+    hashes = require_string_sequence(
+        payload.get("abandoned_event_hashes"), field="abandoned_event_hashes"
+    )
+    if not ids or len(ids) != len(hashes) or len(set(ids)) != len(ids):
+        raise ARC3ValidationError(
+            "abandoned event IDs/hashes must be aligned, non-empty, and unique"
+        )
+    for event_hash in hashes:
+        require_sha256(event_hash, field="abandoned_event_hash")
+    tail_hash = _require_text(payload, "abandoned_tail_hash")
+    require_sha256(tail_hash, field="abandoned_tail_hash")
+    if tail_hash != hashes[-1]:
+        raise ARC3ValidationError("abandoned_tail_hash must match the final abandoned event")
+
+
+def _validate_cadence_activation_payload(payload: dict[str, JSONValue]) -> None:
+    required = {
+        "cadence_config",
+        "cadence_configuration_hash",
+        "migration_policy",
+        "source_checkpoint_commitment_event_id",
+    }
+    missing = sorted(required - set(payload))
+    if missing:
+        raise ARC3ValidationError(
+            "reasoning.cadence_activated payload missing: " + ", ".join(missing)
+        )
+    require_object(payload.get("cadence_config"), field="cadence_config")
+    require_sha256(
+        _require_text(payload, "cadence_configuration_hash"),
+        field="cadence_configuration_hash",
+    )
+    _require_text(payload, "migration_policy")
+    _require_text(payload, "source_checkpoint_commitment_event_id")
 
 
 def _validate_delta_payload(payload: dict[str, JSONValue]) -> None:
@@ -364,6 +677,59 @@ def _validate_delta_payload(payload: dict[str, JSONValue]) -> None:
         raise ARC3ValidationError("apparent_noop must exactly reflect changed_cell_count == 0")
 
 
+def _validate_checkpoint_written_payload(payload: dict[str, JSONValue]) -> None:
+    required = {
+        "commitment_schema",
+        "checkpoint_sequence",
+        "checkpoint_hash",
+        "checkpoint_schema",
+        "derived_controller_schema",
+        "derived_controller_state_hash",
+        "rng_state_hash",
+        "envelope_prior_trace_tail_event_id",
+        "envelope_prior_trace_tail_hash",
+        "git_commit",
+        "config_hash",
+        "memory_phase",
+        "controller_phase",
+        "level_index",
+        "step_index",
+        "pending_submitted_event_id",
+    }
+    missing = sorted(required - set(payload))
+    if missing:
+        raise ARC3ValidationError(f"run.checkpoint_written payload missing: {', '.join(missing)}")
+    if payload.get("commitment_schema") != CHECKPOINT_COMMITMENT_SCHEMA:
+        raise ARC3ValidationError("unsupported checkpoint commitment schema")
+    if payload.get("checkpoint_schema") != CHECKPOINT_SCHEMA:
+        raise ARC3ValidationError("checkpoint receipt names an unsupported envelope schema")
+    if payload.get("derived_controller_schema") != "arc3.memory.derived-controller.v0.1":
+        raise ARC3ValidationError("checkpoint receipt names an unsupported controller schema")
+    sequence = _require_int(payload, "checkpoint_sequence")
+    if sequence <= 0:
+        raise ARC3ValidationError("checkpoint_sequence must be positive")
+    for field_name in (
+        "checkpoint_hash",
+        "derived_controller_state_hash",
+        "rng_state_hash",
+        "envelope_prior_trace_tail_hash",
+        "config_hash",
+    ):
+        require_sha256(_require_text(payload, field_name), field=field_name)
+    for field_name in ("envelope_prior_trace_tail_event_id", "git_commit"):
+        _require_text(payload, field_name)
+    memory_phase = _require_text(payload, "memory_phase")
+    if memory_phase not in {"ready", "awaiting_consequence", "game_over"}:
+        raise ARC3ValidationError("checkpoint memory_phase is unsupported")
+    _require_text(payload, "controller_phase")
+    for field_name in ("level_index", "step_index"):
+        if _require_int(payload, field_name) < 0:
+            raise ARC3ValidationError(f"checkpoint {field_name} must be non-negative")
+    pending = payload.get("pending_submitted_event_id")
+    if pending is not None and (not isinstance(pending, str) or not pending):
+        raise ARC3ValidationError("pending_submitted_event_id must be a non-empty string or null")
+
+
 def _validate_event_payload(event_type: str, payload: dict[str, JSONValue]) -> None:
     secret = _contains_secret(payload)
     if secret is not None:
@@ -375,8 +741,22 @@ def _validate_event_payload(event_type: str, payload: dict[str, JSONValue]) -> N
         _validate_observation_payload(payload)
     elif event_type == "observation.delta_measured":
         _validate_delta_payload(payload)
+    elif event_type == "run.checkpoint_written":
+        _validate_checkpoint_written_payload(payload)
     elif event_type == "action.selected":
         _validate_action_selected_payload(payload)
+    elif event_type == "reasoning.path_selected":
+        _validate_reasoning_selected_payload(payload)
+    elif event_type == "reasoning.deliberation_completed":
+        _validate_reasoning_terminal_payload(payload, fallback=False)
+    elif event_type == "reasoning.fallback_used":
+        _validate_reasoning_terminal_payload(payload, fallback=True)
+    elif event_type == "reasoning.checkpoint_state":
+        _validate_reasoning_checkpoint_payload(payload)
+    elif event_type == "reasoning.cadence_activated":
+        _validate_cadence_activation_payload(payload)
+    elif event_type == "reasoning.interruption_reopened":
+        _validate_reasoning_interruption_payload(payload)
     elif event_type.startswith("evaluation."):
         surface = payload.get("result_surface")
         if surface not in EVALUATION_SURFACES:

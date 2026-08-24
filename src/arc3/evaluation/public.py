@@ -17,23 +17,16 @@ import os
 import platform
 import subprocess
 import time
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Protocol, cast
+from typing import TYPE_CHECKING, Any, Protocol, cast
 
-from arc3.adapters import (
-    EnvironmentDescriptor,
-    EnvironmentSession,
-    ScoreSummary,
-)
-from arc3.adapters.arc_agi import (
-    ARC_AGI_VERSION,
-    ARCENGINE_VERSION,
-    DEFAULT_BASE_URL,
-    ArcAGIAdapter,
-)
+if TYPE_CHECKING:
+    from arc3.adapters import EnvironmentDescriptor, EnvironmentSession, ScoreSummary
+    from arc3.profiling.hot_path import HotPathProfiler
+
 from arc3.competition_runtime import FROZEN_COMPETITION_RUNTIME
 from arc3.config import ARC3Config, BudgetConfig
 from arc3.errors import AdapterError, EvaluationError
@@ -53,6 +46,7 @@ from .artifacts import (
     verify_object_hash,
 )
 from .baselines import EvaluationPolicy, baseline_descriptor
+from .holdout_gate import ValidatedHoldoutGate, revalidate_earned_holdout_gate
 
 PUBLIC_MANIFEST_SCHEMA = "arc3.public-game-partitions.v0.1"
 PUBLIC_EVALUATION_SCHEMA = "arc3.public-evaluation.manifest.v0.1"
@@ -279,6 +273,11 @@ def inventory_local_assets(
 ) -> dict[str, LocalAssetIdentity]:
     """Return only validated manifest entries currently cached for local execution."""
 
+    # Environment bindings are imported only after the caller has crossed its
+    # authorization gate.  Importing the sealed-gate/config surface itself is
+    # deliberately adapter-free.
+    from arc3.adapters.arc_agi import ArcAGIAdapter
+
     adapter = ArcAGIAdapter(
         ARC3Config.for_mode(EnvironmentMode.LOCAL, seed=0, network_enabled=False),
         environments_dir=environments_dir,
@@ -312,6 +311,10 @@ class PublicEvaluationConfig:
     agents: tuple[str, ...]
     seeds: tuple[int, ...]
     frozen_commit: str
+    game_ids: tuple[str, ...] | None = None
+    hot_path_profile: bool = False
+    python_allocation_tracing: bool = True
+    automatic_checkpointing: bool = True
     max_actions: int = FROZEN_COMPETITION_RUNTIME.max_actions
     max_resets: int = FROZEN_COMPETITION_RUNTIME.max_resets
     # Stage 15 public development is a predeclared 120-second measurement
@@ -327,6 +330,12 @@ class PublicEvaluationConfig:
     acquire_missing: bool = False
     allow_public_holdout: bool = False
     sealed_development_manifest: Path | None = None
+    holdout_gate_receipt: Path | None = None
+    holdout_gate_file_sha256: str | None = None
+    holdout_gate_core_hash: str | None = None
+    stage09_result: Path | None = None
+    stage10_result: Path | None = None
+    competition_integrity_receipt: Path | None = None
     milestone_id: str = "build-000-stage15-v0.1"
 
     def __post_init__(self) -> None:
@@ -359,6 +368,32 @@ class PublicEvaluationConfig:
             raise ValueError("frozen_commit must be a lowercase hexadecimal commit identity")
         if not self.milestone_id.strip():
             raise ValueError("milestone_id must not be empty")
+        if self.game_ids is not None:
+            if not self.game_ids or len(set(self.game_ids)) != len(self.game_ids):
+                raise ValueError("game_ids must be non-empty and unique when supplied")
+            if any(not game_id or game_id != game_id.strip() for game_id in self.game_ids):
+                raise ValueError("game_ids must contain non-empty normalized identifiers")
+            if self.partition == "public-holdout":
+                raise ValueError("public holdout evaluation cannot select a subset of games")
+        if not isinstance(self.hot_path_profile, bool):
+            raise ValueError("hot_path_profile must be boolean")
+        if not isinstance(self.python_allocation_tracing, bool):
+            raise ValueError("python_allocation_tracing must be boolean")
+        if not isinstance(self.automatic_checkpointing, bool):
+            raise ValueError("automatic_checkpointing must be boolean")
+        if self.partition == "public-holdout" and self.hot_path_profile:
+            raise ValueError("public holdout evaluation cannot enable diagnostic profiling")
+        if self.hot_path_profile and self.agents != ("full",):
+            raise ValueError("diagnostic profiling requires the FULL policy only")
+        diagnostic_intervention = (
+            not self.python_allocation_tracing or not self.automatic_checkpointing
+        )
+        if diagnostic_intervention and self.partition == "public-holdout":
+            raise ValueError("public holdout evaluation cannot enable diagnostic interventions")
+        if diagnostic_intervention and self.agents != ("full",):
+            raise ValueError("diagnostic interventions require the FULL policy only")
+        if diagnostic_intervention and not self.hot_path_profile:
+            raise ValueError("diagnostic interventions require hot-path profiling")
         if self.evaluation_id is not None and (
             not self.evaluation_id
             or any(
@@ -371,6 +406,10 @@ class PublicEvaluationConfig:
     def declaration(self) -> dict[str, object]:
         return {
             "partition": self.partition,
+            "game_ids": list(self.game_ids) if self.game_ids is not None else None,
+            "hot_path_profile": self.hot_path_profile,
+            "python_allocation_tracing": self.python_allocation_tracing,
+            "automatic_checkpointing": self.automatic_checkpointing,
             "agents": list(self.agents),
             "seeds": list(self.seeds),
             "max_actions": self.max_actions,
@@ -393,7 +432,43 @@ class PublicEvaluationConfig:
                 if self.sealed_development_manifest is not None
                 else None
             ),
+            "holdout_gate_receipt": (
+                self.holdout_gate_receipt.resolve().as_posix()
+                if self.holdout_gate_receipt is not None
+                else None
+            ),
+            "holdout_gate_file_sha256": self.holdout_gate_file_sha256,
+            "holdout_gate_core_hash": self.holdout_gate_core_hash,
+            "stage09_result": (
+                self.stage09_result.resolve().as_posix()
+                if self.stage09_result is not None
+                else None
+            ),
+            "stage10_result": (
+                self.stage10_result.resolve().as_posix()
+                if self.stage10_result is not None
+                else None
+            ),
+            "competition_integrity_receipt": (
+                self.competition_integrity_receipt.resolve().as_posix()
+                if self.competition_integrity_receipt is not None
+                else None
+            ),
         }
+
+    def selected_games(self, manifest: PublicPartitionManifest) -> tuple[PublicGameEntry, ...]:
+        """Resolve a declared development/smoke subset without changing the manifest."""
+
+        partition_games = manifest.games(self.partition)
+        if self.game_ids is None:
+            return partition_games
+        by_id = {entry.game_id: entry for entry in partition_games}
+        missing = [game_id for game_id in self.game_ids if game_id not in by_id]
+        if missing:
+            raise EvaluationError(
+                f"selected games are outside partition {self.partition}: {missing}"
+            )
+        return tuple(by_id[game_id] for game_id in self.game_ids)
 
     @property
     def surface(self) -> str:
@@ -477,6 +552,66 @@ def validate_frozen_source(frozen_commit: str) -> dict[str, object]:
     return {"git_commit": head, "dirty_worktree": False}
 
 
+def validate_holdout_authorization(
+    config: PublicEvaluationConfig,
+) -> ValidatedHoldoutGate | None:
+    """Fail closed before parsing the public manifest unless Stage 11 earned it."""
+
+    if config.partition != "public-holdout":
+        return None
+    validate_frozen_source(config.frozen_commit)
+    if not config.allow_public_holdout:
+        raise EvaluationError(
+            "public holdout is closed; explicit intent and an earned Stage 11 receipt are required"
+        )
+    required_paths = {
+        "Stage 11 gate": config.holdout_gate_receipt,
+        "Stage 09 result": config.stage09_result,
+        "Stage 10 result": config.stage10_result,
+        "competition-integrity receipt": config.competition_integrity_receipt,
+    }
+    missing_paths = [name for name, path in required_paths.items() if path is None]
+    if missing_paths:
+        raise EvaluationError(
+            "public holdout authorization is incomplete: " + ", ".join(missing_paths)
+        )
+    if config.holdout_gate_file_sha256 is None or config.holdout_gate_core_hash is None:
+        raise EvaluationError(
+            "public holdout requires external Stage 11 file and core hash anchors"
+        )
+    gate = revalidate_earned_holdout_gate(
+        gate_path=cast(Path, config.holdout_gate_receipt),
+        gate_file_sha256=config.holdout_gate_file_sha256,
+        gate_core_hash=config.holdout_gate_core_hash,
+        stage09_path=cast(Path, config.stage09_result),
+        stage10_path=cast(Path, config.stage10_result),
+        integrity_path=cast(Path, config.competition_integrity_receipt),
+        manifest_path=config.manifest_path,
+        source_root=_repository_root(),
+    )
+    expected = gate.evaluation
+    actual = config.declaration()
+    bindings: dict[str, object] = {
+        "agents": list(expected.agents),
+        "automatic_checkpointing": True,
+        "evaluation_id": expected.evaluation_id,
+        "game_ids": None,
+        "hot_path_profile": False,
+        "max_actions": expected.max_actions,
+        "max_resets": expected.max_resets,
+        "milestone_id": expected.milestone_id,
+        "partition": "public-holdout",
+        "python_allocation_tracing": True,
+        "seeds": list(expected.seeds),
+        "timeout_seconds": expected.timeout_seconds,
+    }
+    if any(actual.get(name) != value for name, value in bindings.items()):
+        raise EvaluationError("public holdout declaration differs from the earned Stage 11 receipt")
+    if gate.execution_source.commit != config.frozen_commit:
+        raise EvaluationError("public holdout frozen commit differs from Stage 11 authority")
+    return gate
+
+
 def validate_public_gate(
     config: PublicEvaluationConfig,
     manifest: PublicPartitionManifest,
@@ -487,17 +622,24 @@ def validate_public_gate(
     """Enforce source freeze and the one-shot public-holdout boundary."""
 
     validate_frozen_source(config.frozen_commit)
-    selected = manifest.games(config.partition)
+    selected = config.selected_games(manifest)
     if not selected:
         raise EvaluationError("selected public partition is empty")
     if config.partition != "public-holdout":
         return
-    if not config.allow_public_holdout:
-        raise EvaluationError(
-            "public holdout is closed; explicit milestone authorization is required"
-        )
+    # Revalidate here even though the runner performs the same authorization
+    # before manifest parsing. A caller-supplied object must never substitute
+    # for the exact Stage 11 receipt and its bound evidence.
+    authorization = validate_holdout_authorization(config)
+    if authorization is None:
+        raise EvaluationError("public holdout has no earned Stage 11 authorization")
     if config.evaluation_id is None:
         raise EvaluationError("public holdout requires an explicit resumable evaluation ID")
+    if (
+        manifest.digest != authorization.manifest_sha256
+        or len(selected) != authorization.opaque_count
+    ):
+        raise EvaluationError("parsed holdout partition differs from the sealed Stage 11 identity")
     canonical_output = (_repository_root() / "artifacts" / "stage15" / "evaluations").resolve()
     canonical_ledger = (
         _repository_root() / "artifacts" / "stage15" / "public-exposure.jsonl"
@@ -524,35 +666,6 @@ def validate_public_gate(
         raise EvaluationError(
             "public holdout acquisition is inseparable from its one-shot online evaluation"
         )
-    development = config.sealed_development_manifest
-    if development is None or not development.is_file():
-        raise EvaluationError("public holdout requires a sealed development manifest")
-    sealed = load_json(development)
-    if sealed.get("schema") != PUBLIC_EVALUATION_SCHEMA or not verify_object_hash(
-        sealed, hash_field="manifest_hash"
-    ):
-        raise EvaluationError("sealed development manifest failed its self-hash")
-    if sealed.get("partition") != "development" or sealed.get("status") != "PASS":
-        raise EvaluationError("sealed development evidence is not a passing development run")
-    if (
-        sealed.get("git_commit") != config.frozen_commit
-        or sealed.get("public_partition_manifest_hash") != manifest.digest
-        or sealed.get("surface") != "local-public"
-    ):
-        raise EvaluationError("sealed development evidence has a different frozen identity")
-    from .public_runner import verify_public_evaluation
-
-    verification = verify_public_evaluation(development.parent)
-    if verification.get("verified") is not True:
-        raise EvaluationError("sealed development artifacts failed verification")
-    development_config = sealed.get("agent_config")
-    if not isinstance(development_config, dict):
-        raise EvaluationError("sealed development evidence has no agent declaration")
-    for field in ("agents", "seeds", "max_actions", "max_resets", "timeout_seconds"):
-        if development_config.get(field) != config.declaration().get(field):
-            raise EvaluationError(
-                f"holdout {field} does not match the sealed development declaration"
-            )
     holdout_ids = {entry.game_id for entry in selected}
     for event in ledger.events():
         payload = event.get("payload")
@@ -599,7 +712,7 @@ def acquire_local_public_asset(
     seed: int,
     environments_dir: str | Path,
     recordings_dir: str | Path,
-    base_url: str = DEFAULT_BASE_URL,
+    base_url: str | None = None,
 ) -> None:
     """Use the pinned official NORMAL path to cache and initialize one declared game.
 
@@ -609,6 +722,12 @@ def acquire_local_public_asset(
     """
 
     try:
+        from arc3.adapters.arc_agi import (
+            ARC_AGI_VERSION,
+            ARCENGINE_VERSION,
+            DEFAULT_BASE_URL,
+        )
+
         if importlib.metadata.version("arc-agi") != ARC_AGI_VERSION:
             raise EvaluationError("arc-agi version changed before public acquisition")
         if importlib.metadata.version("arcengine") != ARCENGINE_VERSION:
@@ -627,7 +746,7 @@ def acquire_local_public_asset(
             _ArcadeLike,
             arcade_type(
                 arc_api_key=os.environ.get("ARC_API_KEY", ""),
-                arc_base_url=base_url,
+                arc_base_url=base_url or DEFAULT_BASE_URL,
                 operation_mode=normal_mode,
                 environments_dir=str(Path(environments_dir).resolve()),
                 recordings_dir=str(Path(recordings_dir).resolve()),
@@ -843,6 +962,8 @@ def run_public_episode(
     max_actions: int,
     max_resets: int,
     trace_sink: BaselineTraceSink | None = None,
+    hot_path_profiler: HotPathProfiler | None = None,
+    pre_action_authorization: Callable[[], None] | None = None,
 ) -> tuple[ScoreSummary | None, dict[str, object]]:
     """Execute one normalized official session with no game-specific behavior."""
 
@@ -878,20 +999,37 @@ def run_public_episode(
         if trace_sink is not None:
             trace_sink.record_submitted(before, action)
         try:
-            observation = session.step(
-                action,
-                reasoning={
-                    "category": "stage15-local-public",
-                    "summary": "generic typed policy selection; no game-specific rule",
-                },
-            )
+            # The authorization check is deliberately after policy selection
+            # and directly adjacent to the only environment-action boundary.
+            # RESET uses this same typed step path and is therefore covered.
+            if pre_action_authorization is not None:
+                pre_action_authorization()
+            if hot_path_profiler is not None and hot_path_profiler.enabled:
+                with hot_path_profiler.span("environment_step"):
+                    observation = session.step(
+                        action,
+                        reasoning={
+                            "category": "stage15-local-public",
+                            "summary": "generic typed policy selection; no game-specific rule",
+                        },
+                    )
+            else:
+                observation = session.step(
+                    action,
+                    reasoning={
+                        "category": "stage15-local-public",
+                        "summary": "generic typed policy selection; no game-specific rule",
+                    },
+                )
         except Exception:
             invalid_actions += 1
             raise
-        policy.accept_consequence(observation)
         if trace_sink is not None:
             trace_sink.record_consequence(before, action, observation)
             trace_sink.record_observation(observation)
+        # The returned environment receipt is an authority boundary. Preserve it
+        # before any derived policy fold that can fail.
+        policy.accept_consequence(observation)
         if action.name is ActionName.RESET:
             resets += 1
         else:
@@ -913,7 +1051,13 @@ def run_public_episode(
             first_progress = time.perf_counter() - started
             actions_to_first_level = actions
         state_visits.append(f"{observation.state.value}:{after_hash}")
-    scorecard = session.close()
+        if hot_path_profiler is not None:
+            hot_path_profiler.boundary("episode_action", actions=actions)
+    if hot_path_profiler is not None and hot_path_profiler.enabled:
+        with hot_path_profiler.span("finalize"):
+            scorecard = session.close()
+    else:
+        scorecard = session.close()
     unique_states = len(set(state_visits))
     metrics: dict[str, object] = {
         "environment_actions": actions,

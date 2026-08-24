@@ -1,0 +1,175 @@
+{
+  "schema": "arc3.build001.stage-00-acceptance.v0.1",
+  "stage": "00",
+  "status": "PASS",
+  "evidence_label": "synthetic",
+  "claim": "SOURCE_IDENTITY_AND_ENGINEERING_ACCEPTANCE_ONLY",
+  "started_at": "2026-08-21T15:41:02Z",
+  "completed_at": "2026-08-22T03:11:34Z",
+  "repository": {
+    "identity": "Grativy6/ARC3",
+    "remote": "https://github.com/Grativy6/ARC3.git",
+    "branch": "build/001-local-public-recovery",
+    "base_main_commit": "28c7a00732ce48e5c231211b01bc6eba7d0d71b4",
+    "base_main_tree": "4586299448e9b1b585a0878674ed5f9afa60c384",
+    "origin_main_after_fetch": "28c7a00732ce48e5c231211b01bc6eba7d0d71b4",
+    "build_000_merge_commit": "cf321c3e0e1aa782076491ee84015d24d0fe28ce",
+    "build_000_final_seal": "ee4938b4fdba8bcea9fa3660d32d7b9597644896",
+    "workflow_merge_commit": "28c7a00732ce48e5c231211b01bc6eba7d0d71b4"
+  },
+  "owner_merge_provenance": {
+    "build_000_pr": "https://github.com/Grativy6/ARC3/pull/3",
+    "build_000_pr_state": "MERGED",
+    "build_000_merged_at": "2026-08-21T14:34:05Z",
+    "build_000_merger_identity": "Grativy6 (non-bot)",
+    "workflow_pr": "https://github.com/Grativy6/ARC3/pull/4",
+    "workflow_pr_state": "MERGED",
+    "workflow_merged_at": "2026-08-21T15:07:55Z",
+    "classification": "OWNER_ACTION_NOT_AUTONOMOUS_CODEX_MERGE"
+  },
+  "build_000_validation": {
+    "validated_at_base_before_license_transition": true,
+    "artifact_files_checked": 48,
+    "artifact_hash_failures": 0,
+    "commit_objects_checked": 22,
+    "commit_object_failures": 0,
+    "evidence_json_files_checked": 25,
+    "evidence_json_parse_failures": 0,
+    "partition_assignments_revalidated": "25/25",
+    "historical_reports_evidence_and_ledger_modified": false,
+    "boundary": "Active root metadata may evolve; frozen Build 000 content remains recoverable at its exact commit and was not rewritten."
+  },
+  "machine": {
+    "os": "Microsoft Windows 10 Home 10.0.19045 build 19045 64-bit",
+    "cpu": "AMD Ryzen 5 2600 Six-Core Processor",
+    "physical_cores": 6,
+    "logical_processors": 12,
+    "ram_total_bytes": 17124503552,
+    "ram_free_bytes_at_receipt": 5397180416,
+    "gpu": "NVIDIA GeForce GTX 1660",
+    "gpu_memory_mib": 6144,
+    "gpu_driver": "560.94",
+    "python_project": "CPython 3.12.14",
+    "python_shell": "CPython 3.13.14",
+    "uv": "0.12.5 (210d1f678 2026-08-14 x86_64-pc-windows-msvc)",
+    "git": "2.54.0.windows.1",
+    "wall_clock": "Windows system clock; America/New_York; W32Time service not started (0x80070426)",
+    "network": "reachable for GitHub, PyPI, ARC docs, and organizer-page refresh"
+  },
+  "upstream_refresh": {
+    "refresh_dates_utc": [
+      "2026-08-21",
+      "2026-08-22"
+    ],
+    "repository_heads": {
+      "arcprize/ARC-AGI": "f12822c4d550121c35a275008d964afbbed47d2f",
+      "arcprize/ARCEngine": "b495c6acaf253c9681cd7b75c4299d352e9ce6f8",
+      "arcprize/ARC-AGI-3-Agents": "4743e7d0aaae0ded0d98a89a7e282e63564cd58b",
+      "arcprize/ARC-AGI-3-Kaggle-Starter": "eeb1535404f321d280a8f9194bbc1d7aca5f05fc",
+      "arcprize/docs": "a5dfc0b64c625fb4a19cf074af845ebe0bb88ff8"
+    },
+    "package_latest": {
+      "arc-agi": "0.9.9",
+      "arcengine": "0.9.3"
+    },
+    "static_document_hashes": "8/8 unchanged from upstream.lock.json",
+    "dynamic_page_drift": [
+      {
+        "url": "https://arcprize.org/competitions/2026/arc-agi-3",
+        "locked_sha256": "06ba7dde82da5b9d8bd370646727f036ce3a7bba62e2d2af3c3ffa53952eeaf2",
+        "current_sha256": "00de512939d11d2aafe824800efdedb8c0331d7a63c6e9be85a4b7a8aa85db36",
+        "current_bytes": 44439,
+        "repeat_identity": "3/3"
+      },
+      {
+        "url": "https://arcprize.org/competitions/2026",
+        "locked_sha256": "59061f6142b7a59bedfba9227cb15d22068566d94437f7ce800a37b10fdbcd33",
+        "current_sha256": "f0bc5b1f363038912c1440462603d61efb3f470366139a993b9cddaa1311a874",
+        "current_bytes": 47176,
+        "repeat_identity": "3/3"
+      }
+    ],
+    "pin_policy": "No silent upgrade; retain executable/static pins and carry dynamic-page drift as an open burden."
+  },
+  "license": {
+    "owner_instruction": "I approve MIT-0 for ARC3 first-party source.",
+    "decision_date": "2026-08-21",
+    "scope": "ARC3 first-party source",
+    "expression": "MIT-0",
+    "root_path": "LICENSE",
+    "root_sha256": "sha256:7f433e520d07d56ad14d92e9da9f580771479c30a2bfccc8024eed308f21bbe8",
+    "candidate_path": "docs/legal/candidates/MIT-0-CANDIDATE.md",
+    "candidate_sha256": "sha256:bb511507879af8dc8f2fcf94d90329f13f73fe3b457e267e6855d4ab52b290e2",
+    "operative_matches_candidate_body": true,
+    "candidate_boundary_in_root": false,
+    "pyproject_expression": "MIT-0",
+    "pyproject_license_files": [
+      "LICENSE"
+    ],
+    "third_party_terms_changed": false,
+    "wheel": {
+      "path": "C:/a/arc3-b001-wheel-stage00-20260822/arc3-0.1.0-py3-none-any.whl",
+      "sha256": "sha256:5cd19b205d6b11a392db34fc6d0c34dfc7f01db466d7892bb439d5b4c1b246fa",
+      "bytes": 377008,
+      "metadata_license_expression": "MIT-0",
+      "metadata_license_file": "LICENSE",
+      "embedded_license_sha256": "sha256:7f433e520d07d56ad14d92e9da9f580771479c30a2bfccc8024eed308f21bbe8"
+    }
+  },
+  "holdout": {
+    "status": "SEALED_UNCONSUMED",
+    "manifest_path": "docs/evaluation/public-game-partitions.v0.1.json",
+    "manifest_sha256": "sha256:682d5891c2aface54803d9bd1173c55ed21e89856e13b8a478fb9276ee963f2f",
+    "manifest_holdout_games": 10,
+    "exposure_ledger_path": "C:/a/arc3-s15-6a0f6e5/artifacts/stage15/public-exposure.jsonl",
+    "exposure_ledger_sha256": "sha256:cd9af42ed3a5ef9fa0dc201ddb10e32d2bcccee9df729aa0c7d53077c04c9ad4",
+    "exposure_ledger_events": 330,
+    "exposure_ledger_tail_sequence": 329,
+    "exposure_ledger_tail_hash": "sha256:c8c1f9cc5aa1c6e099e7c81abc0ef2848936f3411a77a870d1fe940c2d1060d4",
+    "holdout_events": 0,
+    "holdout_asset_directories_present": 0,
+    "episode_source_or_gameplay_opened": false
+  },
+  "credentials": {
+    "arc_api_key_present": false,
+    "kaggle_username_present": false,
+    "kaggle_key_present": false,
+    "workspace_env_file_present": false,
+    "terms_accepted": false
+  },
+  "verification": {
+    "uv_lock_check": "PASS:61-packages",
+    "uv_sync_default_workspace": "FAILED_INFRASTRUCTURE:WinError-5-dist-info-replacement",
+    "uv_sync_short_path_first": "FAILED_INFRASTRUCTURE:cloud-hardlink-os-error-396",
+    "uv_sync_short_path_copy_mode": "PASS:50-installed-or-refreshed",
+    "ruff_lint": "PASS:29-files",
+    "ruff_format": "PASS:29-files",
+    "mypy_strict": "PASS:19-source-files",
+    "focused_pytest_initial": "FAILED_INFRASTRUCTURE:10-passed+23-setup-errors-default-temp-ACL",
+    "focused_pytest_isolated": "PASS:35",
+    "offline_build": "PASS:sdist+wheel",
+    "integrity": "PASS:0-findings+MIT-0",
+    "secret_scan": "PASS:0-findings",
+    "git_fsck": "PASS:dangling-objects-only",
+    "git_diff_check": "PASS",
+    "holdout_nonconsumption": "PASS:0-events+0-assets"
+  },
+  "commands": [
+    "git fetch --prune origin",
+    "git fsck --full --strict",
+    "uv lock --check",
+    "$env:UV_PROJECT_ENVIRONMENT='C:\\a\\arc3-b001-28c7a00'; uv sync --frozen --all-extras --dev --python 3.12.14 --link-mode copy",
+    "ruff check <Stage-00 affected source and tests>",
+    "ruff format --check <Stage-00 affected source and tests>",
+    "mypy --strict <Stage-00 affected first-party source>",
+    "pytest -q --basetemp C:\\a\\arc3-b001-pytest-stage00-20260822-2 <focused Stage-00 tests>",
+    "uv build --offline --out-dir C:\\a\\arc3-b001-wheel-stage00-20260822",
+    "python -m scripts.check_competition_integrity --root . --run-state docs/ledger/build-001-run-state.json --expected-manifest-sha256 sha256:682d5891c2aface54803d9bd1173c55ed21e89856e13b8a478fb9276ee963f2f --output artifacts/build-001/stage00/integrity-receipt.json",
+    "git diff --check"
+  ],
+  "integrity_receipt": {
+    "path": "artifacts/build-001/stage00/integrity-receipt.json",
+    "sha256": "sha256:abca6b103f8cbef43cd206baaac6d25f50367081e80375f56c6a31d7fe6cd162"
+  },
+  "claim_boundary": "No gameplay score, RHAE, public-game completion, hidden-game generalization, AGI, PAL, or consciousness claim is made by Stage 00."
+}

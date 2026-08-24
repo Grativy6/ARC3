@@ -20,7 +20,14 @@ from arc3.adapters.synthetic import SYNTHETIC_GAME_ID, SyntheticAdapter
 from arc3.config import ARC3Config, BudgetConfig
 from arc3.errors import CompetitionIntegrityError, PolicyError
 from arc3.policy import ARC3Controller, ControllerPreset, RunContext, preset_features
-from arc3.types import ActionName, EnvironmentMode, GameId, GameStateName
+from arc3.types import (
+    ActionName,
+    ActionRequest,
+    Coordinate,
+    EnvironmentMode,
+    GameId,
+    GameStateName,
+)
 
 
 def _context(
@@ -103,6 +110,14 @@ def test_ungated_ablation_is_explicit_in_model_receipts(tmp_path: Path) -> None:
     controller.reset(_context(tmp_path, label="ungated"))
     controller.observe(session.observation)
 
+    assert not controller.snapshot.active_world_model_ids
+    first = controller.choose_action()
+    controller.apply_consequence(session.step(first.action))
+    assert not controller.snapshot.active_world_model_ids
+
+    second = controller.choose_action()
+    controller.apply_consequence(session.step(second.action))
+
     assert controller.snapshot.active_world_model_ids
     events = controller.journal.verify_manifest()
     retrodictions = [
@@ -115,6 +130,9 @@ def test_ungated_ablation_is_explicit_in_model_receipts(tmp_path: Path) -> None:
     assert {event.payload["promotion_basis"] for event in promotions} == {
         "ungated Stage 14 ablation"
     }
+    started = [event for event in events if event.event_type == "model.retrodiction_started"]
+    assert started
+    assert all("deferred_unclaimed_action_transition_ids" in event.payload for event in started)
 
 
 def test_object_tracking_ablation_preserves_raw_delta_but_omits_correspondence(
@@ -171,6 +189,8 @@ def test_coordinate_salience_ablation_uses_seeded_uniform_candidates(tmp_path: P
     salient_actions = salient._legal_actions(observation, salient._latest_view)
     uniform_actions = uniform._legal_actions(observation, uniform._latest_view)
     repeated_actions = uniform_repeat._legal_actions(observation, uniform_repeat._latest_view)
+    calibration = ActionRequest(ActionName.ACTION6, Coordinate(3, 3))
+    assert uniform_actions[0] == salient_actions[0] == calibration
     assert uniform_actions == repeated_actions
     assert uniform_actions != salient_actions
     assert len(uniform_actions) == len(salient_actions) == 2

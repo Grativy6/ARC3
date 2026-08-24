@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 from collections import Counter
+from collections.abc import Collection
 
 from arc3.adapters import Observation
 from arc3.perception.components import ComponentConfig, extract_components
 from arc3.perception.delta import measure_delta
-from arc3.types import ActionName, ActionRequest, FrameHash, GameStateName
+from arc3.types import ActionRequest, FrameHash, GameStateName
 
 from .models import EffectClassification, EffectKind, StateFeatures
 
@@ -45,14 +46,19 @@ def state_features(
     )
 
 
-def _movement_displacement(before: Observation, after: Observation) -> tuple[int, int] | None:
+def movement_displacements(
+    before: Observation,
+    after: Observation,
+) -> tuple[tuple[int, int], ...]:
+    """Return every receipt-supported rigid translation without choosing by identity."""
+
     before_grid = before.frames[-1]
     after_grid = after.frames[-1]
     background = Counter(cell for row in before_grid.cells for cell in row).most_common(1)[0][0]
     config = ComponentConfig(background_candidates=(background,))
     old_components = extract_components(before_grid, config=config)
     new_components = extract_components(after_grid, config=config)
-    candidates: list[tuple[int, int, int]] = []
+    candidates: set[tuple[int, int]] = set()
     for old in old_components:
         for new in new_components:
             if old.color != new.color or old.translation_signature != new.translation_signature:
@@ -67,11 +73,8 @@ def _movement_displacement(before: Observation, after: Observation) -> tuple[int
                 for x, y in old_points | new_points
             )
             if (dx, dy) != (0, 0) and translated == new_points and touches_delta:
-                candidates.append((old.area, dx, dy))
-    if not candidates:
-        return None
-    _area, dx, dy = max(candidates, key=lambda item: (item[0], -abs(item[1]) - abs(item[2])))
-    return dx, dy
+                candidates.add((dx, dy))
+    return tuple(sorted(candidates))
 
 
 def classify_effect(
@@ -80,8 +83,14 @@ def classify_effect(
     action: ActionRequest,
     *,
     undo_target: FrameHash | None = None,
+    prior_frame_hashes: Collection[FrameHash] = (),
 ) -> EffectClassification:
-    """Classify measured consequences; simultaneous labels remain visible."""
+    """Classify measured consequences without assigning semantics from a handle name.
+
+    ``undo_target`` is retained as a compatibility spelling for one preserved
+    prior digest.  A restore classification applies to whichever submitted
+    handle actually returned that prior frame.
+    """
 
     old_grid = before.frames[-1]
     new_grid = after.frames[-1]
@@ -92,28 +101,24 @@ def classify_effect(
         after_metadata=_metadata(after),
     )
     kinds: set[EffectKind] = set()
-    displacement = _movement_displacement(before, after) if delta.cell_changes else None
+    displacements = movement_displacements(before, after) if delta.cell_changes else ()
+    displacement = displacements[0] if len(displacements) == 1 else None
     became_terminal = before.state not in {
         GameStateName.WIN,
         GameStateName.GAME_OVER,
     } and after.state in {GameStateName.WIN, GameStateName.GAME_OVER}
-    supported_undo = (
-        action.name is ActionName.ACTION7
-        and undo_target is not None
-        and new_grid.digest == undo_target
-    )
+    restore_targets = set(prior_frame_hashes)
+    if undo_target is not None:
+        restore_targets.add(undo_target)
+    supported_restore = new_grid.digest != old_grid.digest and new_grid.digest in restore_targets
 
     if became_terminal:
         kinds.add(EffectKind.TERMINAL)
-    if supported_undo:
+    if supported_restore:
         kinds.add(EffectKind.UNDO)
-    elif action.name is ActionName.ACTION6 and (
-        delta.cell_changes or delta.metadata_changes or became_terminal
-    ):
-        kinds.add(EffectKind.SELECTION)
-    elif displacement is not None:
+    if displacements:
         kinds.add(EffectKind.MOVEMENT)
-    elif delta.cell_changes:
+    elif delta.cell_changes and not supported_restore:
         kinds.add(EffectKind.INTERACTION)
 
     if not delta.cell_changes and delta.metadata_changes:
@@ -128,4 +133,4 @@ def classify_effect(
     )
 
 
-__all__ = ["classify_effect", "state_features"]
+__all__ = ["classify_effect", "movement_displacements", "state_features"]

@@ -1,0 +1,126 @@
+{
+  "schema": "arc3.build-001.stage-06-failed-infrastructure.v0.1",
+  "status": "FAILED_INFRASTRUCTURE",
+  "evidence_label": "synthetic",
+  "attempt": 1,
+  "started_at": "2026-08-22T13:17:22Z",
+  "failed_at": "2026-08-22T13:18:48Z",
+  "claim_boundary": "This receipt records a Windows filesystem failure before the first frozen intervention case completed. It is not a mechanics result, benchmark result, or evidence for or against rule-change recovery.",
+  "source": {
+    "git_commit": "d1866e014ae4ff7ee6f24beb2f92688b5fd7ec17",
+    "git_tree": "2364db42290d8e25d954d2dbf0eb833933e3e9b4",
+    "branch": "build/001-local-public-recovery",
+    "worktree_clean": true,
+    "predeclaration": "docs/evidence/001-06-rule-change-predeclaration.json",
+    "predeclaration_sha256": "sha256:0bca5f32986c79008cf6ee01a83867262cda591f477239a5b8e9bccd90e37434"
+  },
+  "command": {
+    "argv": "C:/a/arc3-b001-28c7a00/Scripts/python.exe scripts/measure_rule_change_reopening.py --output C:/a/arc3-b001/artifacts/stage06/rule-change-reopening.json --work-root C:/a/arc3-b001/artifacts/stage06/rule-change-reopening-work",
+    "exit_code": 1,
+    "result_file_created": false
+  },
+  "failure": {
+    "kind": "FileNotFoundError",
+    "classification": "FAILED_INFRASTRUCTURE",
+    "operation": "Path.open(mode='xb') for an immutable temporary blob",
+    "first_case_id": "stage06-intervention-action_effect_rotation-early_support_2-s7-identity-identity",
+    "failed_path": "C:/a/arc3-b001/artifacts/stage06/rule-change-reopening-work/intervention/stage06-intervention-action_effect_rotation-early_support_2-s7-identity-identity/trace/blobs/sha256/44/.4429705663df1d79fe4eacafdcbc52823851fc14c530b0bd7da8df9523d603b2.blob.bf69f7623ded40a99d17706d369fa831.tmp",
+    "failed_path_characters": 283,
+    "message": "[Errno 2] No such file or directory",
+    "stack": [
+      "scripts/measure_rule_change_reopening.py:5606:<module>",
+      "scripts/measure_rule_change_reopening.py:5587:main",
+      "scripts/measure_rule_change_reopening.py:5388:measure_rule_change_reopening",
+      "scripts/measure_rule_change_reopening.py:4350:_intervention_suite",
+      "scripts/measure_rule_change_reopening.py:3643:_run_case",
+      "src/arc3/policy/controller.py:847:observe",
+      "src/arc3/policy/controller.py:914:_record_observation",
+      "src/arc3/policy/controller.py:1104:_store_frames",
+      "src/arc3/trace/blob.py:136:put_frame",
+      "src/arc3/trace/blob.py:88:put_bytes",
+      "pathlib.py:1013:open"
+    ],
+    "mechanism_cases_completed": 0,
+    "mechanism_result_available": false
+  },
+  "preserved_partial_work_tree": {
+    "original_path": "C:/a/arc3-b001/artifacts/stage06/rule-change-reopening-work",
+    "archive_path": "C:/a/arc3-b001/artifacts/stage06/failed-infrastructure/official-attempt-01-d1866e0",
+    "file_count": 10,
+    "total_bytes": 16846070,
+    "manifest_definition": "sha256(UTF-8-no-BOM(sorted '<file_sha256> <bytes> <relative_posix_path>\\n'))",
+    "manifest_sha256": "sha256:66e31a5df20dbdc5629eae1a063c001cd62e50615519c2c4095422eb77bda080",
+    "files": [
+      {
+        "path": "intervention/stage06-intervention-action_effect_rotation-early_support_2-s7-identity-identity/trace/active.jsonl",
+        "bytes": 1771,
+        "sha256": "sha256:26270c98b72182bb4173abaf7c067a1ecc3b71e0fd1c4d8231dae8bea47c237f"
+      },
+      {
+        "path": "verification/action-semantics.json",
+        "bytes": 2487,
+        "sha256": "sha256:6308c5d115fead85a3420f9c010f646fd2b8e40b853e3c7ddd785f57da0c3729"
+      },
+      {
+        "path": "verification/competition-integrity.json",
+        "bytes": 73751,
+        "sha256": "sha256:61be98636ca4550bfa8aa9926192d6e97a1f0122e08bfeda3d42ee2e208aab0b"
+      },
+      {
+        "path": "verification/mypy-cache/.gitignore",
+        "bytes": 36,
+        "sha256": "sha256:ffbb394643c112f2356bb5f3184e95e33fd732146892f4eeead126975570ff39"
+      },
+      {
+        "path": "verification/mypy-cache/3.12/cache.db",
+        "bytes": 16764928,
+        "sha256": "sha256:b937a919fb24ef211a2467a5689705397557fccf7191ec4fe1467addbdd6ff4b"
+      },
+      {
+        "path": "verification/mypy-cache/CACHEDIR.TAG",
+        "bytes": 193,
+        "sha256": "sha256:70ebb54facb76f7dab3058261eefb43a2315d28d10fcf90a85538c05a72b8d1e"
+      },
+      {
+        "path": "verification/mypy-strict.json",
+        "bytes": 692,
+        "sha256": "sha256:bedf7cf033582a2945742655438f99a272564f39ac08d660e8fec34964a91d7c"
+      },
+      {
+        "path": "verification/pytest-focused-replay.json",
+        "bytes": 1078,
+        "sha256": "sha256:6410129da6834bfd9729a397e901ebaaf37627b3d36de209e63e8065d8779a39"
+      },
+      {
+        "path": "verification/ruff-format.json",
+        "bytes": 578,
+        "sha256": "sha256:0b76c6743ffc92a39763903486b7c018f99cabf92fd47d6bdb94e31befd1fae9"
+      },
+      {
+        "path": "verification/ruff-lint.json",
+        "bytes": 556,
+        "sha256": "sha256:62acb15d57272bc41f394d80c829e0c2406360ec55654254acfebf8e30d300f8"
+      }
+    ]
+  },
+  "repair_boundary": {
+    "allowed_change": "Replace filesystem-only execution directory components with deterministic bounded content-addressed names.",
+    "forbidden_changes": [
+      "case membership",
+      "case order",
+      "seeds",
+      "action or reset budgets",
+      "acceptance predicates",
+      "mechanics or noise truth",
+      "production policy behavior"
+    ],
+    "superseding_output": "C:/a/arc3-b001/artifacts/stage06/rule-change-reopening-attempt-02.json",
+    "superseding_work_root": "C:/a/arc3-b001/artifacts/stage06/rule-change-reopening-work-attempt-02",
+    "preservation_rule": "Attempt 01 and its archived partial work tree are immutable and must not be overwritten or deleted."
+  },
+  "holdout": {
+    "status": "SEALED_UNCONSUMED",
+    "public_holdout_gameplay_events": 0,
+    "locally_acquired_holdout_assets": 0
+  }
+}

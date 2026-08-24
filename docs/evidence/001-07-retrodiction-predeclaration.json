@@ -1,0 +1,408 @@
+{
+  "schema": "arc3.build-001.stage-07-retrodiction-predeclaration.v0.1",
+  "status": "PREDECLARED",
+  "created_at": "2026-08-22T15:21:32.8066144Z",
+  "workflow": "docs/workflows/001-local-public-failure-recovery.md",
+  "objective": "Resolve the Build 000 retrodiction conflict with paired, falsification-aware measurements of full, absent, bounded-window, event-triggered, and cached-incremental retrodiction without weakening promotion integrity or opening the public holdout.",
+  "claim_limit": "NO_GENERALIZATION_CLAIM",
+  "evidence_labels": [
+    "synthetic",
+    "local-public"
+  ],
+  "source_baseline": {
+    "git_commit": "8e3400cebda87f75b8bb3fd0c8d592d2125a6869",
+    "git_tree": "69fd3a35c110e411e89e368e93d6f7110bc4673c",
+    "branch": "build/001-local-public-recovery",
+    "worktree_clean": true,
+    "stage_06_status": "FAILED_MECHANISM",
+    "stage_06_acceptance": "docs/evidence/001-06-rule-change-reopening.json",
+    "stage_06_acceptance_sha256": "sha256:0a7b98fbabd5df8df8cf63351d6629903ee9ae9b85f6b1b1d45776fe815301dd",
+    "implementation_rule": "The measured implementation commit must descend from this clean checkpoint and contain this declaration unchanged. Bind the final commit, tree, first-party source hash, configuration hash, exact commands, packages, hardware, case-manifest hash, trace hashes, and raw artifact hash.",
+    "dirty_worktree_measurement_allowed": false,
+    "public_holdout_allowed": false
+  },
+  "inherited_conflict": {
+    "positive_mechanism_evidence": {
+      "source": "docs/evidence/008-world-model-acceptance.json",
+      "label": "synthetic",
+      "result": "Full-history retrodiction completed 4/4 supplied-plan cases while the ungated higher-rank selection completed 0/4, with 16 actions each."
+    },
+    "negative_integrated_evidence": {
+      "source": "docs/evidence/014-ablation-acceptance.json",
+      "source_file_sha256": "sha256:56e7c23bea479cd64fb4433e369bda28177ca76e94e4ba18ee756dab3a8ab82c",
+      "label": "synthetic",
+      "result": "FULL and the retrodiction-off A3 ablation both completed 8/14 cases; A3 used 141 actions versus FULL's 150."
+    },
+    "stage_02_03_runtime_evidence": "Retrodiction was attributed 0.9014809 seconds in the Stage 02 synthetic profile and grew from 0.0502462 seconds at action 2 to 0.1943109 seconds at action 8. Stage 03 classified repeated full-history retrodiction as supported secondary growth with causal value unresolved.",
+    "resolution_boundary": "Neither a four-case supplied-plan mechanism test nor one integrated ablation decides production policy. Stage 07 uses paired cases, explicit false-rule histories, rule-change/noise controls, development runs, and microbenchmarks."
+  },
+  "mode_order": [
+    "FULL",
+    "NONE",
+    "RECENT_WINDOW_8",
+    "EVENT_TRIGGERED",
+    "CACHED_INCREMENTAL"
+  ],
+  "mode_contracts": {
+    "FULL": {
+      "use_retrodiction_gate": true,
+      "scope": "For the current mechanics epoch, exclude resolved-noise transitions, apply the candidate-specific compatibility partition and projection, and evaluate every compatible transition on every model update.",
+      "promotion": "Promotion requires complete compatible-scope evaluation, at least one tested transition, and zero contradictions.",
+      "default_rule": "FULL remains the FULL and COMPETITION preset default until a later committed Stage 07 decision changes it."
+    },
+    "NONE": {
+      "use_retrodiction_gate": false,
+      "scope": "Evaluate zero transitions and emit an explicit UNGATED_ABLATION artifact.",
+      "promotion": "Ungated promotion is permitted only inside the Stage 07 experimental harness.",
+      "competition_eligible": false,
+      "expected_role": "Negative control; accepting an evaluator-known false model makes it ineligible for replacement."
+    },
+    "RECENT_WINDOW_8": {
+      "use_retrodiction_gate": true,
+      "scope": "After candidate-specific compatibility partition and projection, evaluate the last eight compatible transitions in immutable trace order.",
+      "promotion": "The artifact must state bounded scope and coverage and must never claim full-history completeness.",
+      "window": 8
+    },
+    "EVENT_TRIGGERED": {
+      "use_retrodiction_gate": true,
+      "full_audit_triggers": [
+        "first sight of a mechanics-epoch and model identity",
+        "new model or rule identity",
+        "mechanics epoch, exclusion, or resolved-noise identity change",
+        "contradiction or matched-prediction mismatch",
+        "model reopening, demotion, or mechanics-change candidate event"
+      ],
+      "reuse_rule": "An ordinary history append may reuse prior promotion only when the new claimed transition has an immutable pre-action prediction receipt for that exact model and a matched returned consequence. Missing or malformed receipts force FULL. A mismatch suspends authority and forces FULL before the next environment action.",
+      "deferred_rule": "Unclaimed and collision-ambiguous transitions remain explicit; receipt-free reuse is prohibited."
+    },
+    "CACHED_INCREMENTAL": {
+      "use_retrodiction_gate": true,
+      "first_use": "First use and every non-prefix input run FULL.",
+      "prefix_extension": "An exact ordered prefix extension evaluates only the suffix and then materializes an artifact semantically identical to FULL over the entire eligible history.",
+      "invalidations": [
+        "model semantic identity change",
+        "mechanics epoch change",
+        "projection version change",
+        "resolved-noise or exclusion change",
+        "rank or configuration change",
+        "prefix mismatch",
+        "history removal or reorder",
+        "hash collision or malformed cache state"
+      ],
+      "capacity": 64,
+      "eviction": "Deterministic least-recently-used eviction; eviction may affect cost only, never policy semantics."
+    }
+  },
+  "cache_and_checkpoint_contract": {
+    "namespace_schema": "arc3.retrodiction-cache.v0.1",
+    "namespace_fields": [
+      "model semantic fingerprint including model_id, hypothesis_ids, rules, rank_weight, and compile residuals",
+      "mechanics_epoch_id",
+      "projection_version",
+      "mode",
+      "window",
+      "global retrodiction configuration hash"
+    ],
+    "history_key": "sha256_json of ordered post-exclusion, post-partition projected tuples containing transition_id, before_state_id, exact action payload, after_state_id, source_event_ids, and compatible_model_ids, plus ordered resolved-noise and exclusion identity",
+    "entry_fields": [
+      "prefix_length",
+      "prefix_hash",
+      "complete ordered canonical projected-transition vector used to verify prefix content independently of its hash",
+      "per-transition outcome and residual fold",
+      "materialized artifact identity",
+      "access ordinal"
+    ],
+    "hit_rule": "A hit requires byte-equal canonical prefix content, length, and hash. The stored ordered vector is compared before reuse so a supplied hash alone cannot manufacture a hit. Every mismatch or collision fails closed to FULL and emits a rebuild receipt.",
+    "checkpoint_path": "world_model_ensemble.retrodiction_state",
+    "checkpoint_fields": [
+      "schema",
+      "mode",
+      "window",
+      "capacity",
+      "global retrodiction configuration hash",
+      "model semantic fingerprints",
+      "mechanics epoch identities",
+      "projection version",
+      "ordered resolved-noise and exclusion identities",
+      "trigger generations",
+      "cache entries including their complete canonical prefix vectors"
+    ],
+    "restore_rule": "Retrodiction state is derived authority. Restore replays preserved transitions and trace receipts, rebuilds every artifact and cache key, compares exact serialization, and rejects tamper or mode/config mismatch. A cache may be dropped only with an explicit rebuild receipt.",
+    "feature_validation": "NONE must pair with use_retrodiction_gate=false. All other modes require true. A3 maps to NONE. COMPETITION rejects experimental overrides."
+  },
+  "trace_contract": {
+    "events": [
+      "model.retrodiction_started",
+      "model.retrodiction_completed",
+      "model.retrodiction_reused",
+      "model.rule_promoted"
+    ],
+    "required_receipt_fields": [
+      "mode and reason",
+      "mechanics epoch and model identity",
+      "full eligible history hash and count",
+      "selected history hash and count",
+      "omitted transition IDs and reasons",
+      "cache key, hit, prefix count, and suffix count",
+      "prior artifact and source receipt identity when reused",
+      "result artifact, status, complete-scope flag, and promotion basis"
+    ],
+    "authority_rule": "Every promotion receipt cites the exact artifact or extension chain. Later success never rewrites earlier receipts."
+  },
+  "matrix": {
+    "mode_count": 5,
+    "evaluation_cell_count": 280,
+    "group_counts": {
+      "A_stage14_frozen": 70,
+      "B_false_rule_histories": 40,
+      "C_rule_change_and_noise": 160,
+      "D_local_public_development": 10
+    },
+    "execution_order": "A, B, C, D; within each group use the listed case order and then mode_order. Execute serially.",
+    "paired_seed_rule": "Every mode receives the identical case, environment seed, controller seed, action/reset/wall budget, and evaluator truth. Controller seed equals the case seed."
+  },
+  "group_A_stage14_frozen": {
+    "label": "synthetic",
+    "source": "docs/evidence/014-ablation-acceptance.json",
+    "source_file_sha256": "sha256:56e7c23bea479cd64fb4433e369bda28177ca76e94e4ba18ee756dab3a8ab82c",
+    "case_manifest_hash": "sha256:121264695566131342f3af9fbdefa0b3a0a2c812759467ef3863fcdbe339caa9",
+    "protocol_hash": "sha256:41539f8cf16481ce465221ec7a1b7dcfe79952f06bdd3d9521b9fc24a75614b4",
+    "protocol_manifest_hash": "sha256:b00c45337f451ecde9af097ce68c8eb60203a7516bff55d9ed7c40868700b369",
+    "budgets": {
+      "action_budget": 16,
+      "reset_budget": 2,
+      "wall_seconds": 120.0,
+      "max_search_nodes": 2048,
+      "grid_size": 8,
+      "synthetic_max_steps": 32
+    },
+    "cases": [
+      {"case_id": "navigation-seed-101", "seed": 101, "partition": "predeclared-navigation-holdout"},
+      {"case_id": "navigation-seed-211", "seed": 211, "partition": "predeclared-navigation-holdout"},
+      {"case_id": "navigation-seed-307", "seed": 307, "partition": "predeclared-navigation-holdout"},
+      {"case_id": "navigation-seed-401", "seed": 401, "partition": "predeclared-navigation-holdout"},
+      {"case_id": "navigation-seed-503", "seed": 503, "partition": "predeclared-navigation-holdout"},
+      {"case_id": "navigation-seed-601", "seed": 601, "partition": "predeclared-navigation-holdout"},
+      {"case_id": "navigation-seed-701", "seed": 701, "partition": "predeclared-navigation-holdout"},
+      {"case_id": "navigation-seed-809", "seed": 809, "partition": "predeclared-navigation-holdout"},
+      {"case_id": "held-out-combinations-0000", "seed": -5640284960563742535, "partition": "held-out-combinations"},
+      {"case_id": "held-out-combinations-0001", "seed": 5148471431942529652, "partition": "held-out-combinations"},
+      {"case_id": "held-out-combinations-0002", "seed": -494584122490033530, "partition": "held-out-combinations"},
+      {"case_id": "held-out-families-0000", "seed": -7426763916605020087, "partition": "held-out-families"},
+      {"case_id": "held-out-families-0001", "seed": -5141244049481781291, "partition": "held-out-families"},
+      {"case_id": "held-out-families-0002", "seed": -3996662115619061362, "partition": "held-out-families"}
+    ]
+  },
+  "group_B_false_rule_histories": {
+    "label": "synthetic",
+    "case_count": 8,
+    "transitions_per_case": 12,
+    "state_envelope": {"width": 8, "height": 4},
+    "history_rule": "T00 contains fact rare and is evaluator-generated from the declared TRUE primitive. T01 through T11 omit rare and are generated from the declared shared primitive. The FALSE primitive contradicts T00 but agrees on all ordinary transitions, placing the contradiction outside an eight-transition window by construction.",
+    "identity_rule": "Hypotheses are H-Bxx-TRUE and H-Bxx-FALSE. Rules are R-Bxx-TRUE-RARE, R-Bxx-FALSE-RARE, and R-Bxx-SHARED-NORMAL. Transitions are stage07-bxx-t00 through t11 with event:<transition>:before and event:<transition>:after source IDs. TRUE rank weight is 1 and FALSE rank weight is 9.",
+    "model_composition": {
+      "B01_B02_B04_B05_B06_B08": "The TRUE candidate contains exactly R-Bxx-TRUE-RARE conditioned on FACT_PRESENT rare plus R-Bxx-SHARED-NORMAL conditioned on FACT_ABSENT rare. The FALSE candidate substitutes R-Bxx-FALSE-RARE with the same FACT_PRESENT condition and shares the identical FACT_ABSENT rule. No other rule is present.",
+      "B03_B07": "The TRUE and FALSE candidates share exactly one unconditional R-Bxx-SHARED-NORMAL MovementRule for the declared action, mover kind, and +1 x displacement. The TRUE candidate additionally contains R-Bxx-TRUE-RARE and the FALSE candidate R-Bxx-FALSE-RARE, each conditioned on FACT_PRESENT rare. Those rare rules are respectively CollisionRule or ContactRule and are applied by the shared movement driver. No second movement or fallback rule is present.",
+      "rule_order": "Use the existing deterministic execute_rules phase order. Candidate content, conditions, kinds, action payloads, rank weights, compile residuals, and resulting model IDs are sealed in the case manifest before official measurement."
+    },
+    "case_manifest": "The implementation must materialize complete before/after states, actions, rules, deterministic candidate model IDs, and a canonical case-manifest hash in docs/evidence/001-07-false-rule-case-manifest.json before any official Stage 07 measurement. The construction rules in this declaration may not change.",
+    "cases": [
+      {"case_id": "stage07-false-rule-b01-movement-sign", "action": "ACTION1", "rare_true": "Movement(piece,+1,0)", "rare_false": "Movement(piece,-1,0)", "ordinary_shared": "Movement(piece,+1,0)", "t00": "piece x3 to x4"},
+      {"case_id": "stage07-false-rule-b02-noop-vs-translation", "action": "ACTION2", "rare_true": "NoOp(piece)", "rare_false": "Movement(piece,+1,0)", "ordinary_shared": "Movement(piece,+1,0)", "t00": "piece x3 remains x3"},
+      {"case_id": "stage07-false-rule-b03-collision-pass-vs-block", "action": "ACTION3", "rare_true": "Collision(mover,terrain,BLOCK)", "rare_false": "Collision(mover,terrain,PASS)", "ordinary_shared": "Movement(mover,+1,0)", "t00": "mover x2 remains blocked by terrain x3"},
+      {"case_id": "stage07-false-rule-b04-toggle-cycle", "action": "ACTION4", "rare_true": "Toggle(mode,off/on)", "rare_false": "Toggle(mode,off/standby/on)", "ordinary_shared": "Movement(piece,+1,0)", "t00": "mode off to on"},
+      {"case_id": "stage07-false-rule-b05-counter-delta", "action": "ACTION1", "rare_true": "Counter(tally,+1)", "rare_false": "Counter(tally,+2)", "ordinary_shared": "Movement(piece,+1,0)", "t00": "tally 0 to 1"},
+      {"case_id": "stage07-false-rule-b06-recolor-value", "action": "ACTION2", "rare_true": "Transformation(token,RECOLOR,color=3)", "rare_false": "Transformation(token,RECOLOR,color=4)", "ordinary_shared": "Movement(piece,+1,0)", "t00": "token color 2 to 3"},
+      {"case_id": "stage07-false-rule-b07-contact-effect", "action": "ACTION3", "rare_true": "Contact(mover,target,OVERLAP,ADD_FACT,contacted)", "rare_false": "Contact(mover,target,OVERLAP,SET_TOGGLE,contacted=on)", "ordinary_shared": "Movement(mover,+1,0)", "t00": "mover x2 enters beacon x3 and adds fact contacted"},
+      {"case_id": "stage07-false-rule-b08-coordinate-selection", "action": "ACTION6(2,1)", "rare_true": "Selection(choice-good)", "rare_false": "Selection(choice-bad)", "ordinary_shared": "Selection(choice-normal)", "t00": "co-located good and bad choices select good"}
+    ],
+    "ordinary_state_rule": "For T01 through T11, a mover starts at x=1+(ordinal mod 5) so a shared +1 translation remains bounded. Collision/contact ordinary states omit obstacle or beacon. Selection ordinary states contain choice-normal at (2,1)."
+  },
+  "group_C_rule_change_and_noise": {
+    "label": "synthetic",
+    "source_predeclaration": "docs/evidence/001-06-rule-change-predeclaration.json",
+    "source_predeclaration_sha256": "sha256:0bca5f32986c79008cf6ee01a83867262cda591f477239a5b8e9bccd90e37434",
+    "selection_rule": "Frozen orthogonal selection made before Stage 07 results: for interventions, palette is identity iff (seed_index + family_index) is even and action is identity iff (seed_index + timing_index) is even. For noise, select the timing/seed base transform and its joint complement. This balances both families, timings, seeds, palettes, actions, and transform tuples without selecting on Stage 06 outcomes.",
+    "budgets": {"action_budget": 48, "reset_budget": 2, "wall_seconds": 60.0, "max_search_nodes": 2048},
+    "intervention_case_ids": [
+      "stage06-intervention-action_effect_rotation-early_support_2-s7-identity-identity",
+      "stage06-intervention-action_effect_rotation-early_support_2-s11-affine_nonidentity-cycle1234",
+      "stage06-intervention-action_effect_rotation-early_support_2-s23-identity-identity",
+      "stage06-intervention-action_effect_rotation-early_support_2-s29-affine_nonidentity-cycle1234",
+      "stage06-intervention-action_effect_rotation-late_support_4-s7-identity-cycle1234",
+      "stage06-intervention-action_effect_rotation-late_support_4-s11-affine_nonidentity-identity",
+      "stage06-intervention-action_effect_rotation-late_support_4-s23-identity-cycle1234",
+      "stage06-intervention-action_effect_rotation-late_support_4-s29-affine_nonidentity-identity",
+      "stage06-intervention-traversability_flip-early_support_2-s7-affine_nonidentity-identity",
+      "stage06-intervention-traversability_flip-early_support_2-s11-identity-cycle1234",
+      "stage06-intervention-traversability_flip-early_support_2-s23-affine_nonidentity-identity",
+      "stage06-intervention-traversability_flip-early_support_2-s29-identity-cycle1234",
+      "stage06-intervention-traversability_flip-late_support_4-s7-affine_nonidentity-cycle1234",
+      "stage06-intervention-traversability_flip-late_support_4-s11-identity-identity",
+      "stage06-intervention-traversability_flip-late_support_4-s23-affine_nonidentity-cycle1234",
+      "stage06-intervention-traversability_flip-late_support_4-s29-identity-identity"
+    ],
+    "noise_case_ids": [
+      "stage06-noise-early_support_2-s7-identity-identity",
+      "stage06-noise-early_support_2-s7-affine_nonidentity-cycle1234",
+      "stage06-noise-early_support_2-s11-affine_nonidentity-cycle1234",
+      "stage06-noise-early_support_2-s11-identity-identity",
+      "stage06-noise-early_support_2-s23-identity-identity",
+      "stage06-noise-early_support_2-s23-affine_nonidentity-cycle1234",
+      "stage06-noise-early_support_2-s29-affine_nonidentity-cycle1234",
+      "stage06-noise-early_support_2-s29-identity-identity",
+      "stage06-noise-late_support_4-s7-identity-cycle1234",
+      "stage06-noise-late_support_4-s7-affine_nonidentity-identity",
+      "stage06-noise-late_support_4-s11-affine_nonidentity-identity",
+      "stage06-noise-late_support_4-s11-identity-cycle1234",
+      "stage06-noise-late_support_4-s23-identity-cycle1234",
+      "stage06-noise-late_support_4-s23-affine_nonidentity-identity",
+      "stage06-noise-late_support_4-s29-affine_nonidentity-identity",
+      "stage06-noise-late_support_4-s29-identity-cycle1234"
+    ]
+  },
+  "group_D_local_public_development": {
+    "label": "local-public",
+    "game_id": "ar25-0c556536",
+    "stable_name": "ar25",
+    "partition": "development",
+    "assignment_hash": "90423451e4cc21a85da6aed98ef9359685517addec73ab8e71a8b351d4940cda",
+    "partition_manifest": "docs/evaluation/public-game-partitions.v0.1.json",
+    "partition_manifest_sha256": "sha256:682d5891c2aface54803d9bd1173c55ed21e89856e13b8a478fb9276ee963f2f",
+    "seeds": [7, 23],
+    "budgets": {"action_budget": 80, "reset_budget": 8, "worker_wall_seconds": 120.0},
+    "controller_baseline": "FULL/B4 with only the declared retrodiction mode varied",
+    "exposure_ledger": "C:/a/arc3-b001/artifacts/stage07/public-exposure.jsonl",
+    "gate": "The selected identity must resolve to development. Any smoke or holdout identity is rejected before adapter launch. Every attempted development episode appends an immutable exposure receipt."
+  },
+  "microbenchmark": {
+    "label": "synthetic",
+    "case_ids": [
+      "stage07-retrodiction-micro-n0002",
+      "stage07-retrodiction-micro-n0004",
+      "stage07-retrodiction-micro-n0008",
+      "stage07-retrodiction-micro-n0016",
+      "stage07-retrodiction-micro-n0032",
+      "stage07-retrodiction-micro-n0064"
+    ],
+    "history_sizes": [2, 4, 8, 16, 32, 64],
+    "model": "One fixed ACTION1 +1 mover model with ordered matching transitions stage07-micro-nNNNN-tIII.",
+    "paths": ["cold_exact_n", "append_one_from_verified_n_minus_1_prefix"],
+    "warmups_per_cell": 5,
+    "measured_repetitions_per_cell": 31,
+    "fresh_state_for_cold": true,
+    "semantic_parity_required": "Every mode must preserve the declared model-selection, prediction, and returned-state semantics on the matching micro histories. Artifact status and coverage may differ by mode; CACHED_INCREMENTAL alone must materialize the exact FULL artifact semantics.",
+    "material_history_floor": 16
+  },
+  "measurements": {
+    "per_evaluation_cell": [
+      "completion, score, levels completed, and final state",
+      "environment actions, resets, and commands",
+      "total wall and process CPU nanoseconds",
+      "retrodiction phase wall and CPU nanoseconds, including per-action values",
+      "current and peak RSS",
+      "accepted TRUE and FALSE model identities",
+      "tested, matched, contradicted, deferred, and excluded transition IDs",
+      "contradiction-to-recovery action and wall latency with lifecycle chain",
+      "planning failures and planned-prediction mismatches",
+      "trace and checkpoint bytes, event counts, and tail hashes",
+      "replay, prefix immutability, and artifact/hash verification",
+      "cache hits, misses, rebuilds, evictions, and suffix-transition counts",
+      "faults, invalid requests, network attempts, and holdout exposure"
+    ],
+    "identity": [
+      "source commit, tree, and first-party source hash",
+      "configuration and case-manifest hashes",
+      "exact commands and package versions",
+      "hardware and runtime identity",
+      "seeds and action/reset/wall budgets"
+    ],
+    "cost_comparison_rows": "Report paired retrodiction CPU and wall per action for every row and separately for rows with at least nine actions."
+  },
+  "resource_limits": {
+    "overall_wall_seconds": 3600.0,
+    "per_process_peak_rss_bytes": 2147483648,
+    "cache_capacity": 64,
+    "execution": "serial",
+    "network_enabled": false,
+    "hosted_inference": false
+  },
+  "replacement_gates": {
+    "hard_integrity": [
+      "all traces, checkpoints, replay receipts, artifact hashes, and source identities validate",
+      "zero controller faults and invalid requests",
+      "zero public-holdout gameplay events or locally acquired holdout assets",
+      "peak RSS does not exceed 2147483648 bytes",
+      "zero network or hosted-inference attempts"
+    ],
+    "false_rule_gate_B": "Any replacement candidate must accept TRUE in 8/8 B cases and FALSE in 0/8. NONE is an expected negative control and is ineligible if it accepts any false model.",
+    "completion_gate_A": "No case completed by FULL may become incomplete and total completion must be at least FULL.",
+    "mechanics_gate_C": "All 16 intervention cases must trigger. Every strict Stage 06 lifecycle row accepted under FULL must remain accepted. All 16 noise cases must end in the raw RESOLVED_NOISE state with zero confirmed false epochs; the stricter candidate-specific Stage 06 closure remains separately reported and a replacement may not lose any strict row that FULL passes. This gate does not relabel the Stage 06 failure as success.",
+    "outcome_gate_ACD": "For every paired A, C, and D row, a replacement may not reduce completion, levels, or score relative to that row's FULL result, and may not increase planning failures or planned-prediction mismatches. The same inequalities must hold for the fixed aggregate over all A, C, and D rows.",
+    "action_gate": "Aggregate environment actions across A, C, and D must be at most 1.05 times FULL, and every paired row must be at most FULL plus one action.",
+    "cost_gate": "Freeze the episode-cost comparison set to paired A, C, and D rows where FULL executes at least nine environment actions; a candidate cannot change row membership by acting differently. On that fixed set, both aggregate retrodiction wall and CPU per action must improve at least 25 percent. Whole-episode wall over the complete fixed A, C, and D matrix may not exceed FULL by more than 5 percent. Microbenchmark qualification is mode-specific so first-use FULL audits are not treated as an optimization failure.",
+    "mode_specific": {
+      "CACHED_INCREMENTAL": "Exact FULL artifact parity and at least one verified cache hit are mandatory. For every history size at least 16, append-one median wall and CPU must improve at least 25 percent versus FULL; cold exact-N median wall and CPU may not exceed FULL by more than 5 percent because first use intentionally audits FULL.",
+      "EVENT_TRIGGERED": "Every reuse is bound to a valid matched pre-action prediction and returned-consequence receipt. For every history size at least 16, append-one median wall and CPU must improve at least 25 percent versus FULL; cold exact-N median wall and CPU may not exceed FULL by more than 5 percent because first sight intentionally audits FULL.",
+      "RECENT_WINDOW_8": "The mode must pass all eight old-contradiction B cases despite its bounded window. For every history size at least 16, both cold and append-one median wall and CPU must improve at least 25 percent versus FULL.",
+      "NONE": "For every history size at least 16, both cold and append-one median wall and CPU must improve at least 25 percent versus FULL; the false-rule integrity gate remains controlling."
+    }
+  },
+  "decision_rule": {
+    "eligible_ordering": "Among modes satisfying every integrity, truth, completion, mechanics, action, and cost gate, select the lowest paired retrodiction CPU. If values are within 5 percent, prefer stronger coverage in this order: CACHED_INCREMENTAL, EVENT_TRIGGERED, RECENT_WINDOW_8, NONE.",
+    "outcomes": [
+      "KEEP_FULL",
+      "REMOVE_NONE",
+      "NARROW_RECENT_WINDOW_8",
+      "DEFER_EVENT_TRIGGERED",
+      "CACHE_INCREMENTAL"
+    ],
+    "fallback": "If no replacement mode qualifies, KEEP_FULL.",
+    "production_change_gate": "Do not change the FULL or COMPETITION default until the decision artifact is complete, independently verified, and committed. Preserve all rejected implementations and measurements as evidence."
+  },
+  "verification_plan": {
+    "required_tests": [
+      "mode/config validation and COMPETITION override rejection",
+      "FULL legacy artifact parity",
+      "exact recent-window selection and explicit omissions",
+      "all eight false-rule identities and old-contradiction rejection",
+      "event reuse only from matched pre-action receipts and mismatch-triggered FULL audit",
+      "incremental suffix parity with FULL and every declared invalidation",
+      "deterministic capacity-64 eviction and collision fail-closed behavior",
+      "checkpoint/resume exactness and rehashed mode/cache/trigger tamper rejection",
+      "trace causal payload and source ordering",
+      "exact 280-cell matrix and hash",
+      "exact balanced C subset",
+      "development selector and exposure-ledger accounting",
+      "microbenchmark semantic parity",
+      "no-overwrite, replay, action/game-ID integrity, offline network, and secret checks"
+    ],
+    "quality_checks": [
+      "pytest with deterministic seeds and explicit short basetemp",
+      "ruff check",
+      "ruff format --check",
+      "mypy --strict for first-party source",
+      "competition-integrity and secret scan",
+      "static production action/game-identity scan"
+    ]
+  },
+  "artifact_paths": {
+    "false_rule_case_manifest": "docs/evidence/001-07-false-rule-case-manifest.json",
+    "raw_attempt_01": "C:/a/arc3-b001/artifacts/stage07/retrodiction-decision-attempt-01.json",
+    "work_root_attempt_01": "C:/a/arc3-b001/artifacts/stage07/retrodiction-decision-work-attempt-01",
+    "development_exposure": "C:/a/arc3-b001/artifacts/stage07/public-exposure.jsonl",
+    "acceptance": "docs/evidence/001-07-retrodiction-decision.json",
+    "report": "docs/reports/001-07-retrodiction-decision.md",
+    "failed_attempt_rule": "Never overwrite a failed attempt. Move its complete evidence tree beneath a content-addressed failed-mechanisms or failed-infrastructure directory and preserve a recursive manifest hash."
+  },
+  "competition_integrity": {
+    "offline_required": true,
+    "hosted_model_api_allowed": false,
+    "game_id_specific_production_logic_allowed": false,
+    "public_game_source_read_during_evaluation_allowed": false,
+    "hidden_or_private_information_allowed": false,
+    "public_holdout": "SEALED_UNCONSUMED",
+    "public_holdout_gameplay_events_allowed": 0,
+    "locally_acquired_holdout_assets_allowed": 0
+  }
+}

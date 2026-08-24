@@ -8,6 +8,7 @@ from dataclasses import dataclass
 
 from arc3.types import ActionName, ActionRequest, GameStateName
 
+from .action_registry import ActionEffectRegistry
 from .models import (
     EffectClassification,
     EffectKind,
@@ -84,10 +85,12 @@ class ExplorationPlanner:
         self,
         *,
         statistics: ActionEffectStatistics | None = None,
+        action_registry: ActionEffectRegistry | None = None,
         weights: ProbeUtilityWeights | None = None,
         suppression_threshold: int = 2,
     ) -> None:
         self.statistics = statistics or ActionEffectStatistics()
+        self.action_registry = action_registry or ActionEffectRegistry()
         self.weights = weights or ProbeUtilityWeights()
         self.ineffective = IneffectiveActionMemory(suppression_threshold=suppression_threshold)
 
@@ -108,9 +111,13 @@ class ExplorationPlanner:
             return True
         if action.name not in context.state.available_actions:
             return False
-        if action.name is ActionName.ACTION7 and not self.statistics.supported_undo:
-            return False
         return not self.ineffective.suppressed(context.state.signature, action)
+
+    def _semantic_ranks(self, options: tuple[ProbeOption, ...]) -> dict[ActionName, int]:
+        handles = tuple(option.action.name for option in options)
+        self.action_registry.register_handles(handles)
+        ordered = self.action_registry.canonical_order(handles)
+        return {handle: index for index, handle in enumerate(ordered)}
 
     def _utility(
         self,
@@ -159,13 +166,11 @@ class ExplorationPlanner:
                     option.action.name is ActionName.RESET
                     or option.action.name in context.state.available_actions
                 )
-                and not (
-                    option.action.name is ActionName.ACTION7 and not self.statistics.supported_undo
-                )
             )
         if not eligible:
             raise ValueError("no legal exploration option is available")
 
+        semantic_ranks = self._semantic_ranks(eligible)
         if context.use_fallback:
             selected = max(
                 eligible,
@@ -173,7 +178,7 @@ class ExplorationPlanner:
                     option.progress - option.failure_risk,
                     option.reversibility,
                     -self.ineffective.count(context.state.signature, option.action),
-                    option.action.name.value,
+                    -semantic_ranks.get(option.action.name, len(semantic_ranks)),
                     repr(option.action.coordinate),
                 ),
             )
@@ -189,7 +194,7 @@ class ExplorationPlanner:
                 item[0][0],
                 item[0][1],
                 item[1].progress,
-                item[1].action.name.value,
+                -semantic_ranks.get(item[1].action.name, len(semantic_ranks)),
                 repr(item[1].action.coordinate),
             ),
         )

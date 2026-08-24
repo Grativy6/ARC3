@@ -14,7 +14,11 @@ import venv
 from pathlib import Path
 from typing import cast
 
-from arc3.packaging.models import PackagingError, SandboxReceipt
+from arc3.packaging.models import (
+    PYTHON_NETWORK_ENFORCEMENT,
+    PackagingError,
+    SandboxReceipt,
+)
 from arc3.packaging.notebook import REHEARSAL_AUTHORITY, validate_notebook
 from arc3.packaging.runtime_launcher import SAFE_FRAMEWORK_FIXTURE_IDENTITY
 from arc3.packaging.submission import write_validation_submission
@@ -29,7 +33,96 @@ from arc3.types import JSONValue
 _FIXTURE_DISTRIBUTION = "arc3-rehearsal-canary"
 _FIXTURE_VERSION = "0.0.0"
 
-_RUNNER = r"""
+_PYTHON_SOCKET_GUARD = r"""
+def address_host(address):
+    raw_host = address[0] if isinstance(address, tuple) and address else address
+    if isinstance(raw_host, bytes):
+        return raw_host.decode("ascii", errors="replace")
+    return str(raw_host)
+
+
+def guard_address(operation, address, *, record_connection=False):
+    if address_host(address) not in allowed_hosts:
+        blocked_attempts.append(f"{operation}:{address!r}")
+        raise RuntimeError(f"offline sandbox blocked non-loopback {operation}")
+    if record_connection:
+        gateway_connections.append(repr(address))
+
+
+def deny_operation(operation, address):
+    blocked_attempts.append(f"{operation}:{address!r}")
+    raise RuntimeError(f"offline sandbox blocked {operation}")
+
+
+class GuardedSocket(real_socket):
+    def connect(self, address):
+        guard_address("connect", address, record_connection=True)
+        return super().connect(address)
+
+    def connect_ex(self, address):
+        try:
+            guard_address("connect_ex", address, record_connection=True)
+        except RuntimeError:
+            return 1
+        return super().connect_ex(address)
+
+    def sendto(self, data, *args):
+        if not args:
+            raise TypeError("sendto requires a destination address")
+        guard_address("sendto", args[-1])
+        return super().sendto(data, *args)
+
+    def sendmsg(self, buffers, ancdata=(), flags=0, address=None):
+        if address is not None:
+            guard_address("sendmsg", address)
+        implementation = getattr(super(), "sendmsg", None)
+        if implementation is None:
+            raise NotImplementedError("sendmsg is unavailable on this platform")
+        if address is None:
+            return implementation(buffers, ancdata, flags)
+        return implementation(buffers, ancdata, flags, address)
+
+
+def guarded_connection(address, *args, **kwargs):
+    guard_address("create_connection", address, record_connection=True)
+    return real_create_connection(address, *args, **kwargs)
+
+
+def guarded_getaddrinfo(host, port, family=0, type=0, proto=0, flags=0):
+    guard_address("getaddrinfo", host)
+    return real_getaddrinfo(
+        host, port, family, type, proto, flags | socket.AI_NUMERICHOST
+    )
+
+
+def guarded_gethostbyname(host):
+    deny_operation("gethostbyname", host)
+
+
+def guarded_gethostbyname_ex(host):
+    deny_operation("gethostbyname_ex", host)
+
+
+def guarded_gethostbyaddr(host):
+    deny_operation("gethostbyaddr", host)
+
+
+def guarded_getnameinfo(address, flags):
+    del flags
+    deny_operation("getnameinfo", address)
+
+
+socket.socket = GuardedSocket
+socket.SocketType = GuardedSocket
+socket.create_connection = guarded_connection
+socket.getaddrinfo = guarded_getaddrinfo
+socket.gethostbyname = guarded_gethostbyname
+socket.gethostbyname_ex = guarded_gethostbyname_ex
+socket.gethostbyaddr = guarded_gethostbyaddr
+socket.getnameinfo = guarded_getnameinfo
+"""
+
+_RUNNER_TEMPLATE = r"""
 from __future__ import annotations
 
 import json
@@ -50,7 +143,13 @@ gateway_connections = []
 blocked_attempts = []
 real_socket = socket.socket
 real_create_connection = socket.create_connection
-allowed_hosts = {"127.0.0.1", "::1", "localhost"}
+real_getaddrinfo = socket.getaddrinfo
+real_gethostbyname = socket.gethostbyname
+real_gethostbyname_ex = socket.gethostbyname_ex
+real_gethostbyaddr = socket.gethostbyaddr
+real_getnameinfo = socket.getnameinfo
+allowed_hosts = {"127.0.0.1", "::1"}
+network_enforcement = __ARC3_NETWORK_ENFORCEMENT__
 
 
 class GatewayHandler(BaseHTTPRequestHandler):
@@ -76,36 +175,7 @@ server_thread = threading.Thread(target=server.serve_forever, daemon=True)
 server_thread.start()
 gateway_port = int(server.server_address[1])
 
-
-class GuardedSocket(real_socket):
-    def connect(self, address):
-        host = str(address[0]) if isinstance(address, tuple) and address else ""
-        if host not in allowed_hosts:
-            blocked_attempts.append(repr(address))
-            raise RuntimeError("offline sandbox blocked a non-loopback connection")
-        gateway_connections.append(repr(address))
-        return super().connect(address)
-
-    def connect_ex(self, address):
-        host = str(address[0]) if isinstance(address, tuple) and address else ""
-        if host not in allowed_hosts:
-            blocked_attempts.append(repr(address))
-            return 1
-        gateway_connections.append(repr(address))
-        return super().connect_ex(address)
-
-
-def guarded_connection(address, *args, **kwargs):
-    host = str(address[0]) if isinstance(address, tuple) and address else ""
-    if host not in allowed_hosts:
-        blocked_attempts.append(repr(address))
-        raise RuntimeError("offline sandbox blocked a non-loopback connection")
-    gateway_connections.append(repr(address))
-    return real_create_connection(address, *args, **kwargs)
-
-
-socket.socket = GuardedSocket
-socket.create_connection = guarded_connection
+__ARC3_PYTHON_SOCKET_GUARD__
 os.environ["KAGGLE_IS_COMPETITION_RERUN"] = "1"
 os.environ["ARC3_REHEARSAL_FIXTURE"] = "1"
 os.environ["ARC3_COMPETITION_INPUT"] = str(input_root)
@@ -231,6 +301,7 @@ print(json.dumps({
     "installed_wheel_sha256": install_receipt["wheel_sha256"],
     "max_concurrency": launch_receipt["max_concurrency"],
     "network_attempts": len(blocked_attempts),
+    "network_enforcement": network_enforcement,
     "orchestration": launch_receipt["orchestration"],
     "production_rerun_exercised": True,
     "rehearsal_requirements_sha256": install_receipt["requirements_sha256"],
@@ -239,6 +310,10 @@ print(json.dumps({
     "worker_count": launch_receipt["worker_count"],
 }, sort_keys=True))
 """
+
+_RUNNER = _RUNNER_TEMPLATE.replace("__ARC3_PYTHON_SOCKET_GUARD__", _PYTHON_SOCKET_GUARD).replace(
+    "__ARC3_NETWORK_ENFORCEMENT__", repr(PYTHON_NETWORK_ENFORCEMENT)
+)
 
 
 def _wheel_record(path: str, content: bytes) -> str:
@@ -533,6 +608,7 @@ def run_offline_sandbox(
         shutil.copyfile(sandbox_submission, output_path)
 
     network_attempts = raw_receipt.get("network_attempts")
+    network_enforcement = raw_receipt.get("network_enforcement")
     gateway_connections = raw_receipt.get("gateway_connections")
     credentials = raw_receipt.get("credentials_present")
     installed_wheels = raw_receipt.get("installed_wheel_sha256")
@@ -551,6 +627,8 @@ def run_offline_sandbox(
     orchestration = raw_receipt.get("orchestration")
     if not isinstance(network_attempts, int) or network_attempts < 0:
         raise PackagingError("sandbox receipt has an invalid network-attempt count")
+    if network_enforcement != PYTHON_NETWORK_ENFORCEMENT:
+        raise PackagingError("sandbox receipt overstates or omits its network enforcement scope")
     if not isinstance(gateway_connections, int) or gateway_connections < 2:
         raise PackagingError("sandbox did not exercise the local gateway path")
     if not isinstance(credentials, list) or not all(isinstance(item, str) for item in credentials):
@@ -605,6 +683,7 @@ def run_offline_sandbox(
         agent_consequence_state=agent_consequence_state,
         agent_cycle_actions=(agent_cycle_actions[0], agent_cycle_actions[1]),
         network_attempts=network_attempts,
+        network_enforcement=PYTHON_NETWORK_ENFORCEMENT,
         credentials_present=tuple(cast(list[str], credentials)),
         imported_agent_path=imported_agent,
         imported_arc3_path=imported_arc3,
@@ -635,6 +714,9 @@ def run_offline_sandbox(
             "competition-provided framework tree was unavailable and was not executed locally.",
             "A loopback HTTP gateway fixture reproduced discovery and output handoff; Kaggle's "
             "private gateway sidecar and official evaluator were unavailable locally.",
+            "Network denial in this rehearsal is limited to guarded Python socket entry points. "
+            "OS-level network containment is absent, so native code, direct system calls, and "
+            "child-process egress were not proven impossible.",
         ),
     )
 

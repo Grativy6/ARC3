@@ -1,0 +1,307 @@
+{
+  "schema": "arc3.build-001.stage-13-offline-package.v0.1",
+  "generated_at": "2026-08-23T12:08:30Z",
+  "status": "BLOCKED_EXTERNAL",
+  "evidence_label": "synthetic",
+  "claim": "DETERMINISTIC_OFFLINE_PACKAGE_OBSERVED_ON_AVAILABLE_SURFACES",
+  "claim_boundary": "No Kaggle-public, semi-private, official-private, public-game, or hidden-game result is produced by package verification",
+  "artifact_core_hash": "sha256:f15f0f59304e3f1a22bfeba3c831b43122de00f407e7a50573a99c02d295bf8f",
+  "package_source": {
+    "commit": "9f25e13b4672ff0ea87544ba20c5677f194cf291",
+    "tree": "d7fc05c9dff0f63cc97e7b752e1fe59ff7583900",
+    "clean_clone": "C:/a/arc3-b001-stage14-9f25e13",
+    "clean": true,
+    "production_policy_commit": "d6d4bac1e33c9837856c08abcee61bcb14afd34e",
+    "production_policy_tree": "dd8e82e4b34337a208110929e3f5f8079d1e0a18",
+    "production_policy_source_sha256": "sha256:8f0de1a9c2c88761951ba2bcd69f2612bedfa0cc4226f44f1ed272b54b9023a8",
+    "uv_lock_sha256": "sha256:3bf42dcbe45720f71b7433584f56a5d5982ec1c687c341ad2626222fa5de285b",
+    "upstream_lock_sha256": "sha256:67e1d937e213bbcc25783784d04c4fa349b85dc09b94855256916ca6b96e808a",
+    "license_expression": "MIT-0",
+    "license_sha256": "sha256:7f433e520d07d56ad14d92e9da9f580771479c30a2bfccc8024eed308f21bbe8",
+    "third_party_notices_sha256": "sha256:dd3b46094c40b5bf2a0b13892382e05ebaa1e8006f341f94f1279a87ffdbf70a"
+  },
+  "preserved_long_root_failure": {
+    "status": "FAILED_MECHANISM",
+    "reason": "Three Windows path-length FileNotFoundError test failures under an avoidably long external root",
+    "output_root": "C:/a/arc3-b001-final-output-d9c1955",
+    "transient_root": "C:/a/arc3-b001-final-transient-d9c1955",
+    "receipt": "C:/a/arc3-b001-final-output-d9c1955/release-verification-receipt.json",
+    "receipt_file_sha256": "sha256:cd8aed1cb97cdac6bfd7f27b1a3852724e09ca71a5740360b40e55dcc931e4e3",
+    "curated_evidence_file_sha256": "sha256:100f86379f867d14cb330d28c25f32436fb5243863e22b78da89275e65c95732",
+    "test_summary": {
+      "passed": 696,
+      "skipped": 2,
+      "failed": 3
+    },
+    "nonpass_checks": [
+      "package-safe-test-suite",
+      "package-test-guard-validation",
+      "private-kaggle-surfaces"
+    ],
+    "candidate_sha256": "sha256:0bd55b93d1652f1d2f09aafb74189d5b6050e4a9fae3df9aa9925359f2a095bd",
+    "candidate_bytes": 788071,
+    "preserved": true
+  },
+  "accepted_short_root_verification": {
+    "status": "BLOCKED_EXTERNAL",
+    "output_root": "C:/a/o13d9",
+    "transient_root": "C:/a/t13d9",
+    "receipt": "C:/a/o13d9/release-verification-receipt.json",
+    "receipt_file_sha256": "sha256:c2feeee04fbf0a82291a0c7ba335a1bfe041a6bffbefed4db73d51901c9ec234",
+    "receipt_self_hash": "sha256:6bab4c521b1202198aa96ea81b8c3f24ee78f6d12e8c58b5793da7b48cd312d9",
+    "receipt_self_hash_valid": true,
+    "curated_evidence": "C:/a/o13d9/release-verification-evidence.json",
+    "curated_evidence_file_sha256": "sha256:2ddf1af211f973ac71c1eb5e13d97d03c2fd2b664a319611945e0ffa0c780d06",
+    "curated_evidence_self_hash": "sha256:d173af4011dc9f4d04433e939cfc9a5fd7923edf81579c0dda772b0bbafa4057",
+    "curated_evidence_self_hash_valid": true,
+    "checks": {
+      "total": 21,
+      "passed": 20,
+      "blocked_external": 1,
+      "failed_mechanism": 0,
+      "failed_infrastructure": 0,
+      "only_nonpass": "private-kaggle-surfaces"
+    },
+    "test_summary": {
+      "passed": 699,
+      "skipped": 2,
+      "failed": 0,
+      "wall_seconds": 1150.9940076000057
+    },
+    "candidate_a": "C:/a/o13d9/package-a/arc3-kaggle-candidate.zip",
+    "candidate_b": "C:/a/o13d9/package-b/arc3-kaggle-candidate.zip",
+    "candidate_sha256": "sha256:0bd55b93d1652f1d2f09aafb74189d5b6050e4a9fae3df9aa9925359f2a095bd",
+    "candidate_bytes": 788071,
+    "candidates_byte_identical": true,
+    "build_receipt_file_sha256": "sha256:2afe8f7b4641bc36a174c5db8c608297e7fab31ac403fbc613b11038c8269c74",
+    "build_receipt_self_hash": "sha256:0febd239ca704565d30a5c10873f951ab15b378d2261ef77f011485976988883",
+    "runtime_wheel_count": 31,
+    "package_builds": {
+      "a_wall_seconds": 16.563186600105837,
+      "a_peak_rss_bytes": 166326272,
+      "b_wall_seconds": 16.239603399997577,
+      "b_peak_rss_bytes": 151076864
+    },
+    "startup": {
+      "status": "PASS",
+      "total_seconds": 1.6057818999979645,
+      "import_seconds": 1.4579975999658927,
+      "peak_rss_bytes": 67846144,
+      "network_attempts": 0,
+      "process_launch_attempts": 0
+    },
+    "sealed_artifact_set": {
+      "complete": true,
+      "file_count": 46,
+      "total_bytes": 4182060,
+      "set_sha256": "sha256:cbc2532eca8119d8fc04f6327b1b66a428c723260b5c8657b060d381988c4834",
+      "file_map_reverified": true,
+      "secret_finding_count": 0
+    },
+    "runtime": {
+      "operating_system": "Windows-10-10.0.19045-SP0",
+      "machine": "AMD64",
+      "processor": "AMD64 Family 23 Model 8 Stepping 2, AuthenticAMD",
+      "logical_cpu_count": 12,
+      "python_version": "3.12.14",
+      "gpu": null
+    },
+    "source_commit": "d9c19558fb76b9c5111221a8e7c78d4def5dee51",
+    "source_tree": "ba0cdbc178d41e7b528240c042a3a61cdb1b329b"
+  },
+  "hosted_package_verification": {
+    "source_commit": "d9c19558fb76b9c5111221a8e7c78d4def5dee51",
+    "push_run": {
+      "id": 32634680498,
+      "conclusion": "success",
+      "ubuntu_job": 97184241577,
+      "windows_job": 97184241643
+    },
+    "pull_request_run": {
+      "id": 32634682445,
+      "conclusion": "success",
+      "ubuntu_job": 97182764688,
+      "windows_job": 97182764766
+    },
+    "job_count": 4,
+    "authenticated_blocked_external_receipts": 4,
+    "candidate_build_count": 8,
+    "all_candidates_byte_identical": true,
+    "candidate_sha256": "sha256:0bd55b93d1652f1d2f09aafb74189d5b6050e4a9fae3df9aa9925359f2a095bd",
+    "candidate_bytes": 788071,
+    "all_build_receipt_file_sha256": "sha256:2afe8f7b4641bc36a174c5db8c608297e7fab31ac403fbc613b11038c8269c74",
+    "all_build_receipt_self_hash": "sha256:0febd239ca704565d30a5c10873f951ab15b378d2261ef77f011485976988883",
+    "all_sealed_file_maps_valid": true,
+    "audit_root": "C:/a/hpa-d9-3263468"
+  },
+  "final_hosted_package_verification": {
+    "source_commit": "9f25e13b4672ff0ea87544ba20c5677f194cf291",
+    "source_tree": "d7fc05c9dff0f63cc97e7b752e1fe59ff7583900",
+    "push_run": {
+      "id": 32636996137,
+      "conclusion": "success",
+      "ubuntu_job": 97188148939,
+      "windows_job": 97188148891
+    },
+    "pull_request_run": {
+      "id": 32636997645,
+      "conclusion": "success",
+      "ubuntu_job": 97188152719,
+      "windows_job": 97188152825
+    },
+    "job_count": 4,
+    "authenticated_blocked_external_receipts": 4,
+    "candidate_build_count": 8,
+    "all_candidates_byte_identical": true,
+    "candidate_sha256": "sha256:02326a145d510c017dc04ffd79a61cfe8c46771cbc9e74b7c8f29a9b75756d21",
+    "candidate_bytes": 788070,
+    "all_build_receipt_file_sha256": "sha256:6651eabef173547b8ffa52bdd8bebc46549e197dcb3424c766689202f16087a8",
+    "all_build_receipt_self_hash": "sha256:de14ebcae8e6b61d666ac98cd6dadfce84a96c82820f3fbde7692a00599ad8b8",
+    "all_sealed_file_maps_valid": true,
+    "available_checks_passed_per_job": 20,
+    "only_nonpass_per_job": "private-kaggle-surfaces",
+    "audit_root": "C:/a/hpa-9f-3263699",
+    "durable_windows_copy": {
+      "root": "C:/a/arc3-b001/artifacts/stage13/final-package-9f25e13-exact",
+      "source_job": 97188148891,
+      "candidate": {
+        "path": "C:/a/arc3-b001/artifacts/stage13/final-package-9f25e13-exact/package-a/arc3-kaggle-candidate.zip",
+        "bytes": 788070,
+        "sha256": "sha256:02326a145d510c017dc04ffd79a61cfe8c46771cbc9e74b7c8f29a9b75756d21"
+      },
+      "build_receipt_file_sha256": "sha256:6651eabef173547b8ffa52bdd8bebc46549e197dcb3424c766689202f16087a8",
+      "package_manifest_file_sha256": "sha256:d6766e06b03276009029dce24196b5ed6b5a8f0a904f88f5306a288d074bf933",
+      "verification_evidence_file_sha256": "sha256:98ddfedc4e2f652bf47ac8c5b9111bf1bfe8b190d7dce1c34f22620e5f042390",
+      "verification_receipt_file_sha256": "sha256:5657f2b377aaa08540963820d57ad0426b10a1e5c3a1a2a93bbf1cb4895ac6e0",
+      "file_count": 48,
+      "total_bytes": 4263775,
+      "file_record_manifest_sha256": "sha256:2aca4b7e6f1430b33444459470850b05947fedef2c0bfed34d0eb07a69d03295",
+      "all_files_rehashed": true,
+      "release_receipt_validation": "PASS:BLOCKED_EXTERNAL"
+    },
+    "jobs": [
+      {
+        "event": "push",
+        "platform": "ubuntu-latest",
+        "job_id": 97188148939,
+        "artifact": "arc3-build001-package-only-ubuntu-latest-9f25e13b4672ff0ea87544ba20c5677f194cf291",
+        "receipt_file_sha256": "sha256:a5fa74a3b6a569653fbfef641074eb36016595efdc898146f5c8a96c281fe988",
+        "receipt_self_hash": "sha256:08ff0f2513a8bfc6fe435176b2052f7add404d339e8b74904c3276b4ab9c2eb0",
+        "evidence_file_sha256": "sha256:77ab51a5b0f10a1e07e44ae6a4b5873a886805cdeec7e0b1dd1c2cbec09a0aa3",
+        "evidence_self_hash": "sha256:3152abb27153bd5c74778933b5dfa2af7006ec24774b6a5dc4b93235c896aba4"
+      },
+      {
+        "event": "push",
+        "platform": "windows-latest",
+        "job_id": 97188148891,
+        "artifact": "arc3-build001-package-only-windows-latest-9f25e13b4672ff0ea87544ba20c5677f194cf291",
+        "receipt_file_sha256": "sha256:5657f2b377aaa08540963820d57ad0426b10a1e5c3a1a2a93bbf1cb4895ac6e0",
+        "receipt_self_hash": "sha256:f7df7e9225b6d8615a963bbfd94befd8a670f977cd86c2b0db0a2fbb581cdb56",
+        "evidence_file_sha256": "sha256:98ddfedc4e2f652bf47ac8c5b9111bf1bfe8b190d7dce1c34f22620e5f042390",
+        "evidence_self_hash": "sha256:1d92db94f25b53b235d99288e9c669171ec5228552bc67b698100082a43b538d"
+      },
+      {
+        "event": "pull_request",
+        "platform": "ubuntu-latest",
+        "job_id": 97188152719,
+        "artifact": "arc3-build001-package-only-ubuntu-latest-9f25e13b4672ff0ea87544ba20c5677f194cf291",
+        "receipt_file_sha256": "sha256:37fa80e9dfe937627493f662a9c945febdb313fcbcba945d0c877cc062c18d68",
+        "receipt_self_hash": "sha256:161db4b3ce86d038d847b4a4a49e36c225262127b7bd7f04a37e430ac6d932bc",
+        "evidence_file_sha256": "sha256:8de8981f9656748caaf847ee17a483e6ed85500d2bf92b9721bb7bac2a40457d",
+        "evidence_self_hash": "sha256:544f5cb966ff8b8fa85a37393c6420544d262077c834c69d95f91ac6ba42c57b"
+      },
+      {
+        "event": "pull_request",
+        "platform": "windows-latest",
+        "job_id": 97188152825,
+        "artifact": "arc3-build001-package-only-windows-latest-9f25e13b4672ff0ea87544ba20c5677f194cf291",
+        "receipt_file_sha256": "sha256:2c516becd484c0299be93542083379d3eae9cacdc79e4b9ced560d09dfc5a9a4",
+        "receipt_self_hash": "sha256:db155eff97e5ba21f71f7475ff1a898bf645ec0277a437069eac268cdf9cdd83",
+        "evidence_file_sha256": "sha256:4cae3d83d1f7bccda3a78d979da33067e9dfea27d81885cc68f292a8b369e0a7",
+        "evidence_self_hash": "sha256:3f6d2344aca99cdabf45dd6d6d8a5a7d41f2121852559753c894f9778466277e"
+      }
+    ],
+    "runtime_payload_projection_relative_to_d9": {
+      "member_count": 100,
+      "member_records_sha256": "sha256:ec119c9ddfb1c283adf82b77b44854e23f7b70ec5151532b27b8915b569f5333",
+      "payload_sha256": "sha256:ee23b1fa9398afa02539bf539408ed94d68a5df60e51130e102c9b0d23721a92",
+      "runtime_payload_changed": false,
+      "archive_identity_changed_reason": "The candidate embeds its exact source commit"
+    }
+  },
+  "final_code_freeze_verification": {
+    "commit": "9f25e13b4672ff0ea87544ba20c5677f194cf291",
+    "tree": "d7fc05c9dff0f63cc97e7b752e1fe59ff7583900",
+    "diff_from_package_source": [
+      ".github/workflows/ci.yml",
+      "tests/release/test_package_only_path_guard.py"
+    ],
+    "production_package_projection_changed": false,
+    "clean_clone": "C:/a/arc3-b001-stage14-9f25e13",
+    "offline_sync": "PASS:61-packages",
+    "offline_lock_check": "PASS",
+    "ruff_lint": "PASS",
+    "ruff_format": "PASS:313-files",
+    "mypy_strict": "PASS:179-source-files",
+    "doctor": "PASS",
+    "stage14_full_verification_receipt": "docs/evidence/001-14-final-verification.json",
+    "ordinary_ci_push_run": 32636996144,
+    "ordinary_ci_pull_request_run": 32636997705,
+    "package_ci_push_run": 32636996137,
+    "package_ci_pull_request_run": 32636997645,
+    "package_hosted_status": "PASS:push+pull-request;ubuntu+windows",
+    "ordinary_ci_status": "PASS:push+pull-request;ubuntu+windows",
+    "ordinary_ci_jobs": [
+      {
+        "event": "push",
+        "platform": "ubuntu-latest",
+        "job_id": 97188148681,
+        "passed": 1329,
+        "skipped": 10,
+        "pytest_seconds": 1024.61,
+        "coverage_total_percent": 80,
+        "conclusion": "success"
+      },
+      {
+        "event": "push",
+        "platform": "windows-latest",
+        "job_id": 97188148803,
+        "passed": 1323,
+        "skipped": 16,
+        "pytest_seconds": 1836.93,
+        "coverage_total_percent": 80,
+        "conclusion": "success"
+      },
+      {
+        "event": "pull_request",
+        "platform": "ubuntu-latest",
+        "job_id": 97188153034,
+        "passed": 1329,
+        "skipped": 10,
+        "pytest_seconds": 1047.62,
+        "coverage_total_percent": 80,
+        "conclusion": "success"
+      },
+      {
+        "event": "pull_request",
+        "platform": "windows-latest",
+        "job_id": 97188153231,
+        "passed": 1323,
+        "skipped": 16,
+        "pytest_seconds": 1573.22,
+        "coverage_total_percent": 80,
+        "conclusion": "success"
+      }
+    ]
+  },
+  "verification_boundary": {
+    "dependency_resolution": "Locked sync and lock check were offline with a primed public cache",
+    "python_guard_scope": "Python audit hooks and selected guarded in-process tests; not complete OS/native containment",
+    "private_kaggle_surfaces": "BLOCKED_EXTERNAL",
+    "public_manifest_semantically_accessed": false,
+    "public_or_holdout_gameplay_attempted": false,
+    "official_submission_performed": false,
+    "terms_accepted": false,
+    "secrets_disclosed": false
+  }
+}

@@ -1,6 +1,13 @@
-"""Stage 16 offline profiling, fault, and robustness measurements."""
+"""Offline runtime, hot-path, fault, and robustness measurements."""
 
 from .fixtures import ManyComponentStressSession, RobustnessVariant, TransformedSyntheticSession
+from .hot_path import (
+    NULL_HOT_PATH_PROFILER,
+    HotPathChangeKind,
+    HotPathPhase,
+    HotPathProfiler,
+    NullHotPathProfiler,
+)
 from .models import RuntimeProfileConfig
 from .runtime import (
     process_memory_sample,
@@ -10,7 +17,12 @@ from .runtime import (
 )
 
 __all__ = [
+    "NULL_HOT_PATH_PROFILER",
+    "HotPathChangeKind",
+    "HotPathPhase",
+    "HotPathProfiler",
     "ManyComponentStressSession",
+    "NullHotPathProfiler",
     "RobustnessVariant",
     "RuntimeProfileConfig",
     "TransformedSyntheticSession",

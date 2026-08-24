@@ -22,7 +22,6 @@ from .models import (
     SearchBudget,
     SearchResult,
     SearchStatus,
-    action_key,
 )
 
 
@@ -50,14 +49,20 @@ def search(
     algorithm: SearchAlgorithm = SearchAlgorithm.A_STAR,
     budget: SearchBudget | None = None,
     score_weights: PlanScoreWeights | None = None,
+    enforce_time_budget: bool = True,
 ) -> SearchResult:
-    """Find one bounded plan using stable priorities and action tie-breaks."""
+    """Find one bounded plan using stable priorities and action tie-breaks.
+
+    ``enforce_time_budget=False`` retains elapsed time as output telemetry but
+    removes it from search termination and therefore from policy semantics.
+    Deterministic callers must still supply finite node and depth budgets.
+    """
 
     budget = budget or SearchBudget()
     score_weights = score_weights or PlanScoreWeights()
     started = time.perf_counter()
     root = _Node(problem.initial_state, (), (problem.initial_state,), (), (), ())
-    frontier: list[tuple[float, int, tuple[tuple[str, int, int], ...], str, _Node]] = []
+    frontier: list[tuple[float, int, tuple[int, ...], str, _Node]] = []
     _push(frontier, root, problem, algorithm)
     best_cost: dict[str, float] = {problem.initial_state.state_id: 0.0}
     expanded = 0
@@ -67,7 +72,7 @@ def search(
 
     while frontier:
         elapsed_ms = (time.perf_counter() - started) * 1_000.0
-        if elapsed_ms >= budget.max_time_ms:
+        if enforce_time_budget and elapsed_ms >= budget.max_time_ms:
             return _result(
                 SearchStatus.TIME_BUDGET,
                 algorithm,
@@ -158,7 +163,7 @@ def _validate_metric(name: str, value: float, *, positive: bool = False) -> None
 
 
 def _push(
-    frontier: list[tuple[float, int, tuple[tuple[str, int, int], ...], str, _Node]],
+    frontier: list[tuple[float, int, tuple[int, ...], str, _Node]],
     node: _Node,
     problem: PlanProblem,
     algorithm: SearchAlgorithm,
@@ -171,7 +176,8 @@ def _push(
         heuristic = problem.heuristic(node.state)
         _validate_metric("heuristic", heuristic)
         priority = node.cost + heuristic
-    action_path = tuple(action_key(action) for action in node.actions)
+    semantic_rank = {action: index for index, action in enumerate(problem.available_actions)}
+    action_path = tuple(semantic_rank[action] for action in node.actions)
     heapq.heappush(frontier, (priority, node.depth, action_path, node.state.state_id, node))
 
 

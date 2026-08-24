@@ -8,6 +8,8 @@ version = "0.1.0"
 description = "Offline-first ARC-AGI-3 agent with reproducible trace and evaluation tooling"
 readme = "README.md"
 requires-python = ">=3.12,<3.13"
+license = "MIT-0"
+license-files = ["LICENSE"]
 authors = [
   { name = "Christopher D. Pang" },
 ]

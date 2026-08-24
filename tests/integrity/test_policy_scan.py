@@ -8,7 +8,9 @@ import pytest
 
 from arc3.integrity import (
     FindingCategory,
+    discover_candidate_files,
     discover_policy_files,
+    discover_reachable_policy_files,
     load_public_identifiers,
     scan_policy_files,
 )
@@ -39,6 +41,19 @@ def test_public_game_identifiers_are_manifest_driven_and_blocked(
     ]
     assert len(public_findings) == 2
     assert all(fake_game_id not in finding.message for finding in findings)
+
+
+@pytest.mark.competition
+def test_game_id_shape_is_blocked_without_semantic_public_identifiers(
+    integrity_repo: tuple[Path, str, str],
+) -> None:
+    root, _, _ = integrity_repo
+    source = root / "policy" / "candidate.py"
+    source.write_text("TARGET = 'generic42-deadbeef'\n", encoding="utf-8")
+
+    findings = scan_policy_files(root=root, files=(source,), public_identifiers=())
+
+    assert any(finding.rule_id == "game-id-shaped-literal" for finding in findings)
 
 
 @pytest.mark.competition
@@ -112,13 +127,70 @@ def test_runtime_launcher_gateway_import_exception_is_exact_and_path_scoped(
 
 
 @pytest.mark.competition
-def test_pure_normalization_boundary_import_is_allowed(
+def test_environment_adapter_normalization_import_is_not_exempt(
+    integrity_repo: tuple[Path, str, str],
+) -> None:
+    root, _, _ = integrity_repo
+    findings = _scan(root, "from arc3.adapters.normalization import normalize_frame_data\n")
+    assert not any(
+        finding.category is FindingCategory.FORBIDDEN_NETWORK_CLIENT for finding in findings
+    )
+
+
+@pytest.mark.competition
+def test_environment_adapter_normalization_import_is_no_longer_exempt(
     integrity_repo: tuple[Path, str, str],
 ) -> None:
     root, _, _ = integrity_repo
     findings = _scan(root, "from arc3.adapters.arc_agi import normalize_frame_data\n")
+
+    assert any(finding.rule_id == "forbidden-from-import" for finding in findings)
+
+
+@pytest.mark.competition
+def test_production_entry_reaches_pure_boundary_not_environment_adapter() -> None:
+    root = Path(__file__).resolve().parents[2]
+    reachable = discover_reachable_policy_files(
+        root,
+        candidate_files=discover_candidate_files(root),
+    )
+    labels = {path.relative_to(root).as_posix() for path in reachable}
+
+    assert "agent/my_agent.py" in labels
+    assert "src/arc3/adapters/normalization.py" in labels
+    assert "src/arc3/adapters/arc_agi.py" not in labels
+    findings = scan_policy_files(root=root, files=reachable, public_identifiers=())
     assert not any(
-        finding.category is FindingCategory.FORBIDDEN_NETWORK_CLIENT for finding in findings
+        finding.path == "src/arc3/adapters/arc_agi.py"
+        or finding.rule_id == "forbidden-dynamic-import"
+        for finding in findings
+    )
+
+
+@pytest.mark.competition
+def test_from_import_cannot_hide_malicious_module_top_level_code(
+    integrity_repo: tuple[Path, str, str],
+) -> None:
+    root, _, _ = integrity_repo
+    entry = root / "agent" / "my_agent.py"
+    package = root / "src" / "arc3" / "__init__.py"
+    adapters = root / "src" / "arc3" / "adapters" / "__init__.py"
+    boundary = root / "src" / "arc3" / "adapters" / "arc_agi.py"
+    boundary.parent.mkdir(parents=True, exist_ok=True)
+    entry.write_text("from arc3.adapters.arc_agi import normalize_frame_data\n", encoding="utf-8")
+    package.write_text("", encoding="utf-8")
+    adapters.write_text("", encoding="utf-8")
+    boundary.write_text("import openai\ndef normalize_frame_data(): ...\n", encoding="utf-8")
+
+    candidates = (entry, package, adapters, boundary)
+    policy_files = discover_policy_files(root, candidate_files=candidates)
+
+    assert boundary in policy_files
+    findings = scan_policy_files(root=root, files=policy_files, public_identifiers=())
+    assert any(
+        finding.path.endswith("arc3/adapters/arc_agi.py")
+        and finding.category is FindingCategory.FORBIDDEN_NETWORK_CLIENT
+        for finding in findings
     )
 
 

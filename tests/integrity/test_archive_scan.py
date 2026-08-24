@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import io
 import zipfile
 from pathlib import Path
 
@@ -13,6 +14,26 @@ from arc3.integrity import (
     load_public_identifiers,
     scan_archive_files,
 )
+
+
+def _zip_bytes(
+    members: dict[str, bytes | str],
+    *,
+    modes: dict[str, int] | None = None,
+) -> bytes:
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as handle:
+        for name, content in members.items():
+            info = zipfile.ZipInfo(name, date_time=(1980, 1, 1, 0, 0, 0))
+            if modes is not None and name in modes:
+                info.create_system = 3
+                info.external_attr = modes[name] << 16
+            handle.writestr(info, content)
+    return buffer.getvalue()
+
+
+def _write_candidate(path: Path, payload: bytes) -> None:
+    path.write_bytes(_zip_bytes({"arc3-first-party.zip": payload}))
 
 
 @pytest.mark.competition
@@ -58,9 +79,38 @@ def test_archive_path_traversal_is_blocking(integrity_repo: tuple[Path, str, str
     findings = scan_archive_files(root=root, archives=(archive,), public_identifiers=())
     assert any(
         finding.category is FindingCategory.UNSAFE_ARCHIVE
-        and finding.rule_id == "archive-path-traversal"
+        and finding.rule_id == "archive-central-directory-unsafe"
         for finding in findings
     )
+
+
+@pytest.mark.competition
+def test_explicit_external_archive_is_scanned_with_a_portable_label(
+    integrity_repo: tuple[Path, str, str],
+    tmp_path: Path,
+) -> None:
+    root, _, _ = integrity_repo
+    archive = tmp_path / "generated-output" / "candidate.zip"
+    archive.parent.mkdir()
+    _write_candidate(
+        archive,
+        _zip_bytes({"agent/my_agent.py": "class MyAgent:\n    pass\n"}),
+    )
+
+    findings = scan_archive_files(root=root, archives=(archive,), public_identifiers=())
+    assert findings == ()
+    receipt = build_integrity_receipt(
+        root,
+        archive_paths=(archive,),
+        include_installed_metadata=False,
+    )
+    inputs = receipt.body["inputs"]
+    assert isinstance(inputs, dict)
+    assert inputs["archive_paths"] == ["@supplied-archive/0000/candidate.zip"]
+    files = receipt.body["source_hashes"]
+    assert isinstance(files, dict)
+    assert "@supplied-archive/0000/candidate.zip" in files
+    assert str(tmp_path).encode("utf-8") not in receipt.canonical_bytes()
 
 
 @pytest.mark.competition

@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 import json
+import os
+import platform
 import socket
+import sys
 import urllib.request
 
 import pytest
@@ -35,6 +38,22 @@ def test_doctor_runs_without_network_or_optional_dependencies(
     network_check = next(check for check in report.checks if check.name == "network-policy")
     assert network_check.passed
     assert network_check.details == {"network_enabled": False}
+
+
+def test_doctor_platform_identity_avoids_command_backed_helpers(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def forbidden(*args: object, **kwargs: object) -> None:
+        del args, kwargs
+        raise AssertionError("doctor called a command-backed platform helper")
+
+    monkeypatch.setattr(platform, "platform", forbidden)
+    monkeypatch.setattr(platform, "uname", forbidden)
+
+    report = doctor.run_doctor()
+
+    filesystem_check = next(check for check in report.checks if check.name == "working-directory")
+    assert filesystem_check.details["platform"] == f"{os.name}:{sys.platform}"
 
 
 def test_doctor_report_never_reads_or_emits_environment_secrets(

@@ -1,0 +1,409 @@
+{
+  "schema": "arc3.build-001.stage-03-causal-bottlenecks.v0.1",
+  "status": "PASS",
+  "evidence_labels": [
+    "synthetic",
+    "local-public"
+  ],
+  "completed_at": "2026-08-22T04:33:07.0859171Z",
+  "claim_boundary": "This is a causal throughput diagnosis on deterministic synthetic fixtures and one already-exposed development game. It is not a recovery result, benchmark score, holdout result, hidden-game claim, or authorization to delete persistence or trace mechanisms.",
+  "frozen_source": {
+    "git_commit": "515177c2b640efbdbfd92eca117aff1e42637e98",
+    "git_tree": "aa83f0d45a481956a02281d0e96a37c5d2303e89",
+    "worktree_clean_before_measurements": true,
+    "synthetic_first_party_source_hash": "sha256:3c501a35b4bc8ad93dac7192a840fe4f6d1f17ea986767867cf0698caeaab112",
+    "local_public_first_party_source_hash": "sha256:d7da8a52cefd447e803649526980afffb961eff50f4efbd331cea3e0694b2fd9",
+    "predeclaration": "docs/evidence/001-03-causal-predeclaration.json",
+    "predeclaration_sha256": "sha256:b9f81e93fbd76944dcb2ef9382e4d7da756bfd91e68075a4d7f4930d060f96d1"
+  },
+  "verification": {
+    "focused_tests": "PASS:21",
+    "ruff_check": "PASS",
+    "ruff_format_check": "PASS",
+    "mypy_strict": "PASS",
+    "diff_check": "PASS",
+    "historical_stage_02_artifact_verification": "PASS:30-artifacts+1-run+0-errors",
+    "stage_03_public_artifact_verification": [
+      "PASS:30-artifacts+1-run+0-errors",
+      "PASS:30-artifacts+1-run+0-errors",
+      "PASS:11-artifacts+1-run+0-errors",
+      "PASS:11-artifacts+1-run+0-errors"
+    ],
+    "synthetic_artifact_self_hash_valid": true,
+    "exact_local_public_action_decision_signatures_match": true,
+    "exact_local_public_observation_outcomes_match": true,
+    "local_public_action_decision_signature_hash": "sha256:e4f613a9424030efc046654c242270e750746d7ff3bbe5b690603da790511d76",
+    "local_public_observation_outcome_signature_hash": "sha256:07485eca51e6c03186842a6572a4c118f3ac349d15f24d1e2f9b1d3a6159b706"
+  },
+  "synthetic_factorial": {
+    "evidence_label": "synthetic",
+    "schema": "arc3.hot-path-causal-diagnosis.v0.1",
+    "status": "PASS",
+    "seed": 25,
+    "action_budget": 8,
+    "repetitions_per_cell": 5,
+    "total_factorial_trials": 20,
+    "factor_order_balanced": true,
+    "exact_action_decision_signatures_match": true,
+    "exact_environment_outcomes_match": true,
+    "reference_decision_signature_hash": "sha256:ffcc6cd63aead5be8a818b317f83998d51e7798ab4c1818cec83a79d539d8078",
+    "reference_outcome_signature_hash": "sha256:5b864e10a7233782ffb3f0e4435cd4cd4b18502e3a26764cde7c8ec4ea77c3b9",
+    "wall_ns_cell_medians": {
+      "tracemalloc_off_checkpoint_off": 448147500.0,
+      "tracemalloc_off_checkpoint_on": 682028800.0,
+      "tracemalloc_on_checkpoint_off": 1301678300.0,
+      "tracemalloc_on_checkpoint_on": 2125135600.0
+    },
+    "cpu_ns_cell_medians": {
+      "tracemalloc_off_checkpoint_off": 390625000.0,
+      "tracemalloc_off_checkpoint_on": 562500000.0,
+      "tracemalloc_on_checkpoint_off": 1296875000.0,
+      "tracemalloc_on_checkpoint_on": 2000000000.0
+    },
+    "wall_factor_effects": {
+      "tracemalloc_marginal_on_to_off_ratio": 3.282885694304,
+      "tracemalloc_marginal_delta_ns": 1311716100.0,
+      "checkpoint_marginal_on_to_off_ratio": 1.59702275995,
+      "checkpoint_marginal_delta_ns": 534846750.0,
+      "additive_interaction_ns": 589576000.0,
+      "multiplicative_cross_ratio": 1.072756725069
+    },
+    "cpu_factor_effects": {
+      "tracemalloc_marginal_on_to_off_ratio": 3.965517241379,
+      "tracemalloc_marginal_delta_ns": 1343750000.0,
+      "checkpoint_marginal_on_to_off_ratio": 1.552380952381,
+      "checkpoint_marginal_delta_ns": 453125000.0,
+      "additive_interaction_ns": 531250000.0,
+      "multiplicative_cross_ratio": 1.070950468541
+    },
+    "maximum_process_peak_rss_bytes": 44867584,
+    "maximum_python_allocation_peak_bytes": 2402313,
+    "trace_event_count_every_trial": 170,
+    "action_selection_microbenchmark": {
+      "schema": "arc3.hot-path-action-selection-microbenchmark.v0.1",
+      "status": "PASS",
+      "trial_count": 10,
+      "iterations_per_timing_pass": 32,
+      "active_ensemble_sampled_every_trial": true,
+      "active_models": 1,
+      "active_hypotheses": 4,
+      "candidate_count": 4,
+      "exact_candidate_signatures_match": true,
+      "method_outputs_unchanged": true,
+      "policy_state_unchanged": true,
+      "tracemalloc_disabled_median_wall_ns_per_call": 4510543.75,
+      "tracemalloc_enabled_median_wall_ns_per_call": 20941640.625,
+      "tracemalloc_ratio": 4.642819532567,
+      "representative_cprofile_counts_per_32_calls": {
+        "model_candidate_predict_calls": 256,
+        "ensemble_predict_calls": 128,
+        "symbolic_state_id_calls": 1664
+      },
+      "interpretation": "An active-ensemble candidate pass repeats deterministic prediction and canonical state hashing while preserving identical candidates and controller state. This is a concrete optimization target, not yet end-to-end intervention proof."
+    },
+    "raw_path": "C:/a/arc3-b001/artifacts/stage03/hot-path-diagnosis.json",
+    "raw_file_sha256": "sha256:bc36afbe4c3f8ec19d97a8999e5b79ccc04dfb39294b13a304f78e1a842ec01c",
+    "artifact_core_hash": "sha256:f4df520d35424ad873dd83c399cd9e65d0221ea2245e28929b29c341afc6ad1f"
+  },
+  "local_public_factorial": {
+    "evidence_label": "local-public",
+    "game_id": "ar25-0c556536",
+    "seed": 7,
+    "preset": "FULL/B4",
+    "max_actions": 8,
+    "max_resets": 8,
+    "timeout_seconds": 120.0,
+    "environment_actions_every_cell": 8,
+    "resets_every_cell": 0,
+    "levels_completed_every_cell": 0,
+    "score_every_cell": 0.0,
+    "replay_verified_every_cell": true,
+    "action_signature_match_every_cell": true,
+    "observation_outcome_match_every_cell": true,
+    "cells": [
+      {
+        "cell": "control",
+        "evaluation_id": "build001-stage03-ar25-seed7-trace-on-checkpoint-on",
+        "python_allocation_tracing": true,
+        "automatic_checkpointing": true,
+        "wall_seconds": 46.070333300042,
+        "profile_wall_ns": 46037652800,
+        "profile_cpu_ns": 45437500000,
+        "attribution_coverage": 0.999808217851,
+        "maximum_current_rss_bytes": 148500480,
+        "peak_python_allocation_bytes": 50324536,
+        "exclusive_wall_ns": {
+          "action_selection": 22433849200,
+          "checkpointing": 8007395100,
+          "goal_inference": 4283591100,
+          "trace_serialization": 2688564700,
+          "perception": 1178276500,
+          "retrodiction": 1123478600,
+          "planning": 527105300,
+          "correspondence": 141688100
+        },
+        "checkpoint_files": 19,
+        "immutable_checkpoint_files": 18,
+        "checkpoint_total_bytes": 2395163,
+        "trace_events": 241,
+        "trace_bytes": 593206,
+        "receipt_hash": "sha256:fdaf4e25d1576bc4db765edcae2ad4ddfb5567d2f79fd26ff1c8d99af98f6d6a",
+        "run_spec_hash": "sha256:209cfb28e9a06a03f15d0396b327676392d3978959e30a5f4054d968eec82f86",
+        "manifest_file_sha256": "sha256:2770c96ef50e161de4a600d06e6ea1e79c640c5c6c368aad1398edd549ee5af5",
+        "manifest_self_hash": "sha256:9e9e2ed7cfe074a26f7053777ef5228f259155ff73fe993f347032035f8972bc",
+        "results_jsonl_sha256": "sha256:179555d51047d309e549678c3179935e09684182c3e73759db9049b293f8269b",
+        "summary_file_sha256": "sha256:4298d9ae435d2a8a111d7436a5867b5ca4b193167c14ccc19548d5fe1e7012f2",
+        "trace_manifest_hash": "sha256:7f68a0888a011da49dcd7630f8a08bb7adebddb6212d9e7ad8a929ffded6a063",
+        "trace_tail_event_hash": "sha256:d650db2c842352635c25a2de7fe26cd7efcff52d08f25b8a8d2c2bdd8ab631f6"
+      },
+      {
+        "cell": "allocator_intervention",
+        "evaluation_id": "build001-stage03-ar25-seed7-trace-off-checkpoint-on",
+        "python_allocation_tracing": false,
+        "automatic_checkpointing": true,
+        "wall_seconds": 8.84490280004684,
+        "profile_wall_ns": 8832358400,
+        "profile_cpu_ns": 8531250000,
+        "attribution_coverage": 0.999589792461,
+        "maximum_current_rss_bytes": 97316864,
+        "peak_python_allocation_bytes": null,
+        "exclusive_wall_ns": {
+          "action_selection": 3318086300,
+          "checkpointing": 1919182900,
+          "goal_inference": 947796000,
+          "trace_serialization": 705253000,
+          "retrodiction": 148707000,
+          "planning": 72005300
+        },
+        "checkpoint_files": 19,
+        "immutable_checkpoint_files": 18,
+        "checkpoint_total_bytes": 2395163,
+        "trace_events": 241,
+        "trace_bytes": 593207,
+        "receipt_hash": "sha256:a5c30f5ab414fd48c6e2ba40e574fd1f1a66a44c20b5777de96738b21991f451",
+        "run_spec_hash": "sha256:e3ba9bb0cfdef39fd332e0b9fa06510baa259245febb96f6afd107cbb4e2b61f",
+        "manifest_file_sha256": "sha256:e2e539436876050f3876c9fd36271c53895737b59ed5dc131c37d8fc4f6382f3",
+        "manifest_self_hash": "sha256:d81aa54b98cc4f64f792c7fe2456f77f8dc822a6a57a8957bce711328fd88aab",
+        "results_jsonl_sha256": "sha256:53f835002299c64fdd57f19f01e8a52965df27fe3a082f23e8c76b395c60a59e",
+        "summary_file_sha256": "sha256:9ccecec01686b8f27a7277a3855e2b7f2c8f0c539a47ed659288b9f460206549",
+        "trace_manifest_hash": "sha256:06bf6c70684d069d02a3fe87b4845a8782445beae3afc48dc2007071139bfbca",
+        "trace_tail_event_hash": "sha256:3f85a41dd3d9f8f14a9e0c58f63ecebf735b4657dcc1152c7e506581e37d87f1"
+      },
+      {
+        "cell": "checkpoint_intervention",
+        "evaluation_id": "build001-stage03-ar25-seed7-trace-on-checkpoint-off",
+        "python_allocation_tracing": true,
+        "automatic_checkpointing": false,
+        "wall_seconds": 37.9903721000301,
+        "profile_wall_ns": 37955833100,
+        "profile_cpu_ns": 37484375000,
+        "attribution_coverage": 0.999762961335,
+        "maximum_current_rss_bytes": 136372224,
+        "peak_python_allocation_bytes": 49512258,
+        "exclusive_wall_ns": {
+          "action_selection": 21848319500,
+          "checkpointing": 0,
+          "goal_inference": 4203124600,
+          "trace_serialization": 3129087100,
+          "retrodiction": 1164537800,
+          "planning": 493108300
+        },
+        "checkpoint_files": 0,
+        "immutable_checkpoint_files": 0,
+        "checkpoint_total_bytes": 0,
+        "trace_events": 241,
+        "trace_bytes": 593451,
+        "receipt_hash": "sha256:ef608f58ae1ef55cdef1ce2462fd5d891fc0e8368e408cf9b1f9463136291ca6",
+        "run_spec_hash": "sha256:aa3b63a5e1f16dc0366c23204bc6670f40d43767a2217ef5b27616f25ca63e35",
+        "manifest_file_sha256": "sha256:0be54325444f64ca12cdd9bda0b609bea5cabb71e2a414b61508398d9cfc3d66",
+        "manifest_self_hash": "sha256:9aecf8109155c113718c25395abe53cb028d1cb6328f6cfa373209f284b89199",
+        "results_jsonl_sha256": "sha256:f909f66744b8c0fd7847f7eade8694c9a032ad59a900683f81b0b3f860243073",
+        "summary_file_sha256": "sha256:cbcfb3fbffe965da44d7e2cc5ce6eebd83607a346b76941916aef9a7f9dc0e98",
+        "trace_manifest_hash": "sha256:88df1988fb60d7adc47302e0e7afc69f18d1c4d0f4360d2a3746bb51c4b493b6",
+        "trace_tail_event_hash": "sha256:8f85f5067ae1d51486d73c57d76d8debe843be9dce35802dbcdec818cf276aa1"
+      },
+      {
+        "cell": "joint_interaction",
+        "evaluation_id": "build001-stage03-ar25-seed7-trace-off-checkpoint-off",
+        "python_allocation_tracing": false,
+        "automatic_checkpointing": false,
+        "wall_seconds": 6.75240610004403,
+        "profile_wall_ns": 6740777600,
+        "profile_cpu_ns": 6562500000,
+        "attribution_coverage": 0.999499256584,
+        "maximum_current_rss_bytes": 92336128,
+        "peak_python_allocation_bytes": null,
+        "exclusive_wall_ns": {
+          "action_selection": 3212395500,
+          "checkpointing": 0,
+          "goal_inference": 913439300,
+          "trace_serialization": 703896400,
+          "retrodiction": 183559100,
+          "planning": 69400100
+        },
+        "checkpoint_files": 0,
+        "immutable_checkpoint_files": 0,
+        "checkpoint_total_bytes": 0,
+        "trace_events": 241,
+        "trace_bytes": 593449,
+        "receipt_hash": "sha256:460d6c723bb36ba815474b181b5b53e23e41d0278791bf8e7ba0d303d8786470",
+        "run_spec_hash": "sha256:7acbfc650ea787ce0799abb3cd19375e16d539278117a349c1d9b862157d2410",
+        "manifest_file_sha256": "sha256:ab28a0887037b291cbb2e379560efb39b97beda0d4578e8b71bc120f2757bafd",
+        "manifest_self_hash": "sha256:e28241a78db8f4211e9a85e9bc7b8e0272e0c29194c6b32480a59e573ff0ab89",
+        "results_jsonl_sha256": "sha256:844fd91c9d6c8bd2114b3423e2825b6ad08b5e9e5f5bbd75861bee5b961935e3",
+        "summary_file_sha256": "sha256:c38a52e0fa5de24f5494c60d4a20f932f6dca00aa3aed6f25e9c4564dd1e17d1",
+        "trace_manifest_hash": "sha256:77492fe635a29ce892d18cb36c3b188b7908f143e10320d567d2530ed5f13249",
+        "trace_tail_event_hash": "sha256:ede5283c13af61754ec018c5a5c84095211f0731084a64289818c4027e674de6"
+      }
+    ],
+    "one_factor_effects": {
+      "allocator_tracing_with_checkpoints": {
+        "saved_wall_seconds": 37.2254304999951,
+        "saved_wall_seconds_per_action": 4.65317881249939,
+        "wall_reduction_percent": 80.80130494727986,
+        "control_to_intervention_ratio": 5.208687346999226,
+        "material_threshold_pass": true,
+        "classification": "SUPPORTED_MATERIAL_CAUSE"
+      },
+      "automatic_checkpointing_with_tracing": {
+        "saved_wall_seconds": 8.07996120001189,
+        "saved_wall_seconds_per_action": 1.00999515000149,
+        "wall_reduction_percent": 17.53831722334107,
+        "control_to_intervention_ratio": 1.2126844448571616,
+        "material_threshold_pass": true,
+        "classification": "SUPPORTED_MATERIAL_CAUSE"
+      },
+      "allocator_tracing_without_checkpoints": {
+        "saved_wall_seconds": 31.237965999986,
+        "wall_reduction_percent": 82.22600694127269,
+        "classification": "SUPPORTED_MATERIAL_CAUSE"
+      },
+      "automatic_checkpointing_without_tracing": {
+        "saved_wall_seconds": 2.09249670000281,
+        "wall_reduction_percent": 23.657656249108015,
+        "classification": "SUPPORTED_MATERIAL_CAUSE"
+      },
+      "interaction": {
+        "additive_difference_of_differences_seconds": 5.98746450000908,
+        "multiplicative_cross_ratio": 0.92579172750645,
+        "interpretation": "Checkpoint serialization itself is amplified by active allocation tracing; marginal savings are not additive."
+      }
+    },
+    "runtime_identity": {
+      "python": "3.12.14",
+      "platform": "win32",
+      "processor": "AMD64 Family 23 Model 8 Stepping 2, AuthenticAMD",
+      "logical_cpu_count": 12,
+      "gpu": null,
+      "arc_agi": "0.9.9",
+      "arcengine": "0.9.3",
+      "network_mode": "offline-evaluation",
+      "process_isolation": "multiprocessing-spawn"
+    },
+    "raw_root": "C:/a/arc3-b001/artifacts/stage03/evaluations",
+    "asset_aggregate_sha256": "sha256:e796e615d2e10c93b849f9bf150308fbf84d624725deaf995d7ec2d1c2f86b22",
+    "game_source_available_to_policy": false,
+    "source_semantically_inspected_for_stage_03": false
+  },
+  "causal_bottleneck_map": [
+    {
+      "candidate": "python_object_validation_and_allocator_overhead",
+      "classification": "SUPPORTED_MATERIAL_CAUSE",
+      "evidence": "Disabling global tracemalloc with checkpoints retained saved 37.2254 seconds, 80.80 percent, or 4.6532 seconds per action with exact decisions/outcomes; the balanced synthetic marginal wall ratio was 3.2829 and active-ensemble candidate generation alone was 4.6428 times slower under tracing.",
+      "repair": "Disable diagnostic allocation tracing by default outside explicit memory investigations while retaining OS RSS and phase timing."
+    },
+    {
+      "candidate": "automatic_checkpoint_frequency",
+      "classification": "SUPPORTED_MATERIAL_CAUSE",
+      "evidence": "Suppressing 18 automatic immutable checkpoints saved 8.0800 seconds under tracing and 2.0925 seconds without tracing; 2,395,163 bytes of checkpoint files were written in each enabled cell.",
+      "repair": "Retain crash-safe durability but replace whole-state every-boundary serialization with measured incremental/cadenced persistence in Stage 08."
+    },
+    {
+      "candidate": "redundant_world_model_prediction_and_state_identity",
+      "classification": "SUPPORTED_INTERNAL_CANDIDATE",
+      "evidence": "Each representative 32-call active-ensemble candidate profile executed 256 model-candidate predictions, 128 ensemble predictions, and 1,664 uncached SymbolicState.state_id calls while exact candidates and policy state remained unchanged.",
+      "repair": "Reuse one prediction per state/action/model-set and cache immutable canonical state identity; require exact receipt and action parity before production adoption."
+    },
+    {
+      "candidate": "repeated_full_history_retrodiction",
+      "classification": "SUPPORTED_SECONDARY_GROWTH_UNRESOLVED_VALUE",
+      "evidence": "Retrodiction used 1.1235 seconds, 2.44 percent, in the traced control and grew with history in Stage 02, but no Stage 03 direct semantic-preserving cache/window intervention was run.",
+      "repair": "Stage 07 must test event-triggered incremental retrodiction while preserving false-rule rejection and reopening."
+    },
+    {
+      "candidate": "synchronous_trace_and_blob_writes",
+      "classification": "MEASURED_SECONDARY_UNRESOLVED",
+      "evidence": "Trace serialization used 2.6886 seconds, 5.84 percent, in the traced control and about 0.705 seconds without tracing; all cells retained 241 events, about 593 KB, and verified replay.",
+      "repair": "Keep immutable receipts; later test batching and canonicalization reuse without weakening submitted-action durability."
+    },
+    {
+      "candidate": "repeated_frame_transformations",
+      "classification": "SUPPORTED_REPETITION_UNRESOLVED_CAUSAL_SAVING",
+      "evidence": "The control recorded 51 input identities, 38 repeats, 40 unchanged classifications, and only 13 unique inputs; perception still consumed 2.56 percent. No cache intervention was accepted in Stage 03.",
+      "repair": "Cache immutable frame-derived component/state features by collision-safe full digest with exact-output tests."
+    },
+    {
+      "candidate": "component_correspondence",
+      "classification": "CONTRADICTED_AS_PRIMARY_ON_THIS_EPISODE",
+      "evidence": "Correspondence used 0.1417 seconds, 0.31 percent, in the traced control; Build 000 also found it trace-only rather than policy-coupled on the tested path.",
+      "repair": "Retain and optimize only if later long-history profiles promote it."
+    },
+    {
+      "candidate": "planning_expansion_explosion",
+      "classification": "CONTRADICTED_AS_PRIMARY_ON_THIS_EPISODE",
+      "evidence": "Planning used 0.5271 seconds, 1.14 percent, and seven preserved plan receipts expanded one node each; this does not negate its positive synthetic functional evidence.",
+      "repair": "Retain bounded planning and monitor node counts rather than deleting it."
+    },
+    {
+      "candidate": "combinatorial_hypothesis_growth",
+      "classification": "CONTRADICTED_AS_PRIMARY_ON_THIS_EPISODE",
+      "evidence": "Only four hypotheses and one active model existed after the first transition; hypothesis update was below 0.01 percent. Goal-support event growth, not hypothesis-count explosion, was observed.",
+      "repair": "Keep caps and test explicit hypothesis-by-history scaling synthetically before claiming absence generally."
+    }
+  ],
+  "acceptance": {
+    "minimum_material_causes_required": 2,
+    "material_causes_supported": 2,
+    "prechange_baselines_present": true,
+    "remaining_uncertainty_explicit": true,
+    "exact_behavior_control_pass": true,
+    "artifact_verification_pass": true,
+    "stage_status": "PASS"
+  },
+  "holdout": {
+    "status": "SEALED_UNCONSUMED",
+    "build_000_exposure_ledger_sha256": "sha256:cd9af42ed3a5ef9fa0dc201ddb10e32d2bcccee9df729aa0c7d53077c04c9ad4",
+    "stage_03_exposure_ledger_sha256": "sha256:e02a9fa71206170a6fe2aeefb6935ae25141e2759937657475cead4389bb17aa",
+    "stage_03_development_events": 8,
+    "stage_03_holdout_events": 0,
+    "stage_03_exposure_tail_sequence": 7,
+    "stage_03_exposure_tail_hash": "sha256:12078ca60e8c4833ec8b03f9d6192cc3beddb47971e31ae920fb37f9bd93e381",
+    "locally_acquired_holdout_assets": 0
+  },
+  "resolved_failures": [
+    {
+      "kind": "windows-default-pytest-temp-permission",
+      "observed": "A direct evaluator-contract run had nine passing tests and seven setup errors because pytest could not enumerate the ACL-inaccessible default user temp root.",
+      "resolution": "The same 16 tests passed with a new explicit short-path basetemp; the combined Stage 03 suite then passed 21 tests."
+    }
+  ],
+  "command_receipts": [
+    {
+      "status": "PASS",
+      "exit_code": 0,
+      "command": "C:/a/arc3-b001-28c7a00/Scripts/python.exe scripts/diagnose_hot_path.py --seed 25 --repetitions 5 --actions 8 --output C:/a/arc3-b001/artifacts/stage03/hot-path-diagnosis.json --work-root C:/a/arc3-b001/artifacts/stage03/hot-path-diagnosis-work"
+    },
+    {
+      "status": "PASS",
+      "exit_code": 0,
+      "command_template": "C:/a/arc3-b001-28c7a00/Scripts/python.exe -m scripts.evaluate_public --partition development --agents full --seeds 7 --max-actions 8 --max-resets 8 --timeout-seconds 120.0 --frozen-commit 515177c2b640efbdbfd92eca117aff1e42637e98 --manifest <REPOSITORY>/docs/evaluation/public-game-partitions.v0.1.json --environments-dir C:/a/arc3-s15-6a0f6e5/artifacts/stage15/public-environments --recordings-dir C:/a/arc3-b001/recordings/stage03 --output-root C:/a/arc3-b001/artifacts/stage03/evaluations --exposure-ledger C:/a/arc3-b001/artifacts/stage03/public-exposure.jsonl --milestone-id build-001-stage03-causal-v0.1 --game-ids ar25-0c556536 --hot-path-profile <explicit tracing flag> <explicit checkpoint flag> --evaluation-id <cell id>",
+      "executed_cells": 4
+    },
+    {
+      "status": "PASS",
+      "exit_code": 0,
+      "command_template": "C:/a/arc3-b001-28c7a00/Scripts/python.exe -m scripts.evaluate_public --verify C:/a/arc3-b001/artifacts/stage03/evaluations/<cell id>",
+      "executed_cells": 4
+    }
+  ]
+}

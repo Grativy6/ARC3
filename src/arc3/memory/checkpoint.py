@@ -10,8 +10,17 @@ from pathlib import Path
 from typing import cast
 
 from arc3.errors import ARC3ValidationError
-from arc3.trace import CheckpointEnvelope, CheckpointStore, CodeIdentity, EventJournal, TraceEvent
-from arc3.trace.canonical import normalize_json, require_sha256
+from arc3.trace import CHECKPOINT_COMMITMENT_SCHEMA as CHECKPOINT_COMMITMENT_SCHEMA
+from arc3.trace import (
+    CheckpointEnvelope,
+    CheckpointStore,
+    CodeIdentity,
+    EventJournal,
+    SourceIdentity,
+    TraceEvent,
+)
+from arc3.trace.authority import is_revisable_interruption_event_type
+from arc3.trace.canonical import normalize_json, require_sha256, sha256_json
 from arc3.types import ActionName, ActionRequest, Coordinate, JSONValue
 
 from .models import MemoryContractError
@@ -286,6 +295,8 @@ class RestoredController:
     state: DerivedControllerState
     rng: random.Random
     envelope: CheckpointEnvelope
+    commitment_event: TraceEvent
+    abandoned_suffix_events: tuple[TraceEvent, ...] = ()
 
     @property
     def restart_directive(self) -> RestartDirective:
@@ -297,23 +308,238 @@ class ControllerCheckpointManager:
 
     def __init__(self, root: str | Path) -> None:
         self.store = CheckpointStore(root)
+        self._next_checkpoint_sequence: int | None = None
 
     @staticmethod
-    def _validate_pending_tail(state: DerivedControllerState, journal: EventJournal) -> None:
+    def _validate_pending_tail(
+        state: DerivedControllerState,
+        journal: EventJournal,
+        *,
+        commitment_event: TraceEvent | None = None,
+    ) -> None:
         pending = state.pending_action
         if pending is None:
+            if (
+                commitment_event is not None
+                and commitment_event.payload.get("pending_submitted_event_id") is not None
+            ):
+                raise MemoryContractError(
+                    "checkpoint commitment invents a pending submitted action"
+                )
             return
-        submitted = journal.tail_event
-        if submitted is None or submitted.event_id != pending.submitted_event_id:
+        submitted = journal.get_event(pending.submitted_event_id)
+        if submitted is None:
             raise MemoryContractError(
-                "pending action must point to the current trace tail before checkpointing"
+                "pending action must point to a submitted receipt before checkpointing"
+            )
+        if commitment_event is None and journal.tail_event_id != pending.submitted_event_id:
+            tail = journal.tail_event
+            if (
+                tail is None
+                or tail.event_type not in {"reasoning.checkpoint_state", "run.checkpoint_written"}
+                or tail.payload.get("pending_submitted_event_id") != pending.submitted_event_id
+            ):
+                raise MemoryContractError(
+                    "pending action must point to the submitted tail or its checkpoint suffix"
+                )
+        if commitment_event is not None and (
+            commitment_event.payload.get("pending_submitted_event_id") != pending.submitted_event_id
+        ):
+            raise MemoryContractError(
+                "pending action does not match the checkpoint commitment receipt"
             )
         if submitted.event_type != "action.submitted":
             raise MemoryContractError("pending action tail is not an action.submitted receipt")
         if submitted.step_index != pending.step_index:
             raise MemoryContractError("pending action step does not match submitted receipt")
-        if journal.get_event(pending.selected_event_id) is None:
+        selected = journal.get_event(pending.selected_event_id)
+        if selected is None or selected.event_type != "action.selected":
             raise MemoryContractError("pending action selected receipt is absent from trace")
+        coordinate = pending.action.coordinate
+        action_payload: dict[str, JSONValue] = {
+            "name": pending.action.name.value,
+            "coordinate": (
+                {"x": coordinate.x, "y": coordinate.y} if coordinate is not None else None
+            ),
+        }
+        latest_observation_id = state.perception_state.get("latest_observation_event_id")
+        if (
+            selected.step_index != pending.step_index
+            or selected.level_index != state.level_index
+            or selected.payload.get("source_observation_event_id") != latest_observation_id
+            or selected.payload.get("selected_action") != action_payload
+            or submitted.payload.get("selected_event_id") != pending.selected_event_id
+            or submitted.payload.get("action") != action_payload
+            or submitted.payload.get("decision_id") != selected.payload.get("decision_id")
+        ):
+            raise MemoryContractError("pending action is not exactly bound to its trace receipts")
+        validated_id = submitted.payload.get("validated_event_id")
+        validated = journal.get_event(validated_id) if isinstance(validated_id, str) else None
+        if (
+            validated is None
+            or validated.event_type != "action.validated"
+            or validated.payload.get("selected_event_id") != pending.selected_event_id
+            or validated.payload.get("action") != action_payload
+        ):
+            raise MemoryContractError("pending action validation receipt is inconsistent")
+
+    @staticmethod
+    def _checkpoint_events(
+        journal: EventJournal,
+        *,
+        episode_id: str,
+    ) -> tuple[TraceEvent, ...]:
+        return tuple(
+            event
+            for event in journal.verify_manifest()
+            if event.episode_id == episode_id and event.event_type == "run.checkpoint_written"
+        )
+
+    def _allocate_checkpoint_sequence(
+        self,
+        journal: EventJournal,
+        *,
+        episode_id: str,
+    ) -> int:
+        if self._next_checkpoint_sequence is None:
+            existing = self._checkpoint_events(journal, episode_id=episode_id)
+            sequences = tuple(event.payload.get("checkpoint_sequence") for event in existing)
+            if any(
+                isinstance(item, bool) or not isinstance(item, int) for item in sequences
+            ) or sequences != tuple(range(1, len(existing) + 1)):
+                raise MemoryContractError("checkpoint commitment sequence is not contiguous")
+            self._next_checkpoint_sequence = len(existing) + 1
+        return self._next_checkpoint_sequence
+
+    @classmethod
+    def _validate_commitment_receipt(
+        cls,
+        *,
+        journal: EventJournal,
+        episode_id: str,
+        code_identity: CodeIdentity,
+        source_identity: SourceIdentity | None = None,
+    ) -> tuple[TraceEvent, tuple[TraceEvent, ...]]:
+        events = journal.verify_manifest()
+        if not events:
+            raise MemoryContractError("controller restore requires a non-empty verified trace")
+        checkpoint_events = tuple(
+            event
+            for event in events
+            if event.episode_id == episode_id and event.event_type == "run.checkpoint_written"
+        )
+        if not checkpoint_events:
+            raise MemoryContractError(
+                "controller restore requires a current checkpoint commitment receipt"
+            )
+        receipt = checkpoint_events[-1]
+        receipt_index = next(
+            index for index, event in enumerate(events) if event.event_id == receipt.event_id
+        )
+        suffix = events[receipt_index + 1 :]
+        if (
+            receipt.event_type != "run.checkpoint_written"
+            or receipt.episode_id != episode_id
+            or receipt.scope != "run"
+        ):
+            raise MemoryContractError(
+                "controller restore requires a current checkpoint commitment receipt"
+            )
+        observed_sequences = tuple(
+            event.payload.get("checkpoint_sequence") for event in checkpoint_events
+        )
+        if any(
+            isinstance(item, bool) or not isinstance(item, int) for item in observed_sequences
+        ) or observed_sequences != tuple(range(1, len(checkpoint_events) + 1)):
+            raise MemoryContractError("checkpoint commitment sequence is not contiguous")
+        payload = receipt.payload
+        prior_event_id = payload.get("envelope_prior_trace_tail_event_id")
+        prior_hash = payload.get("envelope_prior_trace_tail_hash")
+        prior = journal.get_event(prior_event_id) if isinstance(prior_event_id, str) else None
+        try:
+            if isinstance(prior_hash, str):
+                require_sha256(prior_hash, field="envelope_prior_trace_tail_hash")
+        except ARC3ValidationError as error:
+            raise MemoryContractError(str(error)) from error
+        if (
+            payload.get("commitment_schema") != CHECKPOINT_COMMITMENT_SCHEMA
+            or payload.get("derived_controller_schema") != DERIVED_CONTROLLER_SCHEMA
+            or payload.get("checkpoint_sequence") != len(checkpoint_events)
+            or prior is None
+            or prior.event_hash != prior_hash
+            or receipt.previous_event_hash != prior_hash
+            or receipt_index < 1
+            or events[receipt_index - 1].event_id != prior_event_id
+            or receipt.game_id != prior.game_id
+            or receipt.source != prior.source
+            or (source_identity is not None and receipt.source != source_identity)
+            or receipt.code_identity != code_identity
+            or payload.get("git_commit") != code_identity.git_commit
+            or payload.get("config_hash") != code_identity.config_hash
+        ):
+            raise MemoryContractError(
+                "checkpoint commitment receipt is not exactly bound to its prior trace tail"
+            )
+        if suffix:
+            if receipt.payload.get("pending_submitted_event_id") is not None or any(
+                event.episode_id != episode_id
+                or event.level_index != receipt.level_index
+                or event.step_index != receipt.step_index
+                or not is_revisable_interruption_event_type(event.event_type)
+                for event in suffix
+            ):
+                raise MemoryContractError(
+                    "checkpoint suffix crosses an action, consequence, observation, run, "
+                    "checkpoint, evaluation, migration, or other non-revisable boundary"
+                )
+        for field_name in (
+            "checkpoint_hash",
+            "derived_controller_state_hash",
+            "rng_state_hash",
+        ):
+            value = payload.get(field_name)
+            try:
+                if not isinstance(value, str):
+                    raise ARC3ValidationError(f"{field_name} must be a string")
+                require_sha256(value, field=field_name)
+            except ARC3ValidationError as error:
+                raise MemoryContractError(str(error)) from error
+        return receipt, suffix
+
+    @staticmethod
+    def validate_restored_commitment(restored: RestoredController) -> None:
+        """Verify the immutable receipt's complete state and RNG commitments."""
+
+        payload = restored.commitment_event.payload
+        envelope = restored.envelope
+        if (
+            payload.get("checkpoint_hash") != envelope.checkpoint_hash
+            or payload.get("envelope_prior_trace_tail_event_id") != envelope.trace_tail_event_id
+            or payload.get("envelope_prior_trace_tail_hash") != envelope.trace_tail_hash
+            or payload.get("derived_controller_state_hash") != sha256_json(restored.state.to_dict())
+            or payload.get("rng_state_hash") != sha256_json(envelope.rng_state)
+            or payload.get("checkpoint_schema") != envelope.schema
+            or payload.get("memory_phase") != restored.state.phase.value
+            or payload.get("controller_phase")
+            != (
+                restored.state.planner_state.get("controller_phase")
+                if isinstance(restored.state.planner_state.get("controller_phase"), str)
+                else restored.state.phase.value
+            )
+            or payload.get("level_index") != restored.state.level_index
+            or payload.get("step_index") != restored.state.step_index
+            or restored.commitment_event.level_index != restored.state.level_index
+            or restored.commitment_event.step_index != restored.state.step_index
+            or payload.get("pending_submitted_event_id")
+            != (
+                restored.state.pending_action.submitted_event_id
+                if restored.state.pending_action is not None
+                else None
+            )
+        ):
+            raise MemoryContractError(
+                "checkpoint envelope disagrees with its immutable state commitment"
+            )
 
     def write(
         self,
@@ -332,16 +558,65 @@ class ControllerCheckpointManager:
         if journal.tail_event is None or journal.tail_event_id is None or journal.tail_hash is None:
             raise MemoryContractError("controller checkpoint requires a non-empty verified trace")
         self._validate_pending_tail(state, journal)
-        return self.store.write(
+        prior_event_id = journal.tail_event_id
+        prior_hash = journal.tail_hash
+        prior_event = journal.tail_event
+        assert prior_event_id is not None
+        assert prior_hash is not None
+        assert prior_event is not None
+        checkpoint_sequence = self._allocate_checkpoint_sequence(
+            journal,
+            episode_id=episode_id,
+        )
+        path, envelope = self.store.write(
             run_id=journal.run_id,
             episode_id=episode_id,
-            trace_tail_event_id=journal.tail_event_id,
-            trace_tail_hash=journal.tail_hash,
+            trace_tail_event_id=prior_event_id,
+            trace_tail_hash=prior_hash,
             git_commit=code_identity.git_commit,
             config_hash=code_identity.config_hash,
             rng=rng,
             state={"derived_controller_state": state.to_dict()},
         )
+        journal.append(
+            episode_id=episode_id,
+            game_id=prior_event.game_id,
+            level_index=state.level_index,
+            step_index=state.step_index,
+            event_type="run.checkpoint_written",
+            source=prior_event.source,
+            scope="run",
+            payload={
+                "commitment_schema": CHECKPOINT_COMMITMENT_SCHEMA,
+                "checkpoint_sequence": checkpoint_sequence,
+                "checkpoint_hash": envelope.checkpoint_hash,
+                "checkpoint_schema": envelope.schema,
+                "derived_controller_schema": state.schema,
+                "derived_controller_state_hash": sha256_json(state.to_dict()),
+                "rng_state_hash": sha256_json(envelope.rng_state),
+                "envelope_prior_trace_tail_event_id": prior_event_id,
+                "envelope_prior_trace_tail_hash": prior_hash,
+                "git_commit": code_identity.git_commit,
+                "config_hash": code_identity.config_hash,
+                "memory_phase": state.phase.value,
+                "controller_phase": (
+                    state.planner_state.get("controller_phase")
+                    if isinstance(state.planner_state.get("controller_phase"), str)
+                    else state.phase.value
+                ),
+                "level_index": state.level_index,
+                "step_index": state.step_index,
+                "pending_submitted_event_id": (
+                    state.pending_action.submitted_event_id
+                    if state.pending_action is not None
+                    else None
+                ),
+            },
+            code_identity=code_identity,
+        )
+        journal.flush()
+        self._next_checkpoint_sequence = checkpoint_sequence + 1
+        return path, envelope
 
     def restore(
         self,
@@ -349,19 +624,46 @@ class ControllerCheckpointManager:
         journal: EventJournal,
         episode_id: str,
         code_identity: CodeIdentity,
+        source_identity: SourceIdentity | None = None,
         path: str | Path | None = None,
+        defer_payload_commitment: bool = False,
     ) -> RestoredController:
-        if journal.tail_event_id is None or journal.tail_hash is None:
-            raise MemoryContractError("controller restore requires a non-empty verified trace")
+        commitment_event, abandoned_suffix_events = self._validate_commitment_receipt(
+            journal=journal,
+            episode_id=episode_id,
+            code_identity=code_identity,
+            source_identity=source_identity,
+        )
+        raw_sequence = commitment_event.payload.get("checkpoint_sequence")
+        assert isinstance(raw_sequence, int) and not isinstance(raw_sequence, bool)
+        self._next_checkpoint_sequence = raw_sequence + 1
+        prior_event_id = commitment_event.payload.get("envelope_prior_trace_tail_event_id")
+        prior_hash = commitment_event.payload.get("envelope_prior_trace_tail_hash")
+        committed_checkpoint_hash = commitment_event.payload.get("checkpoint_hash")
+        assert isinstance(prior_event_id, str)
+        assert isinstance(prior_hash, str)
+        assert isinstance(committed_checkpoint_hash, str)
+        authoritative_path = (
+            self.store.content_addressed_path(committed_checkpoint_hash) if path is None else path
+        )
         restored = self.store.restore(
-            path=path,
+            path=authoritative_path,
             expected_run_id=journal.run_id,
             expected_episode_id=episode_id,
-            expected_trace_tail_event_id=journal.tail_event_id,
-            expected_trace_tail_hash=journal.tail_hash,
+            expected_trace_tail_event_id=prior_event_id,
+            expected_trace_tail_hash=prior_hash,
             expected_git_commit=code_identity.git_commit,
             expected_config_hash=code_identity.config_hash,
         )
         state = DerivedControllerState.from_dict(restored.state.get("derived_controller_state"))
-        self._validate_pending_tail(state, journal)
-        return RestoredController(state=state, rng=restored.rng, envelope=restored.envelope)
+        result = RestoredController(
+            state=state,
+            rng=restored.rng,
+            envelope=restored.envelope,
+            commitment_event=commitment_event,
+            abandoned_suffix_events=abandoned_suffix_events,
+        )
+        self._validate_pending_tail(state, journal, commitment_event=commitment_event)
+        if not defer_payload_commitment:
+            self.validate_restored_commitment(result)
+        return result

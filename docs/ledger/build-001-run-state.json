@@ -1,0 +1,1005 @@
+{
+  "schema": "arc3.build-001-run-state.v0.1",
+  "workflow": "docs/workflows/001-local-public-failure-recovery.md",
+  "workflow_version": "0.1",
+  "repository": "Grativy6/ARC3",
+  "owner": "Christopher D. Pang",
+  "build_status": "PARTIAL",
+  "status": "COMPLETE",
+  "current_stage": "14",
+  "current_task": "Workflow 001 complete; final documentation commit, push, and draft PR update are the active external handoff boundary",
+  "implementation_branch": "build/001-local-public-recovery",
+  "pull_request": "https://github.com/Grativy6/ARC3/pull/5",
+  "started_at": "2026-08-21T15:41:02Z",
+  "last_checkpoint_at": "2026-08-23T12:25:00Z",
+  "last_checkpoint_commit": "6e6899693acc35c1b48012ed7f82cdd6eaffdc52",
+  "base": {
+    "main_commit": "28c7a00732ce48e5c231211b01bc6eba7d0d71b4",
+    "main_tree": "4586299448e9b1b585a0878674ed5f9afa60c384",
+    "build_000_merge_commit": "cf321c3e0e1aa782076491ee84015d24d0fe28ce",
+    "build_000_final_seal": "ee4938b4fdba8bcea9fa3660d32d7b9597644896",
+    "workflow_merge_commit": "28c7a00732ce48e5c231211b01bc6eba7d0d71b4"
+  },
+  "holdout": {
+    "status": "SEALED_UNCONSUMED",
+    "opening_gate": "HOLDOUT_NOT_EARNED",
+    "manifest": "docs/evaluation/public-game-partitions.v0.1.json",
+    "manifest_sha256": "sha256:682d5891c2aface54803d9bd1173c55ed21e89856e13b8a478fb9276ee963f2f",
+    "game_count": 10,
+    "gameplay_events": 0,
+    "locally_acquired_assets": 0
+  },
+  "completed_stages": [
+    "00",
+    "01",
+    "02",
+    "03",
+    "04",
+    "05",
+    "06",
+    "07",
+    "08",
+    "09",
+    "10",
+    "11",
+    "12",
+    "13",
+    "14"
+  ],
+  "stage_status": {
+    "00": "PASS",
+    "01": "PASS",
+    "02": "PASS",
+    "03": "PASS",
+    "04": "PASS",
+    "05": "PASS",
+    "06": "FAILED_MECHANISM",
+    "07": "FAILED_INFRASTRUCTURE",
+    "08": "FAILED_INFRASTRUCTURE",
+    "09": "FAILED_INFRASTRUCTURE",
+    "10": "FAILED_INFRASTRUCTURE",
+    "11": "PASS",
+    "12": "PASS",
+    "13": "BLOCKED_EXTERNAL",
+    "14": "PASS"
+  },
+  "evidence": {
+    "00": {
+      "status": "PASS",
+      "label": "synthetic",
+      "report": "docs/reports/001-00-preflight-identity-license.md",
+      "report_sha256": "sha256:323f0ded31ccfb107b6bb2821ec748f27c925b2cff2ec7930a4ee1f4226c03b1",
+      "acceptance": "docs/evidence/001-00-preflight-acceptance.json",
+      "acceptance_sha256": "sha256:65eb293aff43fb50f7ab5b52bef3af99331fd5f02f8b5197e1f8a10e2a2a68ff",
+      "integrity_receipt_sha256": "sha256:abca6b103f8cbef43cd206baaac6d25f50367081e80375f56c6a31d7fe6cd162",
+      "checkpoint_commit": "ca83b69d8734f76896896dabd99e830d73e783a0",
+      "verification": {
+        "base_and_branch": "PASS",
+        "build_000_artifacts": "PASS:48-hashes+22-commit-objects",
+        "upstream_static_identity": "PASS:5-repositories+2-packages+8-documents",
+        "upstream_dynamic_pages": "DRIFT_RECORDED:2-pages",
+        "owner_mit0_gate": "PASS:explicit-approval+exact-root-license",
+        "holdout": "PASS:sealed+0-events+0-assets",
+        "focused_tests": "PASS:35",
+        "ruff": "PASS:29-files",
+        "mypy_strict": "PASS:19-source-files",
+        "integrity_secret_scan": "PASS:0-findings",
+        "git_fsck": "PASS:dangling-objects-only"
+      }
+    },
+    "01": {
+      "status": "PASS",
+      "label": "local-public",
+      "predeclaration": "docs/evidence/001-01-reproduction-predeclaration.json",
+      "predeclaration_sha256": "sha256:7c4594d7164a462adad7abfc131c9d4a24c4c6f27fd9a8b1a1bdb575e34bc804",
+      "acceptance": "docs/evidence/001-01-reproduction-acceptance.json",
+      "acceptance_sha256": "sha256:80fd11900b8133512b1858f235888289728a59dcb50770d575068823506067be",
+      "report": "docs/reports/001-01-failure-reproduction.md",
+      "report_sha256": "sha256:4d0595b8f19b291371eb157978fae6d49b5a9114bbda9a3d1efd376c389f6840",
+      "classification": "REPRODUCED_FAILURE",
+      "frozen_commit": "75482a994c00123ddb3942663a2c521b710116c4",
+      "raw_manifest_sha256": "sha256:684cccf4731cf9e6163e51f121438fed4ba496bc9e6986ccb61aa4155b3592b4",
+      "run_receipt_hash": "sha256:57a2686c51d87bedb80647c3fd820d34ec2ac09e3ba9dd853c7b12549d8aae34",
+      "artifact_verification": "PASS:56-artifacts+1-run+0-errors",
+      "production_policy_changed": false,
+      "public_holdout_consumed": false
+    },
+    "02": {
+      "status": "PASS",
+      "labels": [
+        "synthetic",
+        "local-public"
+      ],
+      "predeclaration": "docs/evidence/001-02-hot-path-predeclaration.json",
+      "predeclaration_sha256": "sha256:c573de083314be601a0bd9e877adf533e1880a61cc1825d91b509d61e15248fb",
+      "acceptance": "docs/evidence/001-02-hot-path-observability.json",
+      "acceptance_sha256": "sha256:2c5ba3d11b64395703ae2540fe19fc3839c5e32b53244637ca302c003a6b9421",
+      "report": "docs/reports/001-02-hot-path-observability.md",
+      "report_sha256": "sha256:936385f057d9154e9539e952fbe2258bcf841547042c84541f263ea03e15bf82",
+      "frozen_commit": "8168168ea224add5b8e296ee892866d75f1ca0b7",
+      "synthetic_overhead_ratio": 1.046157943796,
+      "synthetic_decisions_identical": true,
+      "local_public_attribution_coverage": 0.999783265303,
+      "local_public_environment_actions": 8,
+      "local_public_levels_completed": 0,
+      "artifact_verification": "PASS:30-artifacts+1-run+0-errors",
+      "public_holdout_consumed": false
+    },
+    "03": {
+      "status": "PASS",
+      "labels": [
+        "synthetic",
+        "local-public"
+      ],
+      "predeclaration": "docs/evidence/001-03-causal-predeclaration.json",
+      "predeclaration_sha256": "sha256:b9f81e93fbd76944dcb2ef9382e4d7da756bfd91e68075a4d7f4930d060f96d1",
+      "acceptance": "docs/evidence/001-03-causal-bottlenecks.json",
+      "acceptance_sha256": "sha256:42e5bdca00ab87d910fa9c2ddd5219c4b15d4a43ebfd85fd6369f1bf6a5a592a",
+      "report": "docs/reports/001-03-causal-throughput-diagnosis.md",
+      "report_sha256": "sha256:254e12bc0a7fa24db8f9e3b03ebff694ac1d26e3c52b899a014a809ff19ca645",
+      "frozen_commit": "515177c2b640efbdbfd92eca117aff1e42637e98",
+      "material_causes_supported": 2,
+      "local_public_control_wall_seconds": 46.070333300042,
+      "local_public_allocator_off_wall_seconds": 8.84490280004684,
+      "local_public_checkpoint_off_wall_seconds": 37.9903721000301,
+      "exact_action_and_outcome_match": true,
+      "artifact_verification": "PASS:82-artifacts+4-runs+0-errors",
+      "public_holdout_consumed": false
+    },
+    "04": {
+      "status": "PASS",
+      "label": "synthetic",
+      "predeclaration": "docs/evidence/001-04-palette-equivariance-predeclaration.json",
+      "predeclaration_sha256": "sha256:9df1df67641a642234cde2494b1ac53a55524778284f8af2c0aa0a9d727c6d32",
+      "acceptance": "docs/evidence/001-04-palette-equivariance.json",
+      "acceptance_sha256": "sha256:eb45275fc82870fde999d7d914534d064568a1605276a52132ed6d0335f94a73",
+      "report": "docs/reports/001-04-palette-equivariance.md",
+      "report_sha256": "sha256:ab0cd441d0daa1701267256130a7ff99af1e02a006690c2958a84ebf7e6a4c29",
+      "frozen_commit": "86134755f3f26a268585b14264946571592cd4a5",
+      "frozen_tree": "df3204136e44d66b30bff455815a10c5ba9efa84",
+      "historical_palette_cases": 2,
+      "historical_palette_cases_passed": 2,
+      "procedural_pairs": 256,
+      "procedural_pairs_passed": 256,
+      "checkpoint_resume_pairs": 16,
+      "checkpoint_resume_pairs_passed": 16,
+      "color_causal_controls": 64,
+      "joint_color_controls_passed": 64,
+      "one_sided_color_controls_passed": 64,
+      "raw_artifact_sha256": "sha256:cad09761d4f361e2b072a54a3525a90b0c8f10961dc8fd041da8b08abc6b3108",
+      "raw_artifact_core_hash": "sha256:c76ad6ecf0c956b51579b27d6543734e7368ca48fb0cadfce3134735be895676",
+      "measured_episodes": 324,
+      "trace_events": 48598,
+      "controller_faults": 0,
+      "wall_seconds": 225.4006992,
+      "maximum_process_peak_rss_bytes": 54927360,
+      "seed_11_base_action_change": "1-to-3-open-burden",
+      "verification": "PASS:68-broad+11-offline-integrity+ruff+format+mypy-148+replay",
+      "public_holdout_consumed": false
+    },
+    "05": {
+      "status": "PASS",
+      "label": "synthetic",
+      "predeclaration": "docs/evidence/001-05-action-equivariance-predeclaration.json",
+      "predeclaration_sha256": "sha256:ec4ed1a8b3b8d4904a38bf4533d9fbd61975cac61aea05d4313d4b6a47119ce2",
+      "source_baseline_commit": "ed0c5e691ed09614a29f5bdb90cc1cc328254dbd",
+      "source_baseline_tree": "b44876452420251c0049b2c6cde5a1cae5d87d37",
+      "frozen_source_commit": "43713f8add4495cb48e15d9edab402564ab8b8da",
+      "frozen_source_tree": "c002b634f5536839fc96b64e827e0a03c71e6c02",
+      "acceptance": "docs/evidence/001-05-action-equivariance.json",
+      "acceptance_sha256": "sha256:7d9a72d9e222944a60cf92cb2b3bd5db2e33f46d5a64be4d22f91df224adf85a",
+      "report": "docs/reports/001-05-action-equivariance.md",
+      "report_sha256": "sha256:210d3e473fb12acc5a1d07344625c47c8ae4256ca377a2921688fe842dd65abf",
+      "procedural_pairs_predeclared": 128,
+      "procedural_pairs_passed": 128,
+      "post_calibration_inverse_requests": "528/528",
+      "causal_controls_predeclared": 64,
+      "causal_controls_passed": 64,
+      "checkpoint_resume_pairs_predeclared": 16,
+      "checkpoint_resume_pairs_passed": 16,
+      "historical_action_remap_cases": 2,
+      "historical_action_remap_cases_passed": 2,
+      "implementation_status": "ACCEPTED_CORRECTED_CLEAN_SOURCE",
+      "implementation_verification": {
+        "focused_tests": "PASS:67",
+        "broad_tests": "PASS:114",
+        "post_trace_refinement_tests": "PASS:30",
+        "offline_integrity_tests": "PASS:11",
+        "ruff_check": "PASS",
+        "ruff_format_check": "PASS",
+        "mypy_strict": "PASS:151-source-files",
+        "static_action_semantics": "PASS:0-findings",
+        "competition_integrity_secret_scan": "PASS:0-findings",
+        "corrected_focused_tests": "PASS:17",
+        "corrected_clean_source_guard_tests": "PASS:2",
+        "remote_ci": "PASS:push+pull-request;ubuntu+windows",
+        "holdout": "SEALED_UNCONSUMED:2-ledgers+2-roots"
+      },
+      "raw_artifact_sha256": "sha256:48141af44742c0955f30086f73b1983e6274362e150195ff88065be2b30ea797",
+      "raw_artifact_core_hash": "sha256:b2ea83ff85f50f005e8630e34857741b70471b232781464fa8e3825d6f33bc07",
+      "measured_controller_episodes": 292,
+      "environment_actions": 2314,
+      "trace_events": 55707,
+      "controller_faults": 0,
+      "wall_seconds": 238.9817805,
+      "peak_rss_bytes": 66064384,
+      "superseded_raw_artifact_sha256": "sha256:6280fbe932fec3fa23fae6ba430093ca94a10135b052370673a801e38ff56a02",
+      "resolved_failed_mechanism": {
+        "burden": "B-001-0018",
+        "failed_inverse_smoke": "C:/a/arc3-b001/stage05-smoke-pair-02",
+        "failed_seed_13_trace_sha256": "sha256:0f14f37dad736d3f279920949b4e2c54911d916a124a00493337efa7cdfc9c76",
+        "resolving_seed_13_completion": "PASS:16/16-seeds+6/6-permutations"
+      },
+      "public_holdout_consumed": false
+    },
+    "06": {
+      "status": "FAILED_MECHANISM",
+      "label": "synthetic",
+      "predeclaration": "docs/evidence/001-06-rule-change-predeclaration.json",
+      "predeclaration_sha256": "sha256:0bca5f32986c79008cf6ee01a83867262cda591f477239a5b8e9bccd90e37434",
+      "intervention_cases_predeclared": 64,
+      "stationary_noise_cases_predeclared": 32,
+      "checkpoint_resume_pairs_predeclared": 8,
+      "controller_executions_predeclared": 112,
+      "frozen_source_commit": "ec51f7e7d09241f47baa866af897546912d3c611",
+      "frozen_source_tree": "b138ba66990bae945d03272a1c805194d63b2037",
+      "implementation_status": "MEASURED_FAILED_MECHANISM_ACCEPTED_WITH_HISTORY_PRESERVED",
+      "preimplementation_integrity": "PASS:0-blocking+0-warnings+0-secrets",
+      "preimplementation_integrity_receipt_hash": "sha256:993bbce75fb055058711949d873ac5c73e6cc0a6cabe2cf4e93cf04fd12923a3",
+      "official_attempt_01": {
+        "status": "FAILED_INFRASTRUCTURE",
+        "source_commit": "d1866e014ae4ff7ee6f24beb2f92688b5fd7ec17",
+        "mechanism_cases_completed": 0,
+        "result_file_created": false,
+        "failure_receipt": "docs/evidence/001-06-failed-infrastructure-attempt-01.json",
+        "failure_receipt_sha256": "sha256:749bdf1673b44fe5272ac4445bb21299b54f7835634ab87e74e86d6d274c3029",
+        "partial_work_manifest_sha256": "sha256:66e31a5df20dbdc5629eae1a063c001cd62e50615519c2c4095422eb77bda080"
+      },
+      "runtime_path_preflight_058": {
+        "status": "FAILED_MECHANISM",
+        "source_commit": "7b6133d8a1a2b5e64ba1aca7d2deba13786259c2",
+        "path_runtime": "PASS:0-path-failures+247-character-stronger-root",
+        "checkpoint_pair": "PASS:24/24",
+        "intervention_case": "FAILED_MECHANISM:WIN18-but-causal-support-order-misaligned",
+        "failure_receipt": "docs/evidence/001-06-preflight-058-failed-mechanism.json",
+        "raw_file_sha256": "sha256:b864d5391a45ed12468d8c7a0ec97f6fabe4c5e7cb09ae3b80f140d5e086b91b",
+        "raw_core_hash": "sha256:9534e8b993f6cda329fc07545bf785b6ab92f91df4c320ef1fef1b436573e23c"
+      },
+      "runtime_path_preflight_059": {
+        "status": "PASS",
+        "source_commit": "ec51f7e7d09241f47baa866af897546912d3c611",
+        "path_runtime": "PASS:0-path-failures+249-character-projected-temporary-path",
+        "checkpoint_pair": "PASS:24/24",
+        "intervention_case": "PASS:WIN18-trigger6-confirmation7-ordered-support",
+        "path": "C:/a/arc3-b001/artifacts/stage06/preflight/s059-ordered-support-ec51f7e/result.json",
+        "raw_file_sha256": "sha256:13d088883014bc61ae3ad5943e2e87b0c8b8f85b0bd0994263048e0ea37642c0",
+        "raw_core_hash": "sha256:4edb729d70ebcd1b5b3cd92de99b8183a7ff198440e51dce2a9201630da2a711"
+      },
+      "official_attempt_02": {
+        "status": "FAILED_MECHANISM",
+        "source_commit": "ec51f7e7d09241f47baa866af897546912d3c611",
+        "raw_path": "C:/a/arc3-b001/artifacts/stage06/rule-change-reopening-attempt-02.json",
+        "raw_file_sha256": "sha256:198201b86d6bbbefd01188cdea67bde4297f402a41ca1531a4fb05a527627151",
+        "raw_core_hash": "sha256:4623ec8b03dbeaa6c4901ca70daaea53747f3918b8a8c49b6d73a80c1d70eb0f",
+        "controller_executions": "112/112",
+        "action_effect_rotation": "PASS:32/32",
+        "traversability_flip": "FAILED_MECHANISM:0/32-despite-WIN32/32",
+        "stationary_noise": "FAILED_MECHANISM:0/32-despite-WIN32/32+resolved_as_noise32+false_positive_reopenings0",
+        "checkpoint_resume_pairs": "4/8",
+        "trace_replay_and_prefix_immutability": "PASS:112/112",
+        "environment_actions": 2084,
+        "trace_events": 53980,
+        "controller_faults": 0,
+        "invalid_requests": 0,
+        "wall_seconds": 849.782134,
+        "peak_rss_bytes": 120565760,
+        "verification": "PASS:ruff+format+mypy154+focused114+integrity0+action-semantics0+socket0",
+        "remote_ci": "PASS:push32578675235+pr32578677426;ubuntu+windows"
+      },
+      "acceptance": "docs/evidence/001-06-rule-change-reopening.json",
+      "acceptance_sha256": "sha256:0a7b98fbabd5df8df8cf63351d6629903ee9ae9b85f6b1b1d45776fe815301dd",
+      "report": "docs/reports/001-06-rule-change-reopening.md",
+      "report_sha256": "sha256:a7cd087a98e49862241d7542db4d00a37a52a16f73f6c3cffded6515bd7ee25c",
+      "resolved_burdens": [
+        "B-001-0025",
+        "B-001-0026"
+      ],
+      "open_burdens": [
+        "B-001-0022",
+        "B-001-0023",
+        "B-001-0024"
+      ],
+      "public_holdout_consumed": false
+    },
+    "07": {
+      "status": "FAILED_INFRASTRUCTURE",
+      "labels": [
+        "synthetic",
+        "local-public"
+      ],
+      "predeclaration": "docs/evidence/001-07-retrodiction-predeclaration.json",
+      "predeclaration_sha256": "sha256:d4eb82f2e0c04e1c94be4d6fbaa8862aa808cc07932042a02d0c5fbcc02dc608",
+      "predeclaration_amendment": "docs/evidence/001-07-retrodiction-predeclaration-amendment-01.json",
+      "predeclaration_amendment_sha256": "sha256:5c8ff0c91602d86ecaadd61197dfb80681f618ad4e6c810c26933ca337fdcc3b",
+      "source_baseline_commit": "8e3400cebda87f75b8bb3fd0c8d592d2125a6869",
+      "source_baseline_tree": "69fd3a35c110e411e89e368e93d6f7110bc4673c",
+      "modes_predeclared": 5,
+      "evaluation_cells_predeclared": 280,
+      "stage_14_cases": 14,
+      "false_rule_histories": 8,
+      "false_rule_case_seeds": [1, 2, 3, 4, 5, 6, 7, 8],
+      "rule_change_and_noise_cases": 32,
+      "local_public_development_cases": 2,
+      "micro_history_sizes": 6,
+      "implementation_status": "UNIQUE_OFFICIAL_ATTEMPT_FAILED_AND_FAIL_CLOSED_SERIALIZATION_REPAIRED",
+      "runtime_checkpoint_commit": "586e8ba2c9c414b4bf2cc426ad5c1bbd357d5258",
+      "runtime_authority_checkpoint_commit": "44fc3666522db4787f4349c4a5cb5ee085f787d9",
+      "runtime_final_audit_checkpoint_commit": "2a78ba0f873a6f2c0e2b214a953f4b303057139e",
+      "official_harness_checkpoint_commit": "1cf1945c42bb7da42e63b423c4a986d72fd24ead",
+      "premeasurement_audit": "docs/evidence/001-07-premeasurement-audit.json",
+      "premeasurement_audit_sha256": "sha256:c0520173e58dbc1b994169e858e09a36d0f03003eb5953e2f0583d8c93a4478c",
+      "runtime_verification": "PASS:139-expanded+48-all-mode-adapter+87-artifact-asset-repair+ruff+format+mypy-strict",
+      "official_attempt_01": {
+        "status": "FAILED_INFRASTRUCTURE",
+        "source_commit": "f683dbc672213e804ddc6120b0be2762e6c66a08",
+        "result_file_created": false,
+        "cell_directories": "279/280",
+        "synthetic_cell_directories": 270,
+        "local_public_cells_attempted": 9,
+        "local_public_cells_completed": 0,
+        "microbenchmarks": "0/60",
+        "replacement_gates_evaluated": false,
+        "failure_receipt": "docs/evidence/001-07-failed-infrastructure-attempt-01.json",
+        "partial_work_inventory_sha256": "sha256:fa79526cc91c096fa38868fe4aa11e52cad6c8f0fe8c804ebe00806ee6f4f62e",
+        "development_exposure_ledger_sha256": "sha256:4f924df44b11decb392022a927b3296e0248a02edac2c87c53899d374045f0c7"
+      },
+      "production_default": "FULL_RETAINED_NO_ELIGIBLE_REPLACEMENT_DECISION",
+      "recovered_false_rule_receipts": "40/40:FULL+EVENT_TRIGGERED+CACHED reject false8/8;RECENT promotes false8/8;NONE ungated",
+      "recovered_false_rule_inventory_sha256": "sha256:7c7f2f36f7ad0b17df85007f0c4e64c5865481c92cc4f7f34f818a089c00a533",
+      "recovered_local_public_prefixes": "9/9:65-actions+65-consequences+0-levels+NOT_FINISHED+epoch-bound-fault",
+      "recovered_local_public_trace_projection_sha256": "sha256:95ec8fddc04499f8f68411d5ba112670f219d87a74b5a8511cd6fdab2be364e6",
+      "serialization_repair_commit": "85a0782e77e0549814363cbeefd50bb5eec6ca3c",
+      "acceptance": "docs/evidence/001-07-retrodiction-decision.json",
+      "acceptance_sha256": "sha256:35555cc69e9f35091dd3a18ead1822b0b2afde5847f045d4901b7491227425e4",
+      "report": "docs/reports/001-07-retrodiction-decision.md",
+      "report_sha256": "sha256:53b43726a1e2205df157d1fe4cb3005b265fa23737f9a581792ed41636dc21e8",
+      "resolved_burdens": [
+        "B-001-0041"
+      ],
+      "open_burdens": [
+        "B-001-0039",
+        "B-001-0040",
+        "B-001-0042",
+        "B-001-0043"
+      ],
+      "public_holdout_consumed": false
+    },
+    "08": {
+      "status": "FAILED_INFRASTRUCTURE",
+      "labels": [
+        "synthetic",
+        "local-public"
+      ],
+      "predeclaration": "docs/evidence/001-08-two-speed-predeclaration.json",
+      "predeclaration_sha256": "sha256:3342b6e2635c0606391c9aea02b2fec0cf4c5642a3d38b95768a1b77b4520878",
+      "source_baseline_commit": "d0052555e721453746e4c443efea441da2cb4789",
+      "source_baseline_tree": "37cb602a2aa9fa61ec20eee84eb8c226bd8bc432",
+      "production_mode": "TWO_SPEED",
+      "control_mode": "LEGACY_ALWAYS_DEEP",
+      "maximum_fast_streak": 4,
+      "repeated_no_progress_threshold": 2,
+      "prediction_cache_capacity": 256,
+      "public_repetitions_per_variant": 5,
+      "public_variants": 4,
+      "mechanics_capacity": "ARC3Config.budgets.max_actions",
+      "implementation_status": "PROCESS_ISOLATED_HARNESS_VERIFIED;UNIQUE_ATTEMPT_FAILED_EVIDENCE_VALIDATION;GENERIC_VALIDATOR_REPAIRED_FOR_FUTURE_USE;NO_RERUN",
+      "mechanics_capacity_checkpoint_commit": "5d1a67840bf75a939e25832d8300fa9c835c0e1d",
+      "mechanics_capacity_verification": "PASS:82-focused+lifecycle+controller+all-retrodiction-modes+replay+ruff+format+mypy-strict",
+      "failure_sealing_source_commit": "b4b033b4206a2c0044544c992bd02b709d1c59ad",
+      "failure_sealing_checkpoint_commit": "f5a2bd28f91eab6c3e16e335ec9b6b232f4d1804",
+      "failure_sealing_verification": "PASS:29-public-runner+baseline-boundary+evaluator+ruff+format+mypy-strict",
+      "typed_cadence_checkpoint_commit": "dae50e002bacf7802955fe7768d67937977dc96a",
+      "typed_cadence_verification": "PASS:19-unit+property+ruff+format+mypy-strict",
+      "failure_aggregate_checkpoint_commit": "15eda558a40eea9ecb7f162aabdf6fb05ab64c4b",
+      "failure_aggregate_verification": "PASS:27-public-contract+public-episode+historical-v0.1-56-artifacts+ruff+format+mypy-strict",
+      "measurement_contract_checkpoint_commit": "bd9b8a06ad1acde3d13815ef6921da72ecb15058",
+      "measurement_contract_verification": "PASS:22-unit+frozen-20-cell-matrix+fail-closed-paired-gates+ruff+format+mypy-strict",
+      "controller_integration_checkpoint_commit": "df0cf75c63c37a784f6ca2df8b87e24d6404a6cb",
+      "controller_integration_tree": "4eb163c09b5ac80513dfdacfdf18f318b79813c4",
+      "controller_integration_verification": "PASS:19-rule-change-reopening+76-cadence-replay-checkpoint-unit+ruff+format+mypy-strict-9-source-files",
+      "legacy_migration_audit": "FAILED_MECHANISM:honest-current-identity-rejected-before-cadence-migration;compatibility-only-old-identity-falsely-stamps-new-receipts",
+      "legacy_migration_repair_commit": "7f994fc5a520707be780ee0a11405535626eaee0",
+      "legacy_migration_repair_verification": "PASS:21-legacy+controller-checkpoint-replay+ruff+format+mypy-strict+real-df961c7-final-clean-source-migration+one-current-identity-activation+resubmission-blocked+continued-checkpoint-restored;failed-auditor-attempt-preserved",
+      "legacy_migration_final_trace_sha256": "sha256:f6b8be2e8116d88551032e681631ec186c84425c3a3f5596a7786b5ee2985351",
+      "measurement_contract_audit_commit": "2646cd3cb6923107a7e8e817b1072497e2094ad9",
+      "measurement_contract_audit_verification": "PASS:37-unit+whole-controller-checkpoint-inclusive-timing+exact-behavior-parity+resource-gates+typed-cadence-receipts+ruff+format+mypy-strict",
+      "process_harness_checkpoint_commit": "795c731fe5425c9b661160336b80112c38a7594f",
+      "process_harness_checkpoint_tree": "61f57df268335dadef1ab47ca7421cbbccce3cf8",
+      "process_harness_verification": "PASS:111-contract+worker+parent-supervisor+exact-live-cadence-binding+immutable-returned-consequence-binding+prefix-wide-resume-validation+process-tree-timeout+instrumentation-exclusion+parent-domain-recomputation+interim-integrity-stop+ruff+format+windows-and-linux-target-mypy-strict-161-files;no-public-environment-opened",
+      "process_harness_secret_scan": "PASS:9-tests+0-findings",
+      "process_harness_remote_ci": "PASS:2e78c258:32607264914+32607267169:ubuntu+windows:ruff+format+mypy-161+959-tests+doctor;prior-32607075312+32607073797-type-failures-preserved;no-public-cell-opened",
+      "premeasurement_audit_path": "docs/evidence/001-08-premeasurement-audit.json",
+      "premeasurement_audit_status": "READY_NOT_EXECUTED",
+      "premeasurement_audit_checkpoint_commit": "995619592997245776302820ae831c3b19cb6a2b",
+      "premeasurement_audit_sha256": "sha256:bc0e7161fa4d999fad63b025c2545b13fa0bf7444168ca7dc1c23dd45056f863",
+      "non_playing_preflight_hash": "sha256:f5b445550b4af0a0e59474b9235a1f869b41a7e938ac07b69155c086c1e5539c",
+      "execution_source_commit": "2e78c258cfbee8be62462f61ed08ad04c00a8934",
+      "execution_source_tree": "4145356c116944bbd7c0c412771de9179ba22efe",
+      "attempt_status": "FAILED_INFRASTRUCTURE",
+      "attempt_execution_count": 1,
+      "attempt_execution_complete": false,
+      "attempt_rerun_allowed": false,
+      "attempt_raw_path": "C:/a/arc3-b001/artifacts/stage08/two-speed-controller-attempt-01.json",
+      "attempt_raw_sha256": "sha256:7c39fa77de24bd1925d9dbd489d583118f96d4b7fe860678607f485506ad39d4",
+      "attempt_artifact_core_hash": "sha256:e3e078092318882f2c32887c6a223c0396938abba0ca7b30fdcde0eb5b15383f",
+      "attempt_result": "1-of-20-cells+19-missing+8-actions+8-consequences+checkpoint-restore-false-negative+action-chain-hash-namespace-false-negative+0-valid-timing-pairs",
+      "attempt_exposure_ledger_sha256": "sha256:be73b837805a66ed172b20573aa31c41fe6ba16ced4d471929b6018e22a5d52e",
+      "attempt_development_exposure_events": 1,
+      "acceptance": "docs/evidence/001-08-two-speed-controller.json",
+      "acceptance_sha256": "sha256:0134c9e5b7acea716f790088cb59109eded7857ce83fda004ea1b88be2eb92ac",
+      "report": "docs/reports/001-08-two-speed-controller.md",
+      "report_sha256": "sha256:e6aae8fbf30df955770587c4962b5630b0a2a72f950b4bc5a290d48bb9758f03",
+      "throughput_comparison": "UNAVAILABLE",
+      "public_recovery_claim": "UNAVAILABLE",
+      "root_cause_classification": "EVIDENCE_VALIDATION_HARNESS_INCOMPATIBILITY",
+      "future_validator_repair": {
+        "status": "PASS_NON_PLAYING_INFRASTRUCTURE",
+        "commit": "fa24a4326ed191a3dd97b36903a2032bb481c524",
+        "worker_sha256": "sha256:31cdea4060013d2a80358b2249d62bf556064f7e1ae87b729a84cb5715f61f03",
+        "regression_test_sha256": "sha256:8cb7f6b12c4da65f23354187da6c9fb3f0ac303f6228b41154aaf1316b2851de",
+        "verification": "PASS:113-focused+ruff+format+mypy-strict-source-and-tests",
+        "attempt_01_unchanged": true,
+        "attempt_01_rerun": false,
+        "environment_opened": false,
+        "holdout_consumed": false
+      },
+      "process_harness_source_sha256": {
+        "typed_contract": "sha256:d3ee67c9238dbda905045edef91de1a59d764169f4eb85dec19aa89a147b7300",
+        "worker": "sha256:2bc77bdf3280dd8c216094f7363f4ef1e2106342150969f182461b0b80a94dcb",
+        "supervisor": "sha256:903d6ab2f6e86fcdd33b353ee30c8d7692c35846e464538e8236c0a51b7fad00"
+      },
+      "process_harness_test_sha256": {
+        "typed_contract": "sha256:a56ec084cd511fe635fb8145bb08759b67eb079e8e3eab1d58fa588ff7aa2a3c",
+        "worker": "sha256:120de55c09a3f4701cb7d1943ebbde4456e41128b0820e6076e98585201d581a",
+        "supervisor": "sha256:7df3aefde99b500e304245bca45df87dd37372cb27277eaab91e524353cc5687"
+      },
+      "resolved_burdens": [
+        "B-001-0043",
+        "B-001-0044",
+        "B-001-0045",
+        "B-001-0046",
+        "B-001-0047",
+        "B-001-0048"
+      ],
+      "open_burdens": [
+        "B-001-0014",
+        "B-001-0039",
+        "B-001-0040",
+        "B-001-0042"
+      ],
+      "public_holdout_consumed": false
+    },
+    "09": {
+      "status": "FAILED_INFRASTRUCTURE",
+      "label": "local-public",
+      "claim": "NO_GENERALIZATION_CLAIM",
+      "original_predeclaration": "docs/evidence/001-09-development-recovery-predeclaration.json",
+      "original_predeclaration_file_sha256": "sha256:dce14e30d47aff7ac99551ad462c9202113dcd44c591dacd410b86363ddad348",
+      "original_predeclaration_core_hash": "sha256:b32f91fa228a7f1f2c2bbfee23e8fafc3a9affc18f9b0d3cbf9e050b0e498f3c",
+      "predeclaration_amendment": "docs/evidence/001-09-development-recovery-predeclaration-amendment-v0.1.json",
+      "predeclaration_amendment_file_sha256": "sha256:137532b196ffcbd6bbeb07c8ca5ef716c0987f04467663efb6ce1da8508d3084",
+      "predeclaration_amendment_core_hash": "sha256:36104da8f7ea6532ab1ea7cf6f8df16760d1236f8f551d7bef2239f7d1ab93a4",
+      "production_policy_commit": "d6d4bac1e33c9837856c08abcee61bcb14afd34e",
+      "production_policy_tree": "dd8e82e4b34337a208110929e3f5f8079d1e0a18",
+      "production_policy_source_sha256": "sha256:8f0de1a9c2c88761951ba2bcd69f2612bedfa0cc4226f44f1ed272b54b9023a8",
+      "frozen_harness_commit": "10c2c7878a0a13ee6c7eb3c0c9aa36fc98fedefb",
+      "frozen_harness_tree": "18a44bfb068f98fcfb9c0b674cc9c8824fc240cd",
+      "production_package_integrity_receipt": "C:/a/arc3-b001/artifacts/stage09/policy-integrity-d6d4bac-package-only.json",
+      "production_package_integrity_file_sha256": "sha256:173c0a6c3aee154df67920227e3b5303c59682186a2254a220e24dd5589269fe",
+      "production_package_integrity_receipt_sha256": "sha256:3e29edd69d7999760c53a80de474d701f9124faed73ccc1b9047adbf9a766702",
+      "package_only_passed": true,
+      "full_public_identifiers_status": "NOT_EVALUATED_PUBLIC_IDENTIFIERS",
+      "runtime_binding": "docs/evidence/001-09-runtime-binding.json",
+      "runtime_binding_file_sha256": "sha256:6f9230ae8b3560cddbf605814985bf404d6d2cdea83dbdfc44b30c2cc6a476f1",
+      "runtime_binding_hash": "sha256:7c772d556584caa28002a93c4de190ac0396b31d4c2ab6c1fc675e08be3ebf14",
+      "development_identity_count": 12,
+      "cell_count": 96,
+      "seeds": [7, 11],
+      "max_actions": 80,
+      "max_resets": 8,
+      "worker_wall_seconds": 120.0,
+      "overall_active_wall_seconds": 14400.0,
+      "final_harness_preflight": "docs/evidence/001-09-final-harness-preflight.json",
+      "final_harness_preflight_file_sha256": "sha256:e9aa3a19941640255ff0983d81177599f1c2b813854b72c15590e70df26a8f15",
+      "final_harness_preflight_evidence_hash": "sha256:4c356663c1f14ecc4e04f8f40756f6f517d0b4e243726b1355ec9b52b1aeb892",
+      "preflight_status": "READY_NOT_EXECUTED",
+      "preflight_hash": "sha256:442b9a1f7d2d751bb3d72f7e9367550fcac2fc90b866ad5bbeb3a8270db1ef5f",
+      "preflight_predicates": "PASS:14/14",
+      "decisive_execution_started": true,
+      "attempt_execution_count": 1,
+      "attempt_execution_complete": false,
+      "attempt_rerun_allowed": false,
+      "attempt_exit_code": 1,
+      "attempt_terminal": "C:/a/arc3-b001/artifacts/stage09/development-recovery-attempt-01.json",
+      "attempt_terminal_file_sha256": "sha256:5bb20928afe32e60449ae3ff6af3538e1a1b2c2722664f1f2dcfe8c1c77136a4",
+      "attempt_terminal_artifact_core_hash": "sha256:9c6eb08c33721b1b611a562e16bed57a8b7f7f5d654e18a7564e8e0efa71a6bd",
+      "attempt_terminal_finalization_sha256": "sha256:6d50afa64110a8ccb350edafcaf5172ea5d4de61442ae2ea7085b26f82e84b4f",
+      "attempt_terminal_finalization_hash": "sha256:4b44eae5243e58de170152144f0625acc6d335930ddbd449fd2bf1e54b5372c6",
+      "attempt_failure_kind": "terminal-cell-infrastructure-failure",
+      "attempt_failure_reason": "launch-authorization-unavailable-or-invalid:authorized-launcher-pid-21056!=worker-interpreter-pid-23936",
+      "official_terminal_reconstruction": "PASS:16-files-byte-identical-before-and-after",
+      "strict_complete_terminal_verifier": "EXPECTED_REFUSAL:execution-incomplete",
+      "stage09_exposure_events": 1,
+      "stage09_gameplay_events": 0,
+      "environment_opened_cells": 0,
+      "scheduled_cells_not_started": 95,
+      "development_recovery_gate": "NOT_EVALUATED_DUE_INFRASTRUCTURE_FAILURE",
+      "acceptance_evidence": "docs/evidence/001-09-development-recovery.json",
+      "acceptance_evidence_sha256": "sha256:e44473f2335fee5ccf8bd4f911a0d615caf92f9696375ebe6e57697e5622b3b8",
+      "acceptance_evidence_hash": "sha256:29d1961ae7b30e50222806a066b4d1d4a51c7255391a06a0b87ed9d1e8140b23",
+      "report": "docs/reports/001-09-development-recovery.md",
+      "report_sha256": "sha256:7b8abb0f122a9e95737e6f502a693aa6e73b2fcfb26824b44d93d6cc7de99c2e",
+      "public_holdout_consumed": false
+    },
+    "10": {
+      "status": "FAILED_INFRASTRUCTURE",
+      "label": "synthetic",
+      "claim": "NO_GENERALIZATION_CLAIM",
+      "predeclaration": "docs/evidence/001-10-robustness-regression-predeclaration-v0.2.json",
+      "predeclaration_sha256": "sha256:e056eea0d4a6664996ae9078e15b4cdddb5f6c40d5b770540b8e9068cc224613",
+      "predeclaration_amendment": "docs/evidence/001-10-robustness-regression-predeclaration-amendment-v0.1.json",
+      "predeclaration_amendment_sha256": "sha256:6eb1a9f5fba2ce02fbe601ffa123d5f9fb8a9ecc44c0a7db5c91fefdaf5bf2a6",
+      "source_floor_commit": "2e78c258cfbee8be62462f61ed08ad04c00a8934",
+      "supervisor_integration_commit": "670e57b7077a94b9c5087b4a9827a00681f26d4b",
+      "supervisor_integration_tree": "038f197226c3faa9e375b220444912ba3576addb",
+      "authority_repair_commit": "d4c447bbe09e8ecbc5944bcc842145b397804041",
+      "authority_repair_tree": "07a3235eed2f242a9c848617a40a2aa24e09190d",
+      "implementation_status": "UNIQUE_ATTEMPT_FAILED_INFRASTRUCTURE;NO_RERUN;FUTURE_PLAN_AND_RESUME_REPAIR_PENDING",
+      "decisive_execution_started": true,
+      "attempt_execution_count": 1,
+      "attempt_execution_complete": false,
+      "attempt_rerun_allowed": false,
+      "integrated_verification": "PASS:55-tests+1-posix-only-skip+ruff+format+mypy-strict-4-source-files+diff-check",
+      "stage09_live_authority_smoke": "PASS:EVIDENCE_INTEGRITY_ONLY+FAILED_INFRASTRUCTURE+execution-incomplete+stage09-pass-false+16-files+671876-bytes+inventory-unchanged",
+      "stage09_partial_manifest_sha256": "sha256:3f709f3a376511025078aa6c89c3be9c6df0e6bb6fb5fab366759f2e89c7f39d",
+      "superseded_non_playing_preflight": {
+        "status": "SUPERSEDED_BY_AUTHORITY_REPAIR",
+        "source_commit": "670e57b7077a94b9c5087b4a9827a00681f26d4b",
+        "plan_hash": "sha256:3e4a4bff3cc7b4d36c516e1666deacb93a487c07f3753d786d92cf5ba913b12a",
+        "preflight_hash": "sha256:0dc3f97dc7dafb6bd124d6bee9044cfb6f15e107b985dd6dd7985e2d99a99af2",
+        "suite_count": 9,
+        "attempt_root_created": false,
+        "output_created": false
+      },
+      "non_playing_preflight": {
+        "status": "PASS",
+        "source_commit": "88720037361822e1202a6b007678726d4e114b72",
+        "source_tree": "22ae823cfde9f0f471fde0a16b5b642d569fdd3b",
+        "path": "C:/a/arc3-b001/stage10-authority/preflight-8872003.json",
+        "file_sha256": "sha256:38117007fdea79d0ae27024c0f6822c9c4e0fbfaece2e12f1f1ff8a388411ea4",
+        "preflight_hash": "sha256:3a2553a2f0a0d67abbf905d3168a01f9b0fb7e4ed318a1a018a83fca0157f0c9",
+        "plan_hash": "sha256:b20eea9a2944f40e9f0e7ac4a50dec94107f2929b9c428d3c96ed450d6346013",
+        "predeclaration_sha256": "sha256:e056eea0d4a6664996ae9078e15b4cdddb5f6c40d5b770540b8e9068cc224613",
+        "predeclaration_amendment_sha256": "sha256:6eb1a9f5fba2ce02fbe601ffa123d5f9fb8a9ecc44c0a7db5c91fefdaf5bf2a6",
+        "integrity_inputs_path": "C:/a/arc3-b001/stage10-authority/integrity-authority-inputs.json",
+        "integrity_inputs_file_sha256": "sha256:ce698e14f962e3c792fc716d8692073627b66454bfa78626d22ea391f0bdfd90",
+        "integrity_inputs_hash": "sha256:bd4a490cc3128a304b087a48642a3bf9a625626292be275809a0a2a4cde324e1",
+        "runtime_identity_sha256": "sha256:2586c59b6b45ef20c633496a60185a6455a188e074ebcbba3734b265e0b04318",
+        "launcher_sha256": "sha256:99bbec125a2d2ce19b6257324a5a5b70539a64c9fd7b9724c6b65dcba8a6d276",
+        "actual_process_executable_sha256": "sha256:4eb51b7d5963d9e0dc356bd209b1d55360c73db39d8d458ceee084610ca48fd1",
+        "supervisor_import_identity_sha256": "sha256:b2667298fa1bc10c31c066378eabaff501e8cc56599531d704f5e7aeb4ac42f6",
+        "predicates": "PASS:10/10",
+        "suite_count": 9,
+        "attempt_root_created": false,
+        "output_created": false,
+        "independent_audit": "PASS:canonical+self-hash+source+runtime+106-module-hashes+23-callable-origins+stage09-evidence-only-authority+zero-attempt-paths",
+        "holdout_manifest_or_assets_opened": false
+      },
+      "attempt_terminal": "C:/a/arc3-b001/artifacts/stage10/robustness-regression-attempt-01.json",
+      "attempt_terminal_file_bytes": 50168,
+      "attempt_terminal_file_sha256": "sha256:e6e668c57b88f9c7a5d9efe74050e24cf4746a6875e3f74b10c7929183ed982f",
+      "attempt_terminal_artifact_core_hash": "sha256:2ecfd9bd24c2cd1e446384e66b3378c8dc6fb0c0b19ecabc133abf2eb8bd2d3d",
+      "attempt_infrastructure_failure": "suite-failed-infrastructure:competition-integrity",
+      "attempt_result": "1-of-9-suites-completed+8-unstarted+child-exit-2+missing-required-expected-commit+0-network-attempts",
+      "attempt_invocation_ledger_sha256": "sha256:9bb13fdddc8c31a2bc81b56102dddb57207ec546fe1c525e7b5947c046a68f07",
+      "attempt_graph_manifest_sha256": "sha256:f79b2567fa2acc6e7d813a5dfd2b3831673032de9f9b118dcccdf443b8b79143",
+      "attempt_graph_file_count": 9,
+      "attempt_graph_total_bytes": 90692,
+      "acceptance": "docs/evidence/001-10-robustness-regression.json",
+      "acceptance_sha256": "sha256:297aa155f6df2d6b392a2090e489e97e46e8119db04250e1baff4723acc3b208",
+      "acceptance_evidence_hash": "sha256:027501916c038014a5558f9ccadb24c8d2d5b9d77a75899f16e4c32a412a72b8",
+      "report": "docs/reports/001-10-robustness-regression.md",
+      "report_sha256": "sha256:45e592b43db3f8d0c0295172e83144f27f229fd783f314f2ad540486d1f4172b",
+      "robustness_regression_result": "UNAVAILABLE",
+      "baseline_ablation_comparison": "UNAVAILABLE",
+      "resource_profile": "UNAVAILABLE",
+      "public_environment_opened": false,
+      "public_holdout_consumed": false
+    },
+    "11": {
+      "status": "PASS",
+      "label": "synthetic",
+      "claim": "HOLDOUT_NOT_EARNED",
+      "decision": "HOLDOUT_NOT_EARNED",
+      "execution_commit": "262b5f1c443d2df28b61ecab19ada760943f5f67",
+      "execution_tree": "235442ff3f5e2918b31ab84a55740b1ad60c4926",
+      "source_origin_failure": "docs/evidence/001-11-source-origin-failure.json",
+      "source_origin_failure_sha256": "sha256:11451dce9b8e7f27a1868b82fc2e6fde5a642f61e40d674c3f481b9644e723ba",
+      "acceptance": "docs/evidence/001-11-holdout-gate.json",
+      "acceptance_sha256": "sha256:edf01ae6c69a7ce4f862d68bb5a3660cc1b2ce805725d88edd11e1b372a48dcd",
+      "external_canonical_path": "C:/a/arc3-b001/artifacts/stage11/holdout-gate.json",
+      "external_canonical_file_sha256": "sha256:edf01ae6c69a7ce4f862d68bb5a3660cc1b2ce805725d88edd11e1b372a48dcd",
+      "artifact_core_hash": "sha256:7fc63e47bbc601c98daa5c204c809ac216d92cb848f45f493a89fbfb682988bc",
+      "report": "docs/reports/001-11-holdout-gate.md",
+      "report_sha256": "sha256:93497587c83770ef244ef3aba1e5a08df5d16846430d047aae30a8ddee61b271",
+      "criteria_passed": 0,
+      "criteria_total": 5,
+      "independent_verification": "PASS:HOLDOUT_NOT_EARNED",
+      "holdout_identities_loaded": 0,
+      "holdout_manifest_parsed": false,
+      "public_environment_opened": false,
+      "public_holdout_consumed": false
+    },
+    "12": {
+      "status": "PASS",
+      "label": "synthetic",
+      "claim": "SEALED_NONCONSUMPTION_ONLY",
+      "decision": "HOLDOUT_NOT_EARNED",
+      "acceptance": "docs/evidence/001-12-holdout-nonconsumption.json",
+      "acceptance_sha256": "sha256:52005ea16e7f0413f33ad61fed651ee7d8f79ee7493553a6b1aedff34a69709c",
+      "external_canonical_path": "C:/a/arc3-b001/artifacts/stage12/holdout-nonconsumption.json",
+      "external_canonical_file_sha256": "sha256:52005ea16e7f0413f33ad61fed651ee7d8f79ee7493553a6b1aedff34a69709c",
+      "artifact_core_hash": "sha256:ec9dfe6ffea40c4ecec42888c3872247392768bdbacfa663b484011d774bb24b",
+      "report": "docs/reports/001-12-holdout-nonconsumption.md",
+      "report_sha256": "sha256:65c39b0bd34e6d3513523585e31e8ce985c98edcf65a9d9f1284715928bf494f",
+      "independent_verification": "PASS",
+      "environment_adapter_loaded": false,
+      "environment_actions": 0,
+      "gameplay_opened": false,
+      "holdout_identities_loaded": 0,
+      "holdout_manifest_parsed": false,
+      "public_holdout_consumed": false
+    },
+    "13": {
+      "status": "BLOCKED_EXTERNAL",
+      "label": "synthetic",
+      "claim": "DETERMINISTIC_OFFLINE_PACKAGE_OBSERVED_ON_AVAILABLE_SURFACES",
+      "acceptance": "docs/evidence/001-13-offline-package.json",
+      "acceptance_sha256": "sha256:e5d9ea9bed0d2023273d8843b76892e7fc19f975d0dc4e33f3fb6226e2d53760",
+      "artifact_core_hash": "sha256:f15f0f59304e3f1a22bfeba3c831b43122de00f407e7a50573a99c02d295bf8f",
+      "report": "docs/reports/001-13-offline-package.md",
+      "report_sha256": "sha256:4052d9a4b1739524b1c0301ead709d233a79cd6694aca6c0407e76c41651ac0e",
+      "package_source_commit": "9f25e13b4672ff0ea87544ba20c5677f194cf291",
+      "package_source_tree": "d7fc05c9dff0f63cc97e7b752e1fe59ff7583900",
+      "production_policy_commit": "d6d4bac1e33c9837856c08abcee61bcb14afd34e",
+      "candidate_sha256": "sha256:02326a145d510c017dc04ffd79a61cfe8c46771cbc9e74b7c8f29a9b75756d21",
+      "candidate_bytes": 788070,
+      "candidate_builds": 8,
+      "candidate_byte_identity": "PASS",
+      "available_checks": "PASS:20-per-job",
+      "private_kaggle_surfaces": "BLOCKED_EXTERNAL",
+      "package_hosted_runs": "PASS:32636996137+32636997645:ubuntu+windows",
+      "ordinary_ci_runs": "PASS:32636996144+32636997705:ubuntu+windows",
+      "durable_artifact_root": "C:/a/arc3-b001/artifacts/stage13/final-package-9f25e13-exact",
+      "durable_file_count": 48,
+      "durable_total_bytes": 4263775,
+      "durable_file_record_manifest_sha256": "sha256:2aca4b7e6f1430b33444459470850b05947fedef2c0bfed34d0eb07a69d03295",
+      "secret_findings": 0,
+      "os_containment": "ABSENT",
+      "python_boundary_scope": "Python audit hooks plus guarded selected in-process tests; not OS filesystem/network/process-tree containment",
+      "public_environment_opened": false,
+      "public_holdout_consumed": false,
+      "official_submission": false
+    },
+    "14": {
+      "status": "PASS",
+      "label": "synthetic",
+      "claim": "FINAL_REPRODUCIBILITY_AND_PUBLICATION_SURFACES_VERIFIED",
+      "acceptance": "docs/evidence/001-14-final-verification.json",
+      "acceptance_sha256": "sha256:5d7c9744930391bb38b965034523fcc5562c9db71f56d8c3acef2e989712ff0c",
+      "artifact_core_hash": "sha256:560c1ba1898a9060d2bd9b9051781636a55ba197255d1dfad49a0e054e59ff82",
+      "report": "docs/reports/001-14-final-verification.md",
+      "report_sha256": "sha256:b0419066e3ffb941a7bfd7dd167b1e237f52f0ac960a518862cd40f552140b8a",
+      "evidence_index": "docs/evidence/001-final-evidence-index.json",
+      "evidence_index_sha256": "sha256:eb76fa39ac0d49281ee53b07ca8411635a0f3c054ec76e369ac998128174bd71",
+      "evidence_index_core_hash": "sha256:8ca92473e28aee5a1f04f25b5bfb2f4d0f26963cb1cce88b6bee692ee01be1b8",
+      "package_code_test_freeze_commit": "9f25e13b4672ff0ea87544ba20c5677f194cf291",
+      "clean_clone": "C:/a/arc3-b001-stage14-9f25e13",
+      "clean_clone_verification": "PASS:offline-sync+offline-lock+ruff+format+mypy-strict+1322-tests+17-platform-skips+80-percent-coverage+45-replay-property+doctor",
+      "hosted_verification": "PASS:ordinary-ci+package-ci+push+pull-request+ubuntu+windows",
+      "source_projection": "PASS:NO_CODE_TEST_PACKAGE_CHANGE_AFTER_9f25e13",
+      "git_integrity": "PASS:dangling-unreferenced-objects-only",
+      "secret_findings": 0,
+      "markdown_links": "PASS",
+      "draft_pull_request": "https://github.com/Grativy6/ARC3/pull/5",
+      "pull_request_state": "DRAFT_UNMERGED",
+      "public_holdout_consumed": false,
+      "official_submission": false
+    }
+  },
+  "artifacts": {
+    "stage_00_report": {
+      "path": "docs/reports/001-00-preflight-identity-license.md",
+      "sha256": "323f0ded31ccfb107b6bb2821ec748f27c925b2cff2ec7930a4ee1f4226c03b1"
+    },
+    "stage_00_acceptance": {
+      "path": "docs/evidence/001-00-preflight-acceptance.json",
+      "sha256": "65eb293aff43fb50f7ab5b52bef3af99331fd5f02f8b5197e1f8a10e2a2a68ff"
+    },
+    "operative_license": {
+      "path": "LICENSE",
+      "sha256": "7f433e520d07d56ad14d92e9da9f580771479c30a2bfccc8024eed308f21bbe8"
+    },
+    "license_decision": {
+      "path": "docs/legal/LICENSE-DECISION.md",
+      "sha256": "c79c854fe046551fdc21b94b093d15220728f00b93e1b129dd507edba418444f"
+    },
+    "stage_01_predeclaration": {
+      "path": "docs/evidence/001-01-reproduction-predeclaration.json",
+      "sha256": "7c4594d7164a462adad7abfc131c9d4a24c4c6f27fd9a8b1a1bdb575e34bc804"
+    },
+    "stage_01_acceptance": {
+      "path": "docs/evidence/001-01-reproduction-acceptance.json",
+      "sha256": "80fd11900b8133512b1858f235888289728a59dcb50770d575068823506067be"
+    },
+    "stage_01_report": {
+      "path": "docs/reports/001-01-failure-reproduction.md",
+      "sha256": "4d0595b8f19b291371eb157978fae6d49b5a9114bbda9a3d1efd376c389f6840"
+    },
+    "stage_02_predeclaration": {
+      "path": "docs/evidence/001-02-hot-path-predeclaration.json",
+      "sha256": "c573de083314be601a0bd9e877adf533e1880a61cc1825d91b509d61e15248fb"
+    },
+    "stage_02_acceptance": {
+      "path": "docs/evidence/001-02-hot-path-observability.json",
+      "sha256": "2c5ba3d11b64395703ae2540fe19fc3839c5e32b53244637ca302c003a6b9421"
+    },
+    "stage_02_report": {
+      "path": "docs/reports/001-02-hot-path-observability.md",
+      "sha256": "936385f057d9154e9539e952fbe2258bcf841547042c84541f263ea03e15bf82"
+    },
+    "stage_03_predeclaration": {
+      "path": "docs/evidence/001-03-causal-predeclaration.json",
+      "sha256": "b9f81e93fbd76944dcb2ef9382e4d7da756bfd91e68075a4d7f4930d060f96d1"
+    },
+    "stage_03_acceptance": {
+      "path": "docs/evidence/001-03-causal-bottlenecks.json",
+      "sha256": "42e5bdca00ab87d910fa9c2ddd5219c4b15d4a43ebfd85fd6369f1bf6a5a592a"
+    },
+    "stage_03_report": {
+      "path": "docs/reports/001-03-causal-throughput-diagnosis.md",
+      "sha256": "254e12bc0a7fa24db8f9e3b03ebff694ac1d26e3c52b899a014a809ff19ca645"
+    },
+    "stage_04_predeclaration": {
+      "path": "docs/evidence/001-04-palette-equivariance-predeclaration.json",
+      "sha256": "9df1df67641a642234cde2494b1ac53a55524778284f8af2c0aa0a9d727c6d32"
+    },
+    "stage_04_acceptance": {
+      "path": "docs/evidence/001-04-palette-equivariance.json",
+      "sha256": "eb45275fc82870fde999d7d914534d064568a1605276a52132ed6d0335f94a73"
+    },
+    "stage_04_report": {
+      "path": "docs/reports/001-04-palette-equivariance.md",
+      "sha256": "ab0cd441d0daa1701267256130a7ff99af1e02a006690c2958a84ebf7e6a4c29"
+    },
+    "stage_05_predeclaration": {
+      "path": "docs/evidence/001-05-action-equivariance-predeclaration.json",
+      "sha256": "ec4ed1a8b3b8d4904a38bf4533d9fbd61975cac61aea05d4313d4b6a47119ce2"
+    },
+    "stage_05_acceptance": {
+      "path": "docs/evidence/001-05-action-equivariance.json",
+      "sha256": "7d9a72d9e222944a60cf92cb2b3bd5db2e33f46d5a64be4d22f91df224adf85a"
+    },
+    "stage_05_report": {
+      "path": "docs/reports/001-05-action-equivariance.md",
+      "sha256": "210d3e473fb12acc5a1d07344625c47c8ae4256ca377a2921688fe842dd65abf"
+    },
+    "stage_06_predeclaration": {
+      "path": "docs/evidence/001-06-rule-change-predeclaration.json",
+      "sha256": "0bca5f32986c79008cf6ee01a83867262cda591f477239a5b8e9bccd90e37434"
+    },
+    "stage_06_failed_infrastructure_attempt_01": {
+      "path": "docs/evidence/001-06-failed-infrastructure-attempt-01.json",
+      "sha256": "749bdf1673b44fe5272ac4445bb21299b54f7835634ab87e74e86d6d274c3029"
+    },
+    "stage_06_preflight_058_failed_mechanism": {
+      "path": "docs/evidence/001-06-preflight-058-failed-mechanism.json",
+      "sha256": "822c690a02c65e7c6684bcf461f48824fb0f2d61e4b9114a94618a801c77f3e4"
+    },
+    "stage_06_acceptance": {
+      "path": "docs/evidence/001-06-rule-change-reopening.json",
+      "sha256": "0a7b98fbabd5df8df8cf63351d6629903ee9ae9b85f6b1b1d45776fe815301dd"
+    },
+    "stage_06_report": {
+      "path": "docs/reports/001-06-rule-change-reopening.md",
+      "sha256": "a7cd087a98e49862241d7542db4d00a37a52a16f73f6c3cffded6515bd7ee25c"
+    },
+    "stage_07_predeclaration": {
+      "path": "docs/evidence/001-07-retrodiction-predeclaration.json",
+      "sha256": "d4eb82f2e0c04e1c94be4d6fbaa8862aa808cc07932042a02d0c5fbcc02dc608"
+    },
+    "stage_07_predeclaration_amendment_01": {
+      "path": "docs/evidence/001-07-retrodiction-predeclaration-amendment-01.json",
+      "sha256": "5c8ff0c91602d86ecaadd61197dfb80681f618ad4e6c810c26933ca337fdcc3b"
+    },
+    "stage_07_premeasurement_audit": {
+      "path": "docs/evidence/001-07-premeasurement-audit.json",
+      "sha256": "c0520173e58dbc1b994169e858e09a36d0f03003eb5953e2f0583d8c93a4478c"
+    },
+    "stage_07_failed_infrastructure_attempt_01": {
+      "path": "docs/evidence/001-07-failed-infrastructure-attempt-01.json",
+      "sha256": "3c4bb0d9599907d48cb6193082732e2244dcc40e8c6ca23dfa7e237485a3657e"
+    },
+    "stage_07_acceptance": {
+      "path": "docs/evidence/001-07-retrodiction-decision.json",
+      "sha256": "35555cc69e9f35091dd3a18ead1822b0b2afde5847f045d4901b7491227425e4"
+    },
+    "stage_07_report": {
+      "path": "docs/reports/001-07-retrodiction-decision.md",
+      "sha256": "53b43726a1e2205df157d1fe4cb3005b265fa23737f9a581792ed41636dc21e8"
+    },
+    "stage_08_predeclaration": {
+      "path": "docs/evidence/001-08-two-speed-predeclaration.json",
+      "sha256": "3342b6e2635c0606391c9aea02b2fec0cf4c5642a3d38b95768a1b77b4520878"
+    },
+    "stage_08_acceptance": {
+      "path": "docs/evidence/001-08-two-speed-controller.json",
+      "sha256": "0134c9e5b7acea716f790088cb59109eded7857ce83fda004ea1b88be2eb92ac"
+    },
+    "stage_08_report": {
+      "path": "docs/reports/001-08-two-speed-controller.md",
+      "sha256": "e6aae8fbf30df955770587c4962b5630b0a2a72f950b4bc5a290d48bb9758f03"
+    },
+    "stage_09_predeclaration": {
+      "path": "docs/evidence/001-09-development-recovery-predeclaration.json",
+      "sha256": "dce14e30d47aff7ac99551ad462c9202113dcd44c591dacd410b86363ddad348"
+    },
+    "stage_09_predeclaration_amendment": {
+      "path": "docs/evidence/001-09-development-recovery-predeclaration-amendment-v0.1.json",
+      "sha256": "137532b196ffcbd6bbeb07c8ca5ef716c0987f04467663efb6ce1da8508d3084"
+    },
+    "stage_09_runtime_binding": {
+      "path": "docs/evidence/001-09-runtime-binding.json",
+      "sha256": "6f9230ae8b3560cddbf605814985bf404d6d2cdea83dbdfc44b30c2cc6a476f1"
+    },
+    "stage_09_production_package_integrity_receipt": {
+      "path": "C:/a/arc3-b001/artifacts/stage09/policy-integrity-d6d4bac-package-only.json",
+      "sha256": "173c0a6c3aee154df67920227e3b5303c59682186a2254a220e24dd5589269fe"
+    },
+    "stage_09_final_harness_preflight": {
+      "path": "docs/evidence/001-09-final-harness-preflight.json",
+      "sha256": "e9aa3a19941640255ff0983d81177599f1c2b813854b72c15590e70df26a8f15"
+    },
+    "stage_09_acceptance": {
+      "path": "docs/evidence/001-09-development-recovery.json",
+      "sha256": "e44473f2335fee5ccf8bd4f911a0d615caf92f9696375ebe6e57697e5622b3b8"
+    },
+    "stage_09_report": {
+      "path": "docs/reports/001-09-development-recovery.md",
+      "sha256": "7b8abb0f122a9e95737e6f502a693aa6e73b2fcfb26824b44d93d6cc7de99c2e"
+    },
+    "stage_10_predeclaration": {
+      "path": "docs/evidence/001-10-robustness-regression-predeclaration-v0.2.json",
+      "sha256": "e056eea0d4a6664996ae9078e15b4cdddb5f6c40d5b770540b8e9068cc224613"
+    },
+    "stage_10_predeclaration_amendment": {
+      "path": "docs/evidence/001-10-robustness-regression-predeclaration-amendment-v0.1.json",
+      "sha256": "6eb1a9f5fba2ce02fbe601ffa123d5f9fb8a9ecc44c0a7db5c91fefdaf5bf2a6"
+    },
+    "stage_10_acceptance": {
+      "path": "docs/evidence/001-10-robustness-regression.json",
+      "sha256": "297aa155f6df2d6b392a2090e489e97e46e8119db04250e1baff4723acc3b208"
+    },
+    "stage_10_report": {
+      "path": "docs/reports/001-10-robustness-regression.md",
+      "sha256": "45e592b43db3f8d0c0295172e83144f27f229fd783f314f2ad540486d1f4172b"
+    },
+    "stage_11_source_origin_failure": {
+      "path": "docs/evidence/001-11-source-origin-failure.json",
+      "sha256": "11451dce9b8e7f27a1868b82fc2e6fde5a642f61e40d674c3f481b9644e723ba"
+    },
+    "stage_11_acceptance": {
+      "path": "docs/evidence/001-11-holdout-gate.json",
+      "sha256": "edf01ae6c69a7ce4f862d68bb5a3660cc1b2ce805725d88edd11e1b372a48dcd"
+    },
+    "stage_11_external_canonical": {
+      "path": "C:/a/arc3-b001/artifacts/stage11/holdout-gate.json",
+      "sha256": "edf01ae6c69a7ce4f862d68bb5a3660cc1b2ce805725d88edd11e1b372a48dcd"
+    },
+    "stage_11_report": {
+      "path": "docs/reports/001-11-holdout-gate.md",
+      "sha256": "93497587c83770ef244ef3aba1e5a08df5d16846430d047aae30a8ddee61b271"
+    },
+    "stage_12_acceptance": {
+      "path": "docs/evidence/001-12-holdout-nonconsumption.json",
+      "sha256": "52005ea16e7f0413f33ad61fed651ee7d8f79ee7493553a6b1aedff34a69709c"
+    },
+    "stage_12_external_canonical": {
+      "path": "C:/a/arc3-b001/artifacts/stage12/holdout-nonconsumption.json",
+      "sha256": "52005ea16e7f0413f33ad61fed651ee7d8f79ee7493553a6b1aedff34a69709c"
+    },
+    "stage_12_report": {
+      "path": "docs/reports/001-12-holdout-nonconsumption.md",
+      "sha256": "65c39b0bd34e6d3513523585e31e8ce985c98edcf65a9d9f1284715928bf494f"
+    },
+    "stage_13_acceptance": {
+      "path": "docs/evidence/001-13-offline-package.json",
+      "sha256": "e5d9ea9bed0d2023273d8843b76892e7fc19f975d0dc4e33f3fb6226e2d53760"
+    },
+    "stage_13_report": {
+      "path": "docs/reports/001-13-offline-package.md",
+      "sha256": "4052d9a4b1739524b1c0301ead709d233a79cd6694aca6c0407e76c41651ac0e"
+    },
+    "stage_13_package": {
+      "path": "C:/a/arc3-b001/artifacts/stage13/final-package-9f25e13-exact/package-a/arc3-kaggle-candidate.zip",
+      "sha256": "02326a145d510c017dc04ffd79a61cfe8c46771cbc9e74b7c8f29a9b75756d21"
+    },
+    "stage_14_acceptance": {
+      "path": "docs/evidence/001-14-final-verification.json",
+      "sha256": "5d7c9744930391bb38b965034523fcc5562c9db71f56d8c3acef2e989712ff0c"
+    },
+    "stage_14_report": {
+      "path": "docs/reports/001-14-final-verification.md",
+      "sha256": "b0419066e3ffb941a7bfd7dd167b1e237f52f0ac960a518862cd40f552140b8a"
+    },
+    "final_evidence_index": {
+      "path": "docs/evidence/001-final-evidence-index.json",
+      "sha256": "eb76fa39ac0d49281ee53b07ca8411635a0f3c054ec76e369ac998128174bd71"
+    },
+    "research_report": {
+      "path": "docs/research/ARC3-Build-001-report.md",
+      "sha256": "3e641e568660275ad0f5d52119fdd8fd8474454edde06f9dd1972eb68b1e58ef"
+    },
+    "publication_draft": {
+      "path": "docs/research/ARC3-Build-001-publication-draft.md",
+      "sha256": "b73458bc86f8b520f27875813fde7ee9856fa7fcf780bb566b5fa866e621ee8a"
+    },
+    "review_packet": {
+      "path": "docs/review/ARC3-Build-001-review-packet.md",
+      "sha256": "0b90f83d88e603d156e20d99e8dc7874397d363811f2ce2620d7b716ee4bd73a"
+    },
+    "owner_handoff": {
+      "path": "docs/handoffs/001-local-public-recovery.md",
+      "sha256": "eee320d0a2d95c1af9a505aca711fe98f56082a15dfc0c24d102bdad2ea9d90b"
+    },
+    "result_index": {
+      "path": "docs/research/data/ARC3-Build-001-results.json",
+      "sha256": "3b290133409781a7cbdcc5f6f230d379d4d28fc77a20725934b0275712f53391"
+    },
+    "stage_table": {
+      "path": "docs/research/data/ARC3-Build-001-stage-results.csv",
+      "sha256": "331d404cd16769389b26c83e0b0d2f8bfba8c2b5eb5bf5d2e83428e7d15f28d4"
+    },
+    "baseline_ablation_table": {
+      "path": "docs/research/data/ARC3-Build-001-baseline-ablation.csv",
+      "sha256": "7bfee70ca210b8835537a1131ddc68b98cbb9b8aa2318a99fda31f6394bf027c"
+    },
+    "mechanism_table": {
+      "path": "docs/research/data/ARC3-Build-001-mechanism-results.csv",
+      "sha256": "7ca3bd747dec8889832069208334c9bee8ed0587b417402648f6ecff7d7d5489"
+    },
+    "stage_figure": {
+      "path": "docs/research/figures/ARC3-Build-001-stage-status.svg",
+      "sha256": "4462c43b53b659f7c9cb1fccc9edef4410b2b1eaf0bb86ce6cb2ea777a8aaf18"
+    }
+  },
+  "blocked_items": [
+    "B-001-0001: local-public recovery remains unmeasured",
+    "B-001-0003: full typed rule-change reopening remains failed",
+    "B-001-0004: retrodiction benefit/cost remains scientifically unresolved",
+    "B-001-0005: holdout and hidden/private generalization remain unmeasured",
+    "B-001-0006: full competition runtime remains unmeasured",
+    "B-001-0007: dynamic organizer pages remain mutable",
+    "B-001-0055: package evidence is Python-audit scoped and lacks OS/native containment",
+    "B-001-0068: exact private Kaggle wheel, framework-input, gateway, and scorer surfaces are unavailable"
+  ],
+  "next_action": "Review draft PR #5 and decide whether to merge it.",
+  "notes": [
+    "Build 000 ledgers and reports are immutable historical evidence and are not overwritten by Build 001.",
+    "The owner explicitly approved MIT-0 for ARC3 first-party source in the active Build 001 instruction.",
+    "No public-holdout episode may be opened before the Stage 11 gate is earned.",
+    "Two dynamic organizer-page hashes drifted on 2026-08-22; executable and static documentation pins remain unchanged and the drift is not silently adopted.",
+    "The final documentation commit cannot embed its own SHA; the durable prior checkpoint is recorded here, and the pushed final tip plus PR head are verified externally after commit.",
+    "Post-9f25e13 descendants are documentation/evidence only; production, tests, package machinery, lock, license, notices, and upstream identities are unchanged."
+  ]
+}

@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from dataclasses import replace
+
+from arc3.trace.canonical import sha256_json
 from arc3.types import ActionName, ActionRequest, Coordinate
 from arc3.world_model import (
     AttachmentMode,
@@ -117,3 +120,16 @@ def test_attachment_follows_parent_motion_and_can_be_detached() -> None:
     assert moved.entity("parent").anchor == Cell(2, 1)  # type: ignore[union-attr]
     assert moved.entity("child").anchor == Cell(2, 2)  # type: ignore[union-attr]
     assert detached.attachments == ()
+
+
+def test_symbolic_state_identity_is_precomputed_without_entering_semantics() -> None:
+    state = SymbolicState(
+        6,
+        6,
+        (entity("p", "piece", 1, 1, color=2),),
+        facts=("ready",),
+    )
+
+    assert state.state_id == sha256_json(state.to_dict())
+    assert state == replace(state)
+    assert state.state_id == replace(state).state_id

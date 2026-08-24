@@ -200,3 +200,79 @@ def test_observation_schema_validates_frame_receipt() -> None:
             code_identity=CODE,
             previous_event_hash=None,
         )
+
+
+def test_reasoning_selection_requires_complete_typed_trigger_projection() -> None:
+    source_event_id = "E-OBSERVATION"
+    payload = {
+        "action_registry_identity": "sha256:" + "2" * 64,
+        "budget_limits": {"cache_capacity": 256, "search_nodes": 64},
+        "cache_projection_hash": "sha256:" + "3" * 64,
+        "cadence_mode": "TWO_SPEED",
+        "configuration_hash": "sha256:" + "4" * 64,
+        "goal_id": None,
+        "goal_revision": 0,
+        "mechanics_epoch_id": "mechanics-epoch:L0:0000",
+        "observation_event_id": source_event_id,
+        "ordered_triggers": ["STARTUP_UNKNOWN_ACTION"],
+        "path": "DEEP",
+        "plan_id": None,
+        "schema": "arc3.reasoning-cadence-selection.v0.1",
+        "state_id": "state:initial",
+        "trigger_source_event_ids": [source_event_id],
+        "trigger_sources": [
+            {
+                "source_event_ids": [source_event_id],
+                "trigger": "STARTUP_UNKNOWN_ACTION",
+            }
+        ],
+    }
+    selected = TraceEvent.create(
+        run_id="run-1",
+        episode_id="episode-1",
+        game_id="synthetic-redacted",
+        level_index=0,
+        step_index=0,
+        event_type="reasoning.path_selected",
+        source=SOURCE,
+        scope="episode",
+        payload=payload,
+        code_identity=CODE,
+        previous_event_hash=None,
+    )
+    assert selected.payload["trigger_source_event_ids"] == [source_event_id]
+
+    with pytest.raises(ARC3ValidationError, match="requires a typed trigger"):
+        TraceEvent.create(
+            run_id="run-1",
+            episode_id="episode-1",
+            game_id="synthetic-redacted",
+            level_index=0,
+            step_index=0,
+            event_type="reasoning.path_selected",
+            source=SOURCE,
+            scope="episode",
+            payload={
+                **payload,
+                "ordered_triggers": [],
+                "trigger_source_event_ids": [],
+                "trigger_sources": [],
+            },
+            code_identity=CODE,
+            previous_event_hash=None,
+        )
+
+    with pytest.raises(ARC3ValidationError, match="flattened trigger sources"):
+        TraceEvent.create(
+            run_id="run-1",
+            episode_id="episode-1",
+            game_id="synthetic-redacted",
+            level_index=0,
+            step_index=0,
+            event_type="reasoning.path_selected",
+            source=SOURCE,
+            scope="episode",
+            payload={**payload, "trigger_source_event_ids": ["E-BOGUS"]},
+            code_identity=CODE,
+            previous_event_hash=None,
+        )

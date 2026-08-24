@@ -129,13 +129,36 @@ class PredictionBook:
         dependent_plan_ids: tuple[str, ...] = (),
     ) -> PredictionReceipt:
         prediction = ensemble.predict(state, action)
+        return self.emit_prediction(
+            action_decision_id=action_decision_id,
+            prediction=prediction,
+            dependent_plan_ids=dependent_plan_ids,
+        )
+
+    def emit_prediction(
+        self,
+        *,
+        action_decision_id: str,
+        prediction: EnsemblePrediction,
+        dependent_plan_ids: tuple[str, ...] = (),
+    ) -> PredictionReceipt:
+        """Issue fresh authority from one typed, possibly cached prediction.
+
+        A cache may retain only the pure :class:`EnsemblePrediction`.  Receipt
+        identity and pending-match authority are always minted here for the
+        current action decision, so cached computation can never replay an old
+        receipt or consequence boundary.
+        """
+
+        if not action_decision_id.strip():
+            raise WorldModelError("prediction requires a non-empty action decision ID")
         content: dict[str, JSONValue] = {
             "action_decision_id": action_decision_id,
-            "before_state_id": state.state_id,
-            "action": action.name.value,
+            "before_state_id": prediction.before_state_id,
+            "action": prediction.action.name.value,
             "coordinate": (
-                [action.coordinate.x, action.coordinate.y]
-                if action.coordinate is not None
+                [prediction.action.coordinate.x, prediction.action.coordinate.y]
+                if prediction.action.coordinate is not None
                 else None
             ),
             "prediction_ids": [
@@ -149,8 +172,8 @@ class PredictionBook:
         receipt = PredictionReceipt(
             receipt_id=f"prediction-receipt:{digest.removeprefix('sha256:')[:24]}",
             action_decision_id=action_decision_id,
-            before_state_id=state.state_id,
-            action=action,
+            before_state_id=prediction.before_state_id,
+            action=prediction.action,
             prediction=prediction,
             dependent_plan_ids=tuple(sorted(set(dependent_plan_ids))),
         )

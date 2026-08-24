@@ -1,0 +1,59 @@
+{
+  "schema": "arc3.build-001.stage-09-predeclaration-amendment.v0.1",
+  "recorded_at": "2026-08-23T04:50:00Z",
+  "result_state": "READY_NOT_EXECUTED",
+  "reason": "Before results, complete reachability invalidated the original Build 001 package-integrity premise; the premeasurement repair froze a generic pure-normalization policy.",
+  "claim_boundary": "Source-identity and package-integrity repair only; no development result, public-holdout access, or hidden-game claim.",
+  "original_predeclaration": {
+    "path": "docs/evidence/001-09-development-recovery-predeclaration.json",
+    "file_sha256": "sha256:dce14e30d47aff7ac99551ad462c9202113dcd44c591dacd410b86363ddad348",
+    "predeclaration_core_hash": "sha256:b32f91fa228a7f1f2c2bbfee23e8fafc3a9affc18f9b0d3cbf9e050b0e498f3c",
+    "preserved_unchanged": true
+  },
+  "override_scope": [
+    "build_001_policy_source",
+    "build_001_package_integrity_receipt"
+  ],
+  "build_001_policy_source": {
+    "prior_commit": "2e78c258cfbee8be62462f61ed08ad04c00a8934",
+    "prior_tree": "4145356c116944bbd7c0c412771de9179ba22efe",
+    "prior_first_party_source_sha256": "sha256:4dc8b7d7802be6b97427e12fe550bd4a6832ef30f6acdc4b509294a5a1add7f1",
+    "commit": "d6d4bac1e33c9837856c08abcee61bcb14afd34e",
+    "tree": "dd8e82e4b34337a208110929e3f5f8079d1e0a18",
+    "first_party_source_sha256": "sha256:8f0de1a9c2c88761951ba2bcd69f2612bedfa0cc4226f44f1ed272b54b9023a8",
+    "policy_characterization": "generic-pure-normalization-no-game-identity-table"
+  },
+  "build_001_package_integrity_receipt": {
+    "schema": "arc3.integrity.receipt.v0.2",
+    "integrity_scope": "package-only-no-public-identifiers",
+    "full_competition_integrity_status": "NOT_EVALUATED_PUBLIC_IDENTIFIERS",
+    "git_commit": "d6d4bac1e33c9837856c08abcee61bcb14afd34e",
+    "file_sha256": "sha256:173c0a6c3aee154df67920227e3b5303c59682186a2254a220e24dd5589269fe",
+    "receipt_sha256": "sha256:3e29edd69d7999760c53a80de474d701f9124faed73ccc1b9047adbf9a766702"
+  },
+  "unchanged_protocol": {
+    "development_partition_hash": "sha256:bb22711c59555965de0a96f05d55272e0c31fba755825d849869137953a21d80",
+    "development_identity_count": 12,
+    "development_identifier_list_hash": "sha256:09e055dd9839b98b3020086ef437e19d368aecc5b0285784849814bef0436888",
+    "expansion_order": ["development_games", "seeds", "variants"],
+    "variant_order": ["build_000_random", "build_000_cycle", "build_000_full", "build_001_full"],
+    "cell_count": 96,
+    "seeds": [7, 11],
+    "max_actions": 80,
+    "max_resets": 8,
+    "worker_wall_seconds": 120.0,
+    "overall_active_wall_seconds": 14400.0,
+    "decision_gate_hash": "sha256:72f772b412ff791319bc6a80d2d2d85135ec3f3b22d3dc36330879f7754d5094",
+    "holdout_status": "SEALED_UNCONSUMED",
+    "original_matrix_hash": "sha256:5c4c1d4a1d23bd68822c91a5c82dcbbabad7d0ca9ea0ab298a2df37e149b868b",
+    "effective_matrix_hash": "sha256:344b54309e49d6b59dfdb9641068b4099be4a67974aecec6d2c200c11747297f"
+  },
+  "prior_execution_state": {
+    "attempt_output_existed": false,
+    "work_root_existed": false,
+    "exposure_ledger_existed": false,
+    "stage09_cells_exposed": 0,
+    "stage09_gameplay_events": 0
+  },
+  "amendment_core_hash": "sha256:36104da8f7ea6532ab1ea7cf6f8df16760d1236f8f551d7bef2239f7d1ab93a4"
+}

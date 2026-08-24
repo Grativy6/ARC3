@@ -113,10 +113,18 @@ class RationaleCategory(StrEnum):
     """Concise decision categories suitable for an auditable trace."""
 
     DISCRIMINATE_MODELS = "discriminate_models"
+    REEXPLORATION = "reexploration"
     FOLLOW_PLAN = "follow_plan"
     MANDATORY_RESET = "mandatory_reset"
     FAULT_FALLBACK = "fault_fallback"
     BASELINE = "baseline"
+
+
+class DisplacementEvidenceKind(StrEnum):
+    """Receipt status of one interpreted mover displacement."""
+
+    DIRECT_OBSERVATION = "direct-observation"
+    WRAP_TOPOLOGY_CANDIDATE = "wrap-topology-candidate"
 
 
 @dataclass(frozen=True, slots=True, order=True)

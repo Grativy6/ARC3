@@ -41,6 +41,7 @@ class GoalLifecycleEvent:
     new_status: GoalStatus
     rank_after: int
     summary: str
+    record: GoalRecord
 
     def to_trace_payload(self) -> dict[str, JSONValue]:
         return {
@@ -53,6 +54,7 @@ class GoalLifecycleEvent:
             "rank_after": self.rank_after,
             "weight_kind": "uncalibrated_rank",
             "summary": self.summary,
+            "record": self.record.to_dict(),
         }
 
 
@@ -110,6 +112,7 @@ class GoalRegistry:
                 new_status=record.status,
                 rank_after=record.rank,
                 summary=summary,
+                record=record,
             )
         )
 

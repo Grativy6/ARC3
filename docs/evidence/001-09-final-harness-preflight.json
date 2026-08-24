@@ -1,0 +1,72 @@
+{
+  "schema": "arc3.build-001.stage-09-final-harness-preflight.v0.1",
+  "recorded_at": "2026-08-23T08:39:51.1944578Z",
+  "status": "PASS",
+  "result_state": "READY_NOT_EXECUTED",
+  "evidence_label": "local-public",
+  "claim_boundary": "Non-playing source, authority, asset-identity, runtime, and predecessor verification only. This receipt supplies no development-recovery, holdout, private-platform, or hidden-game generalization result.",
+  "frozen_harness": {
+    "commit": "10c2c7878a0a13ee6c7eb3c0c9aa36fc98fedefb",
+    "tree": "18a44bfb068f98fcfb9c0b674cc9c8824fc240cd",
+    "root": "C:/a/arc3-stage09-harness-10c2c78",
+    "detached": true,
+    "dirty_worktree": false,
+    "binding_hash": "sha256:a0e0f85f0e3f0a2cf3596f53218ae9f5e93f87c5452258ee0bccb03e6dff5287",
+    "bootstrap_sha256": "sha256:56c06c4f805a349a602a77f08efb038d450ce15195be56f3ac9219c354213ceb",
+    "supervisor_sha256": "sha256:4167e5074dd3ad476ba72cf6887c0c969bd26a59057b65e76ff244b45946ae3f",
+    "worker_sha256": "sha256:493b5ae70e86bdcd03f90d94557879c198b9c174c7d45c2085cd396f60de8b37",
+    "protocol_sha256": "sha256:b5b6ef034f8471bd0996c501af5d7a07b95b1774cba5eb92d14c9f396688f5bb",
+    "runtime_binding_file_sha256": "sha256:6f9230ae8b3560cddbf605814985bf404d6d2cdea83dbdfc44b30c2cc6a476f1"
+  },
+  "production_policy": {
+    "commit": "d6d4bac1e33c9837856c08abcee61bcb14afd34e",
+    "tree": "dd8e82e4b34337a208110929e3f5f8079d1e0a18",
+    "first_party_source_sha256": "sha256:8f0de1a9c2c88761951ba2bcd69f2612bedfa0cc4226f44f1ed272b54b9023a8",
+    "development_scan": "PASS:111-files+0-raw+0-historical+0-blocking",
+    "package_only_receipt_file_sha256": "sha256:173c0a6c3aee154df67920227e3b5303c59682186a2254a220e24dd5589269fe",
+    "package_only_receipt_sha256": "sha256:3e29edd69d7999760c53a80de474d701f9124faed73ccc1b9047adbf9a766702"
+  },
+  "build_000_comparator": {
+    "commit": "90ecf7267d5bb23d751d6f7ce3e8aa75f2f1a130",
+    "tree": "0cf6e00b2fcc399e7a99a62c20e91bb84d485f13",
+    "first_party_source_sha256": "sha256:2112c390ac62432270a98fdcf6067b02c968b4139d3ee17c68bcd1d21842109c",
+    "development_scan": "PASS:104-files+3-exact-historical+0-blocking",
+    "historical_limitation_profile": "frozen-build-000-official-sdk-boundary-v0.1",
+    "historical_limitation_profile_sha256": "sha256:c4e8be9d9dc2b840f0c72d712a5887970df6f34b77e81b0e38840cfee14f32ed"
+  },
+  "preflight": {
+    "schema": "arc3.build-001.stage-09-preflight.v0.5",
+    "exit_code": 0,
+    "preflight_hash": "sha256:442b9a1f7d2d751bb3d72f7e9367550fcac2fc90b866ad5bbeb3a8270db1ef5f",
+    "predicate_count": 14,
+    "all_predicates_passed": true,
+    "prior_authority_schema": "arc3.build-001.stage-09-prior-authority.v0.3",
+    "prior_authority_hash": "sha256:635b6377718ab98dfe636f9e465e69f5828da75b09235aea07289336f77dd841",
+    "prior_authority_passed": true,
+    "runtime_observation_hash": "sha256:d53daf99344e9b696a2fdcae3a174ece19691ef49f30b0d8f6daad63f53a5b91",
+    "environment_cache_identity_hash": "sha256:fb36f1171a8a7956145726c456dbb0c517bbe45cb6e7478ad7c300e3dec4e8fb",
+    "gameplay_opened": false,
+    "stage09_exposure_event_count": 0,
+    "holdout": {
+      "status": "SEALED_UNCONSUMED",
+      "identities_loaded": 0,
+      "manifest_loaded_as_metadata": false,
+      "public_holdout_gameplay_events": 0
+    }
+  },
+  "official_mutable_paths": {
+    "attempt_output_existed": false,
+    "work_root_existed": false,
+    "exposure_ledger_existed": false,
+    "recordings_root_existed": false
+  },
+  "verification": {
+    "integrated_focused_tests": "PASS:168+1-environment-symlink-skip+42.67s",
+    "comparator_profile_tests": "PASS:152+1-environment-symlink-skip",
+    "ruff": "PASS:4-files",
+    "strict_mypy": "PASS:2-source-files",
+    "exact_package_plan_binding_tests": "PASS:16",
+    "independent_audit": "PASS:production-zero-findings+comparator-exact-three-historical+hosted-and-moved-adversarial-rejections"
+  },
+  "evidence_hash": "sha256:4c356663c1f14ecc4e04f8f40756f6f517d0b4e243726b1355ec9b52b1aeb892"
+}

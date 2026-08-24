@@ -103,7 +103,10 @@ class PlanProblem:
             or not self.goal_revision.strip()
         ):
             raise PlanningError("problem and goal identities must be non-empty")
-        actions = tuple(sorted(set(self.available_actions), key=action_key))
+        # The caller supplies an evidence-ranked semantic order. Re-sorting by
+        # the opaque wire handle here would reintroduce action-ID semantics at
+        # the final planner boundary, so deduplicate without changing order.
+        actions = tuple(dict.fromkeys(self.available_actions))
         if not actions:
             raise PlanningError("a plan problem requires at least one available action")
         if not 0.0 <= self.completion_likelihood <= 1.0:

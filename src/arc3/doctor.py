@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
-import platform
+import os
 import sys
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -100,7 +100,7 @@ def _filesystem_check() -> DoctorCheck:
         passed=passed,
         required=True,
         summary="working directory is readable" if passed else "working directory unavailable",
-        details={"path": str(working_directory), "platform": platform.platform()},
+        details={"path": str(working_directory), "platform": f"{os.name}:{sys.platform}"},
     )
 
 

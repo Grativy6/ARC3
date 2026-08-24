@@ -1,0 +1,243 @@
+{
+  "schema": "arc3.build-001.stage-08-two-speed-predeclaration.v0.1",
+  "status": "FROZEN_PREIMPLEMENTATION",
+  "created_at": "2026-08-22T19:00:22.4554283Z",
+  "workflow": "docs/workflows/001-local-public-failure-recovery.md",
+  "objective": "Reduce median per-action controller wall time on the already exposed Build 001 reproduction surface while preserving immutable evidence, deterministic replay, bounded deep reasoning, and the frozen synthetic mechanism floors.",
+  "source_freeze": {
+    "baseline_commit": "d0052555e721453746e4c443efea441da2cb4789",
+    "baseline_tree": "37cb602a2aa9fa61ec20eee84eb8c226bd8bc432",
+    "build_000_production_commit": "90ecf7267d5bb23d751d6f7ce3e8aa75f2f1a130",
+    "stage_07_unique_attempt_commit": "f683dbc672213e804ddc6120b0be2762e6c66a08",
+    "resolution": "The implementation and measurement commits descend from the baseline above. The unique Stage 07 attempt is never rerun, resumed, completed, or overwritten.",
+    "permitted_changes": [
+      "typed two-speed cadence, receipts, checkpoint state, and pure caches",
+      "budget-derived mechanics transition capacity",
+      "failure-preserving public evaluator cleanup and sealing",
+      "tests and a fail-closed Stage 08 measurement harness"
+    ]
+  },
+  "architectural_contract": {
+    "always_on_evidence_fold": [
+      "raw returned consequence and observation receipts",
+      "pending-prediction assessment",
+      "frame delta and correspondence",
+      "incremental action-effect update",
+      "immutable transition preservation and mechanics membership",
+      "local hypothesis support, contradiction, and reopening",
+      "goal progress and no-progress accounting",
+      "plan and cache invalidation",
+      "submitted-action and returned-consequence checkpoint boundaries"
+    ],
+    "fast_path": [
+      "bounded perception and evidence fold",
+      "pure cache lookup keyed by complete immutable identities",
+      "continuation of an already validated current plan",
+      "generic probe or explicit deterministic fallback when no current plan is usable"
+    ],
+    "deep_path": [
+      "world-model compilation",
+      "multi-hypothesis retrodiction",
+      "goal seeding or revision",
+      "candidate-wide simulation",
+      "bounded new-plan search"
+    ],
+    "separations": [
+      "observation is not interpretation",
+      "candidate hypothesis is not accepted rule",
+      "goal hypothesis is not permission to act",
+      "cache value is derived computation and never authority",
+      "elapsed time is telemetry and never a policy-selection input",
+      "a successful consequence never rewrites a prior hypothesis as known"
+    ]
+  },
+  "typed_cadence": {
+    "production_mode": "TWO_SPEED",
+    "contemporary_control_mode": "LEGACY_ALWAYS_DEEP",
+    "ordered_deep_triggers": [
+      "STARTUP_UNKNOWN_ACTION",
+      "REOPENING",
+      "MEANINGFUL_CONTRADICTION",
+      "STRUCTURAL_NOVELTY",
+      "NO_VALID_PLAN",
+      "HIGH_GOAL_UNCERTAINTY",
+      "REPEATED_NO_PROGRESS",
+      "MAX_FAST_STREAK"
+    ],
+    "maximum_fast_streak": 4,
+    "repeated_no_progress_threshold": 2,
+    "trigger_authority": "Every trigger is derived from the current typed state plus immutable receipt IDs or observation/state digests. Trigger ordering and integer counters are deterministic and checkpointed.",
+    "operation_budgets": {
+      "environment_actions": "ARC3Config.budgets.max_actions",
+      "retrodicted_transitions": "at most the current mechanics epoch membership, itself bounded by max_actions",
+      "search_nodes": "ARC3Config.budgets.max_search_nodes",
+      "search_depth": "ARC3Config.budgets.max_search_depth",
+      "coordinate_candidates": "ARC3Config.budgets.max_coordinate_candidates",
+      "deep_invocations": "at most initial observation plus one completed consequence per permitted environment action"
+    },
+    "timeout_rule": "A wall envelope may terminate an experiment or produce an explicit fault/fallback receipt. It may not choose the current, partial, or best-so-far action silently. Policy path choice uses only deterministic evidence and integer budgets."
+  },
+  "receipt_contract": {
+    "selected": "reasoning.path_selected.v0.1",
+    "completed": "reasoning.deliberation_completed.v0.1",
+    "fallback": "reasoning.fallback_used.v0.1",
+    "required_selected_fields": [
+      "path",
+      "ordered_triggers",
+      "trigger_source_event_ids",
+      "state_id",
+      "mechanics_epoch_id",
+      "goal_id",
+      "goal_revision",
+      "plan_id",
+      "budget_limits",
+      "cache_projection_hash"
+    ],
+    "required_completed_fields": [
+      "path_selected_event_id",
+      "path",
+      "status",
+      "integer_work_counts",
+      "budget_exhaustions",
+      "cache_hits",
+      "cache_misses",
+      "produced_model_ids",
+      "produced_goal_ids",
+      "produced_plan_ids",
+      "artifact_projection_hash"
+    ],
+    "action_linkage": "Every action.selected receipt links to the completed reasoning receipt for the observation available before acting.",
+    "deep_completeness": "Every deep selection has exactly one terminal completed or fallback receipt before an action crosses the adapter boundary."
+  },
+  "cache_contract": {
+    "capacity": 256,
+    "policy": "deterministic bounded LRU with checkpointed access order when hits can affect performed work",
+    "key_fields": [
+      "cache schema",
+      "source and configuration identity",
+      "symbolic state ID",
+      "complete action including coordinate",
+      "ordered model semantic identities and rank weights",
+      "mechanics epoch ID",
+      "action-registry identity"
+    ],
+    "value_boundary": "Only pure predictions, goal/progress projections, and reusable plan values may be cached. Trace IDs, receipt IDs, hypothesis acceptance, permission, and environment consequences may not be cached as authority.",
+    "required_invalidations": [
+      "prediction mismatch",
+      "hypothesis contradiction or reopening",
+      "model promotion, suspension, demotion, or reopening",
+      "mechanics epoch change",
+      "goal revision",
+      "action-space or calibration change",
+      "level transition or reset",
+      "source or configuration change"
+    ],
+    "collision_rule": "A digest match is insufficient; the complete canonical key must match before reuse."
+  },
+  "mechanics_capacity_repair": {
+    "problem": "Stage 07 proved that the fixed 64-transition per-epoch bound faults a valid 80-action run on its 65th non-reset consequence.",
+    "decision": "Make the lifecycle capacity an instance contract equal to the config-hashed max_actions for the run. Persist it, verify it against the current context during restore, and register membership before mutating other derived transition collections.",
+    "forbidden_repairs": [
+      "storage-driven mechanics epoch rollover",
+      "dropping or compacting immutable raw receipts",
+      "a second independently configurable transition-budget knob",
+      "raising a global constant only for the observed 80-action case"
+    ],
+    "acceptance": [
+      "all five retrodiction modes cross 64 transitions under an 80-action budget",
+      "exact-limit and overflow behavior is tested",
+      "checkpoint restore rejects capacity mismatch",
+      "genuine evidence-driven epoch changes retain the same capacity"
+    ]
+  },
+  "checkpoint_contract": {
+    "authority_boundaries_retained": [
+      "after action.submitted and before adapter execution",
+      "after consequence evidence and derived-state update"
+    ],
+    "reason": "The current restore path requires the latest checkpoint commitment at the trace tail and has no general trace-forward state fold. Cadence does not authorize dropping either exactly-once boundary.",
+    "reasoning_state": "Cadence counters, last structural identity, no-progress streak, cache entries and order, and last completed deliberation linkage are typed checkpoint state and are revalidated from the trace or recomputed before reuse.",
+    "mid_deliberation": "A checkpoint is never accepted as a completed reasoning boundary while deliberation is in progress."
+  },
+  "measurement_protocol": {
+    "public_holdout_allowed": false,
+    "labels": [
+      "synthetic",
+      "local-public"
+    ],
+    "already_exposed_development_surface": {
+      "partition": "development",
+      "game_ids": [
+        "ar25-0c556536"
+      ],
+      "seed": 7,
+      "max_actions": 8,
+      "max_resets": 8,
+      "worker_wall_seconds": 120.0,
+      "environment_mode": "LOCAL",
+      "network_enabled": false,
+      "acquire_missing": false,
+      "asset_aggregate_sha256": "sha256:e796e615d2e10c93b849f9bf150308fbf84d624725deaf995d7ec2d1c2f86b22"
+    },
+    "paired_variants": [
+      "FROZEN_BUILD_000_FULL",
+      "BUILD_001_LEGACY_ALWAYS_DEEP",
+      "BUILD_001_TWO_SPEED",
+      "BUILD_001_TWO_SPEED_NO_PREDICTION_CACHE"
+    ],
+    "repetitions_per_variant": 5,
+    "order": "deterministic balanced rotation by repetition; identical game, seed, action/reset/wall/search/coordinate budgets and profiler mode",
+    "primary_metric": "median paired per-action whole-controller wall time over normally returned action/consequence boundaries; separately report censored and failed rows",
+    "materiality": "TWO_SPEED must reduce the primary median by at least 25 percent against both FROZEN_BUILD_000_FULL and BUILD_001_LEGACY_ALWAYS_DEEP, with at least 70 percent of paired cells non-regressing.",
+    "behavior_boundary": "Timing success cannot override different actions, terminal status, score, faults, or receipt integrity. Report those outcomes separately and never let a timeout or exception masquerade as a faster completed action.",
+    "required_measurements": [
+      "choose, consequence, checkpoint, and total wall and CPU time per action",
+      "path and trigger counts",
+      "prediction, compilation, retrodiction, simulation, and search work counts",
+      "cache hits, misses, and invalidations",
+      "environment actions, resets, levels, terminal status, and score",
+      "process peak RSS",
+      "trace and checkpoint bytes",
+      "source, config, asset, seed, hardware, runtime, and package identities"
+    ]
+  },
+  "frozen_regression_floors": {
+    "stage_13_build_000_exact": "2/2 completions in at most 8 total actions with semantic trace, replay, and checkpoint verification",
+    "stage_14_full": "at least 8/14 completions and at most 157 total actions",
+    "stage_14_component_gaps": "A4 without world-model simulation completes at most 1/14 and A5 without goal inference completes 0/14, preserving FULL advantages of at least 7 and 8 completions respectively",
+    "palette_equivariance": "256/256 declared procedural pairs and 16/16 checkpoint pairs",
+    "action_equivariance": "128/128 declared procedural pairs, 528/528 post-calibration inverse requests, and 16/16 checkpoint pairs",
+    "rule_change": "preserve 32/32 action-effect rotations and report the frozen traversability/noise failures honestly; do not weaken the original causal gates",
+    "replay": "deterministic repeat plus checkpoint restore at both FAST and DEEP boundaries, exact next path/action, and tamper rejection",
+    "integrity": "offline production, zero hosted inference, zero game-ID/action-table findings, zero holdout events or locally acquired holdout assets"
+  },
+  "resource_floors": {
+    "peak_rss_bytes": 2147483648,
+    "maximum_trace_bytes_per_run": 268435456,
+    "decision_seconds": 2.0,
+    "note": "Resource violations are reported as FAILED_MECHANISM or FAILED_INFRASTRUCTURE according to cause; thresholds are not changed after observation."
+  },
+  "decision_rule": {
+    "PASS": "The materiality gate, regression floors, receipt completeness, checkpoint/replay, resource bounds, static integrity, artifact verification, and sealed-holdout checks all pass.",
+    "PARTIAL": "A typed and reproducible two-speed system exists but one or more acceptance gates are not met without a decisive mechanism contradiction.",
+    "FAILED_MECHANISM": "The two-speed mechanism fails material timing, behavior, regression, deterministic replay, or resource criteria under a valid execution.",
+    "FAILED_INFRASTRUCTURE": "The declared comparison cannot execute or serialize because of tooling, unavailable resources, or a harness defect; preserve partial evidence and continue independent stages.",
+    "production_on_failure": "Retain the strongest integrity-preserving deterministic configuration supported by completed evidence. A failed timing gate does not authorize evidence loss, holdout exposure, or return to the fixed transition defect."
+  },
+  "integrity": {
+    "public_partition_manifest_sha256": "sha256:682d5891c2aface54803d9bd1173c55ed21e89856e13b8a478fb9276ee963f2f",
+    "public_holdout": "SEALED_UNCONSUMED",
+    "public_holdout_game_count": 10,
+    "public_holdout_game_ids_selected": 0,
+    "hosted_inference_allowed": false,
+    "game_source_available_to_policy": false,
+    "stage_07_attempt_mutation_allowed": false
+  },
+  "planned_outputs": {
+    "acceptance": "docs/evidence/001-08-two-speed-controller.json",
+    "report": "docs/reports/001-08-two-speed-controller.md",
+    "raw_root": "C:/a/arc3-b001/artifacts/stage08",
+    "recordings_root": "C:/a/arc3-b001/recordings/stage08",
+    "exposure_ledger": "C:/a/arc3-b001/artifacts/stage08/public-exposure.jsonl"
+  }
+}

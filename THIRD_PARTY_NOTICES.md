@@ -1,9 +1,13 @@
 # Third-party notices
 
-Status: Build 000 Stage 19 complete lock inventory
+Status: Build 001 Stage 00 license transition; Build 000 lock inventory preserved
 Last verified: 2026-08-21
 
 Christopher D. Pang is the author and steward of ARC3. Third-party works retain their own authorship, copyright, and license terms. This inventory records the exact Build 000 runtime, platform-input, and build-only identities; it does not grant a license for ARC3 itself.
+
+ARC3 first-party source is licensed under MIT-0 by the operative root `LICENSE`, following the
+owner's explicit 2026-08-21 approval. That first-party grant does not replace, relax, or
+misrepresent any third-party terms below.
 
 The generated `runtime-requirements-linux-cp312.txt`, `runtime-wheels-linux-cp312.json`, and SPDX 2.3 SBOM bind every competition-runtime name and version below to one CPython 3.12 Linux x86_64 wheel SHA-256. The SBOM also records a version-keyed license-file or upstream-license identity for every runtime distribution.
 
@@ -32,9 +36,11 @@ The Stage 19 audit binds `uv.lock` at
 It contains 61 package records: one first-party `arc3` record and 60 third-party records. The
 Stage 17 SPDX file covers 37 locked third-party distributions, and the development-lock table
 below covers the remaining 23, including the previously noted platform-conditional Colorama
-record. Thus every locked record has a declared or concluded treatment; `arc3` remains the sole
-`OWNER_DECISION_REQUIRED` / `NOASSERTION` record. The compact machine-readable reconciliation is
-`docs/evidence/019-dependency-license-inventory.json`.
+record. Thus every third-party locked record has a declared or concluded treatment. The Build 000
+machine-readable reconciliation remains preserved at
+`docs/evidence/019-dependency-license-inventory.json`; its historical first-party
+`OWNER_DECISION_REQUIRED` status was resolved by the later Build 001 owner instruction and root
+MIT-0 license.
 
 Hashes below are SHA-256 identities of exact installed `.dist-info` license or notice evidence in
 the frozen Python 3.12 environment. “Composite” means the primary license and bundled terms must
@@ -101,4 +107,7 @@ The platform's `arc_agi_3_wheels` directory is also an external competition inpu
 
 ## First-party distribution boundary
 
-There is intentionally no root `LICENSE` for ARC3. First-party `arc3` remains `NOASSERTION` in the SBOM until Christopher D. Pang makes the owner-only license decision. Any candidate text under `docs/legal/` is a review surface, not a license grant.
+The root `LICENSE` grants MIT-0 for ARC3 first-party source. Current ARC3 package metadata and
+SBOMs declare `MIT-0`. The original file under `docs/legal/candidates/` remains a nonoperative
+historical review surface; it is not the operative license. Third-party and platform-supplied
+components remain under the independent terms recorded above.

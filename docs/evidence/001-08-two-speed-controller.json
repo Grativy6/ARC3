@@ -1,0 +1,276 @@
+{
+  "schema": "arc3.build-001.stage-08-two-speed-controller-acceptance.v0.1",
+  "recorded_at": "2026-08-23T00:42:30Z",
+  "status": "FAILED_INFRASTRUCTURE",
+  "evidence_labels": [
+    "synthetic",
+    "local-public"
+  ],
+  "claim": "NO_THROUGHPUT_OR_PUBLIC_RECOVERY_CLAIM",
+  "predeclaration": {
+    "path": "docs/evidence/001-08-two-speed-predeclaration.json",
+    "sha256": "sha256:3342b6e2635c0606391c9aea02b2fec0cf4c5642a3d38b95768a1b77b4520878",
+    "matrix_sha256": "sha256:ca507ee6e539e0544647aac792417b276806a848e656f2b7b4f1a368ba6b63a1",
+    "plan_sha256": "sha256:b42326c4de76786982c07a18be2fcd73afe4583bdb11100e9cb6147b6c8e582c",
+    "expected_cell_count": 20,
+    "repetitions_per_variant": 5,
+    "maximum_median_paired_ratio": 0.75,
+    "minimum_paired_cell_nonregression_fraction": 0.7
+  },
+  "source_identity": {
+    "build_001_execution_commit": "2e78c258cfbee8be62462f61ed08ad04c00a8934",
+    "build_001_execution_tree": "4145356c116944bbd7c0c412771de9179ba22efe",
+    "build_001_execution_root": "C:/a/arc3-stage08-build001-2e78c25",
+    "build_001_clean_and_stable": true,
+    "build_000_commit": "90ecf7267d5bb23d751d6f7ce3e8aa75f2f1a130",
+    "build_000_tree": "0cf6e00b2fcc399e7a99a62c20e91bb84d485f13",
+    "build_000_root": "C:/a/arc3-stage08-build000-90ecf72",
+    "build_000_clean_and_stable": true
+  },
+  "attempt": {
+    "identity": "stage08-two-speed-controller-attempt-01",
+    "execution_count": 1,
+    "execution_complete": false,
+    "rerun_allowed": false,
+    "started_at": "2026-08-23T00:42:18.287361Z",
+    "completed_at": "2026-08-23T00:42:29Z",
+    "working_directory": "C:/a/arc3-stage08-build001-2e78c25",
+    "environment": {
+      "PYTHONPATH": "C:/a/arc3-stage08-build001-2e78c25/src",
+      "network_enabled": false
+    },
+    "launch_command": [
+      "C:/a/arc3-b001-28c7a00/Scripts/python.exe",
+      "scripts/measure_two_speed_controller.py",
+      "--execute"
+    ],
+    "exit_code": 1,
+    "raw_output": {
+      "path": "C:/a/arc3-b001/artifacts/stage08/two-speed-controller-attempt-01.json",
+      "bytes": 74659,
+      "file_sha256": "sha256:7c39fa77de24bd1925d9dbd489d583118f96d4b7fe860678607f485506ad39d4",
+      "artifact_core_hash": "sha256:e3e078092318882f2c32887c6a223c0396938abba0ca7b30fdcde0eb5b15383f"
+    }
+  },
+  "matrix_result": {
+    "expected_cells": 20,
+    "typed_results": 1,
+    "missing_cells": 19,
+    "complete_matrix": false,
+    "terminal_failure_count": 1,
+    "integrity_failure_count": 1,
+    "resource_failure_count": 1,
+    "behavior_parity_failure_count": 0,
+    "reasoning_receipt_failure_count": 0,
+    "paired_action_count": 0,
+    "median_paired_wall_ratio": null,
+    "material_reduction_passed": false,
+    "gate_passed": false
+  },
+  "exposed_cell": {
+    "cell_id": "stage08-cell-00-r0-p0-f4e27bf39bade15a",
+    "ordinal": 0,
+    "variant": "FROZEN_BUILD_000_FULL",
+    "partition": "development",
+    "game_id": "ar25-0c556536",
+    "seed": 7,
+    "max_actions": 8,
+    "max_resets": 8,
+    "worker_wall_seconds": 120.0,
+    "asset_aggregate_sha256": "sha256:e796e615d2e10c93b849f9bf150308fbf84d624725deaf995d7ec2d1c2f86b22",
+    "spec_hash": "sha256:e013fbc4a950ffafe0ee4b89968480266f0c86155aac223319881fe66a9cc529",
+    "exposure_event_hash": "sha256:01b58a353562819887b487d939194647a3d9c103379a254e0fad47b0955d75dd",
+    "action_counts": {
+      "attempted": 8,
+      "submitted": 8,
+      "returned": 8,
+      "acknowledged": 8
+    },
+    "reset_counts": {
+      "attempted": 0,
+      "submitted": 0,
+      "returned": 0,
+      "acknowledged": 0
+    },
+    "worker_status": "failure",
+    "worker_failure_domain": "INFRASTRUCTURE",
+    "worker_failure_phase": "checkpoint-restore",
+    "parent_typed_status": "crash",
+    "parent_failure_phase": "parent-worker-result-validation",
+    "accepted_score": null,
+    "raw_worker_failed_evidence_scorecard": {
+      "verified_by_worker": true,
+      "score": 0.0,
+      "levels_completed": 0,
+      "completed": false,
+      "official_run_state": "NOT_FINISHED",
+      "scope": "FAILED_WORKER_EVIDENCE_ONLY_NOT_AN_ACCEPTED_STAGE_RESULT"
+    }
+  },
+  "failure": {
+    "primary": "RuntimeError: Stage 08 restored terminal controller snapshot changed",
+    "validation_failures": [
+      "checkpoint-restore:RuntimeError:Stage 08 restored terminal controller snapshot changed",
+      "checkpoint-restore:terminal checkpoint did not restore exactly",
+      "receipt-integrity:action or cadence receipt chain is incomplete"
+    ],
+    "parent_projection_failure": "EvaluationError: Stage 08 submitted boundary action chain is invalid",
+    "submitted_boundaries_with_invalid_action_chain": 8,
+    "controller_fault_count": 0,
+    "network_attempt_count": 0,
+    "supervisor_timed_out": false,
+    "supervisor_return_code": 1,
+    "matrix_stopped_after_infrastructure_failure": true
+  },
+  "read_only_root_cause_audit": {
+    "classification": "EVIDENCE_VALIDATION_HARNESS_INCOMPATIBILITY",
+    "controller_defect_established": false,
+    "checkpoint_false_negative": {
+      "cause": "the worker compared the post-close CLOSED controller phase with a checkpoint that Build 000 correctly wrote immediately before assigning CLOSED",
+      "build_000_checkpoint_phase": "OBSERVED",
+      "post_close_in_memory_phase": "CLOSED",
+      "other_compared_snapshot_fields_changed_by_close": false,
+      "source_locations": [
+        "scripts/_stage08_two_speed_worker.py:991-1037",
+        "frozen-build-000:src/arc3/policy/controller.py:2886-2917",
+        "frozen-build-000:src/arc3/policy/controller.py:2177-2188"
+      ]
+    },
+    "action_chain_false_negative": {
+      "cause": "the worker required a semantic GridFrame digest to equal a trace descriptor/blob hash even though the two verified hashes use intentionally different encodings",
+      "semantic_grid_frame_digest": "sha256:b0c134f1cbe1bac078337e72000916d047f34742d2202561fdb65c63ccfd6e37",
+      "trace_canonical_json_frame_hash": "sha256:dcb73927160522c26e2655d31ead221e6da6aab818037d20388bbf46e9afa1b0",
+      "boundaries_audited": 8,
+      "semantic_and_trace_links_otherwise_valid": 8,
+      "source_locations": [
+        "scripts/_stage08_two_speed_worker.py:1081-1218",
+        "frozen-build-000:src/arc3/adapters/__init__.py:52-62",
+        "frozen-build-000:src/arc3/trace/blob.py:131-145",
+        "frozen-build-000:src/arc3/trace/replay.py:247-257"
+      ]
+    },
+    "test_gap": "unit fixtures reused one fake hash for both namespaces and mocked terminal restore success",
+    "stage_08_status_changed_by_audit": false,
+    "stage_08_rerun_allowed": false
+  },
+  "resource_receipt": {
+    "attempt_cumulative_active_wall_ns": 11688822300,
+    "attempt_observed_lower_bound_active_wall_ns": 11688822300,
+    "attempt_wall_measurement_complete": true,
+    "attempt_wall_within_2700_second_limit": true,
+    "worker_total_wall_ns": 9790934100,
+    "worker_total_cpu_ns": 9125000000,
+    "worker_peak_rss_bytes": 112750592,
+    "worker_memory_measurement_source": "windows-GetProcessMemoryInfo-working-set",
+    "worker_memory_measurement_valid": true,
+    "parent_supervisor_wall_ns": 10375105700
+  },
+  "trace_receipt": {
+    "replay_verified": true,
+    "event_count": 241,
+    "byte_length": 604310,
+    "manifest_hash": "sha256:e30a9816e8b297dbccce500e3a83fe8563fd71e166e79f61032256adfd845490",
+    "tail_event_hash": "sha256:336b8e461e8204ab610fd98e15515e057c01896a3c2a31807ae0d2f572050ce4",
+    "action_selected_events": 8,
+    "action_validated_events": 8,
+    "action_submitted_events": 8,
+    "consequence_received_events": 8,
+    "run_completed_events": 1,
+    "chunk_file_sha256": "sha256:94b6e10df644e22963d82cfbfa990af36f6caf70ea14f601870d4bfab2b259ed"
+  },
+  "artifact_receipts": {
+    "exposure_ledger": {
+      "path": "C:/a/arc3-b001/artifacts/stage08/public-exposure.jsonl",
+      "bytes": 511,
+      "file_sha256": "sha256:be73b837805a66ed172b20573aa31c41fe6ba16ced4d471929b6018e22a5d52e",
+      "event_count": 1
+    },
+    "worker_result": {
+      "path": "C:/a/arc3-b001/artifacts/stage08/two-speed-work-attempt-01/cells/00-stage08-cell-00-r0-p0-f4e27bf39bade15a/worker-result.json",
+      "bytes": 84134,
+      "file_sha256": "sha256:523f0a6fbc8b34d9ea739e17d507597a3f94d506ed8521b19335644c776e1465",
+      "internal_hash": "sha256:bdd3509f9764b039895ba84afc881b309a982cc4b326fda8436f69efdbee0282"
+    },
+    "typed_result_hash": "sha256:32a5173a0b8a26dfd7ce2f64ebc690905297370ac29158de8fe90bfb2300ae36",
+    "parent_receipt": {
+      "path": "C:/a/arc3-b001/artifacts/stage08/two-speed-work-attempt-01/parent-receipts/00-stage08-cell-00-r0-p0-f4e27bf39bade15a.json",
+      "bytes": 12480,
+      "file_sha256": "sha256:b1e8028c949d7c7344c0aa820b6afd5f02a9d0026d3a48f2e57bebb12871a377",
+      "internal_hash": "sha256:5e9d126c97a25169f5717c824e95a3ee12a7b567a6a7ac2774bb5b3d0c4b9a49"
+    },
+    "surviving_cell_artifacts": {
+      "file_count": 45,
+      "aggregate_sha256": "sha256:810f1f6c5e6d06a06e5b9b061fb240879e0d97a1e2bf9f12cd66ad4bfe9aee22"
+    },
+    "recordings": {
+      "file_count": 1,
+      "bytes": 118540,
+      "aggregate_sha256": "sha256:96860c28faa63a6d2da0fcd6b7d6a8b25b8b0e8a48584a3b2a6dd8a2683d8081",
+      "file_sha256": "sha256:27821d0cfda89948ccd552fb253648abdcce796ef35832a751a2c2b5d4581c16"
+    },
+    "supervisor_streams": {
+      "stderr_bytes": 352,
+      "stderr_sha256": "sha256:ccf1d521b69489b0e46dfa2a6669045e83f06de66c32d7cb60675b16a7a3598d",
+      "stdout_bytes": 0,
+      "stdout_sha256": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  },
+  "runtime_identity": {
+    "python": "3.12.14",
+    "platform": "Windows-10-10.0.19045-SP0",
+    "cpu": "AMD64 Family 23 Model 8 Stepping 2, AuthenticAMD",
+    "cpu_count": 12,
+    "arc_agi": "0.9.9",
+    "arcengine": "0.9.3",
+    "numpy": "2.5.2",
+    "pydantic": "2.13.4"
+  },
+  "integrity": {
+    "source_stable": true,
+    "development_asset_stable": true,
+    "holdout_sealed": true,
+    "public_holdout_game_ids_selected": 0,
+    "public_holdout_gameplay_events": 0,
+    "holdout_manifest_loaded_as_gameplay_metadata": false,
+    "holdout_manifest_sha256": "sha256:682d5891c2aface54803d9bd1173c55ed21e89856e13b8a478fb9276ee963f2f"
+  },
+  "seal_verification": {
+    "json_parse": "PASS",
+    "artifact_hash_crosscheck": "PASS",
+    "focused_secret_and_receipt_tests": "PASS:16 in 2.16s",
+    "competition_integrity": {
+      "status": "PASS",
+      "path": "C:/a/arc3-b001/artifacts/stage08/seal-integrity-receipt-corrected-02.json",
+      "bytes": 80072,
+      "file_sha256": "sha256:df7b22783251afe252fdfb24a55f868f6700e563808268a5d1782a7d9f18e50b",
+      "policy_static": "PASS",
+      "secret_scan": "PASS",
+      "source_identity": "PASS",
+      "supply_chain": "PASS",
+      "findings": 0
+    },
+    "preserved_invocation_failures": [
+      {
+        "path": "C:/a/arc3-b001/artifacts/stage08/seal-integrity-receipt.json",
+        "file_sha256": "sha256:0e9de69499d5b13b6cc548f58fe1d4c2348cbe8e51bf2af0f64014238a64d881",
+        "status": "FAILED_INFRASTRUCTURE",
+        "reason": "the invocation passed upstream.lock.json where the scanner requires the Python dependency lock"
+      },
+      {
+        "path": "C:/a/arc3-b001/artifacts/stage08/seal-integrity-receipt-corrected.json",
+        "file_sha256": "sha256:1df3efa9c078927deb691dbef018d7730b0f3ee5732d12a2c33ba732e50481bf",
+        "status": "FAILED_INFRASTRUCTURE",
+        "reason": "lock-only metadata intentionally left supply-chain evaluation incomplete and is not a milestone pass"
+      }
+    ]
+  },
+  "decision": {
+    "stage_status": "FAILED_INFRASTRUCTURE",
+    "acceptance_satisfied": false,
+    "throughput_comparison_available": false,
+    "synthetic_regression_floor_evaluated_by_attempt": false,
+    "public_recovery_claim_available": false,
+    "attempt_will_not_be_rerun": true,
+    "continue_independent_workflow_stage": "09"
+  }
+}

@@ -1,0 +1,220 @@
+{
+  "schema": "arc3.build-001.stage-14-final-verification.v0.1",
+  "generated_at": "2026-08-23T12:23:00Z",
+  "status": "PASS",
+  "evidence_label": "synthetic",
+  "claim": "FINAL_REPRODUCIBILITY_AND_PUBLICATION_SURFACES_VERIFIED",
+  "claim_boundary": "NO_GENERALIZATION_CLAIM",
+  "overall_build_status": "PARTIAL",
+  "artifact_core_hash": "sha256:560c1ba1898a9060d2bd9b9051781636a55ba197255d1dfad49a0e054e59ff82",
+  "source_identity": {
+    "repository": "Grativy6/ARC3",
+    "canonical_main_commit": "28c7a00732ce48e5c231211b01bc6eba7d0d71b4",
+    "canonical_main_tree": "4586299448e9b1b585a0878674ed5f9afa60c384",
+    "build_000_comparator_commit": "90ecf7267d5bb23d751d6f7ce3e8aa75f2f1a130",
+    "production_policy_commit": "d6d4bac1e33c9837856c08abcee61bcb14afd34e",
+    "production_policy_tree": "dd8e82e4b34337a208110929e3f5f8079d1e0a18",
+    "production_policy_source_sha256": "sha256:8f0de1a9c2c88761951ba2bcd69f2612bedfa0cc4226f44f1ed272b54b9023a8",
+    "package_code_test_freeze_commit": "9f25e13b4672ff0ea87544ba20c5677f194cf291",
+    "package_code_test_freeze_tree": "d7fc05c9dff0f63cc97e7b752e1fe59ff7583900",
+    "stage_13_checkpoint_commit": "6e6899693acc35c1b48012ed7f82cdd6eaffdc52",
+    "stage_13_checkpoint_tree": "9348aaba717e1e11a3deb4c2660d43048f69d327",
+    "post_freeze_code_test_package_diff": "PASS:NO_CHANGE",
+    "post_freeze_allowed_projection": [
+      "README.md",
+      "docs/**"
+    ],
+    "final_commit_self_reference_boundary": "The final documentation commit cannot embed its own SHA; the pushed tip and PR head are verified externally after commit"
+  },
+  "clean_clone": {
+    "root": "C:/a/arc3-b001-stage14-9f25e13",
+    "commit": "9f25e13b4672ff0ea87544ba20c5677f194cf291",
+    "tree": "d7fc05c9dff0f63cc97e7b752e1fe59ff7583900",
+    "git_status": "PASS:CLEAN",
+    "runtime": {
+      "operating_system": "Windows-10-10.0.19045-SP0",
+      "machine": "AMD64",
+      "processor": "AMD64 Family 23 Model 8 Stepping 2, AuthenticAMD",
+      "logical_cpu_count": 12,
+      "python_version": "3.12.14",
+      "uv_version": "0.12.5",
+      "gpu_used": false
+    },
+    "commands": [
+      {
+        "command": "C:/a/uv-tool-0.12.5-venv/Scripts/uv.exe sync --frozen --all-extras --dev --python 3.12.14 --link-mode copy --offline",
+        "exit_code": 0,
+        "result": "PASS:checked-61-packages-in-176ms"
+      },
+      {
+        "command": "C:/a/uv-tool-0.12.5-venv/Scripts/uv.exe lock --check --offline",
+        "exit_code": 0,
+        "result": "PASS:resolved-61-packages-in-2ms"
+      },
+      {
+        "command": ".venv/Scripts/python.exe -m ruff check --no-cache .",
+        "exit_code": 0,
+        "result": "PASS:all-checks"
+      },
+      {
+        "command": ".venv/Scripts/python.exe -m ruff format --check --no-cache .",
+        "exit_code": 0,
+        "result": "PASS:313-files"
+      },
+      {
+        "command": ".venv/Scripts/python.exe -m mypy --strict src agent scripts",
+        "exit_code": 0,
+        "result": "PASS:179-source-files"
+      },
+      {
+        "command": ".venv/Scripts/python.exe -m pytest -q --basetemp C:/a/t14-9f25e13/pytest-full",
+        "exit_code": 0,
+        "result": "PASS:1322-passed+17-platform-skips+80-percent-coverage+2077.70-seconds"
+      },
+      {
+        "command": ".venv/Scripts/python.exe -m pytest -q --no-cov --basetemp C:/a/t14-9f25e13/pytest-replay tests/replay tests/property/test_trace_properties.py",
+        "exit_code": 0,
+        "result": "PASS:45-passed+34.03-seconds"
+      },
+      {
+        "command": ".venv/Scripts/python.exe -m arc3 doctor --json",
+        "exit_code": 0,
+        "result": "PASS:all-required-checks;optional-agents-framework-not-installed"
+      }
+    ],
+    "resolved_command_failure": {
+      "command": "uv lock --check --offline",
+      "exit_code": 1,
+      "classification": "PATH_CONFIGURATION",
+      "stderr": "uv was not recognized on PATH",
+      "resolution": "Installed public uv==0.12.5 into isolated C:/a/uv-tool-0.12.5-venv and reran with its explicit executable path"
+    },
+    "nonfatal_output": "Coverage warned that removed transient package-startup sources were unavailable for parsing; pytest and 80 percent total coverage still passed"
+  },
+  "hosted_verification": {
+    "source_commit": "9f25e13b4672ff0ea87544ba20c5677f194cf291",
+    "ordinary_ci": [
+      {
+        "event": "push",
+        "run_id": 32636996144,
+        "platform": "ubuntu-latest",
+        "job_id": 97188148681,
+        "result": "PASS:1329-passed+10-skipped+80-percent-coverage+1024.61-seconds"
+      },
+      {
+        "event": "push",
+        "run_id": 32636996144,
+        "platform": "windows-latest",
+        "job_id": 97188148803,
+        "result": "PASS:1323-passed+16-skipped+80-percent-coverage+1836.93-seconds"
+      },
+      {
+        "event": "pull_request",
+        "run_id": 32636997705,
+        "platform": "ubuntu-latest",
+        "job_id": 97188153034,
+        "result": "PASS:1329-passed+10-skipped+80-percent-coverage+1047.62-seconds"
+      },
+      {
+        "event": "pull_request",
+        "run_id": 32636997705,
+        "platform": "windows-latest",
+        "job_id": 97188153231,
+        "result": "PASS:1323-passed+16-skipped+80-percent-coverage+1573.22-seconds"
+      }
+    ],
+    "package_runs": [
+      {
+        "event": "push",
+        "run_id": 32636996137,
+        "ubuntu_job": 97188148939,
+        "windows_job": 97188148891,
+        "conclusion": "success"
+      },
+      {
+        "event": "pull_request",
+        "run_id": 32636997645,
+        "ubuntu_job": 97188152719,
+        "windows_job": 97188152825,
+        "conclusion": "success"
+      }
+    ],
+    "all_required_jobs_passed": true,
+    "annotation_boundary": "GitHub emitted a Node 20 forced-to-24 deprecation annotation; no job or required step failed"
+  },
+  "package": {
+    "status": "BLOCKED_EXTERNAL",
+    "evidence_label": "synthetic",
+    "candidate_path": "C:/a/arc3-b001/artifacts/stage13/final-package-9f25e13-exact/package-a/arc3-kaggle-candidate.zip",
+    "candidate_sha256": "sha256:02326a145d510c017dc04ffd79a61cfe8c46771cbc9e74b7c8f29a9b75756d21",
+    "candidate_bytes": 788070,
+    "candidate_builds": 8,
+    "all_candidates_byte_identical": true,
+    "runtime_wheel_count": 31,
+    "durable_receipt_root": "C:/a/arc3-b001/artifacts/stage13/final-package-9f25e13-exact",
+    "durable_file_count": 48,
+    "durable_total_bytes": 4263775,
+    "durable_file_record_manifest_sha256": "sha256:2aca4b7e6f1430b33444459470850b05947fedef2c0bfed34d0eb07a69d03295",
+    "release_receipt_file_sha256": "sha256:5657f2b377aaa08540963820d57ad0426b10a1e5c3a1a2a93bbf1cb4895ac6e0",
+    "release_receipt_validation": "PASS:BLOCKED_EXTERNAL",
+    "available_checks_passed_per_job": 20,
+    "only_nonpass_per_job": "private-kaggle-surfaces",
+    "secret_findings": 0
+  },
+  "integrity": {
+    "production_policy_static_scan": "PASS:zero-findings",
+    "known_public_game_ids_in_production": 0,
+    "obvious_game_specific_solution_tables": 0,
+    "hosted_model_runtime_dependencies": 0,
+    "package_secret_findings": 0,
+    "final_changed_projection_secret_scan": "PASS:18-files+0-findings",
+    "package_file_maps_verified": 4,
+    "git_fsck": "PASS:dangling-unreferenced-objects-only",
+    "git_diff_check": "PASS",
+    "referenced_commit_objects": "PASS:8-checked",
+    "post_freeze_code_test_package_diff": "PASS:NO_CHANGE",
+    "license": "PASS:MIT-0-owner-authorized",
+    "third_party_notices": "PASS",
+    "tracked_notebooks": 0,
+    "unexpected_changed_binary_files": 0,
+    "largest_changed_file_bytes": 132785,
+    "python_audit_boundary": "Python audit hooks and guarded tests are not complete OS/native containment or trusted execution"
+  },
+  "reporting": {
+    "research_report": "docs/research/ARC3-Build-001-report.md",
+    "publication_draft": "docs/research/ARC3-Build-001-publication-draft.md",
+    "review_packet": "docs/review/ARC3-Build-001-review-packet.md",
+    "owner_handoff": "docs/handoffs/001-local-public-recovery.md",
+    "result_json": "docs/research/data/ARC3-Build-001-results.json",
+    "stage_table": "docs/research/data/ARC3-Build-001-stage-results.csv",
+    "baseline_ablation_table": "docs/research/data/ARC3-Build-001-baseline-ablation.csv",
+    "mechanism_table": "docs/research/data/ARC3-Build-001-mechanism-results.csv",
+    "stage_figure": "docs/research/figures/ARC3-Build-001-stage-status.svg",
+    "json_parse": "PASS",
+    "csv_parse": "PASS",
+    "svg_xml_parse": "PASS",
+    "markdown_links": "PASS",
+    "claim_label_audit": "PASS:NO_UNSUPPORTED_POSITIVE_CLAIM",
+    "run_state_artifacts": "PASS:66-paths+hashes",
+    "final_index_records": "PASS:33-paths+hashes"
+  },
+  "holdout": {
+    "status": "SEALED_UNCONSUMED",
+    "decision": "HOLDOUT_NOT_EARNED",
+    "holdout_identities_loaded": 0,
+    "holdout_manifest_parsed": false,
+    "environment_adapter_loaded": false,
+    "environment_actions": 0,
+    "gameplay_opened": false
+  },
+  "human_and_external_gates": {
+    "private_kaggle_surfaces": "BLOCKED_EXTERNAL",
+    "terms_accepted": false,
+    "official_submission": false,
+    "pull_request_merged": false,
+    "release_or_doi_published": false,
+    "money_spent_or_paid_compute_activated": false,
+    "external_owner_communication": false,
+    "secrets_disclosed": false
+  }
+}
