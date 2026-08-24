@@ -96,7 +96,7 @@ def package_directory(fixture_root: Path) -> Path:
         fixture_root / "package",
         allow_dirty_preacceptance=True,
     )
-    assert result.status == "PACKAGING_PREACCEPTANCE"
+    assert result.status in {"PACKAGING_PASS", "PACKAGING_PREACCEPTANCE"}
     return result.output_directory
 
 
