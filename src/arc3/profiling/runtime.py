@@ -18,6 +18,7 @@ from arc3.types import (
     ActionName,
     ActionRequest,
     EnvironmentMode,
+    ExecutionMode,
     GameId,
     GameStateName,
     JSONScalar,
@@ -154,14 +155,20 @@ def _context(
         if preset is ControllerPreset.COMPETITION
         else EnvironmentMode.SYNTHETIC
     )
+    execution_mode = (
+        ExecutionMode.COMPETITION_BOUNDED
+        if preset is ControllerPreset.COMPETITION
+        else ExecutionMode.RESEARCH_UNBOUNDED
+    )
     return RunContext(
         run_id=f"stage16-{run_label}",
         episode_id=f"stage16-{run_label}-episode",
         game_id=game_id,
         trace_root=root / "trace",
         checkpoint_root=root / "checkpoint",
-        config=ARC3Config(
-            mode=mode,
+        config=ARC3Config.for_mode(
+            mode,
+            execution_mode=execution_mode,
             seed=config.seed,
             network_enabled=False,
             profile="stage16-runtime-profile",
@@ -486,6 +493,10 @@ def run_runtime_profile(
         "complete_action_chains": complete_action_chains,
         "config": selected_config.to_dict(),
         "consequence_latency_seconds": _latency_summary(consequence_latencies),
+        "controller_execution": {
+            "execution_mode": context.config.execution_mode.value,
+            "runtime_policy": context.config.to_dict()["runtime_policy"],
+        },
         "controller_fault_count": snapshot.fault_count,
         "controller_reset_seconds": controller_reset_seconds,
         "decision_latency_seconds": _latency_summary(decision_latencies),

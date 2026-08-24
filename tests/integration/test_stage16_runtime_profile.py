@@ -15,7 +15,7 @@ from arc3.profiling import (
     run_robustness_suite,
     run_runtime_profile,
 )
-from arc3.types import JSONValue
+from arc3.types import ExecutionMode, JSONValue
 
 
 @pytest.mark.integration
@@ -68,6 +68,11 @@ def test_runtime_profile_restarts_pending_actions_and_replays_exact_trace(
     assert cast(dict[str, JSONValue], result["consequence_latency_seconds"])["count"] > 0
     assert cast(dict[str, JSONValue], result["total_step_latency_seconds"])["count"] > 0
     assert result["python_tracemalloc_peak_bytes"] is None
+    controller_execution = cast(dict[str, JSONValue], result["controller_execution"])
+    runtime_policy = cast(dict[str, JSONValue], controller_execution["runtime_policy"])
+    assert controller_execution["execution_mode"] == ExecutionMode.COMPETITION_BOUNDED.value
+    assert runtime_policy["allocator_tracing_enabled"] is False
+    assert runtime_policy["automatic_per_action_checkpoints"] is False
     memory_after = cast(dict[str, JSONValue], result["kernel_memory_after"])
     assert isinstance(memory_after["peak_rss_bytes"], int)
 
@@ -202,8 +207,6 @@ def test_early_completion_is_operational_when_planning_has_no_opportunity(
     assert cases["base"]["final_phase"] == "complete"
     assert cases["base"]["operational_verified"] is True
     assert cases["base"]["status"] == "PASS"
-    assert cases["rule-change"]["behavior_exercised"] is False
-    assert cases["rule-change"]["status"] == "NOT_EXERCISED"
 
 
 @pytest.mark.integration

@@ -406,7 +406,7 @@ def _startup_worker(root: Path, git_commit: str) -> int:
     from arc3.config import ARC3Config, BudgetConfig
     from arc3.policy import ARC3Controller, ControllerPreset, RunContext
     from arc3.profiling import process_memory_sample
-    from arc3.types import EnvironmentMode
+    from arc3.types import EnvironmentMode, ExecutionMode
 
     imports_completed = time.perf_counter()
     session = SyntheticAdapter(seed=7, size=8, max_steps=32).open(SYNTHETIC_GAME_ID)
@@ -417,8 +417,9 @@ def _startup_worker(root: Path, git_commit: str) -> int:
         game_id=SYNTHETIC_GAME_ID,
         trace_root=root / "trace",
         checkpoint_root=root / "checkpoint",
-        config=ARC3Config(
-            mode=EnvironmentMode.COMPETITION,
+        config=ARC3Config.for_mode(
+            EnvironmentMode.COMPETITION,
+            execution_mode=ExecutionMode.COMPETITION_BOUNDED,
             seed=7,
             network_enabled=False,
             profile="stage16-startup",
@@ -433,9 +434,11 @@ def _startup_worker(root: Path, git_commit: str) -> int:
     ready = time.perf_counter()
     result = {
         "controller_initialize_and_first_observe_seconds": ready - imports_completed,
+        "execution_mode": context.config.execution_mode.value,
         "first_party_import_through_ready_seconds": ready - started,
         "memory_at_ready": process_memory_sample(),
         "phase_at_ready": controller.phase.value,
+        "runtime_policy": context.config.to_dict()["runtime_policy"],
         "trace_events_at_ready": controller.snapshot.trace_events,
     }
     controller.close()

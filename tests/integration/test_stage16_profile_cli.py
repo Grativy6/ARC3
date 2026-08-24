@@ -10,6 +10,8 @@ from pathlib import Path
 
 import pytest
 
+from arc3.types import ExecutionMode
+
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = ROOT / "scripts" / "profile_competition.py"
 
@@ -80,6 +82,9 @@ def test_profile_cli_runs_in_fresh_process_and_self_hashes_receipt(tmp_path: Pat
     assert result["launch"]["fresh_process"] is True
     assert result["launch"]["worker_exit_code"] == 1
     assert result["startup"]["phase_at_ready"] == "observed"
+    assert result["startup"]["execution_mode"] == ExecutionMode.COMPETITION_BOUNDED.value
+    assert result["startup"]["runtime_policy"]["allocator_tracing_enabled"] is False
+    assert result["startup"]["runtime_policy"]["automatic_per_action_checkpoints"] is False
     assert result["profile"]["complete_action_chains"] is True
     assert result["first_party_import_identity"]["verified"] is True
     assert Path(result["first_party_import_identity"]["arc3_module"]).is_relative_to(
