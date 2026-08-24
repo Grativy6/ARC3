@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import pytest
 
@@ -11,6 +11,7 @@ from arc3.exploration.causal_events import RiskLevel
 from arc3.mechanics.visual_causal import (
     VisualCausalPolicy,
     VisualObjectRole,
+    VisualScene,
     _radial_plan_points,
     extract_visual_scene,
     infer_affine_mechanic,
@@ -123,6 +124,122 @@ def _three_endpoint_frame() -> GridFrame:
     return GridFrame.from_rows(rows)
 
 
+def _marker_frame(
+    groups: tuple[tuple[tuple[int, int], ...], ...],
+    targets: tuple[tuple[int, int], ...],
+    marker_colors: tuple[int, ...],
+    *,
+    active_group: int,
+    active_index: int,
+    background: int,
+    active_color: int,
+    fixed_color: int,
+) -> GridFrame:
+    rows = [[background for _ in range(64)] for _ in range(64)]
+    center_fill = next(
+        color
+        for color in range(16)
+        if color not in {background, active_color, fixed_color, *marker_colors}
+    )
+    for group_index, (endpoints, target, marker_color) in enumerate(
+        zip(groups, targets, marker_colors, strict=True)
+    ):
+        _paint(rows, target, _TARGET_RING, marker_color)
+        for endpoint_index, endpoint in enumerate(endpoints):
+            outer_color = (
+                active_color
+                if (group_index, endpoint_index) == (active_group, active_index)
+                else fixed_color
+            )
+            _paint(rows, endpoint, _ENDPOINT_SHAPE, outer_color)
+            rows[endpoint[1]][endpoint[0]] = marker_color
+        mediator = (
+            math.floor(sum(x for x, _y in endpoints) / len(endpoints)),
+            math.floor(sum(y for _x, y in endpoints) / len(endpoints)),
+        )
+        _paint(rows, mediator, _HUB_OUTER, marker_color)
+        rows[mediator[1]][mediator[0]] = center_fill
+    return GridFrame.from_rows(rows)
+
+
+@dataclass
+class _MarkerAffineEnvironment:
+    groups: list[list[tuple[int, int]]]
+    targets: tuple[tuple[int, int], ...]
+    marker_colors: tuple[int, ...]
+    active_group: int = 0
+    active_index: int = 0
+    background: int = 5
+    active_color: int = 0
+    fixed_color: int = 3
+    levels_completed: int = 0
+    action_kinds: list[str] = field(default_factory=list)
+
+    def observation(self, returned_action: ActionRequest | None = None) -> Observation:
+        frame = _marker_frame(
+            tuple(tuple(group) for group in self.groups),
+            self.targets,
+            self.marker_colors,
+            active_group=self.active_group,
+            active_index=self.active_index,
+            background=self.background,
+            active_color=self.active_color,
+            fixed_color=self.fixed_color,
+        )
+        return Observation(
+            game_id=GameId("synthetic-marker-affine"),
+            frames=(frame,),
+            state=GameStateName.NOT_FINISHED,
+            levels_completed=self.levels_completed,
+            win_levels=2,
+            available_actions=(ActionName.ACTION6,),
+            returned_action=returned_action,
+        )
+
+    def direct_solution(self) -> tuple[int, int]:
+        endpoints = self.groups[self.active_group]
+        target_x, target_y = self.targets[self.active_group]
+        others = tuple(
+            endpoint for index, endpoint in enumerate(endpoints) if index != self.active_index
+        )
+        return (
+            len(endpoints) * target_x - sum(x for x, _y in others),
+            len(endpoints) * target_y - sum(y for _x, y in others),
+        )
+
+    def step(self, action: ActionRequest) -> Observation:
+        assert action.coordinate is not None
+        clicked = (action.coordinate.x, action.coordinate.y)
+        selected_endpoint: tuple[int, int] | None = None
+        for group_index, endpoints in enumerate(self.groups):
+            for endpoint_index, endpoint in enumerate(endpoints):
+                if math.dist(clicked, endpoint) <= 2.25:
+                    selected_endpoint = (group_index, endpoint_index)
+                    break
+            if selected_endpoint is not None:
+                break
+        if selected_endpoint is not None and selected_endpoint != (
+            self.active_group,
+            self.active_index,
+        ):
+            self.active_group, self.active_index = selected_endpoint
+            self.action_kinds.append("switch")
+        else:
+            self.groups[self.active_group][self.active_index] = clicked
+            self.action_kinds.append("move")
+
+        solved = 0
+        for endpoints, target in zip(self.groups, self.targets, strict=True):
+            mediator = (
+                math.floor(sum(x for x, _y in endpoints) / len(endpoints)),
+                math.floor(sum(y for _x, y in endpoints) / len(endpoints)),
+            )
+            solved += mediator == target
+        if solved == len(self.groups):
+            self.levels_completed = 1
+        return self.observation(returned_action=action)
+
+
 def test_scene_roles_are_descriptive_and_identity_blind() -> None:
     scene = extract_visual_scene(_frame((8, 32), (32, 32), (20, 10)))
 
@@ -195,6 +312,177 @@ def test_failed_target_relative_plan_signature_is_not_repeated() -> None:
 
     assert second is not None
     assert second != first
+
+
+@pytest.mark.parametrize(
+    (
+        "groups",
+        "targets",
+        "marker_colors",
+        "active_group",
+        "active_index",
+        "background",
+        "active_color",
+        "fixed_color",
+    ),
+    (
+        (
+            (((10, 50), (30, 50)), ((38, 52), (58, 52))),
+            ((20, 28), (48, 32)),
+            (12, 14),
+            0,
+            0,
+            5,
+            0,
+            3,
+        ),
+        (
+            (((8, 14), (8, 34)), ((12, 46), (34, 46))),
+            ((30, 24), (23, 28)),
+            (13, 9),
+            1,
+            1,
+            7,
+            4,
+            2,
+        ),
+    ),
+)
+def test_marker_planner_solves_distinct_groups_and_reobserves_after_switch(
+    groups: tuple[tuple[tuple[int, int], ...], ...],
+    targets: tuple[tuple[int, int], ...],
+    marker_colors: tuple[int, ...],
+    active_group: int,
+    active_index: int,
+    background: int,
+    active_color: int,
+    fixed_color: int,
+) -> None:
+    environment = _MarkerAffineEnvironment(
+        groups=[list(group) for group in groups],
+        targets=targets,
+        marker_colors=marker_colors,
+        active_group=active_group,
+        active_index=active_index,
+        background=background,
+        active_color=active_color,
+        fixed_color=fixed_color,
+    )
+    policy = VisualCausalPolicy()
+    observation = environment.observation()
+
+    first_solution = Coordinate(*environment.direct_solution())
+    first = policy.select(observation)
+    assert first.coordinate == first_solution
+    observation = environment.step(first)
+    policy.accept_consequence(observation)
+    assert observation.state is GameStateName.NOT_FINISHED
+    assert observation.levels_completed == 0
+
+    solved_group = environment.active_group
+    next_group = 1 - solved_group
+    switch = policy.select(observation)
+    assert switch.coordinate is not None
+    assert (switch.coordinate.x, switch.coordinate.y) in environment.groups[next_group]
+    observation = environment.step(switch)
+    policy.accept_consequence(observation)
+    assert environment.active_group == next_group
+    assert observation.levels_completed == 0
+
+    second_solution = Coordinate(*environment.direct_solution())
+    second = policy.select(observation)
+    assert second.coordinate == second_solution
+    observation = environment.step(second)
+    policy.accept_consequence(observation)
+
+    assert observation.levels_completed == 1
+    assert environment.action_kinds == ["move", "switch", "move"]
+    assert policy.snapshot()["pending_plan_actions"] == 0
+    assert policy.receipts[0].source_mechanic_refs[0].startswith("affine-marker:")
+    assert "matched marker" in policy.receipts[1].prediction
+
+
+def test_marker_planner_relocates_one_group_sequentially_when_direct_closure_is_out_of_bounds() -> (
+    None
+):
+    environment = _MarkerAffineEnvironment(
+        groups=[[(17, 6), (8, 21), (49, 9)]],
+        targets=((40, 51),),
+        marker_colors=(12,),
+    )
+    initial_direct = environment.direct_solution()
+    assert initial_direct == (63, 123)
+    policy = VisualCausalPolicy()
+    observation = environment.observation()
+    actions: list[ActionRequest] = []
+
+    for _ in range(8):
+        action = policy.select(observation)
+        assert action.coordinate is not None
+        assert 0 <= action.coordinate.x < 64
+        assert 0 <= action.coordinate.y < 64
+        actions.append(action)
+        observation = environment.step(action)
+        policy.accept_consequence(observation)
+        if observation.levels_completed:
+            break
+
+    assert observation.levels_completed == 1
+    assert len(actions) == 5
+    assert environment.action_kinds == ["move", "switch", "move", "switch", "move"]
+    assert all(
+        "marker-group" in receipt.prediction or "same marker group" in receipt.prediction
+        for receipt in policy.receipts
+    )
+    assert policy.snapshot()["pending_plan_actions"] == 0
+
+
+def test_marker_planner_does_not_emit_an_unreadable_direct_destination(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    environment = _MarkerAffineEnvironment(
+        groups=[[(8, 50), (32, 58), (52, 42)]],
+        targets=((30, 40),),
+        marker_colors=(12,),
+    )
+    blocked_direct = Coordinate(*environment.direct_solution())
+    original_is_open = VisualScene.is_open
+
+    def block_direct(
+        scene: VisualScene,
+        x: int,
+        y: int,
+        *,
+        radius: int = 2,
+    ) -> bool:
+        if (x, y) == (blocked_direct.x, blocked_direct.y):
+            return False
+        return original_is_open(scene, x, y, radius=radius)
+
+    monkeypatch.setattr(VisualScene, "is_open", block_direct)
+    policy = VisualCausalPolicy()
+
+    action = policy.select(environment.observation())
+
+    assert action.coordinate != blocked_direct
+    assert "marker-group" in policy._pending_prediction
+    assert policy.snapshot()["pending_plan_actions"] == 0
+
+
+def test_ambiguous_marker_active_role_fails_closed_without_legacy_relocation() -> None:
+    environment = _MarkerAffineEnvironment(
+        groups=[[(10, 50), (30, 50)], [(38, 52), (58, 52)]],
+        targets=((20, 28), (48, 32)),
+        marker_colors=(12, 14),
+        active_color=3,
+        fixed_color=3,
+    )
+    policy = VisualCausalPolicy()
+
+    with pytest.raises(PolicyError, match="no bounded same-group action"):
+        policy.select(environment.observation())
+
+    assert policy.snapshot()["pending_plan_actions"] == 0
 
 
 @dataclass

@@ -222,6 +222,20 @@ class PlannedClick:
 
 
 @dataclass(frozen=True, slots=True)
+class _EmbeddedMarkerGroup:
+    """One observation-grounded affine group keyed by an endpoint marker."""
+
+    marker_color: int
+    endpoints: tuple[VisualObject, ...]
+    mediator: VisualObject
+    target: VisualObject
+
+    @property
+    def arity(self) -> int:
+        return len(self.endpoints)
+
+
+@dataclass(frozen=True, slots=True)
 class VisualActionReceipt:
     """Compact prediction/consequence receipt retained by the policy."""
 
@@ -657,6 +671,293 @@ def _radial_plan_points(
                 continue
             return tuple(Coordinate(x, y) for x, y in raw)
     return None
+
+
+def _embedded_marker_groups(scene: VisualScene) -> tuple[_EmbeddedMarkerGroup, ...]:
+    """Read unambiguous endpoint groups from embedded center-cell colors.
+
+    An endpoint marker is used only when its center-cell color names exactly
+    one mediator and exactly one hollow target in the same frame.  Filled
+    endpoints whose center merely repeats their outer color therefore stay on
+    the existing discovery path.
+    """
+
+    endpoints_by_marker: dict[int, list[VisualObject]] = {}
+    for endpoint in scene.endpoints:
+        if endpoint.center_cell in {scene.background, endpoint.color}:
+            continue
+        endpoints_by_marker.setdefault(endpoint.center_cell, []).append(endpoint)
+
+    groups: list[_EmbeddedMarkerGroup] = []
+    for marker_color, endpoints in endpoints_by_marker.items():
+        mediators = tuple(item for item in scene.mediators if item.color == marker_color)
+        targets = tuple(item for item in scene.targets if item.color == marker_color)
+        if not 2 <= len(endpoints) <= 6 or len(mediators) != 1 or len(targets) != 1:
+            continue
+        groups.append(
+            _EmbeddedMarkerGroup(
+                marker_color=marker_color,
+                endpoints=tuple(sorted(endpoints, key=lambda item: item.object_ref)),
+                mediator=mediators[0],
+                target=targets[0],
+            )
+        )
+    return tuple(sorted(groups, key=lambda item: item.marker_color))
+
+
+def _axis_box_distance(value: int, lower: int, upper: int) -> int:
+    if value < lower:
+        return lower - value
+    if value > upper:
+        return value - upper
+    return 0
+
+
+def _marker_group_potential(
+    group: _EmbeddedMarkerGroup,
+    *,
+    sum_x: int,
+    sum_y: int,
+) -> int:
+    """Squared distance of the endpoint sum from the floor-centroid goal box."""
+
+    target_x, target_y = group.target.rounded_center
+    lower_x = group.arity * target_x
+    lower_y = group.arity * target_y
+    dx = _axis_box_distance(sum_x, lower_x, lower_x + group.arity - 1)
+    dy = _axis_box_distance(sum_y, lower_y, lower_y + group.arity - 1)
+    return dx * dx + dy * dy
+
+
+def _marker_relocation_candidates(
+    scene: VisualScene,
+    group: _EmbeddedMarkerGroup,
+    endpoint: VisualObject,
+) -> tuple[Coordinate, ...]:
+    """Return a bounded target-relative candidate set for one group endpoint."""
+
+    sum_other_x = sum(
+        item.rounded_center[0] for item in group.endpoints if item.object_ref != endpoint.object_ref
+    )
+    sum_other_y = sum(
+        item.rounded_center[1] for item in group.endpoints if item.object_ref != endpoint.object_ref
+    )
+    target_x, target_y = group.target.rounded_center
+    lower_x = group.arity * target_x
+    lower_y = group.arity * target_y
+    raw: set[tuple[int, int]] = {
+        (x, y)
+        for x in range(lower_x - sum_other_x, lower_x + group.arity - sum_other_x)
+        for y in range(lower_y - sum_other_y, lower_y + group.arity - sum_other_y)
+    }
+    for radius in (7, 9, 11, 13, 16, 19, 23, 27):
+        for rotation_index in range(16):
+            rotation = (2 * math.pi * rotation_index) / 16
+            raw.add(
+                (
+                    round(target_x + radius * math.cos(rotation)),
+                    round(target_y + radius * math.sin(rotation)),
+                )
+            )
+    return tuple(
+        Coordinate(x, y)
+        for x, y in sorted(raw, key=lambda item: (item[1], item[0]))
+        if scene.is_open(x, y)
+        and all(
+            item.object_ref == endpoint.object_ref
+            or max(
+                abs(x - item.rounded_center[0]),
+                abs(y - item.rounded_center[1]),
+            )
+            >= 6
+            for item in scene.endpoints
+        )
+    )
+
+
+def _best_marker_relocation(
+    scene: VisualScene,
+    group: _EmbeddedMarkerGroup,
+    endpoint: VisualObject,
+    *,
+    rejected_signatures: set[str],
+) -> tuple[int, Coordinate] | None:
+    sum_x = sum(item.rounded_center[0] for item in group.endpoints)
+    sum_y = sum(item.rounded_center[1] for item in group.endpoints)
+    current = _marker_group_potential(group, sum_x=sum_x, sum_y=sum_y)
+    best: tuple[int, int, int, Coordinate] | None = None
+    for coordinate in _marker_relocation_candidates(scene, group, endpoint):
+        resulting_sum_x = sum_x - endpoint.rounded_center[0] + coordinate.x
+        resulting_sum_y = sum_y - endpoint.rounded_center[1] + coordinate.y
+        potential = _marker_group_potential(
+            group,
+            sum_x=resulting_sum_x,
+            sum_y=resulting_sum_y,
+        )
+        if potential:
+            mediator_after = (
+                resulting_sum_x // group.arity,
+                resulting_sum_y // group.arity,
+            )
+            target = group.target.rounded_center
+            if (
+                max(
+                    abs(mediator_after[0] - target[0]),
+                    abs(mediator_after[1] - target[1]),
+                )
+                <= 5
+            ):
+                # Same-color 5x5 mediator and target glyphs can merge before
+                # the centroid is solved.  Preserve their readability until
+                # an exact floor-centroid closure is available.
+                continue
+        signature_kind = "solve" if potential == 0 else "improve"
+        signature = f"marker:{group.marker_color}:{signature_kind}:{coordinate.x},{coordinate.y}"
+        if potential >= current or signature in rejected_signatures:
+            continue
+        candidate = (potential, coordinate.y, coordinate.x, coordinate)
+        if best is None or candidate[:3] < best[:3]:
+            best = candidate
+    return None if best is None else (best[0], best[3])
+
+
+def _embedded_marker_plan(
+    scene: VisualScene,
+    *,
+    level_index: int,
+    rejected_signatures: set[str],
+) -> PlannedClick | None:
+    """Plan one direct, target-relative action from visible marker evidence.
+
+    The globally unique endpoint outer color identifies the currently active
+    endpoint.  If its embedded marker belongs to an unresolved group, the
+    affine centroid is solved directly.  Otherwise one fixed endpoint in the
+    next unresolved group is clicked to transfer the active role.  The caller
+    re-reads the next frame before planning again, so coordinates and object
+    identities never become a cross-action script.
+    """
+
+    groups = _embedded_marker_groups(scene)
+    if not groups:
+        return None
+    marked_endpoints = tuple(
+        endpoint
+        for endpoint in scene.endpoints
+        if endpoint.center_cell not in {scene.background, endpoint.color}
+    )
+    outer_color_counts = Counter(endpoint.color for endpoint in marked_endpoints)
+    active_candidates = tuple(
+        endpoint for endpoint in marked_endpoints if outer_color_counts[endpoint.color] == 1
+    )
+    if len(active_candidates) != 1 or not any(count > 1 for count in outer_color_counts.values()):
+        return None
+    active = active_candidates[0]
+    unresolved = tuple(
+        group for group in groups if group.mediator.rounded_center != group.target.rounded_center
+    )
+    if not unresolved:
+        return None
+    active_group = next(
+        (
+            group
+            for group in unresolved
+            if active.object_ref in {item.object_ref for item in group.endpoints}
+        ),
+        None,
+    )
+    group = active_group or unresolved[0]
+    identity = f"marker|{level_index}|{group.marker_color}|{group.arity}|{scene.frame_hash}"
+    mechanic_ref = "affine-marker:" + hashlib.sha256(identity.encode("ascii")).hexdigest()[:20]
+    plan_id = (
+        "visual-plan:" + hashlib.sha256(f"{mechanic_ref}|local".encode("ascii")).hexdigest()[:20]
+    )
+
+    if active_group is None:
+        candidates = tuple(
+            item
+            for item in group.endpoints
+            if (
+                f"marker:{group.marker_color}:activate:"
+                f"{item.rounded_center[0]},{item.rounded_center[1]}"
+            )
+            not in rejected_signatures
+        )
+        if not candidates:
+            return None
+        selected = min(candidates, key=lambda item: item.object_ref)
+        coordinate = Coordinate(*selected.rounded_center)
+        signature = f"marker:{group.marker_color}:activate:{coordinate.x},{coordinate.y}"
+        return PlannedClick(
+            coordinate=coordinate,
+            purpose=VisualActionPurpose.PROBE,
+            expectation="transfer the active role to a fixed endpoint with the matched marker",
+            mechanic_ref=mechanic_ref,
+            plan_id=plan_id,
+            plan_signature=signature,
+            target_center=group.target.rounded_center,
+            mediator_color=group.marker_color,
+            arity=group.arity,
+        )
+
+    relocation = _best_marker_relocation(
+        scene,
+        group,
+        active,
+        rejected_signatures=rejected_signatures,
+    )
+    if relocation is not None:
+        potential, coordinate = relocation
+        signature_kind = "solve" if potential == 0 else "improve"
+        signature = f"marker:{group.marker_color}:{signature_kind}:{coordinate.x},{coordinate.y}"
+        return PlannedClick(
+            coordinate=coordinate,
+            purpose=VisualActionPurpose.PROGRESS,
+            expectation=(
+                "place the active endpoint at the marker-group affine solution"
+                if potential == 0
+                else "strictly reduce the marker-group floor-centroid residual"
+            ),
+            mechanic_ref=mechanic_ref,
+            plan_id=plan_id,
+            plan_signature=signature,
+            target_center=group.target.rounded_center,
+            mediator_color=group.marker_color,
+            arity=group.arity,
+            completes_local_target=potential == 0,
+        )
+
+    switch_candidates: list[tuple[int, str, VisualObject]] = []
+    for endpoint in group.endpoints:
+        if endpoint.object_ref == active.object_ref:
+            continue
+        coordinate = Coordinate(*endpoint.rounded_center)
+        signature = f"marker:{group.marker_color}:rotate:{coordinate.x},{coordinate.y}"
+        if signature in rejected_signatures:
+            continue
+        prospective = _best_marker_relocation(
+            scene,
+            group,
+            endpoint,
+            rejected_signatures=rejected_signatures,
+        )
+        if prospective is not None:
+            switch_candidates.append((prospective[0], endpoint.object_ref, endpoint))
+    if not switch_candidates:
+        return None
+    _potential, _object_ref, selected = min(switch_candidates, key=lambda item: item[:2])
+    coordinate = Coordinate(*selected.rounded_center)
+    signature = f"marker:{group.marker_color}:rotate:{coordinate.x},{coordinate.y}"
+    return PlannedClick(
+        coordinate=coordinate,
+        purpose=VisualActionPurpose.PROBE,
+        expectation="transfer the active role within the same marker group before recomputing",
+        mechanic_ref=mechanic_ref,
+        plan_id=plan_id,
+        plan_signature=signature,
+        target_center=group.target.rounded_center,
+        mediator_color=group.marker_color,
+        arity=group.arity,
+    )
 
 
 _COORDINATE_TRANSFORM: dict[str, JSONValue] = {
@@ -1097,6 +1398,41 @@ class VisualCausalPolicy:
             self._failed_plan_signatures.add(self._plan[0].plan_signature)
             self._plan.clear()
             self._last_probe_failed = True
+        if ActionName.ACTION6 in observation.available_actions:
+            marker_scene = extract_visual_scene(observation.frames[-1])
+            marker_groups = _embedded_marker_groups(marker_scene)
+            marker_plan = _embedded_marker_plan(
+                marker_scene,
+                level_index=observation.levels_completed,
+                rejected_signatures=self._failed_plan_signatures,
+            )
+            if marker_plan is not None:
+                # Marker plans contain exactly one locally justified action and
+                # are recomputed from the returned frame.  A queued radial
+                # hypothesis for this level must not override stronger visible
+                # grouping evidence.
+                self._plan.clear()
+                action = ActionRequest(ActionName.ACTION6, marker_plan.coordinate)
+                self._stage_pending(
+                    observation,
+                    action,
+                    purpose=marker_plan.purpose,
+                    prediction=marker_plan.expectation,
+                    mechanic_refs=(marker_plan.mechanic_ref,),
+                    plan_signature=marker_plan.plan_signature,
+                    target_center=marker_plan.target_center,
+                    mediator_color=marker_plan.mediator_color,
+                    arity=marker_plan.arity,
+                    completes_local_target=marker_plan.completes_local_target,
+                )
+                return action
+            if any(
+                group.mediator.rounded_center != group.target.rounded_center
+                for group in marker_groups
+            ):
+                raise PolicyError(
+                    "embedded marker group is unresolved but has no bounded same-group action"
+                )
         if self._plan:
             planned = self._plan.popleft()
             action = ActionRequest(ActionName.ACTION6, planned.coordinate)
