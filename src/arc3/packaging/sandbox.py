@@ -242,8 +242,43 @@ if (
     or launch_receipt.get("orchestration") != "arc3.sequential-pinned-swarm.v1"
 ):
     raise RuntimeError("safe framework fixture did not use bounded sequential orchestration")
-if fixture_receipt.get("games") != ["stage17-fixture-game"]:
+expected_games = fixture_receipt.get("games")
+if expected_games != ["stage17-fixture-game"]:
     raise RuntimeError("safe framework fixture did not receive the gateway game inventory")
+if launch_receipt.get("discovered_environments") != expected_games:
+    raise RuntimeError("launch receipt environment inventory differs from the gateway fixture")
+if (
+    launch_receipt.get("lifecycle_enforced") is not True
+    or launch_receipt.get("open_scorecard_count") != 1
+    or launch_receipt.get("close_scorecard_count") != 1
+    or launch_receipt.get("make_count") != len(expected_games)
+    or launch_receipt.get("get_scorecard_during_flight_count") != 0
+    or launch_receipt.get("all_environments_covered") is not True
+):
+    raise RuntimeError("safe framework fixture did not prove the exact scorecard lifecycle")
+if (
+    launch_receipt.get("tournament_configured") is not True
+    or launch_receipt.get("tournament_finalized") is not True
+):
+    raise RuntimeError("safe framework fixture did not finalize its bounded tournament")
+tournament_wrapper = launch_receipt.get("tournament_receipt")
+if not isinstance(tournament_wrapper, dict) or tournament_wrapper.get("status") != "PASS":
+    raise RuntimeError("safe framework fixture has no passing tournament receipt")
+tournament_receipt = tournament_wrapper.get("receipt")
+if not isinstance(tournament_receipt, dict):
+    raise RuntimeError("safe framework fixture tournament receipt has the wrong shape")
+tournament_games = tournament_receipt.get("games")
+if (
+    tournament_receipt.get("expected_environments") != len(expected_games)
+    or tournament_receipt.get("finalized_environments") != len(expected_games)
+    or tournament_receipt.get("effective_ceiling_respected") is not True
+    or tournament_receipt.get("reserve_preserved") is not True
+    or tournament_receipt.get("outcome") != "complete-reserve-preserved"
+    or not isinstance(tournament_games, list)
+    or [item.get("game_id") for item in tournament_games if isinstance(item, dict)]
+    != expected_games
+):
+    raise RuntimeError("safe framework fixture tournament receipt failed semantic validation")
 if fixture_receipt.get("agent_action_cycle_status") != "PASS":
     raise RuntimeError("safe framework fixture did not execute a packaged agent action cycle")
 cycle_actions = fixture_receipt.get("agent_cycle_actions")
@@ -386,6 +421,22 @@ from types import SimpleNamespace
 
 from arcengine import GameAction, GameState
 
+class _CompetitionMode:
+    value = "competition"
+
+class _Arcade:
+    operation_mode = _CompetitionMode()
+    def open_scorecard(self, *args, **kwargs):
+        del args, kwargs
+        return "stage17-fixture-scorecard"
+    def make(self, game_id, *args, **kwargs):
+        del game_id, args, kwargs
+        return object()
+    def close_scorecard(self, scorecard_id):
+        if scorecard_id != "stage17-fixture-scorecard":
+            raise RuntimeError("fixture received the wrong scorecard identity")
+        return None
+
 class Swarm:
     def __init__(self, agent, root_url, games, tags=None):
         from agents import AVAILABLE_AGENTS
@@ -396,8 +447,10 @@ class Swarm:
         self.agent_class = AVAILABLE_AGENTS[agent]
         self.agents = []
         self.threads = []
+        self._arc = _Arcade()
 
     def main(self):
+        card_id = self._arc.open_scorecard(tags=self.tags)
         outcomes = {{}}
         def run(instance):
             if not instance.name:
@@ -442,13 +495,20 @@ class Swarm:
                 "agent_cycle_actions": [first_action.name, second_name],
             }}
         for game_id in self.games:
-            instance = self.agent_class(game_id=game_id, agent_name=self.agent)
+            instance = self.agent_class(
+                card_id=card_id,
+                game_id=game_id,
+                agent_name=self.agent,
+                arc_env=self._arc.make(game_id, scorecard_id=card_id),
+                record=False,
+            )
             self.agents.append(instance)
             self.threads.append(Thread(target=run, args=(instance,), daemon=True))
         for thread in self.threads:
             thread.start()
         for thread in self.threads:
             thread.join()
+        self._arc.close_scorecard(card_id)
         if set(outcomes) != set(self.games):
             raise RuntimeError("fixture did not execute every discovered game")
         first_outcome = outcomes[self.games[0]]

@@ -89,8 +89,12 @@ import json
 import os
 import subprocess
 import sys
+import time
 from pathlib import Path
 
+notebook_started_at_seconds = globals().setdefault(
+    "_ARC3_NOTEBOOK_STARTED_MONOTONIC", time.monotonic()
+)
 if os.environ.get("KAGGLE_IS_COMPETITION_RERUN"):
     fixture = (
         globals().get("_ARC3_REHEARSAL_AUTHORITY") == "{REHEARSAL_AUTHORITY}"
@@ -248,6 +252,9 @@ if os.environ.get("KAGGLE_IS_COMPETITION_RERUN"):
         gateway_port=gateway_port,
         working_root=working_root,
         allow_test_fixture=fixture,
+        notebook_started_at_seconds=float(
+            globals()["_ARC3_NOTEBOOK_STARTED_MONOTONIC"]
+        ),
     )
     (working_root / "arc3-launch-receipt.json").write_text(
         json.dumps(launch_receipt.to_dict(), sort_keys=True), encoding="utf-8"

@@ -406,6 +406,9 @@ def _validate_candidate_members(
                 "LICENSE",
                 "THIRD_PARTY_NOTICES.md",
                 "src/arc3/competition-runtime.v0.1.json",
+                "src/arc3/competition-runtime.v0.2.json",
+                "src/arc3/competition/__init__.py",
+                "src/arc3/competition/governor.py",
                 "src/arc3/competition_runtime.py",
             }
             if not required_runtime_members.issubset(payload_names):

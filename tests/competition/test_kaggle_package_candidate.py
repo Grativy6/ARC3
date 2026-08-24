@@ -287,6 +287,8 @@ def test_stage17_payload_excludes_build_tools_from_runtime_reachability(tmp_path
         assert "LICENSE" in members
         assert "agent/my_agent.py" in members
         assert "src/arc3/competition-runtime.v0.1.json" in members
+        assert "src/arc3/competition-runtime.v0.2.json" in members
+        assert "src/arc3/competition/governor.py" in members
         assert "src/arc3/competition_runtime.py" in members
         assert "src/arc3/policy/controller.py" in members
         assert "src/arc3/packaging/runtime_launcher.py" in members
@@ -326,6 +328,9 @@ def test_payload_is_projected_from_exact_git_blobs_not_hidden_worktree_bytes(
         "agent/my_agent.py": "class MyAgent:\n    pass\n",
         "pyproject.toml": "[project]\nname='fixture'\n",
         "src/arc3/competition-runtime.v0.1.json": "{}\n",
+        "src/arc3/competition-runtime.v0.2.json": "{}\n",
+        "src/arc3/competition/__init__.py": "\n",
+        "src/arc3/competition/governor.py": "GOVERNOR = 'tracked'\n",
         "src/arc3/competition_runtime.py": "RUNTIME = 'tracked'\n",
         "src/arc3/policy/controller.py": "VALUE = 'tracked'\n",
         "upstream.lock.json": "{}\n",
@@ -1017,7 +1022,25 @@ def test_stage17_runtime_launcher_registers_only_first_party_agent(
     )
     agent = tmp_path / "my_agent.py"
     agent.write_text(
-        "from agents.agent import Agent\n\nclass MyAgent(Agent):\n    pass\n",
+        "from agents.agent import Agent\n\n"
+        "class MyAgent(Agent):\n"
+        "    configured_games = ()\n"
+        "    @classmethod\n"
+        "    def configure_tournament(cls, games, working_root):\n"
+        "        del working_root\n"
+        "        cls.configured_games = tuple(games)\n"
+        "    @classmethod\n"
+        "    def finalize_tournament(cls):\n"
+        "        return {\n"
+        "            'effective_ceiling_respected': True,\n"
+        "            'expected_environments': len(cls.configured_games),\n"
+        "            'finalized_environments': len(cls.configured_games),\n"
+        "            'games': [{'game_id': game} for game in cls.configured_games],\n"
+        "            'maximum_total_actions': max(1, 80 * len(cls.configured_games)),\n"
+        "            'outcome': 'complete-reserve-preserved',\n"
+        "            'reserve_preserved': True,\n"
+        "            'total_actions_authorized': 0,\n"
+        "        }\n",
         encoding="utf-8",
     )
     discovered_games = ("fixture-game-1", "fixture-game-2", "fixture-game-3")

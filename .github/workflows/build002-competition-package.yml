@@ -1,0 +1,79 @@
+name: Build 002 competition package and cold start
+
+"on":
+  push:
+    branches:
+      - "build/002-kaggle-competition-adapter"
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: "arc3-build002-package-${{ github.ref }}"
+  cancel-in-progress: false
+
+jobs:
+  native-linux-cold-start:
+    name: Native Linux sealed cold start
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Check out exact source
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: "${{ github.event.pull_request.head.sha || github.sha }}"
+
+      - name: Install pinned uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.12.5"
+          enable-cache: true
+
+      - name: Install pinned Python
+        run: uv python install 3.12.14
+
+      - name: Synchronize exact development environment
+        run: uv sync --frozen --all-extras --dev --python 3.12.14 --link-mode copy
+
+      - name: Build and execute the no-network notebook rehearsal
+        shell: pwsh
+        run: |
+          $package = Join-Path $env:RUNNER_TEMP "arc3-build002-package"
+          "ARC3_BUILD002_PACKAGE=$package" | Out-File -FilePath $env:GITHUB_ENV -Append
+          uv run python -m scripts.prepare_kaggle_submission `
+            --output $package `
+            --owner-username OWNER_USERNAME `
+            --sandbox-timeout 240
+
+      - name: Acquire sealed wheels and run native offline cold start twice
+        shell: pwsh
+        run: |
+          $wheelhouse = Join-Path $env:RUNNER_TEMP "arc3-build002-wheelhouse"
+          $receipt = Join-Path $env:ARC3_BUILD002_PACKAGE "linux-cold-start-receipt.json"
+          uv run python -m scripts.verify_build002_cold_start `
+            --package-dir $env:ARC3_BUILD002_PACKAGE `
+            --wheelhouse $wheelhouse `
+            --receipt $receipt `
+            --acquire
+          $result = Get-Content -LiteralPath $receipt -Raw | ConvertFrom-Json
+          if ($result.status -ne "PASS" -or
+              -not $result.cold_start.executed -or
+              $result.cold_start.determinism.repetitions -ne 2 -or
+              $result.public_environment_interactions -ne 0 -or
+              $result.kaggle_accessed -ne $false) {
+            throw "Build 002 native cold-start receipt did not pass its sealed boundary"
+          }
+
+      - name: Upload exact package and cold-start receipts
+        uses: actions/upload-artifact@v4
+        with:
+          name: "arc3-build002-linux-${{ github.sha }}"
+          path: "${{ env.ARC3_BUILD002_PACKAGE }}"
+          if-no-files-found: error
+          retention-days: 14
