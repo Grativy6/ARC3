@@ -98,6 +98,7 @@ from arc3.perception import (
     TrackingResult,
     extract_components,
     measure_delta,
+    observation_metadata,
     track_components,
 )
 from arc3.planning import (
@@ -1718,8 +1719,8 @@ class ARC3Controller:
             delta = measure_delta(
                 prior_frame,
                 frame,
-                before_metadata=_metadata(previous),
-                after_metadata=_metadata(observation),
+                before_metadata=observation_metadata(previous),
+                after_metadata=observation_metadata(observation),
                 background_colors=frozenset({prior_background, background}),
             )
             if self.features.use_object_tracking:
@@ -1771,7 +1772,7 @@ class ARC3Controller:
                         change.field: {"before": change.before, "after": change.after}
                         for change in delta.metadata_changes
                     },
-                    "apparent_noop": delta.changed_cell_count == 0,
+                    "apparent_noop": delta.apparent_noop,
                 },
             )
             measurement_ids.append(delta_event.event_id)
@@ -7863,8 +7864,8 @@ class ARC3Controller:
             delta = measure_delta(
                 prior_frame,
                 current_frame,
-                before_metadata=_metadata(previous),
-                after_metadata=_metadata(latest),
+                before_metadata=observation_metadata(previous),
+                after_metadata=observation_metadata(latest),
                 background_colors=frozenset({prior_background, current_background}),
             )
             if self.features.use_object_tracking:

@@ -202,6 +202,48 @@ def test_observation_schema_validates_frame_receipt() -> None:
         )
 
 
+def test_delta_schema_requires_empty_cells_and_metadata_for_apparent_noop() -> None:
+    payload = {
+        "before_frame_hash": "sha256:" + "a" * 64,
+        "after_frame_hash": "sha256:" + "a" * 64,
+        "changed_cell_count": 0,
+        "cell_changes": [],
+        "changed_bbox": None,
+        "component_changes": [],
+        "metadata_changes": {"state": {"before": "NOT_FINISHED", "after": "GAME_OVER"}},
+        "apparent_noop": False,
+    }
+    receipt = TraceEvent.create(
+        run_id="run-1",
+        episode_id="episode-1",
+        game_id="synthetic-redacted",
+        level_index=0,
+        step_index=1,
+        event_type="observation.delta_measured",
+        source=SOURCE,
+        scope="episode",
+        payload=payload,
+        code_identity=CODE,
+        previous_event_hash=None,
+    )
+    assert receipt.payload["apparent_noop"] is False
+
+    with pytest.raises(ARC3ValidationError, match="empty cell and metadata"):
+        TraceEvent.create(
+            run_id="run-1",
+            episode_id="episode-1",
+            game_id="synthetic-redacted",
+            level_index=0,
+            step_index=1,
+            event_type="observation.delta_measured",
+            source=SOURCE,
+            scope="episode",
+            payload={**payload, "apparent_noop": True},
+            code_identity=CODE,
+            previous_event_hash=None,
+        )
+
+
 def test_reasoning_selection_requires_complete_typed_trigger_projection() -> None:
     source_event_id = "E-OBSERVATION"
     payload = {
