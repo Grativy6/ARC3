@@ -620,7 +620,7 @@ projection = {
     "network_denial_self_test": network_denial_self_test,
     "permitted_loopback_socket_events": permitted_loopback_socket_events,
     "source_commit": source_commit,
-    "source_runtime_config_sha256": wrapper.FROZEN_COMPETITION_RUNTIME.config_sha256,
+    "source_runtime_config_sha256": wrapper.FROZEN_COMPETITION_RUNTIME.configuration_sha256,
     "tournament_finalized_environments": final.get("finalized_environments"),
     "tournament_outcome": final.get("outcome"),
     "tournament_total_actions": final.get("total_actions_authorized"),

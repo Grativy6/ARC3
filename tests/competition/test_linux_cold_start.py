@@ -74,6 +74,8 @@ def test_build002_probe_allows_only_required_loopback_bind_socket_events() -> No
     assert '"permitted_loopback_socket_events"' in source
     assert 'denial_probe.connect(("203.0.113.1", 9))' in source
     assert 'network_denial_self_test = "PASS"' in source
+    assert "FROZEN_COMPETITION_RUNTIME.configuration_sha256" in source
+    assert "FROZEN_COMPETITION_RUNTIME.config_sha256" not in source
 
 
 @pytest.mark.competition
