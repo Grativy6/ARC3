@@ -7,6 +7,7 @@ from arc3.adapters import GridFrame, Observation
 from arc3.mechanics.visual_causal import (
     VisualCausalPolicy,
     VisualObjectRole,
+    _radial_plan_points,
     extract_visual_scene,
     infer_affine_mechanic,
     infer_transferred_affine_mechanic,
@@ -151,6 +152,28 @@ def test_supported_affine_form_transfers_without_coordinates_or_object_identity(
     assert mechanic.arity == 3
     assert set(mechanic.anchor_centers) == {(28, 8), (18, 26)}
     assert mechanic.target_center == (25, 29)
+
+
+def test_failed_target_relative_plan_signature_is_not_repeated() -> None:
+    scene = extract_visual_scene(_frame((8, 32), (32, 32), (20, 10)))
+    first = _radial_plan_points(
+        scene,
+        target=(20, 10),
+        arity=2,
+        rejected_signatures=set(),
+    )
+    assert first is not None
+    signature = ";".join(f"{item.x},{item.y}" for item in first)
+
+    second = _radial_plan_points(
+        scene,
+        target=(20, 10),
+        arity=2,
+        rejected_signatures={signature},
+    )
+
+    assert second is not None
+    assert second != first
 
 
 @dataclass

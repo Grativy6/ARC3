@@ -175,6 +175,7 @@ class PlannedClick:
     expectation: str
     mechanic_ref: str
     plan_id: str
+    plan_signature: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -619,6 +620,7 @@ class VisualCausalPolicy:
         self._pending_purpose = VisualActionPurpose.PROBE
         self._pending_prediction = "all factored channels UNKNOWN"
         self._pending_mechanic_refs: tuple[str, ...] = ()
+        self._pending_plan_signature: str | None = None
         self._plan: deque[PlannedClick] = deque()
         self._mechanics: list[AffineMechanic] = []
         self._receipts: list[VisualActionReceipt] = []
@@ -744,6 +746,7 @@ class VisualCausalPolicy:
                     expectation="place active endpoint at a target-relative support point",
                     mechanic_ref=mechanic.mechanic_ref,
                     plan_id=plan_id,
+                    plan_signature=signature,
                 )
             )
             actions.append(
@@ -753,6 +756,7 @@ class VisualCausalPolicy:
                     expectation="exchange active and fixed endpoint roles without global reset",
                     mechanic_ref=mechanic.mechanic_ref,
                     plan_id=plan_id,
+                    plan_signature=signature,
                 )
             )
         actions.append(
@@ -762,6 +766,7 @@ class VisualCausalPolicy:
                 expectation="complete the observed affine composition at the matched target",
                 mechanic_ref=mechanic.mechanic_ref,
                 plan_id=plan_id,
+                plan_signature=signature,
             )
         )
         self._plan.extend(actions)
@@ -793,6 +798,7 @@ class VisualCausalPolicy:
                 purpose=planned.purpose,
                 prediction=planned.expectation,
                 mechanic_refs=(planned.mechanic_ref,),
+                plan_signature=planned.plan_signature,
             )
             return action
 
@@ -814,6 +820,7 @@ class VisualCausalPolicy:
                         purpose=planned.purpose,
                         prediction=planned.expectation,
                         mechanic_refs=(planned.mechanic_ref,),
+                        plan_signature=planned.plan_signature,
                     )
                     return action
             activation = self._activation_coordinate(scene) if self._last_probe_failed else None
@@ -868,6 +875,7 @@ class VisualCausalPolicy:
         purpose: VisualActionPurpose,
         prediction: str,
         mechanic_refs: tuple[str, ...] = (),
+        plan_signature: str | None = None,
     ) -> None:
         if self._pending_action is not None:
             raise PolicyError("a consequence is required before selecting another action")
@@ -876,6 +884,7 @@ class VisualCausalPolicy:
         self._pending_purpose = purpose
         self._pending_prediction = prediction
         self._pending_mechanic_refs = mechanic_refs
+        self._pending_plan_signature = plan_signature
 
     def accept_consequence(self, observation: Observation) -> None:
         before = self._pending_before
@@ -958,9 +967,8 @@ class VisualCausalPolicy:
             and not state_change
             and changed <= 2
         ):
-            if self._plan:
-                failed = self._plan[0].plan_id
-                self._failed_plan_signatures.add(failed)
+            if self._pending_plan_signature is not None:
+                self._failed_plan_signatures.add(self._pending_plan_signature)
             self._plan.clear()
             self._last_probe_failed = True
 
@@ -977,6 +985,7 @@ class VisualCausalPolicy:
         self._pending_action = None
         self._pending_prediction = "all factored channels UNKNOWN"
         self._pending_mechanic_refs = ()
+        self._pending_plan_signature = None
 
     def close(self) -> None:
         if self._pending_action is not None:
