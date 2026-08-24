@@ -1,0 +1,169 @@
+{
+  "schema": "arc3.build-002.final-evidence-index.v0.1",
+  "generated_at": "2026-08-24T09:20:26Z",
+  "index_status": "SEALED",
+  "overall_build_status": "PARTIAL",
+  "status": "PARTIAL",
+  "implementation_freeze": {
+    "branch": "build/002-kaggle-competition-adapter",
+    "commit": "753b0e007222a973a2c8a6d7ce14a395135d3c5f",
+    "tree": "d07e72716a1f918ed04a6892adb1e3f46259e345",
+    "draft_pull_request": "https://github.com/Grativy6/ARC3/pull/6"
+  },
+  "official_repository_commits": {
+    "arcprize/ARC-AGI": "f12822c4d550121c35a275008d964afbbed47d2f",
+    "arcprize/ARCEngine": "b495c6acaf253c9681cd7b75c4299d352e9ce6f8",
+    "arcprize/ARC-AGI-3-Agents": "4743e7d0aaae0ded0d98a89a7e282e63564cd58b",
+    "arcprize/ARC-AGI-3-Kaggle-Starter": "eeb1535404f321d280a8f9194bbc1d7aca5f05fc",
+    "arcprize/docs": "a5dfc0b64c625fb4a19cf074af845ebe0bb88ff8"
+  },
+  "identities": {
+    "official_source_identity_receipt": {
+      "path": "docs/evidence/002-00-official-source-identities.json",
+      "sha256": "sha256:7231d2c84c3c589ddf24ede5b3064d1c789c2c2e5d9cdb27a609914061f9827f"
+    },
+    "runtime_configuration": {
+      "path": "src/arc3/competition-runtime.v0.2.json",
+      "file_sha256": "sha256:dd3331276476b771d1483fec2c5541c6c6471f6c5bb81bd1a887c5f89949c3e0",
+      "configuration_sha256": "sha256:3b56018560e4bde4005da4c7f30bc97a4180179d4a8ce1c0959cc0c76651694a"
+    },
+    "upstream_lock": {
+      "path": "upstream.lock.json",
+      "sha256": "sha256:fb3acb1e375dddaaa02e38dc39cd3a0cde7fe95045d4dca34d976d29e0f56c68"
+    },
+    "dependency_lock": {
+      "path": "uv.lock",
+      "sha256": "sha256:3bf42dcbe45720f71b7433584f56a5d5982ec1c687c341ad2626222fa5de285b"
+    },
+    "holdout_manifest": {
+      "path": "docs/evaluation/public-game-partitions.v0.1.json",
+      "sha256": "sha256:682d5891c2aface54803d9bd1173c55ed21e89856e13b8a478fb9276ee963f2f"
+    },
+    "license": {
+      "path": "LICENSE",
+      "sha256": "sha256:7f433e520d07d56ad14d92e9da9f580771479c30a2bfccc8024eed308f21bbe8"
+    },
+    "third_party_notices": {
+      "path": "THIRD_PARTY_NOTICES.md",
+      "sha256": "sha256:dd3b46094c40b5bf2a0b13892382e05ebaa1e8006f341f94f1279a87ffdbf70a"
+    },
+    "kaggle_metadata_response_sha256": "sha256:ca6253ca8e87ba6e4e5a435ee5f83bc27aaf62aa564860c1e31390349978de4f"
+  },
+  "measured_local_artifacts": {
+    "profile": {
+      "path": "artifacts/build002/profile-753b0e0/profile.json",
+      "schema": "arc3.stage16.profile.v0.1",
+      "status": "PASS",
+      "file_sha256": "sha256:ed2d4c336017551cb4b99e3fc2bc71eedf66b87683811d0d4a00056e0f84fb15",
+      "producer_receipt_sha256": "sha256:3f03b17ed639a6e7c6762254a1cba9fdfabb45aaa6ac42f9eb72e7f7b0048714",
+      "actions": 80,
+      "wall_seconds": 39.6246924,
+      "peak_rss_bytes": 321466368,
+      "maximum_controller_cycle_seconds": 3.3508976999946753,
+      "label": "synthetic",
+      "claim": "NO_GENERALIZATION_CLAIM"
+    },
+    "package": {
+      "path": "artifacts/build002/final-753b0e0",
+      "status": "PACKAGING_PASS",
+      "build_receipt_file_sha256": "sha256:be23ee24c614229b2f940c112fb916f12b63cbdc700c8bcafc1569024d008bc5",
+      "build_receipt_producer_sha256": "sha256:8afaf2f16cf9f4a7c7825718b14427b5afdcb239d877523d22e70f617ed46358",
+      "candidate_sha256": "sha256:adcd92352f55a0109c0898fe14b531e8780f02dc9b68489af449c1b8b8c16d9a",
+      "candidate_size_bytes": 838438,
+      "notebook_sha256": "sha256:adbb75d09806da104a5d3bfbe41e55d809ec2bb91514aafa6176c2469f30c81e",
+      "notebook_size_bytes": 548193,
+      "payload_sha256": "sha256:726e595523a9b737a3b000b6d4d088a8e9289c1e6fd1da03297b79876311356f",
+      "manifest_sha256": "sha256:29f5b430ff3be418bd8c4922939aa9134f823864983abf320601e1a46ca89388",
+      "runtime_requirements_sha256": "sha256:d71522e36a1d39bd4bcc8c0a0d65d07886e7360658d1b4794add94de02ff2056",
+      "wheel_manifest_sha256": "sha256:04a8774e252511d4b3e1c1f5ac7dab507f98ebb4e5a57c80a1415e50380df90e",
+      "sbom_sha256": "sha256:e1d4836e974f22cf8821ddc46909edc1bce0ed2146a9ad4116550d11a130d0ed",
+      "submission_parquet_sha256": "sha256:f601196d5298e525e04c22185acb3668c3a9f74c6f371040164169fcc17279c9",
+      "submission_parquet_size_bytes": 856,
+      "submission_schema_sha256": "sha256:2966db762a4c328ee8854cb7ba6b78194bd2fab6cca278f8411ffaab6780bd56",
+      "package_only_integrity_passed": true,
+      "full_competition_integrity_status": "NOT_EVALUATED_PUBLIC_IDENTIFIERS",
+      "integrity_receipt_file_sha256": "sha256:9287f22b9a6d63cd8dd3540661f28b2115e9935488d24c38aeb58767c7ad1b3b",
+      "integrity_receipt_producer_sha256": "sha256:42aa847bc4443f100be9163b9bb9746ed30dc1e5d79692d20d7d1cfbc43da588"
+    },
+    "native_linux_cold_start": {
+      "path": "artifacts/build002/ci-753b0e0/linux-cold-start-receipt.json",
+      "ci_artifact_path": "artifacts/build002/ci-753b0e0/arc3-build002-linux-e316089172c35c1fd2d2276ce093874b3c9cff81/linux-cold-start-receipt.json",
+      "schema": "arc3.build-002-cold-start-command.v0.2",
+      "status": "PASS",
+      "file_sha256": "sha256:d04dcef55e36a9ee32a6f4153d89efc6b61560962b9931b031a70632a4ff4ecc",
+      "ci_run": "https://github.com/Grativy6/ARC3/actions/runs/32708504639",
+      "ci_job": "https://github.com/Grativy6/ARC3/actions/runs/32708504639/job/97374699134",
+      "python": "3.12.14",
+      "wall_seconds": 12.728529202,
+      "peak_memory_bytes": 132288512,
+      "wheel_count": 31,
+      "wheel_bytes": 45073152,
+      "kaggle_accessed": false,
+      "public_environment_interactions": 0,
+      "limitation": "safe loopback gateway/framework fixture; not exact Kaggle/private parity"
+    }
+  },
+  "terminal_evidence": {
+    "preflight": "docs/evidence/002-07-frozen-preflight-blocked-external.json",
+    "preflight_tracked_file_sha256": "sha256:e0cd69b2f63b547c14a3cae5d4186c3edae9e58607d20f905d8fa7c808d52951",
+    "preflight_request_path": "artifacts/build002/preflight-753b0e0-final/request.json",
+    "preflight_source_artifact_path": "artifacts/build002/preflight-753b0e0-final/bundle/blocked-external.json",
+    "preflight_source_artifact_file_sha256": "sha256:15d748c6954705cabdfc37d0f993ec3e5d352558fb0741d7bd7cbd472e24e82e",
+    "preflight_producer_receipt_sha256": "sha256:bb37fa65c0bf470ba54b2e6b82c14c01cafc8045d9697b1ac82893b2a241b189",
+    "preflight_request_sha256": "sha256:b842e2cee086ec2833bdd7c3453482f88c8a889b1e474ca992124e8a33033160",
+    "public_run_disposition": "docs/evidence/002-08-public-run-disposition.json",
+    "public_run_disposition_file_sha256": "sha256:aea212ca447c0f3bfd946619c0332e1a7c83115250e5e85610abd1af52672740",
+    "result": "BLOCKED_EXTERNAL_BEFORE_CONSUMPTION",
+    "authorized_runs_consumed": 0,
+    "authorized_runs_remaining": 1,
+    "pre_run_blocker_category": "platform",
+    "public_metrics": "NOT_MEASURED",
+    "official_rhae": null
+  },
+  "hosted_verification": {
+    "arc3_ci": {
+      "status": "PASS",
+      "run": "https://github.com/Grativy6/ARC3/actions/runs/32708504627",
+      "pull_request_merge_commit": "e316089172c35c1fd2d2276ce093874b3c9cff81",
+      "pull_request_merge_tree": "d07e72716a1f918ed04a6892adb1e3f46259e345",
+      "merge_tree_matches_implementation_tree": true,
+      "ubuntu": "1476 passed, 10 skipped",
+      "windows": "1466 passed, 20 skipped"
+    },
+    "build_001_package_only": {
+      "status": "PASS",
+      "run": "https://github.com/Grativy6/ARC3/actions/runs/32708504623",
+      "ubuntu_receipt_file_sha256": "sha256:56e7cb6a4e9b882cb7fe8eb0310ac9a75fb968352b807655dcc7671766611813",
+      "windows_receipt_file_sha256": "sha256:c053e798a9c368cf8607b9a8953e1369b76f855d532dd8e3f3d7d7114207e054"
+    },
+    "build_002_package_and_cold_start": {
+      "status": "PASS",
+      "run": "https://github.com/Grativy6/ARC3/actions/runs/32708504639"
+    }
+  },
+  "documentation_head": {
+    "identity": "EXTERNAL_AFTER_DOCUMENTATION_COMMIT",
+    "reason": "A commit cannot contain its own SHA or later CI conclusion.",
+    "verification_surface": "https://github.com/Grativy6/ARC3/pull/6"
+  },
+  "artifact_retention": "local and CI artifacts; generated binaries are not tracked evidence",
+  "reports": [
+    "docs/research/ARC3-Build-002-report.md",
+    "docs/reports/002-10-final-verification.md",
+    "docs/handoffs/002-kaggle-competition-adapter.md"
+  ],
+  "tracked_deliverables": [
+    {
+      "path": "docs/research/ARC3-Build-002-report.md",
+      "sha256": "sha256:697d6d5ce3af8d79a1e33015c7649de952b206e4c22595c7213383816adecb78"
+    },
+    {
+      "path": "docs/reports/002-10-final-verification.md",
+      "sha256": "sha256:cbcf1a799b3df9693865e848595e562b229fdede790ef7d0655f9df4b9477a48"
+    },
+    {
+      "path": "docs/handoffs/002-kaggle-competition-adapter.md",
+      "sha256": "sha256:8093ef12dcac5d82ad5f69fb0afa9a4dcb9647fd4fc7140ae612cc58c300484c"
+    }
+  ]
+}

@@ -1,6 +1,7 @@
 # Workflow 002 — Kaggle competition adapter and first honest RHAE
 
-**Status:** active; implementation and preflight in progress
+**Status:** terminal `PARTIAL`; all achievable local stages completed, with frozen public and
+official evaluation `BLOCKED_EXTERNAL`
 **Implementation branch:** `build/002-kaggle-competition-adapter`
 **Base:** exact merged `origin/main` at
 `a1931c673b90923e1af78127229667544802a096`
@@ -65,8 +66,10 @@ Acceptance requires:
   by exact commit/tree/blob/file or response hashes;
 - every material source discrepancy and unavailable private surface recorded.
 
-Current state: source discovery is complete on available public surfaces; lock/report integration
-and final stage acceptance remain pending.
+Terminal state: `PASS` on available public sources. The exact base, Build 001 ancestry, repository
+pins, raw file identities, refreshed Kaggle metadata, project lock, and permanent source
+discrepancies are sealed in Build 002 evidence. Exact private Kaggle surfaces remain separately
+`BLOCKED_EXTERNAL`.
 
 ### Stage 01 — Execution-mode separation
 
@@ -172,6 +175,25 @@ checks, offline cold start, secret and competition-integrity scans, artifact/has
 Git integrity, and clean-clone validation. Commit and push the Build 002 branch, open or update a
 draft PR, and prepare the final report and owner handoff. Do not merge or submit.
 
+## Terminal stage disposition
+
+| Stage | Status | Terminal evidence |
+|---|---|---|
+| 00 | `PASS` | exact base, ancestry, public source pins, metadata, and locks |
+| 01 | `PASS` | research and bounded competition modes separated |
+| 02 | `PASS` | official agent surface and granted-action boundary implemented |
+| 03 | `PASS` | governor and lifecycle locally verified |
+| 04 | `PASS` | competition hot-path policy verified; research defaults retained |
+| 05 | `PASS` | clean package and native Linux exact-requirement cold start passed |
+| 06 | `PASS` | notebook and pinned-public Parquet structure passed |
+| 07 | `BLOCKED_EXTERNAL` | frozen preflight stopped before arming |
+| 08 | `BLOCKED_EXTERNAL` | authorized run not started; `0/1` consumed |
+| 09 | `PASS` | pre-consumption blocked disposition sealed; no result promoted |
+| 10 | `PASS` | exact-head checks, pushed branch, draft PR, report, and handoff complete |
+
+Build 002 closes as `PARTIAL`. `BLOCKED_EXTERNAL` is the honest terminal result for the unavailable
+public/official evaluation surfaces. Build 001 remains immutable `PARTIAL`.
+
 ## Persistent-run protocol
 
 After each atomic task:
@@ -197,3 +219,61 @@ Build 002 is complete only after all achievable stages are terminal, the impleme
 adapter are pushed, the draft PR is current, the one-shot run is sealed or honestly blocked, the
 notebook and `submission.parquet` validate locally, and the handoff separates measured results,
 open burdens, and owner-only actions.
+
+## Terminal freeze addendum — 753b0e0
+
+Recorded 2026-08-24T09:20:26Z. This append-only addendum supersedes the current-artifact identity
+in the earlier terminal table without deleting the `0385d238` evidence or its failures.
+
+- Frozen implementation: commit `753b0e007222a973a2c8a6d7ce14a395135d3c5f`, tree
+  `d07e72716a1f918ed04a6892adb1e3f46259e345`.
+- Synthetic profile: file
+  `ed2d4c336017551cb4b99e3fc2bc71eedf66b87683811d0d4a00056e0f84fb15`, producer receipt
+  `3f03b17ed639a6e7c6762254a1cba9fdfabb45aaa6ac42f9eb72e7f7b0048714`,
+  `39.6246924s` wall, `321,466,368`-byte peak RSS, and
+  `3.3508976999946753s` maximum production controller cycle.
+- Package: candidate
+  `adcd92352f55a0109c0898fe14b531e8780f02dc9b68489af449c1b8b8c16d9a`
+  (`838,438` bytes), notebook
+  `adbb75d09806da104a5d3bfbe41e55d809ec2bb91514aafa6176c2469f30c81e`
+  (`548,193` bytes), payload
+  `726e595523a9b737a3b000b6d4d088a8e9289c1e6fd1da03297b79876311356f`, manifest
+  `29f5b430ff3be418bd8c4922939aa9134f823864983abf320601e1a46ca89388`, and SBOM
+  `e1d4836e974f22cf8821ddc46909edc1bce0ed2146a9ad4116550d11a130d0ed`.
+- Package receipts: serialized build
+  `be23ee24c614229b2f940c112fb916f12b63cbdc700c8bcafc1569024d008bc5`, build producer
+  `8afaf2f16cf9f4a7c7825718b14427b5afdcb239d877523d22e70f617ed46358`, serialized integrity
+  `9287f22b9a6d63cd8dd3540661f28b2115e9935488d24c38aeb58767c7ad1b3b`, and integrity producer
+  `42aa847bc4443f100be9163b9bb9746ed30dc1e5d79692d20d7d1cfbc43da588`.
+- Native Linux cold start: workflow `32708504639` passed; receipt file
+  `d04dcef55e36a9ee32a6f4153d89efc6b61560962b9931b031a70632a4ff4ecc`,
+  `12.728529202s` wall, `132,288,512`-byte peak memory, and zero public interactions.
+- Frozen preflight: serialized source artifact
+  `15d748c6954705cabdfc37d0f993ec3e5d352558fb0741d7bd7cbd472e24e82e`, producer receipt
+  `bb37fa65c0bf470ba54b2e6b82c14c01cafc8045d9697b1ac82893b2a241b189`, request
+  `b842e2cee086ec2833bdd7c3453482f88c8a889b1e474ca992124e8a33033160`, and hashed error
+  `ba7ce61033f638929402dad230d898e52fb6ddbdf1471b4951fe49c525e8bd86`.
+  It stopped before arming, scorecard open, make, reset, or action; authority remains `0/1`.
+- Preserved second `0385d238` regression: packaged `MyAgent` startup lacked tournament
+  configuration on both operating systems, and the Linux protected package-only selector also
+  collected the exact POSIX Agents integration. Commit `753b0e0` repairs the startup and excludes
+  only that integration from the protected guard; ordinary CI retains it. Local targeted result:
+  `30 passed`; package startup passes. The exact local invocation and standalone transcript hash
+  were not sealed.
+- Hosted state at this freeze: Build 002 workflow `32708504639` is `PASS`; ARC3 CI
+  `32708504627` and Build 001 package-only CI `32708504623` are `PENDING`. Therefore the earlier
+  Stage 10 `PASS` row is superseded for the exact `753b0e0` head by `IN_PROGRESS` until both final
+  hosted conclusions are bound. Pending is not green.
+
+### Terminal hosted conclusion
+
+Recorded 2026-08-24T09:20:26Z: ARC3 CI `32708504627` and Build 001 package-only CI
+`32708504623` both completed `PASS`; Build 002 package/cold-start CI `32708504639` was already
+`PASS`. The PR merge object `e3160891...` has the exact implementation tree `d07e7271...`.
+Stage 10 is therefore terminal `PASS` at the implementation freeze. The overall Build 002 status
+remains `PARTIAL`, with Stages 07 and 08 `BLOCKED_EXTERNAL`, no public result, and holdout authority
+unconsumed at `0/1`.
+
+Build 002 remains `PARTIAL`; the exact public/official surface remains `BLOCKED_EXTERNAL`; no RHAE
+or public gameplay metric was measured. Build 001 remains unchanged `PARTIAL` and historically
+`SEALED_UNCONSUMED`.

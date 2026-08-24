@@ -1,0 +1,71 @@
+{
+  "schema": "arc3.build-002.public-run-disposition.v0.1",
+  "generated_at": "2026-08-24T09:20:26Z",
+  "status": "BLOCKED_EXTERNAL",
+  "build_status": "PARTIAL",
+  "stage": "08",
+  "source": {
+    "commit": "753b0e007222a973a2c8a6d7ce14a395135d3c5f",
+    "tree": "d07e72716a1f918ed04a6892adb1e3f46259e345",
+    "runtime_configuration_sha256": "sha256:3b56018560e4bde4005da4c7f30bc97a4180179d4a8ce1c0959cc0c76651694a",
+    "holdout_manifest_sha256": "sha256:682d5891c2aface54803d9bd1173c55ed21e89856e13b8a478fb9276ee963f2f"
+  },
+  "authority": {
+    "authorized_runs": 1,
+    "runs_started": 0,
+    "runs_completed": 0,
+    "runs_consumed": 0,
+    "authorized_runs_remaining": 1,
+    "status": "AUTHORIZED_ONCE_NOT_YET_CONSUMED",
+    "consumption_boundary": "durable intent immediately before the first and only upstream scorecard open"
+  },
+  "interactions": {
+    "scorecard_open_intents": 0,
+    "scorecard_open_interactions": 0,
+    "environment_make_intents": 0,
+    "environment_make_interactions": 0,
+    "environment_actions": 0,
+    "environment_resets": 0
+  },
+  "measurements": {
+    "status": "NOT_MEASURED_NO_RUN",
+    "result_surface": null,
+    "total_rhae": null,
+    "official_rhae": null,
+    "completed_games": null,
+    "completed_levels": null,
+    "per_game": null,
+    "per_level": null,
+    "agent_actions_vs_human_baselines": null,
+    "wall_time_seconds": null,
+    "peak_memory_bytes": null,
+    "budget_allocation": null,
+    "remaining_reserve_seconds": null,
+    "failure_taxonomy": null
+  },
+  "blocker": {
+    "kind": "exact-external-surface-unavailable",
+    "primary_category": "platform",
+    "classification_scope": "pre-run blocker; not a per-environment gameplay failure",
+    "receipt": "docs/evidence/002-07-frozen-preflight-blocked-external.json",
+    "producer_receipt_sha256": "sha256:bb37fa65c0bf470ba54b2e6b82c14c01cafc8045d9697b1ac82893b2a241b189",
+    "source_artifact_file_sha256": "sha256:15d748c6954705cabdfc37d0f993ec3e5d352558fb0741d7bd7cbd472e24e82e",
+    "tracked_evidence_file_sha256": "sha256:e0cd69b2f63b547c14a3cae5d4186c3edae9e58607d20f905d8fa7c808d52951",
+    "pre_consumption": true
+  },
+  "canonical_one_shot_state": {
+    "path": "artifacts/build002/holdout-one-shot",
+    "exists": false,
+    "consumption_marker_exists": false,
+    "result_exists": false,
+    "failed_attempt_exists": false
+  },
+  "claim_boundary": {
+    "public_metrics": "NOT_MEASURED",
+    "synthetic_or_approximate_output_labeled_official": false,
+    "future_result_label_if_run": "local-public-source-preview-exposed",
+    "build_001_status": "PARTIAL",
+    "build_001_holdout_status": "SEALED_UNCONSUMED",
+    "build_001_revised": false
+  }
+}

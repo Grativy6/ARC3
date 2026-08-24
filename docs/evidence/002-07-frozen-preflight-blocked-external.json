@@ -1,0 +1,21 @@
+{
+  "authority": {
+    "holdout_authority_consumed": false,
+    "rerun_authorized": true
+  },
+  "claim_boundary": "preflight stopped before arming or any environment interaction",
+  "environment_actions": 0,
+  "environment_make_interactions": 0,
+  "error": {
+    "kind": "FileNotFoundError",
+    "message_sha256": "sha256:ba7ce61033f638929402dad230d898e52fb6ddbdf1471b4951fe49c525e8bd86"
+  },
+  "receipt_sha256": "sha256:bb37fa65c0bf470ba54b2e6b82c14c01cafc8045d9697b1ac82893b2a241b189",
+  "request_sha256": "sha256:b842e2cee086ec2833bdd7c3453482f88c8a889b1e474ca992124e8a33033160",
+  "schema": "arc3.build-002.preflight-external-stop.v0.1",
+  "source": {
+    "commit": "753b0e007222a973a2c8a6d7ce14a395135d3c5f",
+    "tree": "d07e72716a1f918ed04a6892adb1e3f46259e345"
+  },
+  "status": "BLOCKED_EXTERNAL"
+}
