@@ -309,6 +309,9 @@ def test_policy_learns_then_completes_target_relative_plan_without_grid_sweep() 
     assert len(coordinates) <= 6
     assert len(set(coordinates)) == len(coordinates)
     assert all(receipt.before_state is GameStateName.NOT_FINISHED for receipt in policy.receipts)
+    durable = policy.drain_durable_receipts()
+    assert len(durable) == len(coordinates)
+    assert policy.drain_durable_receipts() == ()
 
 
 def test_policy_continues_after_level_transition_until_final_win() -> None:

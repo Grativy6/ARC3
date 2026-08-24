@@ -868,6 +868,7 @@ class VisualCausalPolicy:
         self._plan: deque[PlannedClick] = deque()
         self._mechanics: list[AffineMechanic] = []
         self._receipts: list[VisualActionReceipt] = []
+        self._durable_receipts: deque[dict[str, JSONValue]] = deque()
         self._mechanical_learner: MechanicalLearner | None = None
         self._affine_ledger_ref: MechanicRef | None = None
         self._transfer_confirmed_levels: set[int] = set()
@@ -1493,6 +1494,7 @@ class VisualCausalPolicy:
             mechanic_learning_receipt=learning,
         )
         self._receipts.append(receipt)
+        self._durable_receipts.append(receipt.to_dict())
 
         self._previous_observation = observation
         self._pending_before = None
@@ -1511,6 +1513,13 @@ class VisualCausalPolicy:
     def close(self) -> None:
         if self._pending_action is not None:
             raise PolicyError("cannot close with an unresolved submitted action")
+
+    def drain_durable_receipts(self) -> tuple[dict[str, JSONValue], ...]:
+        """Return each newly completed receipt exactly once for durable journaling."""
+
+        receipts = tuple(self._durable_receipts)
+        self._durable_receipts.clear()
+        return receipts
 
     def snapshot(self) -> dict[str, JSONValue]:
         """Return bounded, deterministic campaign evidence."""

@@ -29,13 +29,20 @@ if TYPE_CHECKING:
 
 from arc3.competition_runtime import FROZEN_COMPETITION_RUNTIME
 from arc3.config import ARC3Config, BudgetConfig
-from arc3.errors import AdapterError, EvaluationError
+from arc3.errors import AdapterError, EvaluationError, TraceError
 from arc3.trace import (
     BaselineTraceSink,
     EventJournal,
     ReplayEngine,
 )
-from arc3.types import ActionName, EnvironmentMode, EvaluationSurface, GameId, GameStateName
+from arc3.types import (
+    ActionName,
+    EnvironmentMode,
+    EvaluationSurface,
+    GameId,
+    GameStateName,
+    JSONValue,
+)
 
 from .artifacts import (
     canonical_json_bytes,
@@ -345,6 +352,10 @@ class PublicEvaluationConfig:
             raise ValueError("agents must be non-empty and unique")
         for agent in self.agents:
             baseline_descriptor(agent)
+        if "mechanical" in self.agents and self.agents != ("mechanical",):
+            raise ValueError("the Build 003 mechanical policy must run alone")
+        if "mechanical" in self.agents and self.partition == "public-holdout":
+            raise ValueError("the Build 003 mechanical policy is local-public development only")
         if not self.seeds or len(set(self.seeds)) != len(self.seeds):
             raise ValueError("seeds must be non-empty and unique")
         if any(
@@ -390,9 +401,24 @@ class PublicEvaluationConfig:
         )
         if diagnostic_intervention and self.partition == "public-holdout":
             raise ValueError("public holdout evaluation cannot enable diagnostic interventions")
-        if diagnostic_intervention and self.agents != ("full",):
+        mechanical_allocator_opt_out = bool(
+            self.partition != "public-holdout"
+            and self.agents == ("mechanical",)
+            and self.hot_path_profile is False
+            and self.python_allocation_tracing is False
+            and self.automatic_checkpointing is True
+        )
+        if (
+            diagnostic_intervention
+            and not mechanical_allocator_opt_out
+            and self.agents != ("full",)
+        ):
             raise ValueError("diagnostic interventions require the FULL policy only")
-        if diagnostic_intervention and not self.hot_path_profile:
+        if (
+            diagnostic_intervention
+            and not mechanical_allocator_opt_out
+            and not self.hot_path_profile
+        ):
             raise ValueError("diagnostic interventions require hot-path profiling")
         if self.evaluation_id is not None and (
             not self.evaluation_id
@@ -878,18 +904,69 @@ def _trace_receipt(trace_path: Path, *, run_id: str, relative_path: str) -> dict
         if journal.active_path.is_file() and journal.active_path.stat().st_size:
             journal.seal()
         events = ReplayEngine(journal).verify_integrity(verify_blobs=True)
+        mechanical_trace = any(
+            event.event_type == "mechanics.action_receipt"
+            or event.source.details.get("baseline_id") == "B5"
+            for event in events
+        )
         counts: dict[str, int] = {}
         environment_actions = 0
         resets = 0
+        consequence_event_ids: set[str] = set()
+        consequence_actions: list[dict[str, JSONValue]] = []
+        mechanical_source_ids: list[str] = []
+        final_observation_event_id: str | None = None
+        final_upstream_session_id: str | None = None
+        final_state: str | None = None
+        final_levels_completed: int | None = None
+        final_win_levels: int | None = None
         for event in events:
             counts[event.event_type] = counts.get(event.event_type, 0) + 1
             if event.event_type == "consequence.received":
+                consequence_event_ids.add(event.event_id)
                 action = event.payload.get("action")
                 name = action.get("name") if isinstance(action, dict) else None
+                if not isinstance(action, dict) and mechanical_trace:
+                    raise TraceError("consequence action payload is malformed")
+                if mechanical_trace and isinstance(action, dict):
+                    consequence_actions.append(cast(dict[str, JSONValue], dict(action)))
                 if name == ActionName.RESET.value:
                     resets += 1
                 else:
                     environment_actions += 1
+            elif event.event_type == "mechanics.action_receipt":
+                source_id = event.payload.get("source_consequence_event_id")
+                if not isinstance(source_id, str) or not source_id:
+                    raise TraceError("mechanical action receipt has no consequence link")
+                mechanical_source_ids.append(source_id)
+            elif mechanical_trace and event.event_type == "observation.received":
+                metadata = event.payload.get("upstream_metadata")
+                upstream_session_id = event.payload.get("upstream_session_id")
+                state = event.payload.get("game_state")
+                levels = metadata.get("levels_completed") if isinstance(metadata, dict) else None
+                wins = metadata.get("win_levels") if isinstance(metadata, dict) else None
+                if (
+                    not isinstance(state, str)
+                    or isinstance(levels, bool)
+                    or not isinstance(levels, int)
+                    or levels < 0
+                    or isinstance(wins, bool)
+                    or not isinstance(wins, int)
+                    or wins < 0
+                ):
+                    raise TraceError("final normalized observation metadata is malformed")
+                final_observation_event_id = event.event_id
+                if upstream_session_id is not None:
+                    if not isinstance(upstream_session_id, str) or not upstream_session_id:
+                        raise TraceError("normalized observation session identity is malformed")
+                    final_upstream_session_id = upstream_session_id
+                final_state = state
+                final_levels_completed = levels
+                final_win_levels = wins
+        mechanical_receipts_replay_linked = bool(
+            len(mechanical_source_ids) == len(set(mechanical_source_ids))
+            and all(source_id in consequence_event_ids for source_id in mechanical_source_ids)
+        )
         receipt: dict[str, object] = {
             "schema": "arc3.evaluation.trace-receipt.v0.1",
             "path": relative_path,
@@ -904,6 +981,19 @@ def _trace_receipt(trace_path: Path, *, run_id: str, relative_path: str) -> dict
             "event_type_counts": counts,
             "replay_verified": True,
         }
+        if mechanical_trace:
+            receipt.update(
+                {
+                    "consequence_actions": consequence_actions,
+                    "mechanical_action_receipt_count": len(mechanical_source_ids),
+                    "mechanical_receipts_replay_linked": mechanical_receipts_replay_linked,
+                    "final_observation_event_id": final_observation_event_id,
+                    "final_upstream_session_id": final_upstream_session_id,
+                    "final_state": final_state,
+                    "final_levels_completed": final_levels_completed,
+                    "final_win_levels": final_win_levels,
+                }
+            )
     finally:
         journal.close()
     receipt["byte_length"] = sum(
@@ -1035,6 +1125,18 @@ def run_public_episode(
         # The returned environment receipt is an authority boundary. Preserve it
         # before any derived policy fold that can fail.
         policy.accept_consequence(observation)
+        if trace_sink is not None:
+            drain = getattr(policy, "drain_durable_receipts", None)
+            if callable(drain):
+                raw_receipts = drain()
+                if not isinstance(raw_receipts, (list, tuple)) or any(
+                    not isinstance(item, Mapping) for item in raw_receipts
+                ):
+                    raise EvaluationError("mechanical policy durable receipts are malformed")
+                trace_sink.record_mechanical_receipts(
+                    observation,
+                    cast(Sequence[Mapping[str, object]], raw_receipts),
+                )
         if action.name is ActionName.RESET:
             resets += 1
         else:
@@ -1086,4 +1188,7 @@ def run_public_episode(
         "final_state": observation.state.value,
         "final_frame_hash": str(observation.frames[-1].digest),
     }
+    if callable(getattr(policy, "drain_durable_receipts", None)):
+        metrics["final_levels_completed"] = observation.levels_completed
+        metrics["final_win_levels"] = observation.win_levels
     return scorecard, metrics

@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 
 from arc3.adapters import GridFrame, Observation, ScoreRunSummary, ScoreSummary
-from arc3.evaluation.public import run_public_episode
+from arc3.evaluation.public import _trace_receipt, run_public_episode
 from arc3.trace import BaselineTraceSink, CodeIdentity, EventJournal, SourceIdentity
 from arc3.types import (
     ActionName,
@@ -167,3 +167,74 @@ def test_baseline_trace_preserves_returned_consequence_before_policy_fault(
     assert event_types.count("action.submitted") == 1
     assert event_types.count("consequence.received") == 1
     assert event_types[-1] == "observation.received"
+
+
+def test_mechanical_receipt_is_durably_linked_at_pretransition_level(
+    tmp_path: Path,
+) -> None:
+    class MechanicalPolicy(_OneStepPolicy):
+        def __init__(self) -> None:
+            super().__init__()
+            self.pending: tuple[dict[str, object], ...] = ()
+
+        def accept_consequence(self, observation: Observation) -> None:
+            super().accept_consequence(observation)
+            self.pending = (
+                {
+                    "action": {"name": "ACTION1", "coordinate": None},
+                    "before_frame_hash": str(
+                        _observation(1, state=GameStateName.NOT_FINISHED, levels=0)
+                        .frames[-1]
+                        .digest
+                    ),
+                    "after_frame_hash": str(observation.frames[-1].digest),
+                    "before_state": "NOT_FINISHED",
+                    "after_state": observation.state.value,
+                    "level_index": 0,
+                    "levels_before": 0,
+                    "levels_after": observation.levels_completed,
+                },
+            )
+
+        def drain_durable_receipts(self) -> tuple[dict[str, object], ...]:
+            result = self.pending
+            self.pending = ()
+            return result
+
+    journal = EventJournal(tmp_path / "trace", run_id="mechanical-receipt")
+    sink = BaselineTraceSink(
+        journal=journal,
+        episode_id="episode:mechanical-receipt",
+        source=SourceIdentity("mechanical_fixture", "1"),
+        code_identity=CodeIdentity("fixture-commit", "sha256:" + "1" * 64),
+        observation_level_scoping=True,
+    )
+
+    run_public_episode(
+        _OneStepOfficialSession(),
+        MechanicalPolicy(),
+        max_actions=10,
+        max_resets=2,
+        trace_sink=sink,
+    )
+
+    events = journal.verify_manifest(include_active=True)
+    journal.close()
+    consequence = next(event for event in events if event.event_type == "consequence.received")
+    mechanical = next(event for event in events if event.event_type == "mechanics.action_receipt")
+    final_observation = [event for event in events if event.event_type == "observation.received"][
+        -1
+    ]
+    assert consequence.level_index == 0
+    assert mechanical.level_index == 0
+    assert final_observation.level_index == 1
+    assert mechanical.payload["source_consequence_event_id"] == consequence.event_id
+    receipt = _trace_receipt(
+        tmp_path / "trace",
+        run_id="mechanical-receipt",
+        relative_path="t/mechanical-receipt",
+    )
+    assert receipt["mechanical_action_receipt_count"] == 1
+    assert receipt["mechanical_receipts_replay_linked"] is True
+    assert receipt["final_state"] == "WIN"
+    assert receipt["final_levels_completed"] == 1

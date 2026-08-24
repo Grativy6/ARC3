@@ -21,7 +21,7 @@ from arc3.config import ARC3Config
 from arc3.errors import EvaluationError, TraceError
 from arc3.profiling.runtime import process_memory_sample
 from arc3.trace import BaselineTraceSink, CodeIdentity, EventJournal, SourceIdentity
-from arc3.types import EnvironmentMode, EvaluationSurface
+from arc3.types import ActionName, EnvironmentMode, EvaluationSurface
 
 from .artifacts import (
     atomic_write_bytes,
@@ -61,9 +61,11 @@ from .public import (
     validate_public_gate,
 )
 
-_TERMINAL_STATUSES = frozenset({"PASS", "PARTIAL", "FAILED_INFRASTRUCTURE"})
+_TERMINAL_STATUSES = frozenset({"PASS", "NOT_FINISHED", "PARTIAL", "FAILED_INFRASTRUCTURE"})
 _PUBLIC_SUMMARY_SCHEMA = "arc3.public-evaluation.summary.v0.2"
 _LEGACY_PUBLIC_SUMMARY_SCHEMA = "arc3.public-evaluation.summary.v0.1"
+_MECHANICAL_PUBLIC_SUMMARY_SCHEMA = "arc3.public-evaluation.summary.v0.3"
+_MECHANICAL_COMPLETION_SCHEMA = "arc3.build003.mechanical-completion.v0.1"
 
 # Kept as an injectable test seam without importing the environment adapter at
 # module import time.  Earned holdout workers resolve it only after their first
@@ -260,6 +262,373 @@ def _asset_identity_check(
     }
 
 
+def _recording_artifacts(
+    directory: Path,
+    *,
+    relative_root: str,
+    expected_game_id: str,
+) -> list[dict[str, object]]:
+    """Strictly identify one pinned-SDK local-public recording."""
+
+    if not directory.is_dir():
+        return []
+    files = sorted(item for item in directory.rglob("*") if item.is_file())
+    if len(files) != 1:
+        return []
+    path = files[0]
+    relative = path.relative_to(directory)
+    expected_prefix = f"{expected_game_id}-"
+    if (
+        len(relative.parts) != 2
+        or path.suffix != ".jsonl"
+        or not path.name.startswith(expected_prefix)
+        or not path.name.endswith(".jsonl")
+        or path.stat().st_size <= 0
+    ):
+        return []
+    guid = path.name[len(expected_prefix) : -len(".jsonl")]
+    if not guid:
+        return []
+    try:
+        lines = [line for line in path.read_text(encoding="utf-8").splitlines() if line]
+        records = [json.loads(line) for line in lines]
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+        return []
+    if not records or any(not isinstance(record, dict) for record in records):
+        return []
+    actions: list[dict[str, object]] = []
+    summaries: list[dict[str, object]] = []
+    for index, record_value in enumerate(records):
+        record = cast(dict[str, object], record_value)
+        data_value = record.get("data")
+        timestamp = record.get("timestamp")
+        if not isinstance(timestamp, str) or not timestamp or not isinstance(data_value, dict):
+            return []
+        data = cast(dict[str, object], data_value)
+        levels = data.get("levels_completed")
+        wins = data.get("win_levels")
+        state = data.get("state")
+        if (
+            data.get("game_id") != expected_game_id
+            or data.get("guid") != guid
+            or not isinstance(state, str)
+            or not state
+            or isinstance(levels, bool)
+            or not isinstance(levels, int)
+            or levels < 0
+            or isinstance(wins, bool)
+            or not isinstance(wins, int)
+            or wins < 0
+            or not isinstance(data.get("full_reset"), bool)
+            or not isinstance(data.get("available_actions"), list)
+            or not isinstance(data.get("frame"), list)
+        ):
+            return []
+        action_input_value = data.get("action_input")
+        if not isinstance(action_input_value, dict):
+            return []
+        action_input = cast(dict[str, object], action_input_value)
+        action_id = action_input.get("id")
+        if not isinstance(action_id, str) or action_id not in {
+            action.value for action in ActionName
+        }:
+            return []
+        coordinate: dict[str, object] | None = None
+        if action_id == ActionName.ACTION6.value:
+            coordinate_value = action_input.get("data")
+            if not isinstance(coordinate_value, dict):
+                return []
+            x = coordinate_value.get("x")
+            y = coordinate_value.get("y")
+            if (
+                isinstance(x, bool)
+                or not isinstance(x, int)
+                or isinstance(y, bool)
+                or not isinstance(y, int)
+                or not 0 <= x < 64
+                or not 0 <= y < 64
+            ):
+                return []
+            coordinate = {"x": x, "y": y}
+        elif action_input.get("data") != {}:
+            return []
+        action: dict[str, object] = {"name": action_id, "coordinate": coordinate}
+        if index == 0:
+            if action_id != ActionName.RESET.value:
+                return []
+        else:
+            actions.append(action)
+        summaries.append(
+            {
+                "state": state,
+                "levels_completed": levels,
+                "win_levels": wins,
+            }
+        )
+    return [
+        {
+            "actions": actions,
+            "byte_length": path.stat().st_size,
+            "event_count": len(records),
+            "final_observation": summaries[-1],
+            "first_observation": summaries[0],
+            "guid": guid,
+            "path": f"{relative_root.rstrip('/')}/{relative.as_posix()}",
+            "scorecard_id": relative.parts[0],
+            "sha256": sha256_file(path),
+        }
+    ]
+
+
+def _mechanical_completion_receipt(
+    result: dict[str, Any],
+    specification: dict[str, object],
+    *,
+    recording_artifacts: list[dict[str, object]],
+) -> dict[str, object]:
+    """Project the only authoritative Build 003 completion boundary."""
+
+    score_value = result.get("score")
+    metrics_value = result.get("metrics")
+    trace_value = result.get("trace")
+    score = score_value if isinstance(score_value, dict) else {}
+    metrics = metrics_value if isinstance(metrics_value, dict) else {}
+    trace = trace_value if isinstance(trace_value, dict) else {}
+    raw_final_state = trace.get("final_state")
+    metric_final_state = metrics.get("final_state")
+    official_final_state = score.get("official_run_state")
+    score_boundary_consistent = bool(
+        isinstance(official_final_state, str)
+        and isinstance(score.get("completed"), bool)
+        and (official_final_state == "WIN") == (score.get("completed") is True)
+    )
+    completion_observed = bool(
+        raw_final_state == "WIN"
+        and metric_final_state == "WIN"
+        and official_final_state == "WIN"
+        and score.get("completed") is True
+        and score.get("verified") is True
+        and score.get("official_run_game_id") == specification.get("game_id")
+    )
+    environment_actions = trace.get("environment_action_count")
+    resets = trace.get("reset_count")
+    submissions = trace.get("submitted_action_count")
+    consequences = trace.get("consequence_count")
+    mechanical_receipts = trace.get("mechanical_action_receipt_count")
+    levels_completed = trace.get("final_levels_completed")
+    win_levels = trace.get("final_win_levels")
+    action_counts_complete = bool(
+        isinstance(environment_actions, int)
+        and not isinstance(environment_actions, bool)
+        and isinstance(resets, int)
+        and not isinstance(resets, bool)
+        and isinstance(submissions, int)
+        and not isinstance(submissions, bool)
+        and isinstance(consequences, int)
+        and not isinstance(consequences, bool)
+        and isinstance(mechanical_receipts, int)
+        and not isinstance(mechanical_receipts, bool)
+        and environment_actions >= 0
+        and resets >= 0
+        and submissions == environment_actions + resets
+        and consequences == submissions
+        and mechanical_receipts == consequences
+        and score.get("official_run_actions") == environment_actions
+        and score.get("official_run_resets") == resets
+    )
+    level_counts_complete = bool(
+        isinstance(levels_completed, int)
+        and not isinstance(levels_completed, bool)
+        and levels_completed >= 0
+        and isinstance(win_levels, int)
+        and not isinstance(win_levels, bool)
+        and win_levels >= 0
+        and score.get("levels_completed") == levels_completed
+        and metrics.get("final_levels_completed") == levels_completed
+        and metrics.get("final_win_levels") == win_levels
+    )
+    replay_verified = bool(
+        trace.get("replay_verified") is True
+        and trace.get("mechanical_receipts_replay_linked") is True
+    )
+    recording_verified = (
+        bool(
+            len(recording_artifacts) == 1
+            and recording_artifacts[0].get("guid") == trace.get("final_upstream_session_id")
+            and recording_artifacts[0].get("event_count") == consequences + 1
+            and recording_artifacts[0].get("actions") == trace.get("consequence_actions")
+            and recording_artifacts[0].get("final_observation")
+            == {
+                "state": raw_final_state,
+                "levels_completed": levels_completed,
+                "win_levels": win_levels,
+            }
+        )
+        if isinstance(consequences, int) and not isinstance(consequences, bool)
+        else False
+    )
+    evidence_paths = {
+        "recordings": [item["path"] for item in recording_artifacts],
+        "run_receipt": f"runs/{specification['run_id']}.json",
+        "trace": trace.get("path"),
+    }
+    run_evidence_complete = bool(
+        action_counts_complete
+        and level_counts_complete
+        and replay_verified
+        and recording_verified
+        and isinstance(trace.get("path"), str)
+    )
+    receipt_complete = bool(completion_observed and run_evidence_complete)
+    return seal_object(
+        {
+            "schema": _MECHANICAL_COMPLETION_SCHEMA,
+            "game_id": specification["game_id"],
+            "levels_completed": levels_completed,
+            "win_levels": win_levels,
+            "win_levels_source": (
+                "final normalized observation; the official ScoreRunSummary has no win_levels field"
+            ),
+            "raw_final_state": raw_final_state,
+            "metric_final_state": metric_final_state,
+            "official_run_state": official_final_state,
+            "score_completed": score.get("completed"),
+            "score_boundary_consistent": score_boundary_consistent,
+            "environment_action_count": environment_actions,
+            "reset_count": resets,
+            "submission_count": submissions,
+            "mechanical_action_receipt_count": mechanical_receipts,
+            "recording_artifacts": recording_artifacts,
+            "evidence_paths": evidence_paths,
+            "replay_verified": replay_verified,
+            "recording_verified": recording_verified,
+            "run_evidence_complete": run_evidence_complete,
+            "completion_observed": completion_observed,
+            "receipt_complete": receipt_complete,
+            "completion_authority": (
+                "raw final observation WIN and official scorecard WIN/completed; "
+                "PASS additionally requires complete replay-linked receipts and recording evidence"
+            ),
+        },
+        hash_field="completion_receipt_hash",
+    )
+
+
+def _finalize_mechanical_result(
+    result: dict[str, Any],
+    specification: dict[str, object],
+    *,
+    recording_artifacts: list[dict[str, object]],
+) -> dict[str, Any]:
+    if specification.get("agent") != "mechanical":
+        return result
+    completion = _mechanical_completion_receipt(
+        result,
+        specification,
+        recording_artifacts=recording_artifacts,
+    )
+    updated = dict(result)
+    updated.pop("receipt_hash", None)
+    updated["build003_completion"] = completion
+    if result.get("status") == "success":
+        if completion["score_boundary_consistent"] is not True:
+            updated["status"] = "failure"
+            updated["failure"] = {
+                "kind": "mechanical_scorecard_terminal_mismatch",
+                "message": "official scorecard state and completed flag disagree",
+            }
+        elif completion["run_evidence_complete"] is not True:
+            updated["status"] = "failure"
+            updated["failure"] = {
+                "kind": "mechanical_run_evidence_incomplete",
+                "message": "required replay-linked action or recording evidence is incomplete",
+            }
+        elif completion["receipt_complete"] is True:
+            updated["status"] = "success"
+            updated["failure"] = None
+        elif completion["completion_observed"] is not True:
+            updated["status"] = "not_finished"
+            updated["failure"] = {
+                "kind": "authoritative_win_not_observed",
+                "message": "official environment remained outside the authoritative WIN boundary",
+            }
+    return seal_object(updated, hash_field="receipt_hash")
+
+
+def _mechanical_completion_valid(receipt: dict[str, Any], specification: dict[str, object]) -> bool:
+    completion = receipt.get("build003_completion")
+    if not isinstance(completion, dict):
+        return False
+    artifacts_value = completion.get("recording_artifacts")
+    if not isinstance(artifacts_value, list) or any(
+        not isinstance(item, dict) for item in artifacts_value
+    ):
+        return False
+    artifacts = cast(list[dict[str, object]], artifacts_value)
+    expected = _mechanical_completion_receipt(
+        receipt,
+        specification,
+        recording_artifacts=artifacts,
+    )
+    if completion != expected or not verify_object_hash(
+        completion, hash_field="completion_receipt_hash"
+    ):
+        return False
+    status = receipt.get("status")
+    if status == "success":
+        return completion.get("receipt_complete") is True and receipt.get("failure") is None
+    if status == "not_finished":
+        failure = receipt.get("failure")
+        return bool(
+            completion.get("completion_observed") is False
+            and completion.get("run_evidence_complete") is True
+            and isinstance(failure, dict)
+            and failure.get("kind") == "authoritative_win_not_observed"
+        )
+    return True
+
+
+def _mechanical_evidence_files_valid(
+    receipt: dict[str, Any],
+    specification: dict[str, object],
+    *,
+    evaluation_root: Path,
+    recording_directory: Path,
+    recordings_relative: str,
+) -> bool:
+    """Re-open Build 003 replay and recording evidence before reuse or verification."""
+
+    if specification.get("agent") != "mechanical":
+        return True
+    completion = receipt.get("build003_completion")
+    trace_value = receipt.get("trace")
+    if not isinstance(completion, dict):
+        return False
+    expected_artifacts = _recording_artifacts(
+        recording_directory,
+        relative_root=recordings_relative,
+        expected_game_id=str(specification["game_id"]),
+    )
+    if completion.get("recording_artifacts") != expected_artifacts:
+        return False
+    if not isinstance(trace_value, dict):
+        return receipt.get("status") not in {"success", "not_finished"} and not expected_artifacts
+    relative_trace = trace_value.get("path")
+    if not isinstance(relative_trace, str) or not relative_trace:
+        return False
+    trace_path = (evaluation_root / relative_trace).resolve()
+    try:
+        trace_path.relative_to(evaluation_root)
+        actual_trace = _trace_receipt(
+            trace_path,
+            run_id=str(specification["run_id"]),
+            relative_path=relative_trace,
+        )
+    except (OSError, EvaluationError, TraceError, ValueError):
+        return False
+    return actual_trace == trace_value
+
+
 def _failure_result(
     specification: dict[str, object],
     identity: dict[str, object],
@@ -364,6 +733,10 @@ def _salvage_trace(
         trace["environment_action_count"], field="environment_action_count"
     )
     metrics["resets"] = _as_int(trace["reset_count"], field="reset_count")
+    if "final_state" in trace:
+        metrics["final_state"] = trace.get("final_state")
+        metrics["final_levels_completed"] = trace.get("final_levels_completed")
+        metrics["final_win_levels"] = trace.get("final_win_levels")
     counts_value = trace.get("event_type_counts")
     counts = counts_value if isinstance(counts_value, dict) else {}
     metrics["fault_count"] = max(1, int(counts.get("run.environment_fault", 0)))
@@ -615,6 +988,7 @@ def _worker_body(
                     str(identity["config_hash"]),
                     {"first_party_source_hash": str(identity["first_party_source_hash"])},
                 ),
+                observation_level_scoping=agent == "mechanical",
             )
         # Recheck after environment initialization and immediately before the
         # first policy selection/action.  Any authority drift fails closed.
@@ -841,7 +1215,9 @@ def _receipt_valid(
     if any(receipt.get(field) != specification.get(field) for field in bound_fields):
         return False
     status = receipt.get("status")
-    if status not in {"success", "failure", "timeout", "crash", "interrupted"}:
+    if status not in {"success", "not_finished", "failure", "timeout", "crash", "interrupted"}:
+        return False
+    if status == "not_finished" and specification.get("agent") != "mechanical":
         return False
     score = receipt.get("score")
     metrics = receipt.get("metrics")
@@ -888,7 +1264,7 @@ def _receipt_valid(
             if specification.get("surface") == "online-public"
             else {"matched", "recorded-uncompared"}
         )
-        if status == "success" and expected_asset_check["status"] not in (
+        if status in {"success", "not_finished"} and expected_asset_check["status"] not in (
             acceptable_success_statuses
         ):
             return False
@@ -942,7 +1318,7 @@ def _receipt_valid(
         expected_success_network_attempts = (
             None if specification.get("surface") == "online-public" else 0
         )
-        if status == "success" and (
+        if status in {"success", "not_finished"} and (
             cpu_seconds is None
             or memory_before is None
             or memory_after is None
@@ -958,10 +1334,11 @@ def _receipt_valid(
         status=status,
     ):
         return False
-    if status == "success":
+    if status in {"success", "not_finished"}:
         trace = receipt.get("trace")
         if (
-            receipt.get("failure") is not None
+            (status == "success" and receipt.get("failure") is not None)
+            or (status == "not_finished" and not isinstance(receipt.get("failure"), dict))
             or not isinstance(trace, dict)
             or trace.get("replay_verified") is not True
             or score.get("verified") is not True
@@ -970,6 +1347,10 @@ def _receipt_valid(
         ):
             return False
     elif not isinstance(receipt.get("failure"), dict):
+        return False
+    if specification.get("agent") == "mechanical" and not _mechanical_completion_valid(
+        receipt, specification
+    ):
         return False
     return bool(
         receipt.get("schema") == PUBLIC_RUN_SCHEMA
@@ -1331,6 +1712,21 @@ def _aggregate(results: list[dict[str, Any]], *, partition: str) -> dict[str, ob
     }
 
 
+def _mechanical_aggregate(results: list[dict[str, Any]], *, partition: str) -> dict[str, object]:
+    """Add Build 003 terminal semantics without changing frozen v0.1/v0.2 shapes."""
+
+    if any(result.get("agent") != "mechanical" for result in results):
+        raise EvaluationError("Build 003 mechanical aggregate received another policy")
+    summary = _aggregate(results, partition=partition)
+    not_finished = sum(result.get("status") == "not_finished" for result in results)
+    failures = _as_int(summary["failure_count"], field="failure_count")
+    summary["schema"] = _MECHANICAL_PUBLIC_SUMMARY_SCHEMA
+    summary["not_finished_count"] = not_finished
+    if not_finished and failures == not_finished:
+        summary["status"] = "NOT_FINISHED"
+    return summary
+
+
 def _render_report(
     manifest: dict[str, Any], summary: dict[str, object], results: list[dict[str, Any]]
 ) -> str:
@@ -1347,7 +1743,10 @@ def _render_report(
         f"- Network during evaluation: `{manifest['network_mode']}`",
         "",
     ]
-    if summary.get("schema") == _PUBLIC_SUMMARY_SCHEMA:
+    if summary.get("schema") in {
+        _PUBLIC_SUMMARY_SCHEMA,
+        _MECHANICAL_PUBLIC_SUMMARY_SCHEMA,
+    }:
         lines.extend(
             [
                 "Successful-run score and level aggregates exclude every failed receipt. "
@@ -1599,6 +1998,16 @@ def verify_public_evaluation(directory: str | Path) -> dict[str, object]:
             continue
         if not _receipt_valid(receipt, specification, manifest.get("identity_hash")):
             errors.append(f"run receipt identity mismatch: {specification.get('run_id')}")
+        if specification.get("agent") == "mechanical":
+            storage_key = _storage_key(run_id_value)
+            if not _mechanical_evidence_files_valid(
+                receipt,
+                specification,
+                evaluation_root=root,
+                recording_directory=root / "official-recordings" / storage_key,
+                recordings_relative=f"official-recordings/{storage_key}",
+            ):
+                errors.append(f"mechanical evidence files mismatch: {specification.get('run_id')}")
         results.append(receipt)
     canonical_required = {
         "results.jsonl",
@@ -1608,6 +2017,16 @@ def verify_public_evaluation(directory: str | Path) -> dict[str, object]:
         "reproduce.txt",
         *(f"runs/{run_id}.json" for run_id in run_ids),
     }
+    for result in results:
+        completion = result.get("build003_completion")
+        if isinstance(completion, dict):
+            artifacts_value = completion.get("recording_artifacts")
+            if isinstance(artifacts_value, list):
+                canonical_required.update(
+                    str(item["path"])
+                    for item in artifacts_value
+                    if isinstance(item, dict) and isinstance(item.get("path"), str)
+                )
     for relative in sorted(canonical_required - set(cast(list[str], required))):
         errors.append(f"canonical required artifact is undeclared: {relative}")
     results_path = root / "results.jsonl"
@@ -1635,6 +2054,8 @@ def verify_public_evaluation(directory: str | Path) -> dict[str, object]:
                     expected_summary = _legacy_aggregate(results, partition=partition)
                 elif summary_schema == _PUBLIC_SUMMARY_SCHEMA:
                     expected_summary = _aggregate(results, partition=partition)
+                elif summary_schema == _MECHANICAL_PUBLIC_SUMMARY_SCHEMA:
+                    expected_summary = _mechanical_aggregate(results, partition=partition)
                 else:
                     raise EvaluationError("public summary schema is unsupported")
             except (EvaluationError, KeyError, TypeError, ValueError):
@@ -1928,15 +2349,34 @@ def run_public_evaluation(config: PublicEvaluationConfig) -> EvaluationOutcome:
     }
     for specification in specifications:
         run_id = str(specification["run_id"])
+        storage_key = _storage_key(run_id)
         receipt_path = runs / f"{run_id}.json"
         failure_path = failures / f"{run_id}.json"
+        run_recordings = (
+            official_recordings / storage_key
+            if specification.get("agent") == "mechanical"
+            else official_recordings
+        )
+        recordings_relative = (
+            f"official-recordings/{storage_key}"
+            if specification.get("agent") == "mechanical"
+            else "official-recordings"
+        )
         if receipt_path.is_file():
             try:
                 existing = load_json(receipt_path)
             except (OSError, EvaluationError, json.JSONDecodeError):
                 _preserve(receipt_path, failures)
             else:
-                if _receipt_valid(existing, specification, identity["identity_hash"]):
+                if _receipt_valid(
+                    existing, specification, identity["identity_hash"]
+                ) and _mechanical_evidence_files_valid(
+                    existing,
+                    specification,
+                    evaluation_root=directory,
+                    recording_directory=run_recordings,
+                    recordings_relative=recordings_relative,
+                ):
                     if run_id not in prior_completions:
                         ledger.append(
                             "game.evaluation_completed",
@@ -1990,9 +2430,15 @@ def run_public_evaluation(config: PublicEvaluationConfig) -> EvaluationOutcome:
             )
             prior_completions.add(run_id)
             continue
-        storage_key = _storage_key(run_id)
         trace_path = traces / storage_key
         checkpoint_path = checkpoints / storage_key
+        if (
+            specification.get("agent") == "mechanical"
+            and run_recordings.exists()
+            and any(run_recordings.iterdir())
+        ):
+            _preserve(run_recordings, failures)
+        run_recordings.mkdir(parents=True, exist_ok=True)
         if trace_path.exists():
             trace_path.replace(failures / f"trace-{storage_key}-{uuid.uuid4().hex}")
         if checkpoint_path.exists():
@@ -2024,7 +2470,7 @@ def run_public_evaluation(config: PublicEvaluationConfig) -> EvaluationOutcome:
             "trace_relative": f"t/{storage_key}",
             "checkpoint_path": str(_runtime_path(checkpoint_path)),
             "environments_dir": str(config.environments_dir.resolve()),
-            "recordings_dir": str(_runtime_path(official_recordings)),
+            "recordings_dir": str(_runtime_path(run_recordings)),
             "timeout_seconds": config.timeout_seconds,
             "max_actions": config.max_actions,
             "max_resets": config.max_resets,
@@ -2146,6 +2592,16 @@ def run_public_evaluation(config: PublicEvaluationConfig) -> EvaluationOutcome:
                 ),
             )
             atomic_write_json(receipt_path, result)
+        result = _finalize_mechanical_result(
+            result,
+            specification,
+            recording_artifacts=_recording_artifacts(
+                run_recordings,
+                relative_root=recordings_relative,
+                expected_game_id=str(specification["game_id"]),
+            ),
+        )
+        atomic_write_json(receipt_path, result)
         if not _receipt_valid(result, specification, identity["identity_hash"]):
             _preserve(receipt_path, failures)
             trace, metrics = _salvage_trace(
@@ -2165,6 +2621,15 @@ def run_public_evaluation(config: PublicEvaluationConfig) -> EvaluationOutcome:
                 trace=trace,
                 asset_identity_after=_local_asset_after(
                     manifest, config, str(specification["game_id"])
+                ),
+            )
+            result = _finalize_mechanical_result(
+                result,
+                specification,
+                recording_artifacts=_recording_artifacts(
+                    run_recordings,
+                    relative_root=recordings_relative,
+                    expected_game_id=str(specification["game_id"]),
                 ),
             )
             atomic_write_json(receipt_path, result)
@@ -2199,7 +2664,11 @@ def run_public_evaluation(config: PublicEvaluationConfig) -> EvaluationOutcome:
         directory / "results.jsonl",
         b"".join(canonical_json_bytes(result) for result in results),
     )
-    summary = _aggregate(results, partition=config.partition)
+    summary = (
+        _mechanical_aggregate(results, partition=config.partition)
+        if config.agents == ("mechanical",)
+        else _aggregate(results, partition=config.partition)
+    )
     summary["evaluation_id"] = evaluation_id
     summary["surface"] = config.surface
     summary["partition"] = config.partition
@@ -2228,6 +2697,18 @@ def run_public_evaluation(config: PublicEvaluationConfig) -> EvaluationOutcome:
             game_id: final_assets[game_id].to_dict()
             for game_id in sorted(selected_ids & set(final_assets))
         }
+    for result in results:
+        completion = result.get("build003_completion")
+        if isinstance(completion, dict):
+            artifacts_value = completion.get("recording_artifacts")
+            if isinstance(artifacts_value, list):
+                required.extend(
+                    str(item["path"])
+                    for item in artifacts_value
+                    if isinstance(item, dict) and isinstance(item.get("path"), str)
+                )
+    required = sorted(set(required))
+    manifest_object["required_artifacts"] = required
     atomic_write_text(directory / "report.md", _render_report(manifest_object, summary, results))
     artifact_paths = [
         path

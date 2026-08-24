@@ -68,6 +68,7 @@ CORE_EVENT_TYPES: Final[frozenset[str]] = frozenset(
         "mechanics.change_candidate_resolved",
         "mechanics.change_confirmed",
         "mechanics.epoch_opened",
+        "mechanics.action_receipt",
         "simulation.plan_evaluated",
         "simulation.plan_invalidated",
         "simulation.prediction_emitted",
