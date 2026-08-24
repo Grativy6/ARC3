@@ -96,6 +96,25 @@ evidence. Later success must not overwrite a failed attempt, superseded artifact
 - Claim boundary: implementation tests, synthetic fixtures, or extrapolations cannot resolve this
   burden.
 
+## B-002-0009 — Public-source preview exposure prevents a pristine/unseen claim
+
+- Status: OPEN; epistemic contamination recorded without mechanical run consumption.
+- Opened: 2026-08-24T03:55:35Z.
+- Observation: while checking for a terms-free static Kaggle asset surface, an unexpected
+  third-party search-result excerpt displayed source-derived public-game claims, baseline
+  examples, and a metric table covering the public set. The claims were not validated or adopted.
+- Exact receipt: `docs/evidence/002-00-public-source-preview-contamination.json`.
+- Measured boundary: zero environment `make`, reset, action, or scorecard interactions; zero
+  static assets acquired or opened; zero game-source files opened; zero production-policy changes
+  derived from the excerpt.
+- Authority: the explicit Build 002 mechanical consumption boundary remains un-crossed (`0/1`
+  runs started), and Build 001 remains immutable `SEALED_UNCONSUMED` historical evidence.
+- Consequence: any later Build 002 public run must be labeled
+  `local-public-source-preview-exposed`, not pristine or unseen. The controller may not use the
+  third-party claims as game-specific rules, tuning data, or hard-coded behavior.
+- Resolution condition: this burden is permanent provenance. A later run may close the
+  measurement burden but must retain this limitation; it cannot erase or supersede the exposure.
+
 ## Failed attempts and superseded evidence registry
 
 No material attempt may be removed after repair. Each new entry must record the exact command,

@@ -81,6 +81,41 @@ failure. Times are UTC. Commands are shown in reproducible PowerShell form unles
   remains `BLOCKED_EXTERNAL`.
 - Public authority consumed: no.
 
+## V-002-0008 — Static holdout-asset availability audit
+
+- Recorded: 2026-08-24T03:38:01Z through 2026-08-24T03:55:35Z.
+- Commands: enumerate filenames under the isolated `C:\a` cache for each exact manifest-bound
+  holdout ID; issue an unauthenticated `HEAD` to Kaggle's competition archive endpoint; inspect
+  public search metadata for a terms-free static-file surface.
+- Exit: local enumeration `0`; archive `HEAD` returned HTTP `404`; no exact static asset was
+  acquired.
+- Result: `BLOCKED_EXTERNAL`; all ten IDs had zero local filename hits and no validated
+  anonymous static archive was available. Do not substitute ARC API gameplay acquisition because
+  that opens an environment and crosses the run boundary.
+- Superseding caveat: the search metadata unexpectedly emitted third-party source-derived public
+  game snippets. Exact exposure and its permanent non-pristine reporting consequence are retained
+  in `docs/evidence/002-00-public-source-preview-contamination.json` and B-002-0009.
+- Public authority consumed: no under the explicit mechanical boundary; environment `make`,
+  resets, actions, scorecards, asset acquisitions, and source-file opens all remained zero.
+
+## V-002-0009 — One-shot harness, partial-write, and lifecycle checks
+
+- Recorded: 2026-08-24T03:58:28Z.
+- Commands:
+  - `.\.venv\Scripts\python.exe -m ruff check src/arc3/evaluation/build002_holdout.py tests/competition/test_build002_holdout.py`
+  - `.\.venv\Scripts\python.exe -m mypy --strict src/arc3/evaluation/build002_holdout.py tests/competition/test_build002_holdout.py`
+  - `.\.venv\Scripts\python.exe -m pytest -q tests/competition/test_build002_holdout.py tests/competition/test_competition_lifecycle.py --no-cov --basetemp C:\a\b002-holdout-tests7`
+- Exit: all `0`.
+- Result: `PASS`; Ruff clean, strict mypy clean, pytest `33 passed, 1 skipped`. The single skip is
+  the declared POSIX-only `SIGALRM` interruption check on Windows.
+- Covered boundaries: exact ten-game static inventory, frozen clean-commit preflight, canonical
+  one-shot state root, marker-before-make ordering, callback-before-upstream enforcement, rerun
+  rejection, zero-intent consumed failure after marker/ledger-write interruption, append-only
+  hash chain, score/failure/allocation/reserve/hash result recomputation, one scorecard, exactly
+  one make per environment, no in-flight scorecard read, and deterministic sequential lifecycle.
+- Public authority consumed: no; tests use isolated synthetic files/framework fixtures and never
+  call an ARC holdout environment.
+
 ## Pending mandatory entries
 
 Append exact commands and receipts for:

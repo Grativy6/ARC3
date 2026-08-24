@@ -6,13 +6,13 @@
   "owner": "Christopher D. Pang",
   "build_status": "IN_PROGRESS",
   "status": "IN_PROGRESS",
-  "current_stage": "00",
-  "current_task": "Implement and verify the competition adapter before freezing the one-shot public run",
+  "current_stage": "05",
+  "current_task": "Freeze and validate the exact offline package, notebook, and cold start",
   "implementation_branch": "build/002-kaggle-competition-adapter",
   "pull_request": null,
   "started_at": "2026-08-24T03:10:13Z",
-  "last_checkpoint_at": "2026-08-24T03:26:38Z",
-  "last_checkpoint_commit": null,
+  "last_checkpoint_at": "2026-08-24T04:01:21Z",
+  "last_checkpoint_commit": "9bae3f943d04e6810a195248629f85f564d094e4",
   "base": {
     "origin_main_commit": "a1931c673b90923e1af78127229667544802a096",
     "origin_main_tree": "7ddc02a03908e43caeda31edaf09bea9bd426cfd",
@@ -43,17 +43,30 @@
     "environment_make_interactions": 0,
     "environment_actions": 0,
     "consumption_boundary": "first attempted environment open/make interaction after the frozen preflight receipt",
-    "result_label_if_local": "local-public",
+    "result_label_if_local": "local-public-source-preview-exposed",
+    "source_preview_exposure": {
+      "status": "RECORDED_NOT_MECHANICALLY_CONSUMED",
+      "receipt": "docs/evidence/002-00-public-source-preview-contamination.json",
+      "environment_make_interactions": 0,
+      "production_policy_changed_from_exposure": false,
+      "pristine_or_unseen_claim_permitted": false
+    },
     "official_rhae": null
   },
-  "completed_stages": [],
+  "completed_stages": [
+    "00",
+    "01",
+    "02",
+    "03",
+    "04"
+  ],
   "stage_status": {
-    "00": "IN_PROGRESS",
-    "01": "PENDING",
-    "02": "PENDING",
-    "03": "PENDING",
-    "04": "PENDING",
-    "05": "PENDING",
+    "00": "PASS",
+    "01": "PASS",
+    "02": "PASS",
+    "03": "PASS",
+    "04": "PASS",
+    "05": "IN_PROGRESS",
     "06": "PENDING",
     "07": "PENDING",
     "08": "PENDING",
@@ -70,6 +83,7 @@
       "available_public_sources_verified": true,
       "project_lock_updated_and_verified": true,
       "project_lock_sha256": "sha256:b5474a8f36bda80bb629f204591610325045411bd5aac65f6765261b7fab6b0b",
+      "public_source_preview_contamination": "docs/evidence/002-00-public-source-preview-contamination.json",
       "exact_private_kaggle_surfaces": "BLOCKED_EXTERNAL"
     }
   },
@@ -93,7 +107,11 @@
     "B-002-0001: exact private Kaggle execution and scorer surfaces are unavailable",
     "B-002-0002: current local scorer and Kaggle data-page score caps conflict",
     "B-002-0003: public toolkit and staff-sample package versions differ",
-    "B-002-0004: exact private submission schema parity cannot be established locally"
+    "B-002-0004: exact private submission schema parity cannot be established locally",
+    "B-002-0005: one-shot public evidence is gated and not consumed",
+    "B-002-0007: native Linux cold-start receipt is pending CI",
+    "B-002-0008: exact ten-game assets and public-run measurements are unavailable",
+    "B-002-0009: public-source preview exposure prevents a pristine or unseen label"
   ],
   "human_gates": {
     "terms_accepted": false,

@@ -1,0 +1,55 @@
+{
+  "schema": "arc3.build-002.public-source-preview-contamination.v0.1",
+  "recorded_at": "2026-08-24T03:55:35Z",
+  "status": "PARTIAL",
+  "evidence_label": "source-preview-exposure",
+  "claim_boundary": "unexpected third-party search-result snippets only; no environment, asset, source file, or validated gameplay result",
+  "trigger": {
+    "purpose": "investigate read-only availability of exact static public assets without Kaggle terms or credentials",
+    "requested_surface": "Kaggle public data-file metadata",
+    "unexpected_surface": "search result excerpt from an unrelated third-party GitHub research note",
+    "intentional_game_source_inspection": false
+  },
+  "exposure": {
+    "affected_public_holdout_game_ids": [
+      "dc22-fdcac232",
+      "ft09-0d8bbf25",
+      "re86-8af5384d",
+      "sb26-7fbdac44",
+      "sc25-635fd71a",
+      "sp80-589a99af",
+      "su15-1944f8ab",
+      "tn36-ef4dde99",
+      "vc33-5430563c",
+      "wa30-ee6fef47"
+    ],
+    "identity_source": "already-authorized Build 002 parsing of docs/evaluation/public-game-partitions.v0.1.json",
+    "snippet_classes": [
+      "third-party source-derived mechanics claim for sp80",
+      "third-party human-baseline examples for sp80, vc33, and wa30",
+      "third-party per-game metric table covering the public set"
+    ],
+    "third_party_claims_validated": false,
+    "source_bytes_opened": false,
+    "static_assets_downloaded": 0,
+    "static_assets_opened": 0,
+    "environment_make_interactions": 0,
+    "environment_resets": 0,
+    "environment_actions": 0,
+    "scorecards_opened": 0,
+    "production_policy_changes_derived_from_snippet": false
+  },
+  "authority": {
+    "build_001_historical_status": "SEALED_UNCONSUMED",
+    "build_001_revised": false,
+    "build_002_mechanical_consumption_boundary_crossed": false,
+    "build_002_runs_started": 0,
+    "build_002_authorized_runs_remaining": 1
+  },
+  "consequence": {
+    "future_public_run_may_be_labeled_pristine_or_unseen": false,
+    "future_public_run_evidence_label": "local-public-source-preview-exposed",
+    "hard_coded_or_source-derived_policy_behavior_permitted": false,
+    "required_reporting": "retain this receipt beside any later one-shot result and report the exposure as a limitation"
+  }
+}
