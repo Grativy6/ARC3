@@ -156,6 +156,13 @@ def run_probe(package_root: Path, expected_commit: str) -> dict[str, object]:
             agent_type = getattr(wrapper, "MyAgent", None)
             if not isinstance(agent_type, type):
                 raise ValueError("packaged wrapper has no MyAgent type")
+            configure_tournament = getattr(agent_type, "configure_tournament", None)
+            tournament_configured = False
+            if configure_tournament is not None:
+                if not callable(configure_tournament):
+                    raise ValueError("packaged MyAgent configure_tournament is not callable")
+                configure_tournament(("offline-startup",), extracted / "competition-runtime")
+                tournament_configured = True
             instantiate_started = time.perf_counter()
             agent = agent_type(game_id="offline-startup", agent_name="myagent", seed=0)
             instantiate_seconds = time.perf_counter() - instantiate_started
@@ -181,6 +188,7 @@ def run_probe(package_root: Path, expected_commit: str) -> dict[str, object]:
         "schema": "arc3.package-startup-probe.v0.2",
         "status": "PASS",
         "total_seconds": time.perf_counter() - started,
+        "tournament_configured": tournament_configured,
     }
 
 

@@ -23,9 +23,13 @@ EXPECTED_DEFAULT_JSON = (
     '{"artifact_root":"artifacts","budgets":{"decision_seconds":5.0,'
     '"max_actions":100,"max_coordinate_candidates":128,"max_resets":8,'
     '"max_search_depth":32,"max_search_nodes":10000,"max_trace_bytes":268435456,'
-    '"memory_megabytes":2048,"wall_clock_seconds":900.0},"log_level":"INFO",'
+    '"memory_megabytes":2048,"wall_clock_seconds":900.0},'
+    '"execution_mode":"RESEARCH_UNBOUNDED","log_level":"INFO",'
     '"mode":"synthetic","network_enabled":false,"profile":"foundation",'
-    '"schema":"arc3.config.v0.1","seed":0,"trace_root":"recordings"}'
+    '"runtime_policy":{"allocator_tracing_enabled":true,'
+    '"automatic_per_action_checkpoints":true,"compact_trace_capacity":0,'
+    '"sparse_checkpoint_interval_actions":1},"schema":"arc3.config.v0.2",'
+    '"seed":0,"trace_root":"recordings"}'
 )
 
 

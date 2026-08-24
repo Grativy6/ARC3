@@ -1,0 +1,349 @@
+{
+  "schema": "arc3.build-002-run-state.v0.2",
+  "workflow": "docs/workflows/002-kaggle-competition-adapter-first-rhae.md",
+  "workflow_version": "0.1",
+  "repository": "Grativy6/ARC3",
+  "owner": "Christopher D. Pang",
+  "build_status": "PARTIAL",
+  "status": "COMPLETE",
+  "workflow_state": "COMPLETE",
+  "workflow_complete": true,
+  "current_stage": "10",
+  "current_task": "Workflow complete; exact public and official evaluation blocked externally before consumption",
+  "implementation_branch": "build/002-kaggle-competition-adapter",
+  "implementation_freeze": {
+    "commit": "753b0e007222a973a2c8a6d7ce14a395135d3c5f",
+    "tree": "d07e72716a1f918ed04a6892adb1e3f46259e345",
+    "clean_worktree_at_freeze": true
+  },
+  "pull_request": {
+    "number": 6,
+    "url": "https://github.com/Grativy6/ARC3/pull/6",
+    "state": "OPEN",
+    "draft": true,
+    "base": "main",
+    "head": "build/002-kaggle-competition-adapter",
+    "merged": false
+  },
+  "started_at": "2026-08-24T03:10:13Z",
+  "completed_at": "2026-08-24T09:20:26Z",
+  "last_implementation_checkpoint_commit": "753b0e007222a973a2c8a6d7ce14a395135d3c5f",
+  "last_implementation_checkpoint_tree": "d07e72716a1f918ed04a6892adb1e3f46259e345",
+  "base": {
+    "origin_main_commit": "a1931c673b90923e1af78127229667544802a096",
+    "origin_main_tree": "7ddc02a03908e43caeda31edaf09bea9bd426cfd",
+    "build_001_final_commit": "8a42e43c96ac1edada21725746cdedcee24e68f9",
+    "build_001_final_tree": "7ddc02a03908e43caeda31edaf09bea9bd426cfd",
+    "build_001_ancestral_to_origin_main": true,
+    "history_rewritten": false,
+    "origin_main_parents": [
+      "28c7a00732ce48e5c231211b01bc6eba7d0d71b4",
+      "8a42e43c96ac1edada21725746cdedcee24e68f9"
+    ],
+    "origin_main_subject": "Merge pull request #5 from Grativy6/build/001-local-public-recovery"
+  },
+  "prior_build_boundary": {
+    "build_001_status": "PARTIAL",
+    "build_001_holdout_status": "SEALED_UNCONSUMED",
+    "build_001_claim_boundary": "NO_GENERALIZATION_CLAIM",
+    "retroactive_revision_permitted": false,
+    "revised_by_build_002": false
+  },
+  "source_identity": {
+    "receipt": "docs/evidence/002-00-official-source-identities.json",
+    "receipt_file_sha256": "sha256:7231d2c84c3c589ddf24ede5b3064d1c789c2c2e5d9cdb27a609914061f9827f",
+    "upstream_lock": "upstream.lock.json",
+    "upstream_lock_sha256": "sha256:fb3acb1e375dddaaa02e38dc39cd3a0cde7fe95045d4dca34d976d29e0f56c68",
+    "dependency_lock": "uv.lock",
+    "dependency_lock_sha256": "sha256:3bf42dcbe45720f71b7433584f56a5d5982ec1c687c341ad2626222fa5de285b",
+    "official_repositories": {
+      "arcprize/ARC-AGI": "f12822c4d550121c35a275008d964afbbed47d2f",
+      "arcprize/ARCEngine": "b495c6acaf253c9681cd7b75c4299d352e9ce6f8",
+      "arcprize/ARC-AGI-3-Agents": "4743e7d0aaae0ded0d98a89a7e282e63564cd58b",
+      "arcprize/ARC-AGI-3-Kaggle-Starter": "eeb1535404f321d280a8f9194bbc1d7aca5f05fc",
+      "arcprize/docs": "a5dfc0b64c625fb4a19cf074af845ebe0bb88ff8"
+    },
+    "kaggle_competition_id": 133468,
+    "kaggle_metadata_response_sha256": "sha256:ca6253ca8e87ba6e4e5a435ee5f83bc27aaf62aa564860c1e31390349978de4f"
+  },
+  "runtime_boundary": {
+    "path": "src/arc3/competition-runtime.v0.2.json",
+    "file_sha256": "sha256:dd3331276476b771d1483fec2c5541c6c6471f6c5bb81bd1a887c5f89949c3e0",
+    "configuration_sha256": "sha256:3b56018560e4bde4005da4c7f30bc97a4180179d4a8ce1c0959cc0c76651694a",
+    "execution_mode": "COMPETITION_BOUNDED",
+    "generic_notebook_limit_seconds": 43200,
+    "competition_specific_limit_seconds": 32400,
+    "effective_limit_seconds": 32400,
+    "planned_reserve_seconds": 6000,
+    "per_game_limit_seconds": 240,
+    "max_actions_per_game": 80,
+    "max_total_actions": 8800,
+    "official_evaluation_games": 110
+  },
+  "build_002_holdout": {
+    "authority": "OWNER_AUTHORIZED_EXACTLY_ONE_RUN_AFTER_ALL_PREFLIGHTS_PASS",
+    "status": "AUTHORIZED_ONCE_NOT_YET_CONSUMED",
+    "manifest": "docs/evaluation/public-game-partitions.v0.1.json",
+    "manifest_sha256": "sha256:682d5891c2aface54803d9bd1173c55ed21e89856e13b8a478fb9276ee963f2f",
+    "declared_game_count": 10,
+    "maximum_runs": 1,
+    "runs_started": 0,
+    "runs_completed": 0,
+    "runs_consumed": 0,
+    "authorized_runs_remaining": 1,
+    "scorecard_open_intents": 0,
+    "scorecards_opened": 0,
+    "environment_make_intents": 0,
+    "environment_make_interactions": 0,
+    "environment_resets": 0,
+    "environment_actions": 0,
+    "consumption_boundary": "durable intent immediately before the first and only upstream scorecard open after the frozen preflight receipt",
+    "result_label_if_run": "local-public-source-preview-exposed",
+    "public_run_disposition": "docs/evidence/002-08-public-run-disposition.json",
+    "source_preview_exposure": {
+      "status": "RECORDED_NOT_MECHANICALLY_CONSUMED",
+      "receipt": "docs/evidence/002-00-public-source-preview-contamination.json",
+      "receipt_file_sha256": "sha256:5fe5317831a581535a3e2ec4dfcaf892e9b3deb2f5b6dee638dd8a21cf4fa0a2",
+      "production_policy_changed_from_exposure": false,
+      "pristine_or_unseen_claim_permitted": false
+    },
+    "local_public_rhae": null,
+    "official_rhae": null,
+    "public_metrics_status": "NOT_MEASURED"
+  },
+  "terminal_stages": [
+    "00",
+    "01",
+    "02",
+    "03",
+    "04",
+    "05",
+    "06",
+    "07",
+    "08",
+    "09",
+    "10"
+  ],
+  "stage_status": {
+    "00": "PASS",
+    "01": "PASS",
+    "02": "PASS",
+    "03": "PASS",
+    "04": "PASS",
+    "05": "PASS",
+    "06": "PASS",
+    "07": "BLOCKED_EXTERNAL",
+    "08": "BLOCKED_EXTERNAL",
+    "09": "PASS",
+    "10": "PASS"
+  },
+  "evidence": {
+    "00": {
+      "status": "PASS",
+      "source_identity": "docs/evidence/002-00-official-source-identities.json",
+      "holdout_authority": "docs/evidence/002-00-holdout-authority-transition.json",
+      "source_preview_exposure": "docs/evidence/002-00-public-source-preview-contamination.json"
+    },
+    "01": {
+      "status": "PASS",
+      "result": "RESEARCH_UNBOUNDED and COMPETITION_BOUNDED implemented; research defaults retained"
+    },
+    "02": {
+      "status": "PASS",
+      "result": "MyAgent.is_done and MyAgent.choose_action adapter implemented with competition-only granted semantics"
+    },
+    "03": {
+      "status": "PASS",
+      "result": "process-global governor, legal-action enforcement, opportunity-cost accounting, fallback, and lifecycle checks passed"
+    },
+    "04": {
+      "status": "PASS",
+      "result": "competition-only allocator tracing and per-action checkpoint suppression verified; compact trace, sparse recovery, replay, and failure receipts retained"
+    },
+    "05": {
+      "status": "PASS",
+      "profile": {
+        "path": "artifacts/build002/profile-753b0e0/profile.json",
+        "file_sha256": "sha256:ed2d4c336017551cb4b99e3fc2bc71eedf66b87683811d0d4a00056e0f84fb15",
+        "producer_receipt_sha256": "sha256:3f03b17ed639a6e7c6762254a1cba9fdfabb45aaa6ac42f9eb72e7f7b0048714",
+        "label": "synthetic",
+        "actions": 80,
+        "wall_seconds": 39.6246924,
+        "peak_rss_bytes": 321466368,
+        "maximum_controller_cycle_seconds": 3.3508976999946753
+      },
+      "package": {
+        "path": "artifacts/build002/final-753b0e0",
+        "status": "PACKAGING_PASS",
+        "candidate_sha256": "sha256:adcd92352f55a0109c0898fe14b531e8780f02dc9b68489af449c1b8b8c16d9a",
+        "payload_sha256": "sha256:726e595523a9b737a3b000b6d4d088a8e9289c1e6fd1da03297b79876311356f",
+        "manifest_sha256": "sha256:29f5b430ff3be418bd8c4922939aa9134f823864983abf320601e1a46ca89388",
+        "runtime_requirements_sha256": "sha256:d71522e36a1d39bd4bcc8c0a0d65d07886e7360658d1b4794add94de02ff2056",
+        "wheel_manifest_sha256": "sha256:04a8774e252511d4b3e1c1f5ac7dab507f98ebb4e5a57c80a1415e50380df90e",
+        "sbom_sha256": "sha256:e1d4836e974f22cf8821ddc46909edc1bce0ed2146a9ad4116550d11a130d0ed",
+        "build_receipt_file_sha256": "sha256:be23ee24c614229b2f940c112fb916f12b63cbdc700c8bcafc1569024d008bc5",
+        "build_receipt_producer_sha256": "sha256:8afaf2f16cf9f4a7c7825718b14427b5afdcb239d877523d22e70f617ed46358",
+        "integrity_receipt_file_sha256": "sha256:9287f22b9a6d63cd8dd3540661f28b2115e9935488d24c38aeb58767c7ad1b3b",
+        "integrity_receipt_producer_sha256": "sha256:42aa847bc4443f100be9163b9bb9746ed30dc1e5d79692d20d7d1cfbc43da588",
+        "full_competition_integrity_status": "NOT_EVALUATED_PUBLIC_IDENTIFIERS"
+      },
+      "native_linux_cold_start": {
+        "status": "PASS",
+        "path": "artifacts/build002/ci-753b0e0/linux-cold-start-receipt.json",
+        "ci_artifact_path": "artifacts/build002/ci-753b0e0/arc3-build002-linux-e316089172c35c1fd2d2276ce093874b3c9cff81/linux-cold-start-receipt.json",
+        "file_sha256": "sha256:d04dcef55e36a9ee32a6f4153d89efc6b61560962b9931b031a70632a4ff4ecc",
+        "validation_level": "native-linux-cp312-exact-notebook-cold-start",
+        "wall_seconds": 12.728529202,
+        "peak_memory_bytes": 132288512,
+        "wheel_count": 31,
+        "wheel_bytes": 45073152,
+        "kaggle_accessed": false,
+        "public_environment_interactions": 0,
+        "limitation": "safe loopback gateway/framework fixture; not exact Kaggle/private parity"
+      }
+    },
+    "06": {
+      "status": "PASS",
+      "notebook_sha256": "sha256:adbb75d09806da104a5d3bfbe41e55d809ec2bb91514aafa6176c2469f30c81e",
+      "notebook_size_bytes": 548193,
+      "submission_parquet_sha256": "sha256:f601196d5298e525e04c22185acb3668c3a9f74c6f371040164169fcc17279c9",
+      "submission_parquet_size_bytes": 856,
+      "submission_schema_sha256": "sha256:2966db762a4c328ee8854cb7ba6b78194bd2fab6cca278f8411ffaab6780bd56",
+      "validation_level": "pinned-public-schema",
+      "exact_private_acceptance": "BLOCKED_EXTERNAL"
+    },
+    "07": {
+      "status": "BLOCKED_EXTERNAL",
+      "receipt": "docs/evidence/002-07-frozen-preflight-blocked-external.json",
+      "request_path": "artifacts/build002/preflight-753b0e0-final/request.json",
+      "source_artifact_path": "artifacts/build002/preflight-753b0e0-final/bundle/blocked-external.json",
+      "producer_receipt_sha256": "sha256:bb37fa65c0bf470ba54b2e6b82c14c01cafc8045d9697b1ac82893b2a241b189",
+      "request_sha256": "sha256:b842e2cee086ec2833bdd7c3453482f88c8a889b1e474ca992124e8a33033160",
+      "source_artifact_file_sha256": "sha256:15d748c6954705cabdfc37d0f993ec3e5d352558fb0741d7bd7cbd472e24e82e",
+      "tracked_evidence_file_sha256": "sha256:e0cd69b2f63b547c14a3cae5d4186c3edae9e58607d20f905d8fa7c808d52951",
+      "claim_boundary": "stopped before arming, scorecard open, or environment interaction"
+    },
+    "08": {
+      "status": "BLOCKED_EXTERNAL",
+      "receipt": "docs/evidence/002-08-public-run-disposition.json",
+      "runs_started": 0,
+      "authorized_runs_remaining": 1,
+      "scorecards_opened": 0,
+      "environment_make_interactions": 0,
+      "environment_actions": 0,
+      "primary_blocker_category": "platform",
+      "public_metrics": "NOT_MEASURED"
+    },
+    "09": {
+      "status": "PASS",
+      "result": "pre-consumption BLOCKED_EXTERNAL disposition sealed; no synthetic or approximate result promoted"
+    },
+    "10": {
+      "status": "PASS",
+      "evidence_index": "docs/evidence/002-final-evidence-index.json",
+      "evidence_index_sha256": "sha256:29e6be47b5a0861707007bd76bc98c23a1becfc0bd514acf498cd7a8137b68f6",
+      "report": "docs/research/ARC3-Build-002-report.md",
+      "report_sha256": "sha256:697d6d5ce3af8d79a1e33015c7649de952b206e4c22595c7213383816adecb78",
+      "verification_report": "docs/reports/002-10-final-verification.md",
+      "verification_report_sha256": "sha256:cbcf1a799b3df9693865e848595e562b229fdede790ef7d0655f9df4b9477a48",
+      "handoff": "docs/handoffs/002-kaggle-competition-adapter.md",
+      "handoff_sha256": "sha256:8093ef12dcac5d82ad5f69fb0afa9a4dcb9647fd4fc7140ae612cc58c300484c",
+      "validation_ledger": "docs/ledger/build-002-VALIDATION.md",
+      "draft_pull_request": "https://github.com/Grativy6/ARC3/pull/6"
+    }
+  },
+  "validation": {
+    "full_repository_suite": {
+      "status": "PASS",
+      "clean_clone_commit": "9d395d51fd3ae9ca35df90a2ddbccbd0338dade4",
+      "result": "1464 passed, 21 skipped, 79 percent coverage"
+    },
+    "ruff_lint": "PASS",
+    "ruff_format": "PASS",
+    "mypy_strict": "PASS",
+    "deterministic_replay": "PASS",
+    "competition_lifecycle": "PASS",
+    "package_integrity": "PASS_PACKAGE_ONLY",
+    "secret_scan": "PASS_ZERO_FINDINGS",
+    "native_linux_package_rehearsal": {
+      "status": "PASS",
+      "run": "https://github.com/Grativy6/ARC3/actions/runs/32708504639",
+      "job": "https://github.com/Grativy6/ARC3/actions/runs/32708504639/job/97374699134"
+    },
+    "implementation_freeze_ci": {
+      "status": "PASS",
+      "run": "https://github.com/Grativy6/ARC3/actions/runs/32708504627",
+      "pull_request_merge_commit": "e316089172c35c1fd2d2276ce093874b3c9cff81",
+      "pull_request_merge_tree": "d07e72716a1f918ed04a6892adb1e3f46259e345",
+      "merge_tree_matches_implementation_tree": true,
+      "ubuntu": "1476 passed, 10 skipped",
+      "windows": "1466 passed, 20 skipped"
+    },
+    "build_001_package_only_boundary": {
+      "status": "PASS",
+      "run": "https://github.com/Grativy6/ARC3/actions/runs/32708504623",
+      "ubuntu_receipt_file_sha256": "sha256:56e7cb6a4e9b882cb7fe8eb0310ac9a75fb968352b807655dcc7671766611813",
+      "windows_receipt_file_sha256": "sha256:c053e798a9c368cf8607b9a8953e1369b76f855d532dd8e3f3d7d7114207e054"
+    },
+    "notebook_execution": "PASS_LOCAL_OFFLINE_FIXTURE",
+    "submission_parquet": "PASS_PINNED_PUBLIC_STRUCTURE",
+    "frozen_preflight": "BLOCKED_EXTERNAL",
+    "one_shot_public_run": "BLOCKED_EXTERNAL_NOT_STARTED",
+    "public_authority_consumed": false
+  },
+  "measured_result": {
+    "surface": null,
+    "status": "NOT_MEASURED",
+    "total_rhae": null,
+    "completed_games": null,
+    "completed_levels": null,
+    "per_game": null,
+    "per_level": null,
+    "agent_actions_vs_human_baselines": null,
+    "wall_time_seconds": null,
+    "peak_memory_bytes": null,
+    "budget_allocation": null,
+    "remaining_reserve_seconds": null,
+    "failure_taxonomy": null,
+    "pre_run_blocker_category": "platform"
+  },
+  "blocked_items": [
+    "B-002-0001: exact private Kaggle wheels, framework, gateway, scorer, and evaluator remain unavailable",
+    "B-002-0002: local toolkit and current Kaggle score-cap formulas conflict",
+    "B-002-0003: public toolkit and observed staff-sample versions differ",
+    "B-002-0004: exact private submission.parquet acceptance remains unavailable",
+    "B-002-0005: authorized public run remains unconsumed after a pre-consumption external blocker",
+    "B-002-0008: public-run performance and failure distribution remain unmeasured",
+    "B-002-0009: source-preview exposure permanently prevents a pristine or unseen label",
+    "B-002-0013: package-only integrity is not full public-identifier competition integrity",
+    "B-002-0015: exact competition surface and first honest RHAE remain unavailable"
+  ],
+  "resolved_items": [
+    "B-002-0006: competition package projection repaired and verified",
+    "B-002-0007: native Linux dependency-only cold start passed without host site-path injection; exact Kaggle framework parity remains separately blocked",
+    "B-002-0010: scorecard-open consumption seal repaired and verified",
+    "B-002-0011: local verification infrastructure failures repaired or bounded"
+  ],
+  "failed_attempts_and_superseded_evidence_preserved": true,
+  "human_gates": {
+    "terms_accepted": false,
+    "kaggle_credentials_used": false,
+    "notebook_uploaded": false,
+    "official_submission": false,
+    "daily_submission_consumed": false,
+    "pull_request_merged": false,
+    "release_or_doi_published": false,
+    "money_spent_or_paid_compute_activated": false,
+    "external_message_sent_as_owner": false,
+    "secrets_disclosed": false
+  },
+  "next_action": "No automatic action. Review draft PR #6. Any accepted-terms Kaggle execution, credential use, upload, or submission requires a later explicit owner authorization.",
+  "notes": [
+    "Build 000 and Build 001 evidence and claims remain immutable.",
+    "Build 001 remains PARTIAL and its holdout remains historical SEALED_UNCONSUMED evidence.",
+    "Build 002 ended PARTIAL because exact external preflight surfaces were unavailable.",
+    "Build 002 public authority remains mechanically unconsumed at 0/1.",
+    "No public, Kaggle-public, semi-private, official-private, or official RHAE metric was measured.",
+    "Synthetic profile, safe-fixture cold-start, and pinned-public Parquet validation are not official scoring evidence."
+  ]
+}

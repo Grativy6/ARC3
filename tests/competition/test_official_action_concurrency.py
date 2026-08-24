@@ -39,12 +39,27 @@ class _RecordingEnvironment:
         return {"accepted": True}
 
 
+class _UnexpiredGovernor:
+    class _Stop:
+        should_stop = False
+        game_seconds_remaining = 5.0
+        tournament_playable_seconds_remaining = 5.0
+
+    def stop_decision(self, game_id: str) -> _Stop:
+        del game_id
+        return self._Stop()
+
+
 def _translated(x: int, y: int) -> object:
     return translate_action(ActionRequest(ActionName.ACTION6, Coordinate(x, y)))
 
 
 @pytest.mark.competition
-def test_two_agents_keep_action6_coordinates_instance_local_under_concurrency() -> None:
+def test_two_agents_keep_action6_coordinates_instance_local_under_concurrency(
+    tmp_path: Path,
+) -> None:
+    configure = MyAgent.configure_tournament
+    configure(("concurrent-a", "concurrent-b"), tmp_path / "action-runtime")
     before = GameAction.ACTION6.action_data.model_dump()
     first_request = _translated(2, 3)
     second_request = _translated(61, 62)
@@ -61,6 +76,8 @@ def test_two_agents_keep_action6_coordinates_instance_local_under_concurrency() 
     second_agent.arc_env = second_environment
     first_agent._convert_raw_frame_data = lambda raw: raw
     second_agent._convert_raw_frame_data = lambda raw: raw
+    first_agent._require_governor = lambda: _UnexpiredGovernor()
+    second_agent._require_governor = lambda: _UnexpiredGovernor()
 
     with ThreadPoolExecutor(max_workers=2) as executor:
         first_future = executor.submit(first_agent.do_action_request, first_request)
@@ -75,3 +92,5 @@ def test_two_agents_keep_action6_coordinates_instance_local_under_concurrency() 
         (GameAction.ACTION6, {"game_id": "", "x": 61, "y": 62}, None)
     ]
     assert GameAction.ACTION6.action_data.model_dump() == before
+    finalize = MyAgent.finalize_tournament
+    finalize()

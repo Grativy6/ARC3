@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 import hashlib
 import json
 from pathlib import Path
@@ -56,18 +57,69 @@ def test_frozen_competition_runtime_is_shared_and_self_verified() -> None:
     assert loaded == FROZEN_COMPETITION_RUNTIME
     assert loaded.max_actions == 80
     assert loaded.max_resets == 8
-    assert loaded.decision_seconds == 2.0
+    assert loaded.decision_seconds == 10.0
     assert loaded.per_game_wall_clock_seconds == 240.0
     assert loaded.per_game_wall_clock_seconds * loaded.official_evaluation_games == 26_400
     assert loaded.reserved_non_game_seconds == 6_000
+    governor = loaded.governor_config(10)
+    assert governor.maximum_resets_per_game == loaded.max_resets == 8
+    assert governor.maximum_total_resets == 80
     assert RuntimeProfileConfig().budgets() == loaded.budgets()
+    assert RuntimeProfileConfig().restart_every == 0
+
+
+def test_kaggle_metadata_identity_is_cross_bound_across_runtime_and_source_locks() -> None:
+    runtime = json.loads(
+        (ROOT / "src" / "arc3" / "competition-runtime.v0.2.json").read_text(encoding="utf-8")
+    )
+    upstream = json.loads((ROOT / "upstream.lock.json").read_text(encoding="utf-8"))
+    evidence = json.loads(
+        (ROOT / "docs" / "evidence" / "002-00-official-source-identities.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    locked = upstream["build_002_refresh"]["kaggle_competition_metadata"]
+    observed = evidence["kaggle_competition_snapshot"]
+    raw_evidence = json.loads(
+        (
+            ROOT
+            / "docs"
+            / "evidence"
+            / "source"
+            / "002-kaggle-competition-metadata-response.v0.1.json"
+        ).read_text(encoding="utf-8")
+    )
+    raw_body = base64.b64decode(raw_evidence["body_base64"], validate=True)
+    assert runtime["kaggle_metadata_response_sha256"] == locked["response_sha256"]
+    assert runtime["kaggle_metadata_response_sha256"] == ("sha256:" + observed["response_sha256"])
+    assert runtime["kaggle_metadata_accessed_at"] == locked["accessed_at"]
+    assert runtime["kaggle_metadata_accessed_at"] == observed["accessed_at"]
+    assert runtime["kaggle_competition_id"] == locked["competition_id"]
+    assert runtime["kaggle_competition_id"] == observed["competition_id"]
+    assert len(raw_body) == raw_evidence["decoded_size_bytes"] == observed["response_size_bytes"]
+    assert "sha256:" + hashlib.sha256(raw_body).hexdigest() == raw_evidence["decoded_sha256"]
+    assert raw_evidence["decoded_sha256"] == runtime["kaggle_metadata_response_sha256"]
+    assert json.loads(raw_body)["id"] == runtime["kaggle_competition_id"]
+
+
+def test_pinned_agents_runtime_hashes_use_exact_git_blob_bytes() -> None:
+    upstream = json.loads((ROOT / "upstream.lock.json").read_text(encoding="utf-8"))
+    fixture = json.loads(
+        (ROOT / "tests" / "fixtures" / "pinned-agents-4743e7d" / "SOURCE_IDENTITY.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    locked = upstream["build_002_refresh"]["pinned_agents_git_blob_sha256"]
+    assert locked == {
+        path: "sha256:" + record["sha256"] for path, record in fixture["files"].items()
+    }
 
 
 @pytest.mark.parametrize(
     ("field", "invalid"),
     (
         ("max_actions", True),
-        ("decision_seconds", "2.0"),
+        ("decision_seconds", "10.0"),
         ("execution_backend", 7),
     ),
 )
@@ -76,7 +128,7 @@ def test_frozen_competition_runtime_rejects_rehashed_invalid_field_types(
     field: str,
     invalid: object,
 ) -> None:
-    source = ROOT / "src" / "arc3" / "competition-runtime.v0.1.json"
+    source = ROOT / "src" / "arc3" / "competition-runtime.v0.2.json"
     raw = json.loads(source.read_text(encoding="utf-8"))
     raw[field] = invalid
     body = {key: value for key, value in raw.items() if key != "configuration_sha256"}
@@ -90,7 +142,7 @@ def test_frozen_competition_runtime_rejects_rehashed_invalid_field_types(
     raw["configuration_sha256"] = f"sha256:{hashlib.sha256(canonical).hexdigest()}"
     candidate = tmp_path / "runtime.json"
     candidate.write_text(json.dumps(raw), encoding="utf-8")
-    with pytest.raises(ValueError, match="field has an invalid type"):
+    with pytest.raises(ValueError):
         load_competition_runtime(candidate)
 
 

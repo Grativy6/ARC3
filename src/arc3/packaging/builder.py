@@ -44,7 +44,9 @@ _RUNTIME_TOP_LEVEL = {
     "__init__.py",
     "adapters",
     "baseline_runner.py",
+    "competition",
     "competition-runtime.v0.1.json",
+    "competition-runtime.v0.2.json",
     "competition_runtime.py",
     "config.py",
     "errors.py",
@@ -63,6 +65,7 @@ _RUNTIME_TOP_LEVEL = {
 _BUILD_ONLY_PACKAGING_MODULES = {
     "builder.py",
     "candidate.py",
+    "cold_start.py",
     "notebook.py",
     "sandbox.py",
     "sbom.py",
@@ -224,6 +227,9 @@ def _collect_payload(
         )
     required_runtime_members = {
         "src/arc3/competition-runtime.v0.1.json",
+        "src/arc3/competition-runtime.v0.2.json",
+        "src/arc3/competition/__init__.py",
+        "src/arc3/competition/governor.py",
         "src/arc3/competition_runtime.py",
     }
     missing_runtime_members = required_runtime_members.difference(members)

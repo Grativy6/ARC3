@@ -111,7 +111,37 @@ def test_package_startup_probe_uses_only_extracted_offline_fixture(tmp_path: Pat
     assert result["process_launch_attempts"] == 0
     assert result["process_launch_attempt_events"] == []
     assert result["payload_sha256"] == _sha256(payload)
+    assert result["tournament_configured"] is False
     assert result["total_seconds"] >= result["import_seconds"]
+
+
+def test_package_startup_probe_configures_competition_agent_before_instantiation(
+    tmp_path: Path,
+) -> None:
+    package = tmp_path / "package"
+    expected_commit = "c" * 40
+    payload = _payload(
+        agent_source=(
+            b"class MyAgent:\n"
+            b"    configured_games = ()\n"
+            b"    @classmethod\n"
+            b"    def configure_tournament(cls, game_ids, working_root):\n"
+            b"        cls.configured_games = tuple(game_ids)\n"
+            b"    def __init__(self, game_id, agent_name, seed):\n"
+            b"        assert self.configured_games == (game_id,)\n"
+            b"        self.name = agent_name\n"
+        )
+    )
+    _write_package(package, payload, expected_commit)
+
+    completed = _run_probe(package, expected_commit)
+
+    assert completed.returncode == 0, completed.stderr
+    result = json.loads(completed.stdout)
+    assert result["status"] == "PASS"
+    assert result["tournament_configured"] is True
+    assert result["network_attempts"] == 0
+    assert result["process_launch_attempts"] == 0
 
 
 def test_package_startup_probe_denies_udp_sendto(tmp_path: Path) -> None:

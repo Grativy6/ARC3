@@ -9,6 +9,10 @@ import sys
 from pathlib import Path
 
 import pytest
+from scripts import profile_competition
+
+from arc3.competition_runtime import FROZEN_COMPETITION_RUNTIME
+from arc3.types import ExecutionMode
 
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = ROOT / "scripts" / "profile_competition.py"
@@ -23,6 +27,16 @@ def _head() -> str:
         text=True,
         encoding="utf-8",
     ).stdout.strip()
+
+
+@pytest.mark.integration
+def test_profile_cli_defaults_match_frozen_build002_runtime() -> None:
+    arguments = profile_competition._parser().parse_args([])
+
+    assert arguments.decision_seconds == FROZEN_COMPETITION_RUNTIME.decision_seconds
+    assert arguments.max_actions == FROZEN_COMPETITION_RUNTIME.max_actions
+    assert arguments.max_resets == FROZEN_COMPETITION_RUNTIME.max_resets
+    assert arguments.wall_clock_seconds == FROZEN_COMPETITION_RUNTIME.per_game_wall_clock_seconds
 
 
 @pytest.mark.integration
@@ -80,6 +94,9 @@ def test_profile_cli_runs_in_fresh_process_and_self_hashes_receipt(tmp_path: Pat
     assert result["launch"]["fresh_process"] is True
     assert result["launch"]["worker_exit_code"] == 1
     assert result["startup"]["phase_at_ready"] == "observed"
+    assert result["startup"]["execution_mode"] == ExecutionMode.COMPETITION_BOUNDED.value
+    assert result["startup"]["runtime_policy"]["allocator_tracing_enabled"] is False
+    assert result["startup"]["runtime_policy"]["automatic_per_action_checkpoints"] is False
     assert result["profile"]["complete_action_chains"] is True
     assert result["first_party_import_identity"]["verified"] is True
     assert Path(result["first_party_import_identity"]["arc3_module"]).is_relative_to(

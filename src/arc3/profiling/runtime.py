@@ -18,6 +18,7 @@ from arc3.types import (
     ActionName,
     ActionRequest,
     EnvironmentMode,
+    ExecutionMode,
     GameId,
     GameStateName,
     JSONScalar,
@@ -154,14 +155,20 @@ def _context(
         if preset is ControllerPreset.COMPETITION
         else EnvironmentMode.SYNTHETIC
     )
+    execution_mode = (
+        ExecutionMode.COMPETITION_BOUNDED
+        if preset is ControllerPreset.COMPETITION
+        else ExecutionMode.RESEARCH_UNBOUNDED
+    )
     return RunContext(
         run_id=f"stage16-{run_label}",
         episode_id=f"stage16-{run_label}-episode",
         game_id=game_id,
         trace_root=root / "trace",
         checkpoint_root=root / "checkpoint",
-        config=ARC3Config(
-            mode=mode,
+        config=ARC3Config.for_mode(
+            mode,
+            execution_mode=execution_mode,
             seed=config.seed,
             network_enabled=False,
             profile="stage16-runtime-profile",
@@ -388,8 +395,20 @@ def run_runtime_profile(
     checkpoint_bytes = cast(int, checkpoint_metrics["directory_bytes"])
     decision_max = max(decision_latencies) if decision_latencies else 0.0
     observation_max = max(observation_latencies) if observation_latencies else 0.0
-    consequence_max = max(consequence_latencies) if consequence_latencies else 0.0
-    checkpoint_max = max(checkpoint_latencies) if checkpoint_latencies else 0.0
+    # The production MyAgent folds the preceding consequence and chooses the
+    # next action inside one hard-deadline call. Reconstruct that exact
+    # controller boundary instead of allowing a sparse-checkpoint spike to be
+    # hidden by separate or averaged measurements.
+    production_cycle_latencies = [decision_latencies[0]] if decision_latencies else []
+    production_cycle_latencies.extend(
+        consequence + decision
+        for consequence, decision in zip(
+            consequence_latencies,
+            decision_latencies[1:],
+            strict=False,
+        )
+    )
+    production_cycle_max = max(production_cycle_latencies) if production_cycle_latencies else 0.0
     total_step_mean = (
         sum(total_step_latencies) / len(total_step_latencies) if total_step_latencies else 0.0
     )
@@ -446,12 +465,11 @@ def run_runtime_profile(
         "checkpoint_bytes_within_declared_limit": (
             checkpoint_bytes <= selected_config.max_checkpoint_bytes
         ),
-        "checkpoint_latency_within_declared_limit": (
-            checkpoint_max <= selected_config.decision_seconds
-            and (bool(checkpoint_latencies) or selected_config.restart_every == 0)
+        "explicit_checkpoint_latency_recorded": (
+            bool(checkpoint_latencies) or selected_config.restart_every == 0
         ),
-        "consequence_latency_within_declared_limit": (
-            consequence_max <= selected_config.decision_seconds
+        "production_controller_cycle_within_declared_limit": (
+            production_cycle_max <= selected_config.decision_seconds
         ),
         "decision_latency_within_declared_limit": (
             decision_max <= selected_config.decision_seconds
@@ -486,9 +504,14 @@ def run_runtime_profile(
         "complete_action_chains": complete_action_chains,
         "config": selected_config.to_dict(),
         "consequence_latency_seconds": _latency_summary(consequence_latencies),
+        "controller_execution": {
+            "execution_mode": context.config.execution_mode.value,
+            "runtime_policy": context.config.to_dict()["runtime_policy"],
+        },
         "controller_fault_count": snapshot.fault_count,
         "controller_reset_seconds": controller_reset_seconds,
         "decision_latency_seconds": _latency_summary(decision_latencies),
+        "production_controller_cycle_latency_seconds": _latency_summary(production_cycle_latencies),
         "duplicate_event_ids": len(event_ids) - len(set(event_ids)),
         "environment_latency_seconds": _latency_summary(environment_latencies),
         "event_chain_sha256": sha256_json([event.event_hash for event in events]),
@@ -524,13 +547,14 @@ def run_runtime_profile(
         "trace_growth_bytes_per_action": trace_growth_per_action,
         "trace_replay_verified": trace_replay_verified,
         "timing_scope": {
-            "checkpoint": "explicit restart checkpoint only; automatic controller persistence remains inside decision/consequence timing",
-            "consequence": "controller apply_consequence only",
-            "decision": "controller choose_action only",
+            "checkpoint": "explicit restart checkpoint only; production sparse persistence remains inside consequence and total-step timing",
+            "consequence": "controller apply_consequence only; retained as a diagnostic component of the production controller cycle",
+            "decision": "controller choose_action only; retained as a diagnostic component of the production controller cycle",
             "environment": "synthetic session step only",
             "observation": "initial controller observe only",
             "total_step": "decision through returned consequence, including any explicit restart",
             "total_step_acceptance": "arithmetic mean <= wall_clock_seconds / (max_actions + max_resets); maximum and percentiles retained",
+            "production_controller_cycle": "first choose_action, then each apply_consequence plus the following choose_action; maximum is bounded by decision_seconds exactly as MyAgent does",
         },
         "variant": selected_variant.value,
         "verified": runtime_verified,
@@ -560,32 +584,53 @@ def run_robustness_suite(
         raise ValueError("robustness seeds must be signed 64-bit integers")
     cases: list[JSONValue] = []
     base_by_seed: dict[int, dict[str, JSONValue]] = {}
+    opaque_action_base_by_seed: dict[int, dict[str, JSONValue]] = {}
     for variant in RobustnessVariant:
         for seed in selected_seeds:
             case_root = root / variant.value / f"seed-{seed}"
+            profile_config = RuntimeProfileConfig(
+                seed=seed,
+                frame_size=8,
+                fixture="navigation",
+                max_actions=max_actions,
+                max_resets=2,
+                restart_every=0,
+                wall_clock_seconds=wall_clock_seconds,
+                max_search_nodes=2_048,
+                max_search_depth=32,
+            )
+            case_preset = selected_preset
+            if (
+                variant is RobustnessVariant.ACTION_REMAP
+                and selected_preset is ControllerPreset.COMPETITION
+            ):
+                # The official competition interface fixes ACTION1-4 and
+                # ACTION7. Arbitrary remapping is therefore a research-mode
+                # robustness obligation, not a bounded competition predicate.
+                case_preset = ControllerPreset.FULL
+                reference = run_runtime_profile(
+                    root / "opaque-action-reference" / f"seed-{seed}",
+                    config=profile_config,
+                    git_commit=git_commit,
+                    preset=ControllerPreset.FULL,
+                    variant=RobustnessVariant.BASE,
+                )
+                opaque_action_base_by_seed[seed] = reference
             result = run_runtime_profile(
                 case_root,
-                config=RuntimeProfileConfig(
-                    seed=seed,
-                    frame_size=8,
-                    fixture="navigation",
-                    max_actions=max_actions,
-                    max_resets=2,
-                    restart_every=0,
-                    wall_clock_seconds=wall_clock_seconds,
-                    max_search_nodes=2_048,
-                    max_search_depth=32,
-                ),
+                config=profile_config,
                 git_commit=git_commit,
-                preset=selected_preset,
+                preset=case_preset,
                 variant=variant,
             )
+            controller_execution = cast(dict[str, JSONValue], result["controller_execution"])
             case: dict[str, JSONValue] = {
                 "actions": result["actions"],
                 "complete_action_chains": result["complete_action_chains"],
                 "controller_fault_count": result["controller_fault_count"],
                 "decision_latency_seconds": result["decision_latency_seconds"],
                 "duplicate_event_ids": result["duplicate_event_ids"],
+                "execution_mode": controller_execution["execution_mode"],
                 "final_phase": result["final_phase"],
                 "resets": result["resets"],
                 "score": result["score"],
@@ -627,7 +672,16 @@ def run_robustness_suite(
                     behavior_predicate = "terminal phase and score parity with same-seed base"
                     behavior_verified = score_parity and phase_parity
                 elif variant is RobustnessVariant.ACTION_REMAP:
-                    behavior_predicate = "score parity after a remapped action boundary"
+                    if selected_preset is ControllerPreset.COMPETITION:
+                        reference = opaque_action_base_by_seed[seed]
+                        score_parity = result["score"] == reference["score"]
+                        phase_parity = result["final_phase"] == reference["final_phase"]
+                        case["action_semantics_scope"] = (
+                            "RESEARCH_UNBOUNDED opaque-action robustness; competition uses official fixed semantics"
+                        )
+                    behavior_predicate = (
+                        "research-mode score parity after a remapped opaque-action boundary"
+                    )
                     behavior_exercised = cast(int, result["actions"]) > 0
                     behavior_verified = behavior_exercised and score_parity
                 else:

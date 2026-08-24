@@ -353,6 +353,12 @@ def _validate_candidate_members(
         or sandbox.get("framework_commit") != AGENTS_COMMIT
         or sandbox.get("framework_identity") != SAFE_FRAMEWORK_FIXTURE_IDENTITY
         or sandbox.get("framework_fixture") is not True
+        or sandbox.get("notebook_entrypoint") != "exact-generated-notebook-code-cells"
+        or sandbox.get("platform_surface") != "safe-loopback-gateway-and-framework-fixture"
+        or sandbox.get("runtime_dependency_surface") != "host-assisted-canary"
+        or sandbox.get("exact_generated_code_cells") != 4
+        or sandbox.get("exact_production_requirements") is not False
+        or sandbox.get("host_site_pth_bridge_present") is not True
         or not isinstance(sandbox.get("gateway_connections"), int)
         or cast(int, sandbox["gateway_connections"]) < 2
     ):
@@ -406,6 +412,9 @@ def _validate_candidate_members(
                 "LICENSE",
                 "THIRD_PARTY_NOTICES.md",
                 "src/arc3/competition-runtime.v0.1.json",
+                "src/arc3/competition-runtime.v0.2.json",
+                "src/arc3/competition/__init__.py",
+                "src/arc3/competition/governor.py",
                 "src/arc3/competition_runtime.py",
             }
             if not required_runtime_members.issubset(payload_names):

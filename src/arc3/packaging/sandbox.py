@@ -125,9 +125,13 @@ socket.getnameinfo = guarded_getnameinfo
 _RUNNER_TEMPLATE = r"""
 from __future__ import annotations
 
+import hashlib
+import importlib
+import importlib.metadata
 import json
 import os
 import re
+import site
 import socket
 import sys
 import threading
@@ -139,6 +143,15 @@ working_root = Path(sys.argv[2]).resolve()
 input_root = Path(sys.argv[3]).resolve()
 requirements_path = Path(sys.argv[4]).resolve()
 rehearsal_authority = sys.argv[5]
+runner_mode = sys.argv[6] if len(sys.argv) > 6 else "host-assisted-canary"
+if runner_mode not in {"host-assisted-canary", "native-linux-exact"}:
+    raise RuntimeError("unknown notebook rehearsal runner mode")
+native_linux_exact = runner_mode == "native-linux-exact"
+expected_packages = json.loads(sys.argv[7]) if native_linux_exact else {}
+import_targets = json.loads(sys.argv[8]) if native_linux_exact else {}
+expected_requirements_sha256 = sys.argv[9] if native_linux_exact else None
+memory_limit = int(sys.argv[10]) if native_linux_exact else None
+cpu_limit = int(sys.argv[11]) if native_linux_exact else None
 gateway_connections = []
 blocked_attempts = []
 real_socket = socket.socket
@@ -150,6 +163,49 @@ real_gethostbyaddr = socket.gethostbyaddr
 real_getnameinfo = socket.getnameinfo
 allowed_hosts = {"127.0.0.1", "::1"}
 network_enforcement = __ARC3_NETWORK_ENFORCEMENT__
+external_site_pth_entries = (
+    [] if native_linux_exact else ["arc3-stage17-host-runtime.pth"]
+)
+foreign_site_paths = [] if native_linux_exact else ["host-site-runtime-via-explicit-pth"]
+venv_site_pth_files = [] if native_linux_exact else ["arc3-stage17-host-runtime.pth"]
+peak_memory_bytes = None
+
+if native_linux_exact:
+    import resource
+
+    if sys.flags.isolated != 1 or site.ENABLE_USER_SITE is not False:
+        raise RuntimeError("native notebook runner is not isolated from the user site")
+    if sys.prefix == sys.base_prefix:
+        raise RuntimeError("native notebook runner is not running in a fresh virtual environment")
+    prefix = Path(sys.prefix).resolve()
+    site_roots = [Path(item).resolve() for item in site.getsitepackages()]
+    if not site_roots or any(not item.is_relative_to(prefix) for item in site_roots):
+        raise RuntimeError("native notebook runner site-packages escape its virtual environment")
+    for raw_path in sys.path:
+        if not raw_path:
+            continue
+        resolved_path = Path(raw_path).resolve()
+        if (
+            {"site-packages", "dist-packages"}.intersection(resolved_path.parts)
+            and not resolved_path.is_relative_to(prefix)
+        ):
+            foreign_site_paths.append(str(resolved_path))
+    if foreign_site_paths:
+        raise RuntimeError("native notebook runner inherited a foreign site-packages path")
+    for site_root in site_roots:
+        for pth_path in sorted(site_root.glob("*.pth")):
+            venv_site_pth_files.append(pth_path.name)
+            for raw_line in pth_path.read_text(encoding="utf-8").splitlines():
+                line = raw_line.strip()
+                if not line or line.startswith("#") or line.startswith("import "):
+                    continue
+                candidate = (pth_path.parent / line).resolve()
+                if not candidate.is_relative_to(prefix):
+                    external_site_pth_entries.append(str(candidate))
+    if external_site_pth_entries:
+        raise RuntimeError("native notebook runner found a host-site .pth bridge")
+    resource.setrlimit(resource.RLIMIT_AS, (memory_limit, memory_limit))
+    resource.setrlimit(resource.RLIMIT_CPU, (cpu_limit, cpu_limit))
 
 
 class GatewayHandler(BaseHTTPRequestHandler):
@@ -179,7 +235,11 @@ __ARC3_PYTHON_SOCKET_GUARD__
 os.environ["KAGGLE_IS_COMPETITION_RERUN"] = "1"
 os.environ["ARC3_REHEARSAL_FIXTURE"] = "1"
 os.environ["ARC3_COMPETITION_INPUT"] = str(input_root)
-os.environ["ARC3_REHEARSAL_REQUIREMENTS"] = str(requirements_path)
+os.environ["ARC3_REHEARSAL_REQUIREMENTS"] = str(
+    working_root / "arc3-runtime-linux-cp312.txt"
+    if native_linux_exact
+    else requirements_path
+)
 os.environ["ARC3_GATEWAY_HOST"] = "127.0.0.1"
 os.environ["ARC3_GATEWAY_PORT"] = str(gateway_port)
 os.environ["ARC3_WORKING_DIR"] = str(working_root)
@@ -189,17 +249,18 @@ namespace = {
     "__name__": "__arc3_notebook_sandbox__",
     "_ARC3_REHEARSAL_AUTHORITY": rehearsal_authority,
 }
+executed_code_cells = 0
 try:
     for index, cell in enumerate(document["cells"]):
         if cell.get("cell_type") == "code":
             exec(compile(cell["source"], f"<notebook-cell-{index}>", "exec"), namespace)
+            executed_code_cells += 1
 finally:
     server.shutdown()
     server.server_close()
     server_thread.join(timeout=5)
 
 import arc3
-import arc3_rehearsal_canary
 from arc3.config import ARC3Config
 from arc3.types import EnvironmentMode
 
@@ -209,9 +270,40 @@ if config.network_enabled:
 arc3_path = Path(arc3.__file__).resolve()
 if not arc3_path.is_relative_to((working_root / "arc3_submission").resolve()):
     raise RuntimeError("sandbox imported ARC3 outside the extracted package payload")
-canary_path = Path(arc3_rehearsal_canary.__file__).resolve()
-if not canary_path.is_relative_to((working_root / "arc3_dependencies").resolve()):
-    raise RuntimeError("no-index canary was not imported from the isolated install target")
+dependency_root = (working_root / "arc3_dependencies").resolve()
+target_installed_packages = {}
+target_import_origins = {}
+if native_linux_exact:
+    canonical = lambda value: re.sub(r"[-_.]+", "-", value).lower()
+    for distribution in importlib.metadata.distributions(path=[str(dependency_root)]):
+        name = distribution.metadata.get("Name")
+        if not isinstance(name, str) or not name:
+            raise RuntimeError("notebook target contains a distribution without a name")
+        normalized = canonical(name)
+        if normalized in target_installed_packages:
+            raise RuntimeError("notebook target contains duplicate distributions")
+        target_installed_packages[normalized] = distribution.version
+    if target_installed_packages != expected_packages:
+        raise RuntimeError("notebook target differs from the exact production runtime lock")
+    if sorted(import_targets) != sorted(expected_packages):
+        raise RuntimeError("native notebook import target map is incomplete")
+    for distribution in sorted(expected_packages):
+        module = importlib.import_module(import_targets[distribution])
+        origin = getattr(module, "__file__", None)
+        if not isinstance(origin, str):
+            raise RuntimeError("notebook production dependency has no concrete import origin")
+        resolved_origin = Path(origin).resolve()
+        if not resolved_origin.is_relative_to(dependency_root):
+            raise RuntimeError("notebook imported a production dependency outside its target")
+        target_import_origins[distribution] = resolved_origin.relative_to(
+            dependency_root
+        ).as_posix()
+else:
+    import arc3_rehearsal_canary
+
+    canary_path = Path(arc3_rehearsal_canary.__file__).resolve()
+    if not canary_path.is_relative_to(dependency_root):
+        raise RuntimeError("no-index canary was not imported from the isolated install target")
 
 agent_path = working_root / "arc3_submission" / "agent" / "my_agent.py"
 if not agent_path.is_file():
@@ -233,6 +325,11 @@ if install_receipt.get("dependency_install_status") != "PASS":
     raise RuntimeError("offline dependency install did not pass")
 if not install_receipt.get("no_index") or not install_receipt.get("require_hashes"):
     raise RuntimeError("offline dependency install contract was weakened")
+if native_linux_exact and (
+    install_receipt.get("requirements_sha256") != expected_requirements_sha256
+    or install_receipt.get("fixture") is not True
+):
+    raise RuntimeError("exact embedded production requirements were not consumed")
 if launch_receipt.get("framework_fixture") is not True:
     raise RuntimeError("safe framework fixture was not identified")
 if (
@@ -242,8 +339,43 @@ if (
     or launch_receipt.get("orchestration") != "arc3.sequential-pinned-swarm.v1"
 ):
     raise RuntimeError("safe framework fixture did not use bounded sequential orchestration")
-if fixture_receipt.get("games") != ["stage17-fixture-game"]:
+expected_games = fixture_receipt.get("games")
+if expected_games != ["stage17-fixture-game"]:
     raise RuntimeError("safe framework fixture did not receive the gateway game inventory")
+if launch_receipt.get("discovered_environments") != expected_games:
+    raise RuntimeError("launch receipt environment inventory differs from the gateway fixture")
+if (
+    launch_receipt.get("lifecycle_enforced") is not True
+    or launch_receipt.get("open_scorecard_count") != 1
+    or launch_receipt.get("close_scorecard_count") != 1
+    or launch_receipt.get("make_count") != len(expected_games)
+    or launch_receipt.get("get_scorecard_during_flight_count") != 0
+    or launch_receipt.get("all_environments_covered") is not True
+):
+    raise RuntimeError("safe framework fixture did not prove the exact scorecard lifecycle")
+if (
+    launch_receipt.get("tournament_configured") is not True
+    or launch_receipt.get("tournament_finalized") is not True
+):
+    raise RuntimeError("safe framework fixture did not finalize its bounded tournament")
+tournament_wrapper = launch_receipt.get("tournament_receipt")
+if not isinstance(tournament_wrapper, dict) or tournament_wrapper.get("status") != "PASS":
+    raise RuntimeError("safe framework fixture has no passing tournament receipt")
+tournament_receipt = tournament_wrapper.get("receipt")
+if not isinstance(tournament_receipt, dict):
+    raise RuntimeError("safe framework fixture tournament receipt has the wrong shape")
+tournament_games = tournament_receipt.get("games")
+if (
+    tournament_receipt.get("expected_environments") != len(expected_games)
+    or tournament_receipt.get("finalized_environments") != len(expected_games)
+    or tournament_receipt.get("effective_ceiling_respected") is not True
+    or tournament_receipt.get("reserve_preserved") is not True
+    or tournament_receipt.get("outcome") != "complete-reserve-preserved"
+    or not isinstance(tournament_games, list)
+    or [item.get("game_id") for item in tournament_games if isinstance(item, dict)]
+    != expected_games
+):
+    raise RuntimeError("safe framework fixture tournament receipt failed semantic validation")
 if fixture_receipt.get("agent_action_cycle_status") != "PASS":
     raise RuntimeError("safe framework fixture did not execute a packaged agent action cycle")
 cycle_actions = fixture_receipt.get("agent_cycle_actions")
@@ -285,6 +417,11 @@ for path in payload_root.rglob("*"):
     if any(pattern.search(content) for pattern in secret_patterns):
         raise RuntimeError("high-confidence secret pattern in extracted payload")
 
+if native_linux_exact:
+    self_peak = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss * 1024
+    child_peak = resource.getrusage(resource.RUSAGE_CHILDREN).ru_maxrss * 1024
+    peak_memory_bytes = max(self_peak, child_peak)
+
 print(json.dumps({
     "credentials_present": credentials,
     "agent_action_cycle_status": fixture_receipt["agent_action_cycle_status"],
@@ -295,18 +432,37 @@ print(json.dumps({
     "framework_commit": launch_receipt["framework_commit"],
     "framework_identity": launch_receipt["framework_identity"],
     "framework_fixture": launch_receipt["framework_fixture"],
+    "foreign_site_paths": foreign_site_paths,
     "gateway_connections": len(gateway_connections),
+    "exact_generated_code_cells": executed_code_cells,
+    "exact_production_requirements": native_linux_exact,
+    "external_site_pth_entries": external_site_pth_entries,
+    "host_site_pth_bridge_present": bool(external_site_pth_entries),
     "imported_agent_path": agent_path.relative_to(working_root).as_posix(),
     "imported_arc3_path": arc3_path.relative_to(working_root).as_posix(),
     "installed_wheel_sha256": install_receipt["wheel_sha256"],
     "max_concurrency": launch_receipt["max_concurrency"],
     "network_attempts": len(blocked_attempts),
     "network_enforcement": network_enforcement,
+    "network_attempt_scope": "non-loopback Python socket attempts",
+    "notebook_entrypoint": "exact-generated-notebook-code-cells",
+    "output_sha256": "sha256:" + hashlib.sha256(output_path.read_bytes()).hexdigest(),
     "orchestration": launch_receipt["orchestration"],
+    "peak_memory_bytes": peak_memory_bytes,
+    "platform_surface": "safe-loopback-gateway-and-framework-fixture",
     "production_rerun_exercised": True,
     "rehearsal_requirements_sha256": install_receipt["requirements_sha256"],
+    "runner_mode": runner_mode,
+    "runtime_dependency_surface": (
+        "exact-embedded-production-requirements"
+        if native_linux_exact
+        else "host-assisted-canary"
+    ),
     "secret_scan_status": "PASS",
     "status": "PASS" if not blocked_attempts and not credentials else "FAIL",
+    "target_import_origins": target_import_origins,
+    "target_installed_packages": target_installed_packages,
+    "venv_site_pth_files": venv_site_pth_files,
     "worker_count": launch_receipt["worker_count"],
 }, sort_keys=True))
 """
@@ -314,6 +470,7 @@ print(json.dumps({
 _RUNNER = _RUNNER_TEMPLATE.replace("__ARC3_PYTHON_SOCKET_GUARD__", _PYTHON_SOCKET_GUARD).replace(
     "__ARC3_NETWORK_ENFORCEMENT__", repr(PYTHON_NETWORK_ENFORCEMENT)
 )
+NOTEBOOK_REHEARSAL_RUNNER_SOURCE = _RUNNER
 
 
 def _wheel_record(path: str, content: bytes) -> str:
@@ -386,6 +543,22 @@ from types import SimpleNamespace
 
 from arcengine import GameAction, GameState
 
+class _CompetitionMode:
+    value = "competition"
+
+class _Arcade:
+    operation_mode = _CompetitionMode()
+    def open_scorecard(self, *args, **kwargs):
+        del args, kwargs
+        return "stage17-fixture-scorecard"
+    def make(self, game_id, *args, **kwargs):
+        del game_id, args, kwargs
+        return object()
+    def close_scorecard(self, scorecard_id):
+        if scorecard_id != "stage17-fixture-scorecard":
+            raise RuntimeError("fixture received the wrong scorecard identity")
+        return None
+
 class Swarm:
     def __init__(self, agent, root_url, games, tags=None):
         from agents import AVAILABLE_AGENTS
@@ -396,8 +569,10 @@ class Swarm:
         self.agent_class = AVAILABLE_AGENTS[agent]
         self.agents = []
         self.threads = []
+        self._arc = _Arcade()
 
     def main(self):
+        card_id = self._arc.open_scorecard(tags=self.tags)
         outcomes = {{}}
         def run(instance):
             if not instance.name:
@@ -442,13 +617,20 @@ class Swarm:
                 "agent_cycle_actions": [first_action.name, second_name],
             }}
         for game_id in self.games:
-            instance = self.agent_class(game_id=game_id, agent_name=self.agent)
+            instance = self.agent_class(
+                card_id=card_id,
+                game_id=game_id,
+                agent_name=self.agent,
+                arc_env=self._arc.make(game_id, scorecard_id=card_id),
+                record=False,
+            )
             self.agents.append(instance)
             self.threads.append(Thread(target=run, args=(instance,), daemon=True))
         for thread in self.threads:
             thread.start()
         for thread in self.threads:
             thread.join()
+        self._arc.close_scorecard(card_id)
         if set(outcomes) != set(self.games):
             raise RuntimeError("fixture did not execute every discovered game")
         first_outcome = outcomes[self.games[0]]
@@ -472,6 +654,12 @@ class Swarm:
         )
 '''
     write_bytes_atomic(agents / "swarm.py", swarm_source.encode("utf-8"))
+
+
+def write_safe_framework_fixture(framework_root: Path, submission_bytes: bytes) -> None:
+    """Write the explicit safe platform fixture used by notebook-entry rehearsals."""
+
+    _write_framework_fixture(framework_root, submission_bytes)
 
 
 def _sanitized_environment(working_root: Path) -> dict[str, str]:
@@ -625,6 +813,9 @@ def run_offline_sandbox(
     worker_count = raw_receipt.get("worker_count")
     max_concurrency = raw_receipt.get("max_concurrency")
     orchestration = raw_receipt.get("orchestration")
+    notebook_entrypoint = raw_receipt.get("notebook_entrypoint")
+    platform_surface = raw_receipt.get("platform_surface")
+    runtime_dependency_surface = raw_receipt.get("runtime_dependency_surface")
     if not isinstance(network_attempts, int) or network_attempts < 0:
         raise PackagingError("sandbox receipt has an invalid network-attempt count")
     if network_enforcement != PYTHON_NETWORK_ENFORCEMENT:
@@ -673,12 +864,24 @@ def run_offline_sandbox(
         or raw_receipt.get("dependency_install_status") != "PASS"
         or raw_receipt.get("framework_fixture") is not True
         or framework_identity != SAFE_FRAMEWORK_FIXTURE_IDENTITY
+        or notebook_entrypoint != "exact-generated-notebook-code-cells"
+        or platform_surface != "safe-loopback-gateway-and-framework-fixture"
+        or runtime_dependency_surface != "host-assisted-canary"
+        or raw_receipt.get("exact_generated_code_cells") != 4
+        or raw_receipt.get("exact_production_requirements") is not False
+        or raw_receipt.get("host_site_pth_bridge_present") is not True
         or raw_receipt.get("production_rerun_exercised") is not True
         or raw_receipt.get("secret_scan_status") != "PASS"
     ):
         raise PackagingError("offline sandbox detected a weakened competition rehearsal")
     return SandboxReceipt(
         status="PASS",
+        notebook_entrypoint="exact-generated-notebook-code-cells",
+        platform_surface="safe-loopback-gateway-and-framework-fixture",
+        runtime_dependency_surface="host-assisted-canary",
+        exact_generated_code_cells=4,
+        exact_production_requirements=False,
+        host_site_pth_bridge_present=True,
         agent_action_cycle_status="PASS",
         agent_consequence_state=agent_consequence_state,
         agent_cycle_actions=(agent_cycle_actions[0], agent_cycle_actions[1]),
@@ -721,4 +924,8 @@ def run_offline_sandbox(
     )
 
 
-__all__ = ["run_offline_sandbox"]
+__all__ = [
+    "NOTEBOOK_REHEARSAL_RUNNER_SOURCE",
+    "run_offline_sandbox",
+    "write_safe_framework_fixture",
+]

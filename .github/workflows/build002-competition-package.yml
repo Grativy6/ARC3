@@ -1,0 +1,103 @@
+name: Build 002 competition package and cold start
+
+"on":
+  push:
+    branches:
+      - "build/002-kaggle-competition-adapter"
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: "arc3-build002-package-${{ github.ref }}"
+  cancel-in-progress: false
+
+jobs:
+  native-linux-cold-start:
+    name: Native Linux packaged-entry rehearsal
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Check out exact source
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: "${{ github.event.pull_request.head.sha || github.sha }}"
+
+      - name: Install pinned uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.12.5"
+          enable-cache: true
+
+      - name: Install pinned Python
+        run: uv python install 3.12.14
+
+      - name: Synchronize exact development environment
+        run: uv sync --frozen --all-extras --dev --python 3.12.14 --link-mode copy
+
+      - name: Build and execute the no-network notebook rehearsal
+        shell: pwsh
+        run: |
+          $package = Join-Path $env:RUNNER_TEMP "arc3-build002-package"
+          "ARC3_BUILD002_PACKAGE=$package" | Out-File -FilePath $env:GITHUB_ENV -Append
+          uv run python -m scripts.prepare_kaggle_submission `
+            --output $package `
+            --owner-username OWNER_USERNAME `
+            --sandbox-timeout 240
+
+      - name: Acquire sealed wheels and rehearse exact notebook cells with safe fixtures
+        shell: pwsh
+        run: |
+          $wheelhouse = Join-Path $env:ARC3_BUILD002_PACKAGE "offline-wheelhouse"
+          $receipt = Join-Path $env:ARC3_BUILD002_PACKAGE "linux-cold-start-receipt.json"
+          uv run python -m scripts.verify_build002_cold_start `
+            --package-dir $env:ARC3_BUILD002_PACKAGE `
+            --wheelhouse $wheelhouse `
+            --receipt $receipt `
+            --acquire
+          $result = Get-Content -LiteralPath $receipt -Raw | ConvertFrom-Json
+          if ($result.schema -ne "arc3.build-002-cold-start-command.v0.2" -or
+              $result.status -ne "PASS" -or
+              $result.acquisition.status -ne "PASS" -or
+              $result.acquisition.source_host -ne "files.pythonhosted.org" -or
+              -not $result.cold_start.executed -or
+              $result.cold_start.schema -ne "arc3.linux-cold-start.v0.2" -or
+              $result.cold_start.validation_level -ne "native-linux-cp312-exact-notebook-cold-start" -or
+              $result.cold_start.determinism.startup_projection_repetitions -ne 2 -or
+              $result.cold_start.determinism.notebook_entry_repetitions -ne 1 -or
+              -not $result.cold_start.notebook_entry.executed -or
+              $result.cold_start.notebook_entry.status -ne "PASS" -or
+              $result.cold_start.notebook_entry.entrypoint -ne "exact-generated-notebook-code-cells" -or
+              $result.cold_start.notebook_entry.exact_generated_code_cells -ne 4 -or
+              $result.cold_start.notebook_entry.exact_production_requirements -ne $true -or
+              $result.cold_start.notebook_entry.host_site_pth_bridge_present -ne $false -or
+              $result.cold_start.notebook_entry.foreign_site_paths.Count -ne 0 -or
+              $result.cold_start.notebook_entry.kaggle_competition_rerun_branch -ne $true -or
+              $result.cold_start.notebook_entry.runtime_dependency_surface -ne "exact-embedded-production-requirements" -or
+              $result.cold_start.notebook_entry.platform_surface -ne "safe-loopback-gateway-and-framework-fixture" -or
+              $result.cold_start.notebook_entry.framework_fixture -ne $true -or
+              $result.cold_start.notebook_entry.network_attempts -ne 0 -or
+              $result.cold_start.notebook_entry.requirements_sha256 -ne $result.cold_start.identities.requirements_sha256 -or
+              $result.cold_start.notebook_entry.notebook_sha256 -ne $result.cold_start.identities.notebook_sha256 -or
+              $result.acquisition.package_count -ne $result.cold_start.wheelhouse_package_count -or
+              $result.cold_start.notebook_entry.output_validation.status -ne "PASS" -or
+              $result.cold_start.notebook_entry.output_validation.validation_level -ne "pinned-public-schema" -or
+              $result.public_environment_interactions -ne 0 -or
+              $result.kaggle_accessed -ne $false) {
+            throw "Build 002 native cold-start receipt did not pass its sealed boundary"
+          }
+
+      - name: Upload exact package and cold-start receipts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: "arc3-build002-linux-${{ github.sha }}"
+          path: "${{ env.ARC3_BUILD002_PACKAGE }}"
+          if-no-files-found: error
+          retention-days: 14
