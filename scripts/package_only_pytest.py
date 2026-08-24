@@ -56,6 +56,11 @@ _PROCESS_ESCAPE_TOKENS = (
 )
 BUILD001_BOUNDARY_EXCLUSIONS: tuple[tuple[str, str], ...] = (
     (
+        "tests/competition/test_run_build002_holdout.py",
+        "the Build 002 production-preflight test intentionally copies the protected public "
+        "partition manifest",
+    ),
+    (
         "tests/integration/test_evaluation_cli.py",
         "evaluation orchestration is outside the package-only verification boundary",
     ),
