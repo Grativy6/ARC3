@@ -1,0 +1,16 @@
+stage,status,evidence_label,claim_or_disposition,measurement,evidence
+00,PASS,synthetic,SOURCE_IDENTITY_AND_LICENSE_VERIFIED,"canonical main; Build000 provenance; owner-authorized MIT-0",docs/evidence/001-00-preflight-acceptance.json
+01,PASS,local-public,REPRODUCED_FAILURE,"Build001 FULL 0 levels; 21 actions; 120.11965939996298 seconds",docs/evidence/001-01-reproduction-acceptance.json
+02,PASS,"synthetic;local-public",HOT_PATH_ATTRIBUTED,"99.9783265303% of representative prefix attributed",docs/evidence/001-02-hot-path-observability.json
+03,PASS,"synthetic;local-public",THROUGHPUT_BOTTLENECK_IDENTIFIED,"allocation tracing off saved 37.2254304999951 seconds; checkpoints off saved 8.07996120001189 seconds",docs/evidence/001-03-causal-bottlenecks.json
+04,PASS,synthetic,PALETTE_EQUIVARIANCE_OBSERVED,"256/256 procedural pairs; 16/16 checkpoint pairs; 128/128 causal controls",docs/evidence/001-04-palette-equivariance.json
+05,PASS,synthetic,ACTION_EQUIVARIANCE_OBSERVED,"128/128 procedural pairs; 528/528 inverse requests; 16/16 checkpoint pairs",docs/evidence/001-05-action-equivariance.json
+06,FAILED_MECHANISM,synthetic,RULE_CHANGE_REOPENING_NOT_OBSERVED_AS_PREDECLARED,"action rotation 32/32; traversability 0/32; noise 0/32; checkpoint 4/8",docs/evidence/001-06-rule-change-reopening.json
+07,FAILED_INFRASTRUCTURE,"synthetic;local-public",RETRODICTION_DECISION_UNAVAILABLE,"279/280 cell directories; 0/60 microbenchmarks; no aggregate",docs/evidence/001-07-retrodiction-decision.json
+08,FAILED_INFRASTRUCTURE,"synthetic;local-public",TWO_SPEED_RESULT_UNAVAILABLE,"1/20 cells; 8 actions; 0 valid timing pairs",docs/evidence/001-08-two-speed-controller.json
+09,FAILED_INFRASTRUCTURE,local-public,LOCAL_PUBLIC_RECOVERY_NOT_MEASURED,"1/96 exposed; 0 environments opened; 0 gameplay actions; 95 unstarted",docs/evidence/001-09-development-recovery.json
+10,FAILED_INFRASTRUCTURE,synthetic,REGRESSION_AND_ABLATION_UNAVAILABLE,"1/9 suites reached infrastructure terminal; 8 unstarted",docs/evidence/001-10-robustness-regression.json
+11,PASS,synthetic,HOLDOUT_NOT_EARNED,"0/5 gate predicates; 0 identities loaded; no manifest parse",docs/evidence/001-11-holdout-gate.json
+12,PASS,synthetic,SEALED_NONCONSUMPTION_ONLY,"0 adapter loads; 0 actions; 0 identities; no manifest parse",docs/evidence/001-12-holdout-nonconsumption.json
+13,BLOCKED_EXTERNAL,synthetic,DETERMINISTIC_OFFLINE_PACKAGE_OBSERVED_ON_AVAILABLE_SURFACES,"8/8 hosted candidates identical; exact private surface unavailable",docs/evidence/001-13-offline-package.json
+14,PASS,synthetic,REPORT_AND_HANDOFF_SEALED,"final evidence index; verification receipt; draft PR; no merge",docs/evidence/001-14-final-verification.json

@@ -1921,3 +1921,67 @@ does not erase earlier uncertainty or failed mechanisms.
 - Resolution: keep Windows verification/output roots short. The original failure remains in the
   evidence graph and is not treated as a passing run.
 - Residual: none for this path-length mechanism; B-001-0068 and B-001-0055 remain separate.
+
+---
+
+## Final Build 001 residual audit
+
+### B-001-0001 — Local-public recovery remains unmeasured
+
+- Status update: OPEN; the causal diagnosis is resolved, the gameplay recovery question is not.
+- Last updated: 2026-08-23T12:23:00Z
+- Final evidence: Stage 01 reproduced zero levels and a wall timeout. Stage 03 identified material
+  costs under matched consequences, but Stage 09's one authorized attempt stopped before
+  environment open with zero gameplay actions and 95/96 cells unstarted. No production
+  local-public recovery result exists.
+- Resolution condition: a later separately predeclared evaluation measures the generic frozen
+  policy against matched baselines without using Build 001's sealed holdout.
+
+### B-001-0003 — Guaranteed exposure succeeded; the full reopening mechanism remains failed
+
+- Status update: OPEN as a failed mechanism, not an exposure burden.
+- Last updated: 2026-08-23T12:23:00Z
+- Final evidence: all 112 Stage 06 executions reached their interventions. Action rotation passed
+  32/32, while traversability and stationary-noise typed gates each passed 0/32 and checkpoint
+  continuity passed 4/8. Terminal wins do not repair the failed evidence criteria.
+- Resolution condition: a future mechanism and new predeclared experiment satisfy the typed
+  contradiction/reopening/noise/checkpoint contract; Build 001 remains unchanged.
+
+### B-001-0004 — The scientific retrodiction benefit/cost conflict remains open
+
+- Status update: OPEN scientifically; `KEEP_FULL` remains only the Build 001 operational decision.
+- Last updated: 2026-08-23T12:23:00Z
+- Final evidence: the unique Stage 07 attempt created 279/280 cell directories but no aggregate or
+  microbenchmark. Partial receipts cannot select a replacement or establish runtime value.
+- Resolution condition: a later fresh protocol completes the paired variants and frozen decision
+  rule without rewriting the Stage 07 failure.
+
+### B-001-0005 — Holdout and hidden/private generalization remain unmeasured
+
+- Status update: OPEN and narrowed by verified nonconsumption.
+- Last updated: 2026-08-23T12:23:00Z
+- Final evidence: Stage 11 returned `HOLDOUT_NOT_EARNED`; Stage 12 records zero identities, adapter
+  loads, actions, and manifest parses. No public-holdout, online-public, Kaggle-public,
+  semi-private, official-private, or official RHAE result exists.
+- Resolution condition: only a later separately authorized and predeclared protocol may create a
+  new result; it cannot reopen Build 001's holdout decision.
+
+### B-001-0006 — Full competition runtime remains unmeasured
+
+- Status update: OPEN.
+- Last updated: 2026-08-23T12:23:00Z
+- Final evidence: deterministic package build/startup and bounded local/hosted tests passed, but the
+  complete sequential 110-game private runtime was not available. Extrapolation is not a measured
+  competition result.
+- Resolution condition: an authorized exact-platform end-to-end receipt records the full runtime,
+  peak memory, and scorer behavior.
+
+### B-001-0007 — Dynamic organizer pages remain mutable external sources
+
+- Status update: OPEN.
+- Last updated: 2026-08-23T12:23:00Z
+- Final evidence: five upstream repository commits, two package versions, and eight static
+  documentation identities remain pinned. Two organizer-page body hashes drifted on 2026-08-22
+  and were not silently adopted.
+- Resolution condition: future release work refreshes and semantically reviews the mutable pages
+  while preserving this recorded identity.

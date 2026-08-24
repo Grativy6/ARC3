@@ -4,15 +4,15 @@
   "workflow_version": "0.1",
   "repository": "Grativy6/ARC3",
   "owner": "Christopher D. Pang",
-  "build_status": "IN_PROGRESS",
-  "status": "IN_PROGRESS",
+  "build_status": "PARTIAL",
+  "status": "COMPLETE",
   "current_stage": "14",
-  "current_task": "Complete the clean-clone verification seal, final evidence index, research report, owner handoff, and draft PR update",
+  "current_task": "Workflow 001 complete; final documentation commit, push, and draft PR update are the active external handoff boundary",
   "implementation_branch": "build/001-local-public-recovery",
   "pull_request": "https://github.com/Grativy6/ARC3/pull/5",
   "started_at": "2026-08-21T15:41:02Z",
-  "last_checkpoint_at": "2026-08-23T12:08:30Z",
-  "last_checkpoint_commit": "9f25e13b4672ff0ea87544ba20c5677f194cf291",
+  "last_checkpoint_at": "2026-08-23T12:25:00Z",
+  "last_checkpoint_commit": "6e6899693acc35c1b48012ed7f82cdd6eaffdc52",
   "base": {
     "main_commit": "28c7a00732ce48e5c231211b01bc6eba7d0d71b4",
     "main_tree": "4586299448e9b1b585a0878674ed5f9afa60c384",
@@ -43,7 +43,8 @@
     "10",
     "11",
     "12",
-    "13"
+    "13",
+    "14"
   ],
   "stage_status": {
     "00": "PASS",
@@ -60,7 +61,7 @@
     "11": "PASS",
     "12": "PASS",
     "13": "BLOCKED_EXTERNAL",
-    "14": "IN_PROGRESS"
+    "14": "PASS"
   },
   "evidence": {
     "00": {
@@ -689,6 +690,31 @@
       "public_environment_opened": false,
       "public_holdout_consumed": false,
       "official_submission": false
+    },
+    "14": {
+      "status": "PASS",
+      "label": "synthetic",
+      "claim": "FINAL_REPRODUCIBILITY_AND_PUBLICATION_SURFACES_VERIFIED",
+      "acceptance": "docs/evidence/001-14-final-verification.json",
+      "acceptance_sha256": "sha256:5d7c9744930391bb38b965034523fcc5562c9db71f56d8c3acef2e989712ff0c",
+      "artifact_core_hash": "sha256:560c1ba1898a9060d2bd9b9051781636a55ba197255d1dfad49a0e054e59ff82",
+      "report": "docs/reports/001-14-final-verification.md",
+      "report_sha256": "sha256:b0419066e3ffb941a7bfd7dd167b1e237f52f0ac960a518862cd40f552140b8a",
+      "evidence_index": "docs/evidence/001-final-evidence-index.json",
+      "evidence_index_sha256": "sha256:eb76fa39ac0d49281ee53b07ca8411635a0f3c054ec76e369ac998128174bd71",
+      "evidence_index_core_hash": "sha256:8ca92473e28aee5a1f04f25b5bfb2f4d0f26963cb1cce88b6bee692ee01be1b8",
+      "package_code_test_freeze_commit": "9f25e13b4672ff0ea87544ba20c5677f194cf291",
+      "clean_clone": "C:/a/arc3-b001-stage14-9f25e13",
+      "clean_clone_verification": "PASS:offline-sync+offline-lock+ruff+format+mypy-strict+1322-tests+17-platform-skips+80-percent-coverage+45-replay-property+doctor",
+      "hosted_verification": "PASS:ordinary-ci+package-ci+push+pull-request+ubuntu+windows",
+      "source_projection": "PASS:NO_CODE_TEST_PACKAGE_CHANGE_AFTER_9f25e13",
+      "git_integrity": "PASS:dangling-unreferenced-objects-only",
+      "secret_findings": 0,
+      "markdown_links": "PASS",
+      "draft_pull_request": "https://github.com/Grativy6/ARC3/pull/5",
+      "pull_request_state": "DRAFT_UNMERGED",
+      "public_holdout_consumed": false,
+      "official_submission": false
     }
   },
   "artifacts": {
@@ -907,18 +933,73 @@
     "stage_13_package": {
       "path": "C:/a/arc3-b001/artifacts/stage13/final-package-9f25e13-exact/package-a/arc3-kaggle-candidate.zip",
       "sha256": "02326a145d510c017dc04ffd79a61cfe8c46771cbc9e74b7c8f29a9b75756d21"
+    },
+    "stage_14_acceptance": {
+      "path": "docs/evidence/001-14-final-verification.json",
+      "sha256": "5d7c9744930391bb38b965034523fcc5562c9db71f56d8c3acef2e989712ff0c"
+    },
+    "stage_14_report": {
+      "path": "docs/reports/001-14-final-verification.md",
+      "sha256": "b0419066e3ffb941a7bfd7dd167b1e237f52f0ac960a518862cd40f552140b8a"
+    },
+    "final_evidence_index": {
+      "path": "docs/evidence/001-final-evidence-index.json",
+      "sha256": "eb76fa39ac0d49281ee53b07ca8411635a0f3c054ec76e369ac998128174bd71"
+    },
+    "research_report": {
+      "path": "docs/research/ARC3-Build-001-report.md",
+      "sha256": "3e641e568660275ad0f5d52119fdd8fd8474454edde06f9dd1972eb68b1e58ef"
+    },
+    "publication_draft": {
+      "path": "docs/research/ARC3-Build-001-publication-draft.md",
+      "sha256": "b73458bc86f8b520f27875813fde7ee9856fa7fcf780bb566b5fa866e621ee8a"
+    },
+    "review_packet": {
+      "path": "docs/review/ARC3-Build-001-review-packet.md",
+      "sha256": "0b90f83d88e603d156e20d99e8dc7874397d363811f2ce2620d7b716ee4bd73a"
+    },
+    "owner_handoff": {
+      "path": "docs/handoffs/001-local-public-recovery.md",
+      "sha256": "eee320d0a2d95c1af9a505aca711fe98f56082a15dfc0c24d102bdad2ea9d90b"
+    },
+    "result_index": {
+      "path": "docs/research/data/ARC3-Build-001-results.json",
+      "sha256": "3b290133409781a7cbdcc5f6f230d379d4d28fc77a20725934b0275712f53391"
+    },
+    "stage_table": {
+      "path": "docs/research/data/ARC3-Build-001-stage-results.csv",
+      "sha256": "331d404cd16769389b26c83e0b0d2f8bfba8c2b5eb5bf5d2e83428e7d15f28d4"
+    },
+    "baseline_ablation_table": {
+      "path": "docs/research/data/ARC3-Build-001-baseline-ablation.csv",
+      "sha256": "7bfee70ca210b8835537a1131ddc68b98cbb9b8aa2318a99fda31f6394bf027c"
+    },
+    "mechanism_table": {
+      "path": "docs/research/data/ARC3-Build-001-mechanism-results.csv",
+      "sha256": "7ca3bd747dec8889832069208334c9bee8ed0587b417402648f6ecff7d7d5489"
+    },
+    "stage_figure": {
+      "path": "docs/research/figures/ARC3-Build-001-stage-status.svg",
+      "sha256": "4462c43b53b659f7c9cb1fccc9edef4410b2b1eaf0bb86ce6cb2ea777a8aaf18"
     }
   },
   "blocked_items": [
-    "B-001-0055: package evidence is Python-audit scoped and lacks OS process-tree containment",
-    "B-001-0068: exact private Kaggle wheel, framework-input, gateway, and scorer surfaces are unavailable",
-    "Build 001 local-public recovery and Stage 10 baseline/ablation results remain unmeasured because their unique attempts failed infrastructure"
+    "B-001-0001: local-public recovery remains unmeasured",
+    "B-001-0003: full typed rule-change reopening remains failed",
+    "B-001-0004: retrodiction benefit/cost remains scientifically unresolved",
+    "B-001-0005: holdout and hidden/private generalization remain unmeasured",
+    "B-001-0006: full competition runtime remains unmeasured",
+    "B-001-0007: dynamic organizer pages remain mutable",
+    "B-001-0055: package evidence is Python-audit scoped and lacks OS/native containment",
+    "B-001-0068: exact private Kaggle wheel, framework-input, gateway, and scorer surfaces are unavailable"
   ],
-  "next_action": "Complete the independent clean-clone full/replay verification, seal the final evidence index and publication artifacts, push the documentation-only final checkpoint, and update draft PR #5.",
+  "next_action": "Review draft PR #5 and decide whether to merge it.",
   "notes": [
     "Build 000 ledgers and reports are immutable historical evidence and are not overwritten by Build 001.",
     "The owner explicitly approved MIT-0 for ARC3 first-party source in the active Build 001 instruction.",
     "No public-holdout episode may be opened before the Stage 11 gate is earned.",
-    "Two dynamic organizer-page hashes drifted on 2026-08-22; executable and static documentation pins remain unchanged and the drift is not silently adopted."
+    "Two dynamic organizer-page hashes drifted on 2026-08-22; executable and static documentation pins remain unchanged and the drift is not silently adopted.",
+    "The final documentation commit cannot embed its own SHA; the durable prior checkpoint is recorded here, and the pushed final tip plus PR head are verified externally after commit.",
+    "Post-9f25e13 descendants are documentation/evidence only; production, tests, package machinery, lock, license, notices, and upstream identities are unchanged."
   ]
 }

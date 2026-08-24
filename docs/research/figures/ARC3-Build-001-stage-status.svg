@@ -1,0 +1,40 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="220" viewBox="0 0 1200 220" role="img" aria-labelledby="title desc">
+  <title id="title">ARC3 Build 001 stage status</title>
+  <desc id="desc">Stages zero through five pass, stage six fails its mechanism, stages seven through ten fail at infrastructure boundaries, stages eleven and twelve pass the holdout denial and nonconsumption procedures, stage thirteen is blocked on private external surfaces, and stage fourteen passes final reporting.</desc>
+  <rect width="1200" height="220" fill="#ffffff"/>
+  <text x="32" y="38" font-family="Segoe UI,Arial,sans-serif" font-size="24" font-weight="700" fill="#17202a">ARC3 Build 001 — stage disposition</text>
+  <g font-family="Segoe UI,Arial,sans-serif" font-size="13" text-anchor="middle">
+    <g fill="#1e8449">
+      <rect x="32" y="72" width="66" height="58" rx="6"/><rect x="106" y="72" width="66" height="58" rx="6"/>
+      <rect x="180" y="72" width="66" height="58" rx="6"/><rect x="254" y="72" width="66" height="58" rx="6"/>
+      <rect x="328" y="72" width="66" height="58" rx="6"/><rect x="402" y="72" width="66" height="58" rx="6"/>
+      <rect x="846" y="72" width="66" height="58" rx="6"/><rect x="920" y="72" width="66" height="58" rx="6"/>
+      <rect x="1068" y="72" width="66" height="58" rx="6"/>
+    </g>
+    <rect x="476" y="72" width="66" height="58" rx="6" fill="#b03a2e"/>
+    <g fill="#ca6f1e">
+      <rect x="550" y="72" width="66" height="58" rx="6"/><rect x="624" y="72" width="66" height="58" rx="6"/>
+      <rect x="698" y="72" width="66" height="58" rx="6"/><rect x="772" y="72" width="66" height="58" rx="6"/>
+    </g>
+    <rect x="994" y="72" width="66" height="58" rx="6" fill="#2471a3"/>
+    <g fill="#ffffff" font-weight="700">
+      <text x="65" y="96">00</text><text x="139" y="96">01</text><text x="213" y="96">02</text><text x="287" y="96">03</text>
+      <text x="361" y="96">04</text><text x="435" y="96">05</text><text x="509" y="96">06</text><text x="583" y="96">07</text>
+      <text x="657" y="96">08</text><text x="731" y="96">09</text><text x="805" y="96">10</text><text x="879" y="96">11</text>
+      <text x="953" y="96">12</text><text x="1027" y="96">13</text><text x="1101" y="96">14</text>
+    </g>
+    <g fill="#ffffff" font-size="10">
+      <text x="65" y="116">PASS</text><text x="139" y="116">PASS</text><text x="213" y="116">PASS</text><text x="287" y="116">PASS</text>
+      <text x="361" y="116">PASS</text><text x="435" y="116">PASS</text><text x="509" y="116">MECHANISM</text><text x="583" y="116">INFRA</text>
+      <text x="657" y="116">INFRA</text><text x="731" y="116">INFRA</text><text x="805" y="116">INFRA</text><text x="879" y="116">PASS</text>
+      <text x="953" y="116">PASS</text><text x="1027" y="116">EXTERNAL</text><text x="1101" y="116">PASS</text>
+    </g>
+  </g>
+  <g font-family="Segoe UI,Arial,sans-serif" font-size="13" fill="#263238">
+    <rect x="32" y="164" width="16" height="16" rx="3" fill="#1e8449"/><text x="56" y="177">PASS</text>
+    <rect x="140" y="164" width="16" height="16" rx="3" fill="#b03a2e"/><text x="164" y="177">FAILED_MECHANISM</text>
+    <rect x="322" y="164" width="16" height="16" rx="3" fill="#ca6f1e"/><text x="346" y="177">FAILED_INFRASTRUCTURE</text>
+    <rect x="548" y="164" width="16" height="16" rx="3" fill="#2471a3"/><text x="572" y="177">BLOCKED_EXTERNAL</text>
+    <text x="776" y="177" font-style="italic">Overall: BUILD 001 PARTIAL</text>
+  </g>
+</svg>

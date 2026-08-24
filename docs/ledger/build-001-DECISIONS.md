@@ -1367,3 +1367,27 @@ independent authorities.
   `pyproject.toml`, `uv.lock`, `LICENSE`, `THIRD_PARTY_NOTICES.md`, or `upstream.lock.json`; an
   authenticated package receipt fails; or a claimed private result lacks the corresponding
   evaluator receipt.
+
+## D-001-0068 — Close Build 001 as PARTIAL with Stage 14 PASS
+
+- Recorded: 2026-08-23T12:23:00Z
+- Status: accepted after the independent clean-clone suite and publication audit.
+- Decision: classify the overall run as `BUILD 001: PARTIAL`. Stage 06 is an exact
+  `FAILED_MECHANISM`, but the primary local-public recovery question was not validly answered
+  because the unique Stage 09 and Stage 10 attempts failed infrastructure before gameplay and
+  regression measurement. Preserve the bounded Stage 03–05 successes, every negative or partial
+  receipt, and the unavailable comparisons. Mark Stage 14 `PASS` for final verification,
+  reproducible reporting, evidence indexing, owner handoff, and draft-PR preparation.
+- Evidence: `docs/evidence/001-14-final-verification.json` records a clean exact-`9f25e13…` clone,
+  1,322 local tests with 17 platform skips and 80% coverage, 45 replay/property tests, Ruff,
+  formatting, strict mypy, doctor, frozen/offline dependency checks, four green exact-source
+  ordinary-CI jobs, four green exact-source package jobs, source-projection identity, and the
+  sealed/nonconsumed holdout state. The final reports and tables bind only `synthetic` and
+  `local-public` results.
+- Boundary: `PARTIAL` is not a recovery, holdout, private-platform, RHAE, hidden-generalization,
+  AGI, consciousness, PAL, or general-theory claim. Packaging remains `BLOCKED_EXTERNAL` at the
+  exact private surface. Christopher D. Pang remains author and steward; AI systems are tools and
+  assistants.
+- Reopening condition: none inside Build 001. Any new gameplay, holdout, private evaluation,
+  policy change, or official submission requires a later separately declared run and cannot revise
+  these frozen outcomes retroactively.

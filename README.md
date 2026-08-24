@@ -8,23 +8,25 @@ checkpoints exact state.
 
 ## Measured status
 
-**Build 000: PARTIAL.** The typed agent, deterministic evaluation system, trace/replay/checkpoint
-machinery, procedural environments, ablations, runtime profile, integrity checks, and offline
-Kaggle package candidate were implemented on `build/000-arc3-end-to-end` and merged by the owner
-through [PR #3](https://github.com/Grativy6/ARC3/pull/3). Build 001 local-public recovery is in
-progress on `build/001-local-public-recovery`; no release or official submission has occurred.
+**Build 001: PARTIAL.** Build 001 is complete on `build/001-local-public-recovery` and remains an
+unmerged [draft PR #5](https://github.com/Grativy6/ARC3/pull/5). It reproduced and diagnosed the
+local-public timeout, added bounded palette/action equivariance mechanisms, preserved a failed
+rule-change mechanism, mechanically refused the public holdout, and produced a deterministic
+offline package candidate. The decisive public-recovery and regression matrices ended at
+authenticated infrastructure boundaries, so recovery was not measured. No release or official
+submission has occurred.
 
 “PARTIAL” describes the measured agent result, not missing evidence:
 
 | Surface | Strongest relevant result |
 |---|---|
-| synthetic | Full controller 32/32 in 190 actions vs cycle 4/32 in 463 under equal 16-action budgets |
-| synthetic ablation | FULL 8/14 in 150 actions; no world-model simulation 1/14 in 211; no goal inference 0/14 in 224 |
-| local-public | Full controller timed out in all 30 Stage 15 smoke/development runs and all 6 Stage 18 release-smoke runs, completing zero levels; random produced the sole nonzero Stage 15 result and completed one development level |
-| synthetic runtime | 80 actions in 116.26474110002164 seconds; 175,210,496-byte peak RSS; all 9 runtime checks passed |
-| synthetic robustness | 7 passed, 4 palette/action-remap cases failed, 1 rule-change case not exercised |
-| synthetic package | Two byte-identical offline candidates passed sandbox, schema, source, wheel, secret, and game-ID checks |
-| synthetic release infrastructure | Clean clone passed 423 tests, 13 replay/tamper tests, exact benchmark reproduction, deterministic packaging, integrity, and artifact verification |
+| local-public | Build 001 FULL reproduced the frozen timeout: 120.11965939996298 seconds, 21 actions, 0 levels, local score 0.0; the matched Build 000 run used 19 actions and 120.110601900029 seconds |
+| local-public diagnosis | Matched-action control 46.070333300042 seconds; allocation tracing off 8.84490280004684; checkpoints off 37.9903721000301; both off 6.75240610004403 |
+| synthetic palette | 256/256 paired cases, 16/16 checkpoint pairs, and 128/128 causal controls passed |
+| synthetic action | 128/128 paired cases, 528/528 inverse requests, 64/64 causal controls, and 16/16 checkpoint pairs passed |
+| synthetic rule change | 112/112 executions completed; action rotation 32/32, traversability gate 0/32, stationary-noise gate 0/32, checkpoint continuity 4/8 — `FAILED_MECHANISM` |
+| development recovery | 96-cell matrix stopped before environment open: 0 gameplay actions, 95 cells unstarted — `FAILED_INFRASTRUCTURE` |
+| synthetic package | Final 788,070-byte archive reproduced across eight hosted Ubuntu/Windows A/B builds at SHA-256 `02326a145d510c017dc04ffd79a61cfe8c46771cbc9e74b7c8f29a9b75756d21`; exact private surface remains `BLOCKED_EXTERNAL` |
 
 These results do not establish hidden-game generalization. There is no `online-public`,
 `Kaggle-public`, `semi-private`, or `official-private` result. Official RHAE is unmeasured/null for
@@ -59,8 +61,8 @@ Build the no-submit offline candidate:
 ```
 
 The package command uses `OWNER_USERNAME` only as notebook metadata. It does not authenticate,
-accept terms, upload, or submit. Exact clean-clone release reproduction is documented in
-[`docs/reports/018-release-candidate-verification.md`](docs/reports/018-release-candidate-verification.md).
+accept terms, upload, or submit. Exact Build 001 package verification is documented in
+[`docs/reports/001-13-offline-package.md`](docs/reports/001-13-offline-package.md).
 
 ## Architecture
 
@@ -92,6 +94,14 @@ proof that every possible shortcut is absent.
 
 | Artifact | Purpose |
 |---|---|
+| [`docs/research/ARC3-Build-001-report.md`](docs/research/ARC3-Build-001-report.md) | Build 001 methods, results, failures, and limitations |
+| [`docs/research/ARC3-Build-001-publication-draft.md`](docs/research/ARC3-Build-001-publication-draft.md) | Publication draft; not submitted or released |
+| [`docs/review/ARC3-Build-001-review-packet.md`](docs/review/ARC3-Build-001-review-packet.md) | Reviewer evidence map and checklist |
+| [`docs/handoffs/001-local-public-recovery.md`](docs/handoffs/001-local-public-recovery.md) | Build 001 owner handoff |
+| [`docs/evidence/001-final-evidence-index.json`](docs/evidence/001-final-evidence-index.json) | Build 001 machine-readable result/evidence index |
+| [`docs/ledger/build-001-run-state.json`](docs/ledger/build-001-run-state.json) | Build 001 persistent machine-readable stage state |
+| [`docs/ledger/build-001-DECISIONS.md`](docs/ledger/build-001-DECISIONS.md) | Build 001 material technical decisions |
+| [`docs/ledger/build-001-OPEN-BURDENS.md`](docs/ledger/build-001-OPEN-BURDENS.md) | Build 001 failures, contradictions, and residual work |
 | [`docs/research/ARC3-Build-000-report.md`](docs/research/ARC3-Build-000-report.md) | Methods, results, ablations, failures, and limitations |
 | [`docs/handoffs/000-autonomous-arc3.md`](docs/handoffs/000-autonomous-arc3.md) | Owner handoff and exact next boundary |
 | [`docs/ledger/run-state.json`](docs/ledger/run-state.json) | Persistent machine-readable stage state |
@@ -108,9 +118,11 @@ bootstrap copy under `docs/reference/` is provenance, not a competing instructio
 
 ## Known limitations
 
-- The measured public result is negative; synthetic completion did not transfer.
-- Palette and action remapping break otherwise successful paired synthetic cases.
-- The one-shot public holdout remains deliberately unconsumed after its development gate failed.
+- The only valid Build 001 public result reproduces the timeout; the decisive recovery matrix did
+  not reach gameplay.
+- Palette/action mechanisms pass bounded paired synthetic suites but add measured calibration cost.
+- Typed traversability/noise reopening and checkpoint continuity failed in Stage 06.
+- The one-shot public holdout remains deliberately unconsumed after its frozen gate was not earned.
 - The private Kaggle wheel inventory, gateway, scorer, and complete 110-game runtime were not
   available locally.
 - The complete sequential competition runtime is estimated, not measured end to end.

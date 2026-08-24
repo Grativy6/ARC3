@@ -1,0 +1,316 @@
+{
+  "schema": "arc3.build-001.final-evidence-index.v0.1",
+  "generated_at": "2026-08-23T12:25:00Z",
+  "status": "PASS",
+  "overall_build_status": "PARTIAL",
+  "claim_boundary": "NO_GENERALIZATION_CLAIM",
+  "manifest_core_hash": "sha256:8ca92473e28aee5a1f04f25b5bfb2f4d0f26963cb1cce88b6bee692ee01be1b8",
+  "repository": {
+    "identity": "Grativy6/ARC3",
+    "branch": "build/001-local-public-recovery",
+    "draft_pull_request": "https://github.com/Grativy6/ARC3/pull/5",
+    "canonical_main_commit": "28c7a00732ce48e5c231211b01bc6eba7d0d71b4",
+    "canonical_main_tree": "4586299448e9b1b585a0878674ed5f9afa60c384",
+    "production_policy_commit": "d6d4bac1e33c9837856c08abcee61bcb14afd34e",
+    "production_policy_tree": "dd8e82e4b34337a208110929e3f5f8079d1e0a18",
+    "package_code_test_freeze_commit": "9f25e13b4672ff0ea87544ba20c5677f194cf291",
+    "package_code_test_freeze_tree": "d7fc05c9dff0f63cc97e7b752e1fe59ff7583900",
+    "stage_13_checkpoint_commit": "6e6899693acc35c1b48012ed7f82cdd6eaffdc52",
+    "stage_13_checkpoint_tree": "9348aaba717e1e11a3deb4c2660d43048f69d327"
+  },
+  "result_labels_present": [
+    "synthetic",
+    "local-public"
+  ],
+  "result_labels_unmeasured": [
+    "online-public",
+    "Kaggle-public",
+    "semi-private",
+    "official-private"
+  ],
+  "stages": [
+    {
+      "stage": "00",
+      "status": "PASS",
+      "evidence_label": "synthetic",
+      "claim": "SOURCE_IDENTITY_AND_LICENSE_VERIFIED",
+      "path": "docs/evidence/001-00-preflight-acceptance.json",
+      "file_sha256": "sha256:65eb293aff43fb50f7ab5b52bef3af99331fd5f02f8b5197e1f8a10e2a2a68ff"
+    },
+    {
+      "stage": "01",
+      "status": "PASS",
+      "evidence_label": "local-public",
+      "claim": "REPRODUCED_FAILURE",
+      "path": "docs/evidence/001-01-reproduction-acceptance.json",
+      "file_sha256": "sha256:80fd11900b8133512b1858f235888289728a59dcb50770d575068823506067be"
+    },
+    {
+      "stage": "02",
+      "status": "PASS",
+      "evidence_label": "synthetic+local-public",
+      "claim": "HOT_PATH_ATTRIBUTED",
+      "path": "docs/evidence/001-02-hot-path-observability.json",
+      "file_sha256": "sha256:2c5ba3d11b64395703ae2540fe19fc3839c5e32b53244637ca302c003a6b9421"
+    },
+    {
+      "stage": "03",
+      "status": "PASS",
+      "evidence_label": "synthetic+local-public",
+      "claim": "THROUGHPUT_BOTTLENECK_IDENTIFIED",
+      "path": "docs/evidence/001-03-causal-bottlenecks.json",
+      "file_sha256": "sha256:42e5bdca00ab87d910fa9c2ddd5219c4b15d4a43ebfd85fd6369f1bf6a5a592a"
+    },
+    {
+      "stage": "04",
+      "status": "PASS",
+      "evidence_label": "synthetic",
+      "claim": "PALETTE_EQUIVARIANCE_OBSERVED",
+      "path": "docs/evidence/001-04-palette-equivariance.json",
+      "file_sha256": "sha256:eb45275fc82870fde999d7d914534d064568a1605276a52132ed6d0335f94a73"
+    },
+    {
+      "stage": "05",
+      "status": "PASS",
+      "evidence_label": "synthetic",
+      "claim": "ACTION_EQUIVARIANCE_OBSERVED",
+      "path": "docs/evidence/001-05-action-equivariance.json",
+      "file_sha256": "sha256:7d9a72d9e222944a60cf92cb2b3bd5db2e33f46d5a64be4d22f91df224adf85a"
+    },
+    {
+      "stage": "06",
+      "status": "FAILED_MECHANISM",
+      "evidence_label": "synthetic",
+      "claim": "RULE_CHANGE_REOPENING_NOT_OBSERVED_AS_PREDECLARED",
+      "path": "docs/evidence/001-06-rule-change-reopening.json",
+      "file_sha256": "sha256:0a7b98fbabd5df8df8cf63351d6629903ee9ae9b85f6b1b1d45776fe815301dd"
+    },
+    {
+      "stage": "07",
+      "status": "FAILED_INFRASTRUCTURE",
+      "evidence_label": "synthetic+local-public",
+      "claim": "RETRODICTION_DECISION_UNAVAILABLE",
+      "path": "docs/evidence/001-07-retrodiction-decision.json",
+      "file_sha256": "sha256:35555cc69e9f35091dd3a18ead1822b0b2afde5847f045d4901b7491227425e4"
+    },
+    {
+      "stage": "08",
+      "status": "FAILED_INFRASTRUCTURE",
+      "evidence_label": "synthetic+local-public",
+      "claim": "TWO_SPEED_RESULT_UNAVAILABLE",
+      "path": "docs/evidence/001-08-two-speed-controller.json",
+      "file_sha256": "sha256:0134c9e5b7acea716f790088cb59109eded7857ce83fda004ea1b88be2eb92ac"
+    },
+    {
+      "stage": "09",
+      "status": "FAILED_INFRASTRUCTURE",
+      "evidence_label": "local-public",
+      "claim": "LOCAL_PUBLIC_RECOVERY_NOT_MEASURED",
+      "path": "docs/evidence/001-09-development-recovery.json",
+      "file_sha256": "sha256:e44473f2335fee5ccf8bd4f911a0d615caf92f9696375ebe6e57697e5622b3b8"
+    },
+    {
+      "stage": "10",
+      "status": "FAILED_INFRASTRUCTURE",
+      "evidence_label": "synthetic",
+      "claim": "REGRESSION_AND_ABLATION_UNAVAILABLE",
+      "path": "docs/evidence/001-10-robustness-regression.json",
+      "file_sha256": "sha256:297aa155f6df2d6b392a2090e489e97e46e8119db04250e1baff4723acc3b208"
+    },
+    {
+      "stage": "11",
+      "status": "PASS",
+      "evidence_label": "synthetic",
+      "claim": "HOLDOUT_NOT_EARNED",
+      "path": "docs/evidence/001-11-holdout-gate.json",
+      "file_sha256": "sha256:edf01ae6c69a7ce4f862d68bb5a3660cc1b2ce805725d88edd11e1b372a48dcd"
+    },
+    {
+      "stage": "12",
+      "status": "PASS",
+      "evidence_label": "synthetic",
+      "claim": "SEALED_NONCONSUMPTION_ONLY",
+      "path": "docs/evidence/001-12-holdout-nonconsumption.json",
+      "file_sha256": "sha256:52005ea16e7f0413f33ad61fed651ee7d8f79ee7493553a6b1aedff34a69709c"
+    },
+    {
+      "stage": "13",
+      "status": "BLOCKED_EXTERNAL",
+      "evidence_label": "synthetic",
+      "claim": "DETERMINISTIC_OFFLINE_PACKAGE_OBSERVED_ON_AVAILABLE_SURFACES",
+      "path": "docs/evidence/001-13-offline-package.json",
+      "file_sha256": "sha256:e5d9ea9bed0d2023273d8843b76892e7fc19f975d0dc4e33f3fb6226e2d53760",
+      "artifact_core_hash": "sha256:f15f0f59304e3f1a22bfeba3c831b43122de00f407e7a50573a99c02d295bf8f"
+    },
+    {
+      "stage": "14",
+      "status": "PASS",
+      "evidence_label": "synthetic",
+      "claim": "FINAL_REPRODUCIBILITY_AND_PUBLICATION_SURFACES_VERIFIED",
+      "path": "docs/evidence/001-14-final-verification.json",
+      "file_sha256": "sha256:5d7c9744930391bb38b965034523fcc5562c9db71f56d8c3acef2e989712ff0c",
+      "artifact_core_hash": "sha256:560c1ba1898a9060d2bd9b9051781636a55ba197255d1dfad49a0e054e59ff82"
+    }
+  ],
+  "headline_results": {
+    "strongest_local_public": {
+      "label": "local-public",
+      "claim": "REPRODUCED_FAILURE",
+      "policy": "Build001 FULL",
+      "seed": 7,
+      "wall_seconds": 120.11965939996298,
+      "environment_actions": 21,
+      "levels_completed": 0,
+      "local_score": 0.0,
+      "official_rhae": null,
+      "matched_build_000": {
+        "wall_seconds": 120.110601900029,
+        "environment_actions": 19,
+        "levels_completed": 0,
+        "local_score": 0.0
+      }
+    },
+    "synthetic_palette": "PASS:256/256-procedural+16/16-checkpoint+128/128-controls",
+    "synthetic_action": "PASS:128/128-procedural+528/528-inverse+64/64-controls+16/16-checkpoint",
+    "synthetic_rule_change": "FAILED_MECHANISM:rotation-32/32+traversability-0/32+noise-0/32+checkpoint-4/8",
+    "stage_09": "FAILED_INFRASTRUCTURE:1/96-exposed+0-environment-opens+0-gameplay-actions+95-unstarted",
+    "stage_10": "FAILED_INFRASTRUCTURE:1/9-infrastructure-terminal+8-unstarted+no-baseline-or-ablation-result",
+    "holdout": "HOLDOUT_NOT_EARNED+SEALED_UNCONSUMED"
+  },
+  "package": {
+    "status": "BLOCKED_EXTERNAL",
+    "evidence_label": "synthetic",
+    "source_commit": "9f25e13b4672ff0ea87544ba20c5677f194cf291",
+    "candidate_path": "C:/a/arc3-b001/artifacts/stage13/final-package-9f25e13-exact/package-a/arc3-kaggle-candidate.zip",
+    "candidate_sha256": "sha256:02326a145d510c017dc04ffd79a61cfe8c46771cbc9e74b7c8f29a9b75756d21",
+    "candidate_bytes": 788070,
+    "candidate_builds": 8,
+    "all_candidates_byte_identical": true,
+    "durable_receipt_root": "C:/a/arc3-b001/artifacts/stage13/final-package-9f25e13-exact",
+    "durable_file_record_manifest_sha256": "sha256:2aca4b7e6f1430b33444459470850b05947fedef2c0bfed34d0eb07a69d03295",
+    "only_nonpass": "private-kaggle-surfaces"
+  },
+  "publication_artifacts": [
+    {
+      "path": "README.md",
+      "file_sha256": "sha256:8f22ac82bf9642175f99bb2fcdc6f73359adfd22670b158c0a03d59e207f76e7"
+    },
+    {
+      "path": "docs/research/ARC3-Build-001-report.md",
+      "file_sha256": "sha256:3e641e568660275ad0f5d52119fdd8fd8474454edde06f9dd1972eb68b1e58ef"
+    },
+    {
+      "path": "docs/research/ARC3-Build-001-publication-draft.md",
+      "file_sha256": "sha256:b73458bc86f8b520f27875813fde7ee9856fa7fcf780bb566b5fa866e621ee8a"
+    },
+    {
+      "path": "docs/review/ARC3-Build-001-review-packet.md",
+      "file_sha256": "sha256:0b90f83d88e603d156e20d99e8dc7874397d363811f2ce2620d7b716ee4bd73a"
+    },
+    {
+      "path": "docs/handoffs/001-local-public-recovery.md",
+      "file_sha256": "sha256:eee320d0a2d95c1af9a505aca711fe98f56082a15dfc0c24d102bdad2ea9d90b"
+    },
+    {
+      "path": "docs/reports/001-13-offline-package.md",
+      "file_sha256": "sha256:4052d9a4b1739524b1c0301ead709d233a79cd6694aca6c0407e76c41651ac0e"
+    },
+    {
+      "path": "docs/reports/001-14-final-verification.md",
+      "file_sha256": "sha256:b0419066e3ffb941a7bfd7dd167b1e237f52f0ac960a518862cd40f552140b8a"
+    },
+    {
+      "path": "docs/research/data/ARC3-Build-001-results.json",
+      "file_sha256": "sha256:3b290133409781a7cbdcc5f6f230d379d4d28fc77a20725934b0275712f53391"
+    },
+    {
+      "path": "docs/research/data/ARC3-Build-001-stage-results.csv",
+      "file_sha256": "sha256:331d404cd16769389b26c83e0b0d2f8bfba8c2b5eb5bf5d2e83428e7d15f28d4"
+    },
+    {
+      "path": "docs/research/data/ARC3-Build-001-baseline-ablation.csv",
+      "file_sha256": "sha256:7bfee70ca210b8835537a1131ddc68b98cbb9b8aa2318a99fda31f6394bf027c"
+    },
+    {
+      "path": "docs/research/data/ARC3-Build-001-mechanism-results.csv",
+      "file_sha256": "sha256:7ca3bd747dec8889832069208334c9bee8ed0587b417402648f6ecff7d7d5489"
+    },
+    {
+      "path": "docs/research/figures/ARC3-Build-001-stage-status.svg",
+      "file_sha256": "sha256:4462c43b53b659f7c9cb1fccc9edef4410b2b1eaf0bb86ce6cb2ea777a8aaf18"
+    },
+    {
+      "path": "docs/ledger/build-001-DECISIONS.md",
+      "file_sha256": "sha256:a5812a73c235187f9bc6b6aebc7d7692aa6edbff09ebf535bca37bbe7a335237"
+    },
+    {
+      "path": "docs/ledger/build-001-OPEN-BURDENS.md",
+      "file_sha256": "sha256:84bdf38619785fa4b1875998eb54e1381e9d0c56893aa04ebf0711135717cd8d"
+    }
+  ],
+  "identity_artifacts": [
+    {
+      "path": "LICENSE",
+      "file_sha256": "sha256:7f433e520d07d56ad14d92e9da9f580771479c30a2bfccc8024eed308f21bbe8"
+    },
+    {
+      "path": "THIRD_PARTY_NOTICES.md",
+      "file_sha256": "sha256:dd3b46094c40b5bf2a0b13892382e05ebaa1e8006f341f94f1279a87ffdbf70a"
+    },
+    {
+      "path": "upstream.lock.json",
+      "file_sha256": "sha256:67e1d937e213bbcc25783784d04c4fa349b85dc09b94855256916ca6b96e808a"
+    },
+    {
+      "path": "uv.lock",
+      "file_sha256": "sha256:3bf42dcbe45720f71b7433584f56a5d5982ec1c687c341ad2626222fa5de285b"
+    }
+  ],
+  "verification": {
+    "clean_clone_full_pytest": "PASS:1322-passed+17-skipped+80-percent-coverage",
+    "clean_clone_replay_property": "PASS:45-passed",
+    "ruff_lint": "PASS",
+    "ruff_format": "PASS:313-files",
+    "mypy_strict": "PASS:179-source-files",
+    "runtime_doctor": "PASS:all-required-checks",
+    "offline_sync": "PASS:61-packages",
+    "offline_lock": "PASS:61-packages",
+    "hosted_ordinary_ci": "PASS:push+pull-request+ubuntu+windows",
+    "hosted_package_ci": "PASS:push+pull-request+ubuntu+windows",
+    "release_receipt": "PASS:authenticated-BLOCKED_EXTERNAL",
+    "secret_scan": "PASS:zero-findings",
+    "production_integrity_scan": "PASS:zero-findings",
+    "replay": "PASS",
+    "git_fsck": "PASS:dangling-unreferenced-objects-only",
+    "git_diff_check": "PASS",
+    "markdown_links": "PASS",
+    "json_csv_svg_validation": "PASS"
+  },
+  "failed_mechanisms_and_attempts": [
+    "Stage 06 typed traversability and stationary-noise reopening plus checkpoint continuity",
+    "Stage 07 unique retrodiction matrix failed infrastructure before aggregate/microbenchmarks",
+    "Stage 08 unique two-speed matrix failed infrastructure after one cell",
+    "Stage 09 unique recovery matrix failed launcher/interpreter PID authority before environment open",
+    "Stage 10 unique regression matrix omitted the required expected-commit argument",
+    "First Stage 13 long-root run hit three Windows path-length failures"
+  ],
+  "unresolved_burdens": [
+    "B-001-0001: local-public recovery remains unmeasured",
+    "B-001-0003: full typed rule-change reopening remains failed",
+    "B-001-0004: retrodiction benefit/cost remains scientifically unresolved",
+    "B-001-0005: holdout and hidden/private generalization remain unmeasured",
+    "B-001-0006: full competition runtime remains unmeasured",
+    "B-001-0007: dynamic organizer pages remain mutable",
+    "B-001-0055: Python audit scope is not OS/native containment",
+    "B-001-0068: exact private Kaggle execution surfaces remain unavailable"
+  ],
+  "human_gates": {
+    "terms_accepted": false,
+    "official_submission": false,
+    "pull_request_merged": false,
+    "release_or_doi_published": false,
+    "money_spent_or_paid_compute_activated": false,
+    "secrets_disclosed": false
+  },
+  "smallest_owner_only_next_action": "Review draft PR #5 and decide whether to merge it."
+}
