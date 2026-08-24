@@ -22,6 +22,7 @@ OBSERVATION_SCHEMA = "arc3.build003.worker-observation.v0.1"
 ACTION_SCHEMA = "arc3.build003.worker-action.v0.1"
 _READY_SCHEMA = "arc3.build003.worker-ready.v0.1"
 _ERROR_SCHEMA = "arc3.build003.worker-error.v0.1"
+_SUMMARY_SCHEMA = "arc3.build003.worker-summary.v0.1"
 _ALLOWED_METADATA = frozenset({"attempt", "step"})
 _PRIVILEGED_KEYS = frozenset(
     {
@@ -252,7 +253,12 @@ def action_from_bytes(payload: bytes) -> ActionRequest:
 class PolicyProcess:
     """Spawn a learner with no evaluator state or Python object references."""
 
-    def __init__(self, *, timeout_seconds: float = 5.0) -> None:
+    def __init__(
+        self,
+        *,
+        variant: str = "BLA_CLEF_FULL",
+        timeout_seconds: float = 10.0,
+    ) -> None:
         if (
             isinstance(timeout_seconds, bool)
             or not isinstance(timeout_seconds, (int, float))
@@ -266,7 +272,7 @@ class PolicyProcess:
         parent, child = context.Pipe(duplex=True)
         process = context.Process(
             target=worker_main,
-            args=(child,),
+            args=(child, variant),
             name="arc3-build003-policy-worker",
             daemon=True,
         )
@@ -297,6 +303,11 @@ class PolicyProcess:
             raise RuntimeError("policy worker returned an invalid import-denial receipt")
         self.loaded_modules = tuple(cast(list[str], raw_modules))
         self.blocked_privileged_imports = tuple(cast(list[str], raw_blocked))
+        returned_variant = ready.get("variant")
+        if returned_variant != variant:
+            self.close()
+            raise RuntimeError("policy worker variant identity mismatch")
+        self.variant = variant
 
     @property
     def process_id(self) -> int | None:
@@ -317,6 +328,20 @@ class PolicyProcess:
         if not self._connection.poll(self._timeout_seconds):
             raise TimeoutError("policy worker exceeded its action timeout")
         return action_from_bytes(self._connection.recv_bytes())
+
+    def finalize(self, observation: Observation) -> dict[str, object]:
+        """Deliver the last consequence and return observation-only telemetry."""
+
+        if not self._process.is_alive():
+            raise RuntimeError("policy worker is not alive")
+        observation_value = _json_object(observation_to_bytes(observation))
+        self._connection.send_bytes(
+            canonical_bytes({"command": "finalize", "observation": observation_value})
+        )
+        summary = self._receive_object()
+        if summary.get("schema") != _SUMMARY_SCHEMA:
+            raise RuntimeError("policy worker returned an invalid summary receipt")
+        return summary
 
     def close(self) -> None:
         if not hasattr(self, "_connection"):
@@ -342,6 +367,7 @@ class PolicyProcess:
 __all__ = [
     "ACTION_SCHEMA",
     "OBSERVATION_SCHEMA",
+    "_SUMMARY_SCHEMA",
     "PolicyProcess",
     "action_from_bytes",
     "action_to_bytes",

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ast
 import json
 import tomllib
 from pathlib import Path
@@ -24,6 +25,10 @@ from evaluation_only.arc3_build003_curriculum.oracle import (
     force_game_over_then_reset,
     shortest_level_plan,
     validate_curriculum,
+)
+from evaluation_only.arc3_build003_curriculum.runner import (
+    SequenceBudgets,
+    run_sequence,
 )
 
 from arc3.errors import InvalidActionError
@@ -162,3 +167,48 @@ def test_evaluator_only_package_is_excluded_from_production_wheel() -> None:
         if source.name == "build003_results.py":
             continue
         assert "arc3_build003_curriculum" not in source.read_text(encoding="utf-8")
+
+
+def test_policy_path_has_no_privileged_evaluator_imports() -> None:
+    policy_sources = (
+        ROOT / "evaluation_only/arc3_build003_curriculum/policy_worker.py",
+        ROOT / "evaluation_only/arc3_build003_curriculum/variant_policy.py",
+        ROOT / "evaluation_only/arc3_build003_curriculum/frozen_build002_worker.py",
+    )
+    denied = {"engine", "generator", "oracle"}
+    for source in policy_sources:
+        tree = ast.parse(source.read_text(encoding="utf-8"), filename=str(source))
+        imported = {
+            alias.name.rsplit(".", 1)[-1]
+            for node in ast.walk(tree)
+            if isinstance(node, (ast.Import, ast.ImportFrom))
+            for alias in node.names
+        }
+        assert imported.isdisjoint(denied)
+
+
+@pytest.mark.integration
+def test_full_observation_only_variant_reaches_authoritative_win() -> None:
+    execution = run_sequence(
+        generate_curriculum(frozen_seeds()[0]),
+        "BLA_CLEF_FULL",
+        budgets=SequenceBudgets(
+            max_environment_actions=300,
+            max_resets=2,
+            max_wall_clock_seconds=20.0,
+        ),
+    )
+    assert execution.receipt["run_status"] == "SUCCESS"
+    assert execution.receipt["final_state"] == GameStateName.WIN.value
+    assert execution.receipt["levels_completed"] == execution.receipt["win_levels"] == 10
+    assert execution.receipt["replay_deterministic"] is True
+    assert all(row.completed and row.receipt_complete for row in execution.rows)
+
+
+def test_unavailable_frozen_baseline_preserves_all_rows_as_infrastructure_failure() -> None:
+    execution = run_sequence(generate_curriculum(frozen_seeds()[0]), "BUILD002_FROZEN")
+    assert len(execution.rows) == 10
+    assert execution.receipt["run_status"] == "FAILED_INFRASTRUCTURE"
+    assert "source root was not supplied" in str(execution.receipt["failure_reason"])
+    assert all(row.run_status == "FAILED_INFRASTRUCTURE" for row in execution.rows)
+    assert not any(row.receipt_complete for row in execution.rows)

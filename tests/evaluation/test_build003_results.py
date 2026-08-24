@@ -56,6 +56,7 @@ def _row(case: FrozenCase, variant: str, family: str) -> CurriculumResultRow:
         completed=True,
         levels_completed=level_index,
         environment_actions=10 + exploratory,
+        resets=0,
         exploratory_actions=exploratory,
         progress_actions=10,
         redundant_probes=redundant,

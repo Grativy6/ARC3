@@ -9,8 +9,6 @@ from importlib.machinery import ModuleSpec
 from multiprocessing.connection import Connection
 from types import ModuleType
 
-from arc3.types import ActionName, ActionRequest, GameStateName
-
 from .broker import (
     _ERROR_SCHEMA,
     _READY_SCHEMA,
@@ -42,19 +40,7 @@ class _PrivilegeDenyFinder(importlib.abc.MetaPathFinder):
         return None
 
 
-def _select_action(
-    state: GameStateName, available: tuple[ActionName, ...], turn: int
-) -> ActionRequest:
-    if state in {GameStateName.GAME_OVER, GameStateName.NOT_PLAYED}:
-        return ActionRequest(ActionName.RESET)
-    if state is GameStateName.WIN:
-        raise RuntimeError("WIN is terminal")
-    if not available:
-        raise RuntimeError("nonterminal observation advertises no actions")
-    return ActionRequest(available[turn % len(available)])
-
-
-def worker_main(connection: Connection) -> None:
+def worker_main(connection: Connection, variant: str = "BLA_CLEF_FULL") -> None:
     """Receive canonical observations and return canonical actions until closed."""
 
     prefix = __package__ or "arc3_build003_curriculum"
@@ -68,6 +54,9 @@ def worker_main(connection: Connection) -> None:
             blocked_imports.append(name)
         else:
             raise RuntimeError(f"privileged worker import unexpectedly succeeded: {name}")
+    from .variant_policy import ObservationOnlyVariantPolicy
+
+    policy = ObservationOnlyVariantPolicy(variant)
     modules = sorted(name for name in sys.modules if name.startswith(prefix))
     connection.send_bytes(
         canonical_bytes(
@@ -75,19 +64,28 @@ def worker_main(connection: Connection) -> None:
                 "blocked_imports": blocked_imports,
                 "modules": modules,
                 "schema": _READY_SCHEMA,
+                "variant": variant,
             }
         )
     )
-    turn = 0
     try:
         while True:
             payload = connection.recv_bytes()
             if payload == canonical_bytes({"command": "close"}):
                 return
+            try:
+                envelope = __import__("json").loads(payload.decode("utf-8"))
+            except (UnicodeDecodeError, ValueError):
+                envelope = None
+            if isinstance(envelope, dict) and envelope.get("command") == "finalize":
+                raw_observation = envelope.get("observation")
+                if not isinstance(raw_observation, dict):
+                    raise ValueError("finalize requires an observation object")
+                observation = observation_from_bytes(canonical_bytes(raw_observation))
+                connection.send_bytes(canonical_bytes(policy.finalize(observation)))
+                continue
             observation = observation_from_bytes(payload)
-            action = _select_action(observation.state, observation.available_actions, turn)
-            connection.send_bytes(action_to_bytes(action))
-            turn += 1
+            connection.send_bytes(action_to_bytes(policy.choose_action(observation)))
     except EOFError:
         return
     except Exception as error:

@@ -9,7 +9,7 @@ from dataclasses import asdict, dataclass
 
 from arc3.types import GameStateName
 
-BUILD003_RESULT_SCHEMA = "arc3.build003.curriculum-result.v0.1"
+BUILD003_RESULT_SCHEMA = "arc3.build003.curriculum-result.v0.2"
 BUILD003_SUMMARY_SCHEMA = "arc3.build003.paired-summary.v0.1"
 FROZEN_SEED_COUNT = 30
 
@@ -30,6 +30,15 @@ FAMILIES = (
     "delayed-hidden-state-response",
     "harmless-animation",
     "held-out-mechanic-composition",
+)
+RUN_STATUSES = (
+    "SUCCESS",
+    "ACTION_BUDGET",
+    "RESET_BUDGET",
+    "WALL_CLOCK_BUDGET",
+    "MEMORY_BUDGET",
+    "FAILED_INFRASTRUCTURE",
+    "POLICY_ERROR",
 )
 
 
@@ -64,6 +73,7 @@ class CurriculumResultRow:
     completed: bool
     levels_completed: int
     environment_actions: int
+    resets: int
     exploratory_actions: int
     progress_actions: int
     redundant_probes: int
@@ -84,6 +94,8 @@ class CurriculumResultRow:
     replay_digest: str
     replay_deterministic: bool
     receipt_complete: bool
+    run_status: str = "SUCCESS"
+    failure_reason: str | None = None
     schema: str = BUILD003_RESULT_SCHEMA
 
     def __post_init__(self) -> None:
@@ -91,6 +103,12 @@ class CurriculumResultRow:
             raise ValueError("result row schema mismatch")
         if self.variant not in VARIANTS or self.family not in FAMILIES:
             raise ValueError("result row has an undeclared variant or family")
+        if self.run_status not in RUN_STATUSES:
+            raise ValueError("result row has an undeclared run status")
+        if (self.run_status == "SUCCESS") != (self.failure_reason is None):
+            raise ValueError("only successful runs omit a failure reason")
+        if self.failure_reason is not None and not self.failure_reason.strip():
+            raise ValueError("failure_reason must be non-empty when present")
         if not isinstance(self.state, GameStateName):
             raise ValueError("state must be a normalized GameStateName")
         if not all(
@@ -118,6 +136,7 @@ class CurriculumResultRow:
             "seed": self.seed,
             "levels_completed": self.levels_completed,
             "environment_actions": self.environment_actions,
+            "resets": self.resets,
             "exploratory_actions": self.exploratory_actions,
             "progress_actions": self.progress_actions,
             "redundant_probes": self.redundant_probes,
@@ -425,6 +444,7 @@ def _metric(row: CurriculumResultRow, metric: str) -> float:
     fields = {
         "completed": float(row.completed),
         "environment_actions": float(row.environment_actions),
+        "resets": float(row.resets),
         "exploratory_actions": float(row.exploratory_actions),
         "progress_actions": float(row.progress_actions),
         "redundant_probes": float(row.redundant_probes),
@@ -444,6 +464,7 @@ __all__ = [
     "BUILD003_SUMMARY_SCHEMA",
     "FAMILIES",
     "FROZEN_SEED_COUNT",
+    "RUN_STATUSES",
     "VARIANTS",
     "Build003ResultLedger",
     "CurriculumResultRow",
