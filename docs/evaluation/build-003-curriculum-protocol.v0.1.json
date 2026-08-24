@@ -1,0 +1,73 @@
+{
+  "schema": "arc3.build003.curriculum-protocol.v0.1",
+  "status": "PREREGISTERED",
+  "surface": "synthetic",
+  "protocol_id": "arc3.build003.curriculum.v0.1",
+  "seed_manifest": "docs/evaluation/build-003-heldout-seeds.v0.1.json",
+  "families": [
+    "movement-resource-cost",
+    "blocking-walls",
+    "resource-restoration",
+    "reusable-versus-one-shot-restoration",
+    "gate-switch-reachability",
+    "pushing-other-object",
+    "terrain-status-modifier",
+    "delayed-hidden-state-response",
+    "harmless-animation",
+    "held-out-mechanic-composition"
+  ],
+  "variants": [
+    "BUILD002_FROZEN",
+    "BLA_CLEF_LEVEL_RESET",
+    "BLA_ONLY_PERSISTENT",
+    "BLA_CLEF_FULL"
+  ],
+  "pairing": {
+    "unit": "seed-and-family",
+    "required_rows": 1200,
+    "missing_rows_permitted": false,
+    "duplicate_or_replacement_rows_permitted": false
+  },
+  "budgets_per_variant_seed_sequence": {
+    "maximum_environment_actions": 1500,
+    "maximum_resets": 10,
+    "maximum_wall_clock_seconds": 120,
+    "maximum_peak_memory_bytes": 1073741824
+  },
+  "environment_contract": {
+    "frame_size": [10, 10],
+    "action_names": ["ACTION1", "ACTION2", "ACTION3", "ACTION4", "ACTION5"],
+    "intermediate_level_state": "NOT_FINISHED",
+    "authoritative_final_state": "WIN",
+    "failure_state": "GAME_OVER",
+    "failure_recovery_action": "RESET",
+    "progressive_level_count": 10,
+    "colors_layouts_coordinates_counts_and_magnitudes_are_seeded": true
+  },
+  "privilege_boundary": {
+    "learner_process_receives": [
+      "normalized frame pixels",
+      "state",
+      "levels_completed",
+      "win_levels",
+      "available actions",
+      "returned action",
+      "step and attempt counters"
+    ],
+    "learner_process_never_receives": [
+      "generator seed",
+      "family label",
+      "rule configuration",
+      "exact evaluator state",
+      "transition truth",
+      "oracle plan"
+    ]
+  },
+  "preregistered_comparisons": {
+    "H1": "BLA_CLEF_FULL minus BLA_CLEF_LEVEL_RESET on later-family exploratory actions and completion",
+    "H2": "BLA_CLEF_FULL base-mechanic retention and erroneous global reopenings on modifier families",
+    "H3": "BLA_CLEF_FULL minus BLA_ONLY_PERSISTENT on redundant probes, actions, and completion",
+    "baseline": "BLA_CLEF_FULL minus BUILD002_FROZEN on actions and completion"
+  },
+  "claim_boundary": "Synthetic curriculum evidence is not target-game completion or GameState.WIN evidence for public, holdout, or official play."
+}

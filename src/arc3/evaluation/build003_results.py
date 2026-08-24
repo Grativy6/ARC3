@@ -1,0 +1,452 @@
+"""Frozen row contract and paired summaries for the Build 003 curriculum."""
+
+from __future__ import annotations
+
+import math
+import statistics
+from collections.abc import Iterable, Mapping
+from dataclasses import asdict, dataclass
+
+from arc3.types import GameStateName
+
+BUILD003_RESULT_SCHEMA = "arc3.build003.curriculum-result.v0.1"
+BUILD003_SUMMARY_SCHEMA = "arc3.build003.paired-summary.v0.1"
+FROZEN_SEED_COUNT = 30
+
+VARIANTS = (
+    "BUILD002_FROZEN",
+    "BLA_CLEF_LEVEL_RESET",
+    "BLA_ONLY_PERSISTENT",
+    "BLA_CLEF_FULL",
+)
+FAMILIES = (
+    "movement-resource-cost",
+    "blocking-walls",
+    "resource-restoration",
+    "reusable-versus-one-shot-restoration",
+    "gate-switch-reachability",
+    "pushing-other-object",
+    "terrain-status-modifier",
+    "delayed-hidden-state-response",
+    "harmless-animation",
+    "held-out-mechanic-composition",
+)
+
+
+@dataclass(frozen=True, slots=True)
+class FrozenCase:
+    """Public immutable pairing identity from the preregistered seed manifest."""
+
+    case_id: str
+    seed: int
+
+    def __post_init__(self) -> None:
+        if not self.case_id:
+            raise ValueError("case_id must not be empty")
+        if (
+            isinstance(self.seed, bool)
+            or not isinstance(self.seed, int)
+            or not 0 <= self.seed < 2**63
+        ):
+            raise ValueError("seed must be an unsigned 63-bit integer")
+
+
+@dataclass(frozen=True, slots=True)
+class CurriculumResultRow:
+    """One immutable variant/seed/family result row."""
+
+    case_id: str
+    seed: int
+    variant: str
+    family: str
+    level_index: int
+    state: GameStateName
+    completed: bool
+    levels_completed: int
+    environment_actions: int
+    exploratory_actions: int
+    progress_actions: int
+    redundant_probes: int
+    actions_to_stable: int | None
+    movement_prediction_errors: int
+    resource_prediction_errors: int
+    access_prediction_errors: int
+    hazard_prediction_errors: int
+    residuals_observed: int
+    residuals_localized: int
+    residuals_resolved: int
+    base_mechanics_retained: bool
+    erroneous_global_reopenings: int
+    unresolved_ledger_count: int
+    active_ledger_pressure: int
+    wall_time_seconds: float
+    peak_memory_bytes: int
+    replay_digest: str
+    replay_deterministic: bool
+    receipt_complete: bool
+    schema: str = BUILD003_RESULT_SCHEMA
+
+    def __post_init__(self) -> None:
+        if self.schema != BUILD003_RESULT_SCHEMA:
+            raise ValueError("result row schema mismatch")
+        if self.variant not in VARIANTS or self.family not in FAMILIES:
+            raise ValueError("result row has an undeclared variant or family")
+        if not isinstance(self.state, GameStateName):
+            raise ValueError("state must be a normalized GameStateName")
+        if not all(
+            isinstance(value, bool)
+            for value in (
+                self.completed,
+                self.base_mechanics_retained,
+                self.replay_deterministic,
+                self.receipt_complete,
+            )
+        ):
+            raise ValueError("result flags must be booleans")
+        expected_level = FAMILIES.index(self.family) + 1
+        if self.level_index != expected_level:
+            raise ValueError("family and level_index disagree")
+        digest = self.replay_digest.removeprefix("sha256:")
+        if (
+            not self.case_id
+            or not self.replay_digest.startswith("sha256:")
+            or len(digest) != 64
+            or any(character not in "0123456789abcdef" for character in digest)
+        ):
+            raise ValueError("result identity and replay digest must be present")
+        integer_fields = {
+            "seed": self.seed,
+            "levels_completed": self.levels_completed,
+            "environment_actions": self.environment_actions,
+            "exploratory_actions": self.exploratory_actions,
+            "progress_actions": self.progress_actions,
+            "redundant_probes": self.redundant_probes,
+            "movement_prediction_errors": self.movement_prediction_errors,
+            "resource_prediction_errors": self.resource_prediction_errors,
+            "access_prediction_errors": self.access_prediction_errors,
+            "hazard_prediction_errors": self.hazard_prediction_errors,
+            "residuals_observed": self.residuals_observed,
+            "residuals_localized": self.residuals_localized,
+            "residuals_resolved": self.residuals_resolved,
+            "erroneous_global_reopenings": self.erroneous_global_reopenings,
+            "unresolved_ledger_count": self.unresolved_ledger_count,
+            "active_ledger_pressure": self.active_ledger_pressure,
+            "peak_memory_bytes": self.peak_memory_bytes,
+        }
+        if any(
+            isinstance(value, bool) or not isinstance(value, int) or value < 0
+            for value in integer_fields.values()
+        ):
+            raise ValueError("result count fields must be non-negative integers")
+        if self.actions_to_stable is not None and (
+            isinstance(self.actions_to_stable, bool)
+            or not isinstance(self.actions_to_stable, int)
+            or self.actions_to_stable < 0
+        ):
+            raise ValueError("actions_to_stable must be a non-negative integer or null")
+        if self.environment_actions != self.exploratory_actions + self.progress_actions:
+            raise ValueError("exploratory and progress actions must partition environment actions")
+        if self.redundant_probes > self.exploratory_actions:
+            raise ValueError("redundant probes cannot exceed exploratory actions")
+        if self.actions_to_stable is not None and self.actions_to_stable > self.environment_actions:
+            raise ValueError("actions_to_stable cannot exceed environment actions")
+        if not self.residuals_resolved <= self.residuals_localized <= self.residuals_observed:
+            raise ValueError("residual resolution counts must be nested")
+        if (
+            isinstance(self.wall_time_seconds, bool)
+            or not isinstance(self.wall_time_seconds, (int, float))
+            or not math.isfinite(self.wall_time_seconds)
+            or self.wall_time_seconds < 0
+        ):
+            raise ValueError("wall_time_seconds must be finite and non-negative")
+        if self.levels_completed > len(FAMILIES):
+            raise ValueError("levels_completed exceeds the curriculum")
+        if self.completed and self.levels_completed != self.level_index:
+            raise ValueError("completed row must end at its declared level")
+        expected_success_state = (
+            GameStateName.WIN if self.level_index == len(FAMILIES) else GameStateName.NOT_FINISHED
+        )
+        if self.completed and self.state is not expected_success_state:
+            raise ValueError("completed row has the wrong authoritative environment state")
+        if self.state is GameStateName.WIN and not self.completed:
+            raise ValueError("WIN cannot be recorded as an incomplete level")
+
+    @property
+    def key(self) -> tuple[str, int, str, str]:
+        return self.case_id, self.seed, self.variant, self.family
+
+
+@dataclass(frozen=True, slots=True)
+class PairedDistribution:
+    """Deterministic paired spread with a normal-approximation mean CI."""
+
+    pairs: int
+    reference_failures: int
+    treatment_failures: int
+    mean_delta: float
+    median_delta: float
+    q1_delta: float
+    q3_delta: float
+    minimum_delta: float
+    maximum_delta: float
+    mean_ci95_low: float
+    mean_ci95_high: float
+
+
+def _quantile(values: list[float], fraction: float) -> float:
+    if not values:
+        raise ValueError("cannot summarize an empty paired distribution")
+    ordered = sorted(values)
+    position = (len(ordered) - 1) * fraction
+    lower = math.floor(position)
+    upper = math.ceil(position)
+    if lower == upper:
+        return ordered[lower]
+    weight = position - lower
+    return ordered[lower] * (1.0 - weight) + ordered[upper] * weight
+
+
+def _distribution(
+    deltas: list[float],
+    *,
+    reference_failures: int,
+    treatment_failures: int,
+) -> PairedDistribution:
+    if not deltas:
+        raise ValueError("paired comparison has no rows")
+    mean = statistics.fmean(deltas)
+    half_width = 0.0
+    if len(deltas) > 1:
+        half_width = 1.96 * statistics.stdev(deltas) / math.sqrt(len(deltas))
+    return PairedDistribution(
+        pairs=len(deltas),
+        reference_failures=reference_failures,
+        treatment_failures=treatment_failures,
+        mean_delta=mean,
+        median_delta=statistics.median(deltas),
+        q1_delta=_quantile(deltas, 0.25),
+        q3_delta=_quantile(deltas, 0.75),
+        minimum_delta=min(deltas),
+        maximum_delta=max(deltas),
+        mean_ci95_low=mean - half_width,
+        mean_ci95_high=mean + half_width,
+    )
+
+
+class Build003ResultLedger:
+    """Append-only exact matrix; duplicate keys can never replace prior evidence."""
+
+    def __init__(self, cases: Iterable[FrozenCase]) -> None:
+        materialized = tuple(cases)
+        if len(materialized) != FROZEN_SEED_COUNT:
+            raise ValueError(f"Build 003 requires exactly {FROZEN_SEED_COUNT} frozen cases")
+        if len({case.seed for case in materialized}) != len(materialized):
+            raise ValueError("cases must have unique seeds")
+        if len({case.case_id for case in materialized}) != len(materialized):
+            raise ValueError("case IDs must be unique")
+        self._cases = {case.seed: case for case in materialized}
+        self._rows: dict[tuple[str, int, str, str], CurriculumResultRow] = {}
+
+    @property
+    def rows(self) -> tuple[CurriculumResultRow, ...]:
+        return tuple(self._rows[key] for key in sorted(self._rows))
+
+    @property
+    def expected_row_count(self) -> int:
+        return len(self._cases) * len(VARIANTS) * len(FAMILIES)
+
+    def append(self, row: CurriculumResultRow) -> None:
+        self.append_many((row,))
+
+    def append_many(self, rows: Iterable[CurriculumResultRow]) -> None:
+        pending = tuple(rows)
+        keys = [row.key for row in pending]
+        if len(keys) != len(set(keys)):
+            raise ValueError("batch contains duplicate result keys; replacement is forbidden")
+        if any(key in self._rows for key in keys):
+            raise ValueError("result key already exists; replacement is forbidden")
+        for row in pending:
+            case = self._cases.get(row.seed)
+            if case is None or case.case_id != row.case_id:
+                raise ValueError("result row is not in the frozen seed/case manifest")
+        self._rows.update(zip(keys, pending, strict=True))
+
+    def completeness_errors(self) -> tuple[str, ...]:
+        expected = {
+            (case.case_id, case.seed, variant, family)
+            for case in self._cases.values()
+            for variant in VARIANTS
+            for family in FAMILIES
+        }
+        actual = set(self._rows)
+        errors: list[str] = []
+        if missing := expected - actual:
+            errors.append(f"missing {len(missing)} frozen rows")
+        if unexpected := actual - expected:
+            errors.append(f"unexpected {len(unexpected)} non-preregistered rows")
+        if len(actual) != self.expected_row_count:
+            errors.append(
+                f"row count {len(actual)} does not equal frozen count {self.expected_row_count}"
+            )
+        return tuple(errors)
+
+    def require_complete(self) -> None:
+        errors = self.completeness_errors()
+        if errors:
+            raise ValueError("; ".join(errors))
+
+    def paired_distribution(
+        self,
+        *,
+        reference: str,
+        treatment: str,
+        metric: str,
+        families: Iterable[str] = FAMILIES,
+    ) -> PairedDistribution:
+        if reference not in VARIANTS or treatment not in VARIANTS or reference == treatment:
+            raise ValueError("paired variants must be distinct preregistered variants")
+        selected = frozenset(families)
+        if not selected or not selected <= set(FAMILIES):
+            raise ValueError("paired families must be a non-empty curriculum subset")
+        indexed = {(row.seed, row.variant, row.family): row for row in self._rows.values()}
+        deltas: list[float] = []
+        reference_failures = 0
+        treatment_failures = 0
+        for seed in sorted(self._cases):
+            for family in FAMILIES:
+                if family not in selected:
+                    continue
+                try:
+                    reference_row = indexed[(seed, reference, family)]
+                    treatment_row = indexed[(seed, treatment, family)]
+                except KeyError as error:
+                    raise ValueError("paired comparison requires complete paired rows") from error
+                reference_failures += not reference_row.completed
+                treatment_failures += not treatment_row.completed
+                deltas.append(_metric(treatment_row, metric) - _metric(reference_row, metric))
+        return _distribution(
+            deltas,
+            reference_failures=reference_failures,
+            treatment_failures=treatment_failures,
+        )
+
+    def preregistered_summary(self) -> dict[str, object]:
+        """Return H1/H2/H3-aligned paired evidence after enforcing all rows."""
+
+        self.require_complete()
+        later_families = FAMILIES[1:]
+        modifier_families = (
+            FAMILIES[2],
+            FAMILIES[3],
+            FAMILIES[6],
+            FAMILIES[7],
+            FAMILIES[9],
+        )
+        full_modifier_rows = [
+            row
+            for row in self._rows.values()
+            if row.variant == "BLA_CLEF_FULL" and row.family in modifier_families
+        ]
+        h2_retention = statistics.fmean(
+            float(row.base_mechanics_retained) for row in full_modifier_rows
+        )
+        h2_global_reopenings = sum(row.erroneous_global_reopenings for row in full_modifier_rows)
+        comparisons: Mapping[str, tuple[str, str, str, Iterable[str]]] = {
+            "h1_later_exploration": (
+                "BLA_CLEF_LEVEL_RESET",
+                "BLA_CLEF_FULL",
+                "exploratory_actions",
+                later_families,
+            ),
+            "h1_later_completion": (
+                "BLA_CLEF_LEVEL_RESET",
+                "BLA_CLEF_FULL",
+                "completed",
+                later_families,
+            ),
+            "h3_redundant_probes": (
+                "BLA_ONLY_PERSISTENT",
+                "BLA_CLEF_FULL",
+                "redundant_probes",
+                FAMILIES,
+            ),
+            "h3_environment_actions": (
+                "BLA_ONLY_PERSISTENT",
+                "BLA_CLEF_FULL",
+                "environment_actions",
+                FAMILIES,
+            ),
+            "h3_completion": (
+                "BLA_ONLY_PERSISTENT",
+                "BLA_CLEF_FULL",
+                "completed",
+                FAMILIES,
+            ),
+            "baseline_full_actions": (
+                "BUILD002_FROZEN",
+                "BLA_CLEF_FULL",
+                "environment_actions",
+                FAMILIES,
+            ),
+        }
+        paired = {
+            name: asdict(
+                self.paired_distribution(
+                    reference=reference,
+                    treatment=treatment,
+                    metric=metric,
+                    families=families,
+                )
+            )
+            for name, (reference, treatment, metric, families) in comparisons.items()
+        }
+        return {
+            "schema": BUILD003_SUMMARY_SCHEMA,
+            "row_count": len(self._rows),
+            "expected_row_count": self.expected_row_count,
+            "paired": paired,
+            "h2_conservative_repair": {
+                "modifier_rows": len(full_modifier_rows),
+                "base_mechanic_retention_rate": h2_retention,
+                "erroneous_global_reopenings": h2_global_reopenings,
+            },
+            "evidence_quality": {
+                "replay_determinism_rate": statistics.fmean(
+                    float(row.replay_deterministic) for row in self._rows.values()
+                ),
+                "receipt_completeness_rate": statistics.fmean(
+                    float(row.receipt_complete) for row in self._rows.values()
+                ),
+            },
+        }
+
+
+def _metric(row: CurriculumResultRow, metric: str) -> float:
+    fields = {
+        "completed": float(row.completed),
+        "environment_actions": float(row.environment_actions),
+        "exploratory_actions": float(row.exploratory_actions),
+        "progress_actions": float(row.progress_actions),
+        "redundant_probes": float(row.redundant_probes),
+        "active_ledger_pressure": float(row.active_ledger_pressure),
+        "unresolved_ledger_count": float(row.unresolved_ledger_count),
+        "wall_time_seconds": float(row.wall_time_seconds),
+        "peak_memory_bytes": float(row.peak_memory_bytes),
+    }
+    try:
+        return fields[metric]
+    except KeyError as error:
+        raise ValueError(f"unsupported paired metric: {metric}") from error
+
+
+__all__ = [
+    "BUILD003_RESULT_SCHEMA",
+    "BUILD003_SUMMARY_SCHEMA",
+    "FAMILIES",
+    "FROZEN_SEED_COUNT",
+    "VARIANTS",
+    "Build003ResultLedger",
+    "CurriculumResultRow",
+    "FrozenCase",
+    "PairedDistribution",
+]
