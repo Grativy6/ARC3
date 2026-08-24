@@ -9,7 +9,9 @@ import sys
 from pathlib import Path
 
 import pytest
+from scripts import profile_competition
 
+from arc3.competition_runtime import FROZEN_COMPETITION_RUNTIME
 from arc3.types import ExecutionMode
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -25,6 +27,16 @@ def _head() -> str:
         text=True,
         encoding="utf-8",
     ).stdout.strip()
+
+
+@pytest.mark.integration
+def test_profile_cli_defaults_match_frozen_build002_runtime() -> None:
+    arguments = profile_competition._parser().parse_args([])
+
+    assert arguments.decision_seconds == FROZEN_COMPETITION_RUNTIME.decision_seconds
+    assert arguments.max_actions == FROZEN_COMPETITION_RUNTIME.max_actions
+    assert arguments.max_resets == FROZEN_COMPETITION_RUNTIME.max_resets
+    assert arguments.wall_clock_seconds == FROZEN_COMPETITION_RUNTIME.per_game_wall_clock_seconds
 
 
 @pytest.mark.integration

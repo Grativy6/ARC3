@@ -69,7 +69,7 @@ def _load_object(path: Path) -> dict[str, Any]:
 
 
 def _frozen_runtime_defaults() -> dict[str, Any]:
-    path = Path(__file__).resolve().parents[1] / "src" / "arc3" / "competition-runtime.v0.1.json"
+    path = Path(__file__).resolve().parents[1] / "src" / "arc3" / "competition-runtime.v0.2.json"
     raw = _load_object(path)
     claimed = raw.get("configuration_sha256")
     body = {key: value for key, value in raw.items() if key != "configuration_sha256"}
