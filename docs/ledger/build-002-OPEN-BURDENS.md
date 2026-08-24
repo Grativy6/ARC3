@@ -56,8 +56,9 @@ evidence. Later success must not overwrite a failed attempt, superseded artifact
 - Burden: all source, offline, lifecycle, package, notebook, output, integrity, and frozen-identity
   gates must pass before the one authorized ten-game public run begins.
 - Current state: `0/1` runs started; no Build 002 public result exists.
-- Failure rule: a preflight failure leaves authority unconsumed; a failure after the first
-  environment interaction consumes it and must be sealed without retry.
+- Failure rule: a preflight failure leaves authority unconsumed; durable intent immediately before
+  the first and only upstream scorecard open consumes it. A later failure must be sealed without
+  retry, while environment `make` interactions remain independently counted.
 - Resolution condition: either the frozen run completes once and is independently verified, or a
   hard blocker is recorded without opening an environment.
 

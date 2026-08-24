@@ -3,6 +3,8 @@
 This command never accesses Kaggle, accepts terms, uploads a notebook, or starts a
 public game. Network access is used only by the optional acquisition phase and only
 for the exact files.pythonhosted.org URLs already sealed in the package manifest.
+On native Linux the verifier runs the exact generated notebook rerun cells once
+against explicit safe loopback fixtures, plus two deterministic startup probes.
 """
 
 from __future__ import annotations
@@ -15,7 +17,7 @@ from typing import cast
 
 from arc3.packaging.cold_start import acquire_runtime_wheelhouse, run_linux_cold_start
 from arc3.packaging.models import PackagingError
-from arc3.packaging.util import canonical_json_bytes, write_bytes_atomic
+from arc3.packaging.util import canonical_json_bytes, sha256_bytes, write_bytes_atomic
 from arc3.types import JSONValue
 
 
@@ -54,6 +56,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     manifest = package_dir / "runtime-wheels-linux-cp312.json"
     requirements = package_dir / "runtime-requirements-linux-cp312.txt"
     payload = package_dir / "arc3-first-party.zip"
+    notebook = package_dir / "arc3-submission.ipynb"
     package_manifest = package_dir / "package-manifest.json"
 
     acquisition: dict[str, JSONValue] | None = None
@@ -70,15 +73,17 @@ def main(argv: Sequence[str] | None = None) -> int:
             wheelhouse,
             payload,
             package_manifest,
+            notebook_path=notebook,
             source_commit=_package_source_commit(package_manifest),
         ).to_dict()
     except PackagingError as error:
         failure_result: dict[str, JSONValue] = {
             "acquisition": acquisition,
-            "error": str(error),
+            "error_message_sha256": sha256_bytes(str(error).encode("utf-8")),
+            "error_type": type(error).__name__,
             "kaggle_accessed": False,
             "public_environment_interactions": 0,
-            "schema": "arc3.build-002-cold-start-command.v0.1",
+            "schema": "arc3.build-002-cold-start-command.v0.2",
             "status": "FAILED_INFRASTRUCTURE",
         }
         write_bytes_atomic(receipt_path, canonical_json_bytes(failure_result))
@@ -90,7 +95,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         "cold_start": cold_start,
         "kaggle_accessed": False,
         "public_environment_interactions": 0,
-        "schema": "arc3.build-002-cold-start-command.v0.1",
+        "schema": "arc3.build-002-cold-start-command.v0.2",
         "status": cold_start["status"],
     }
     write_bytes_atomic(receipt_path, canonical_json_bytes(result))

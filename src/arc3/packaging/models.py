@@ -18,6 +18,10 @@ class PackagingError(RuntimeError):
     """Raised when a candidate cannot be built or validated safely."""
 
 
+class ExternalSurfaceUnavailableError(PackagingError):
+    """A required competition-local service could not be reached."""
+
+
 @dataclass(frozen=True, slots=True)
 class FileRecord:
     """Content identity for one package member."""
@@ -67,6 +71,12 @@ class SandboxReceipt:
     """Result of executing the generated notebook in a network-blocked subprocess."""
 
     status: str
+    notebook_entrypoint: str
+    platform_surface: str
+    runtime_dependency_surface: str
+    exact_generated_code_cells: int
+    exact_production_requirements: bool
+    host_site_pth_bridge_present: bool
     agent_action_cycle_status: str
     agent_consequence_state: str
     agent_cycle_actions: tuple[str, str]
@@ -97,6 +107,12 @@ class SandboxReceipt:
 
     def to_dict(self) -> dict[str, JSONValue]:
         return {
+            "exact_generated_code_cells": self.exact_generated_code_cells,
+            "exact_production_requirements": self.exact_production_requirements,
+            "host_site_pth_bridge_present": self.host_site_pth_bridge_present,
+            "notebook_entrypoint": self.notebook_entrypoint,
+            "platform_surface": self.platform_surface,
+            "runtime_dependency_surface": self.runtime_dependency_surface,
             "agent_action_cycle_status": self.agent_action_cycle_status,
             "agent_consequence_state": self.agent_consequence_state,
             "agent_cycle_actions": list(self.agent_cycle_actions),

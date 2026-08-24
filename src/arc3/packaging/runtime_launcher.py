@@ -22,7 +22,7 @@ from typing import Any, cast
 from urllib.request import ProxyHandler, Request, build_opener
 
 from arc3.competition_runtime import FROZEN_COMPETITION_RUNTIME
-from arc3.packaging.models import PackagingError
+from arc3.packaging.models import ExternalSurfaceUnavailableError, PackagingError
 from arc3.types import JSONValue
 
 AGENTS_COMMIT = "4743e7d0aaae0ded0d98a89a7e282e63564cd58b"
@@ -217,23 +217,29 @@ class _InstrumentedArcade:
         stats: _CompetitionLifecycleStats,
         *,
         hard_deadline_seconds: float,
+        before_scorecard_open: Callable[[], None] | None = None,
         before_environment_make: Callable[[str, int], None] | None = None,
     ) -> None:
         self._arcade = arcade
         self._stats = stats
         self._hard_deadline_seconds = hard_deadline_seconds
+        self._before_scorecard_open = before_scorecard_open
         self._before_environment_make = before_environment_make
 
     def __getattr__(self, name: str) -> Any:
         return getattr(self._arcade, name)
 
     def open_scorecard(self, *args: Any, **kwargs: Any) -> str:
-        self._stats.open_scorecard_count += 1
-        if self._stats.open_scorecard_count != 1:
+        if self._stats.open_scorecard_count != 0:
             raise PackagingError("competition lifecycle attempted a scorecard retry")
         method = getattr(self._arcade, "open_scorecard", None)
         if not callable(method):
             raise PackagingError("competition Arcade has no open_scorecard boundary")
+        if self._before_scorecard_open is not None:
+            self._before_scorecard_open()
+        # Count the upstream interaction attempt only after the durable callback
+        # succeeds and directly before the official scorecard-open call.
+        self._stats.open_scorecard_count = 1
         scorecard_id = _call_with_hard_deadline(
             "competition scorecard open",
             lambda: method(*args, **kwargs),
@@ -471,7 +477,7 @@ def _discover_games(host: str, port: int) -> tuple[str, ...]:
         with build_opener(ProxyHandler({})).open(request, timeout=10.0) as response:
             body = response.read(1024 * 1024 + 1)
     except Exception as error:
-        raise PackagingError(
+        raise ExternalSurfaceUnavailableError(
             f"competition-local gateway discovery failed ({type(error).__name__})"
         ) from None
     if len(body) > 1024 * 1024:
@@ -741,6 +747,7 @@ def launch_competition_framework(
     gateway_port: int = 8001,
     working_root: Path | None = None,
     allow_test_fixture: bool = False,
+    before_scorecard_open: Callable[[], None] | None = None,
     before_environment_make: Callable[[str, int], None] | None = None,
     notebook_started_at_seconds: float | None = None,
 ) -> CompetitionLaunchReceipt:
@@ -755,6 +762,8 @@ def launch_competition_framework(
         raise PackagingError("gateway_port must be in 1..65535")
     if before_environment_make is not None and not callable(before_environment_make):
         raise PackagingError("before_environment_make must be callable when supplied")
+    if before_scorecard_open is not None and not callable(before_scorecard_open):
+        raise PackagingError("before_scorecard_open must be callable when supplied")
     normalized_notebook_start: float | None = None
     if notebook_started_at_seconds is not None:
         if (
@@ -934,6 +943,7 @@ def launch_competition_framework(
                         arcade,
                         lifecycle,
                         hard_deadline_seconds=hard_deadline_seconds,
+                        before_scorecard_open=before_scorecard_open,
                         before_environment_make=before_environment_make,
                     )
                     swarm._arc = instrumented_arcade

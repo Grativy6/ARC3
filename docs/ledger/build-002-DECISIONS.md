@@ -24,9 +24,10 @@ not co-authors or independent authorities.
   `SEALED_UNCONSUMED` records exactly as historical evidence. For Build 002 only, authorize one
   run over the same ten-game public set after all frozen preflights pass.
 - Current Build 002 state: `AUTHORIZED_ONCE_NOT_YET_CONSUMED`; runs started `0/1`.
-- Consumption rule: the first attempted environment open/make interaction after the preflight
-  launch receipt consumes the run. Crash, timeout, platform failure, or zero score does not
-  restore authority.
+- Consumption rule: durable intent immediately before the first and only upstream scorecard open
+  consumes the run. Each later environment `make` intent is counted separately. Crash, timeout,
+  platform failure, or zero score after scorecard-open intent does not restore authority, even if
+  no environment `make` was reached.
 - Boundary: later Build 002 evidence cannot revise or retrospectively earn any Build 001 claim.
 
 ## D-002-0003 — Add a bounded competition mode without replacing research mode

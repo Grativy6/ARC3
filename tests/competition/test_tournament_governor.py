@@ -45,6 +45,7 @@ def _config(
     minimum: float = 5.0,
     maximum_game: float = 20.0,
     game_actions: int = 4,
+    game_resets: int = 2,
     total_actions: int = 12,
     history_capacity: int = 256,
 ) -> TournamentGovernorConfig:
@@ -55,6 +56,7 @@ def _config(
         minimum_fallback_seconds=minimum,
         maximum_game_seconds=maximum_game,
         maximum_actions_per_game=game_actions,
+        maximum_resets_per_game=game_resets,
         maximum_total_actions=total_actions,
         history_capacity=history_capacity,
     )
@@ -71,6 +73,8 @@ def _config(
         ({"minimum": 11.0}, "protect the minimum fallback slice"),
         ({"maximum_game": 4.0}, "maximum_game_seconds"),
         ({"game_actions": 0}, "maximum_actions_per_game"),
+        ({"game_resets": 0}, "maximum_resets_per_game"),
+        ({"game_resets": 5}, "cannot exceed maximum_actions_per_game"),
         ({"total_actions": 2}, "at least one action per environment"),
         ({"history_capacity": 0}, "history_capacity"),
     ],
@@ -176,6 +180,106 @@ def test_legal_action_enforcement_and_coordinate_safe_fallback() -> None:
         selected_value=1.0,
     )
     assert action6.authorized_action.coordinate == Coordinate(7, 61)
+
+
+@pytest.mark.competition
+def test_reset_budget_is_global_receipted_and_stops_reset_only_fallback() -> None:
+    governor = TournamentGovernor(
+        _config(
+            environments=1,
+            minimum=1.0,
+            game_actions=6,
+            game_resets=2,
+            total_actions=6,
+        ),
+        clock=FakeClock(),
+    )
+    start = governor.start_tournament()
+    allocation = governor.begin_game("only")
+    assert start.maximum_resets_per_game == 2
+    assert start.maximum_total_resets == 2
+    assert allocation.reset_limit == 2
+
+    first = governor.authorize_action(
+        "only",
+        ActionRequest(ActionName.ACTION1),
+        (ActionName.RESET,),
+        selected_value=0.0,
+    )
+    assert first.fallback_used is True
+    assert first.authorized_action == ActionRequest(ActionName.RESET)
+    assert first.authorized_reset is True
+    assert first.game_resets_authorized == 1
+    assert first.game_resets_remaining == 1
+
+    second = governor.authorize_action(
+        "only",
+        ActionRequest(ActionName.RESET),
+        (ActionName.RESET,),
+        selected_value=0.0,
+    )
+    assert second.authorized_reset is True
+    assert second.game_resets_authorized == 2
+    assert second.game_resets_remaining == 0
+    assert second.tournament_resets_authorized == 2
+    assert second.tournament_resets_remaining == 0
+    assert governor.total_resets_authorized == 2
+    assert governor.stop_decision("only").reason is GovernorStopReason.CONTINUE
+
+    with pytest.raises(CompetitionIntegrityError, match="game-reset-limit"):
+        governor.authorize_action(
+            "only",
+            ActionRequest(ActionName.ACTION5),
+            (ActionName.RESET,),
+            selected_value=0.0,
+            force_fallback=True,
+        )
+    stop = governor.stop_decision("only")
+    assert stop.reason is GovernorStopReason.GAME_RESET_LIMIT
+    assert stop.game_resets_authorized == 2
+    assert stop.game_resets_remaining == 0
+
+    game = governor.finalize_game("only", reason=GovernorStopReason.GAME_RESET_LIMIT)
+    tournament = governor.finalize_tournament()
+    assert game.resets_authorized == 2
+    assert game.reset_limit == 2
+    assert tournament.total_resets_authorized == 2
+    assert tournament.maximum_resets_per_game == 2
+    assert tournament.maximum_total_resets == 2
+
+
+@pytest.mark.competition
+def test_exhausted_reset_request_uses_non_reset_fallback_when_available() -> None:
+    governor = TournamentGovernor(
+        _config(
+            environments=1,
+            minimum=1.0,
+            game_actions=4,
+            game_resets=1,
+            total_actions=4,
+        ),
+        clock=FakeClock(),
+    )
+    governor.start_tournament()
+    governor.begin_game("only")
+    governor.authorize_action(
+        "only",
+        ActionRequest(ActionName.RESET),
+        (ActionName.RESET,),
+        selected_value=0.0,
+    )
+
+    replacement = governor.authorize_action(
+        "only",
+        ActionRequest(ActionName.RESET),
+        (ActionName.RESET, ActionName.ACTION6),
+        selected_value=0.0,
+    )
+    assert replacement.fallback_used is True
+    assert replacement.authorized_action == ActionRequest(ActionName.ACTION6, Coordinate(32, 32))
+    assert replacement.authorized_reset is False
+    assert replacement.game_resets_authorized == 1
+    assert governor.stop_decision("only").reason is GovernorStopReason.CONTINUE
 
 
 @pytest.mark.competition

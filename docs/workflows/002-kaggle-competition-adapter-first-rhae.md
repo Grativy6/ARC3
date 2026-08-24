@@ -17,8 +17,9 @@ owners, or independent authorities.
 - For Build 002 only, the owner has authorized exactly one run over that ten-game public set,
   and only after every offline, source-identity, packaging, competition-mode, notebook, and
   structural-output preflight below passes.
-- Authorization is not consumption. Until the one-shot runner starts its first environment,
-  Build 002 records `AUTHORIZED_ONCE_NOT_YET_CONSUMED`.
+- Authorization is not consumption. Until the one-shot runner durably records intent immediately
+  before opening its first and only upstream scorecard, Build 002 records
+  `AUTHORIZED_ONCE_NOT_YET_CONSUMED`.
 - Once started, the run is consumed even if it fails, crashes, times out, or returns zero score.
   It must not be retried, resumed as a second run, or silently replaced.
 - Any score from the public toolkit/local public games is `local-public`. It is not Kaggle-public,
@@ -146,9 +147,11 @@ remain separately `BLOCKED_EXTERNAL`, but no result may be labeled official.
 
 ### Stage 08 — Authorized ten-game public run
 
-Execute the frozen public set exactly once. The consumption boundary is the first attempted
-environment open/make interaction. Persist an append-only launch receipt before that boundary.
-From then on, interruption is a consumed failed attempt, not authority for a rerun.
+Execute the frozen public set exactly once. The consumption boundary is a durable intent marker
+immediately before the first and only upstream scorecard open. Persist the launch receipt before
+that boundary, and persist each environment `make` intent separately before its upstream call.
+From the scorecard-open boundary onward, interruption is a consumed failed attempt, not authority
+for a rerun; a pre-`make` failure still reports zero environment interactions.
 
 The result must include every environment, including zero/failure rows for environments that
 receive only bounded fallback. Capture total local-toolkit RHAE, completed games and levels,

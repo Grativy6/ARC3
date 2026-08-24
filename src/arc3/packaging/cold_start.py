@@ -3,8 +3,10 @@
 The acquisition phase is intentionally separate from execution.  A Windows
 host can download and hash-check Linux wheels, but it can never emit a Linux
 cold-start ``PASS`` receipt.  The execution phase only runs on native CPython
-3.12 Linux x86_64 and installs into a fresh virtual environment with pip's
-index, dependency resolution, configuration, cache, and user site disabled.
+3.12 Linux x86_64, installs into a fresh virtual environment with pip's index,
+dependency resolution, configuration, cache, and user site disabled, executes
+the exact generated notebook rerun cells once against explicit safe fixtures,
+then checks the existing deterministic startup projection twice.
 """
 
 from __future__ import annotations
@@ -30,7 +32,8 @@ from urllib.request import Request, urlopen
 
 from packaging.utils import canonicalize_name
 
-from arc3.packaging.models import PackagingError
+from arc3.packaging.models import PYTHON_NETWORK_ENFORCEMENT, PackagingError
+from arc3.packaging.notebook import REHEARSAL_AUTHORITY, notebook_embedded_inputs
 from arc3.packaging.requirements import (
     TARGET_ABI,
     TARGET_IMPLEMENTATION,
@@ -40,7 +43,18 @@ from arc3.packaging.requirements import (
     LockedWheel,
     verify_runtime_wheelhouse,
 )
-from arc3.packaging.util import canonical_json_bytes, sha256_bytes, sha256_file
+from arc3.packaging.runtime_launcher import SAFE_FRAMEWORK_FIXTURE_IDENTITY
+from arc3.packaging.sandbox import (
+    NOTEBOOK_REHEARSAL_RUNNER_SOURCE,
+    write_safe_framework_fixture,
+)
+from arc3.packaging.submission import validate_submission_parquet
+from arc3.packaging.util import (
+    canonical_json_bytes,
+    sha256_bytes,
+    sha256_file,
+    write_bytes_atomic,
+)
 from arc3.types import JSONValue
 
 _SHA256 = re.compile(r"^sha256:[0-9a-f]{64}$")
@@ -141,6 +155,7 @@ class LinuxColdStartReceipt:
     manifest_sha256: str
     requirements_sha256: str
     payload_sha256: str
+    notebook_sha256: str
     wheelhouse_package_count: int
     wall_seconds: float
     peak_memory_bytes: int | None
@@ -150,13 +165,17 @@ class LinuxColdStartReceipt:
     deterministic_repetitions: int
     stable_projection_sha256: str | None
     pip_version: str | None
+    notebook_entry: dict[str, JSONValue]
     limitations: tuple[str, ...]
 
     def to_dict(self) -> dict[str, JSONValue]:
         return {
             "determinism": {
+                "notebook_entry_projection_sha256": self.notebook_entry.get("projection_sha256"),
+                "notebook_entry_repetitions": self.notebook_entry.get("repetitions", 0),
                 "repetitions": self.deterministic_repetitions,
                 "stable_projection_sha256": self.stable_projection_sha256,
+                "startup_projection_repetitions": self.deterministic_repetitions,
             },
             "executed": self.executed,
             "host": {
@@ -169,6 +188,7 @@ class LinuxColdStartReceipt:
             },
             "identities": {
                 "manifest_sha256": self.manifest_sha256,
+                "notebook_sha256": self.notebook_sha256,
                 "package_manifest_sha256": self.package_manifest_sha256,
                 "payload_sha256": self.payload_sha256,
                 "requirements_sha256": self.requirements_sha256,
@@ -183,6 +203,7 @@ class LinuxColdStartReceipt:
                 "peak_memory_bytes": self.peak_memory_bytes,
                 "wall_seconds": self.wall_seconds,
             },
+            "notebook_entry": self.notebook_entry,
             "pip": {
                 "isolated": self.executed,
                 "no_deps": self.executed,
@@ -190,7 +211,7 @@ class LinuxColdStartReceipt:
                 "require_hashes": self.executed,
                 "version": self.pip_version,
             },
-            "schema": "arc3.linux-cold-start.v0.1",
+            "schema": "arc3.linux-cold-start.v0.2",
             "status": self.status,
             "target": TARGET_PLATFORM,
             "validation_level": self.validation_level,
@@ -667,14 +688,19 @@ def _run_checked(
     timeout_seconds: float,
     label: str,
 ) -> subprocess.CompletedProcess[str]:
-    completed = subprocess.run(
-        list(command),
-        check=False,
-        capture_output=True,
-        env=dict(environment),
-        text=True,
-        timeout=timeout_seconds,
-    )
+    try:
+        completed = subprocess.run(
+            list(command),
+            check=False,
+            capture_output=True,
+            env=dict(environment),
+            text=True,
+            timeout=timeout_seconds,
+        )
+    except subprocess.TimeoutExpired as error:
+        raise PackagingError(
+            f"{label} exceeded the remaining {timeout_seconds:.3f}s wall limit"
+        ) from error
     if completed.returncode != 0:
         stderr_digest = sha256_bytes(completed.stderr.encode("utf-8", errors="replace"))
         stdout_digest = sha256_bytes(completed.stdout.encode("utf-8", errors="replace"))
@@ -690,6 +716,94 @@ def _run_checked(
     return completed
 
 
+def _blocked_notebook_entry(
+    *,
+    notebook_sha256: str,
+    requirements_sha256: str,
+    payload_sha256: str,
+) -> dict[str, JSONValue]:
+    return {
+        "entrypoint": "exact-generated-notebook-code-cells",
+        "executed": False,
+        "exact_generated_code_cells": 0,
+        "exact_production_requirements": False,
+        "external_site_pth_entries": None,
+        "foreign_site_paths": None,
+        "framework_fixture": True,
+        "intended_platform_surface": "safe-loopback-gateway-and-framework-fixture",
+        "kaggle_competition_rerun_branch": False,
+        "limitations": [
+            "Native CPython 3.12 Linux x86_64 execution is required for this proof.",
+            "The fixture surface does not establish Kaggle or private-evaluator parity.",
+        ],
+        "network_attempts": None,
+        "notebook_sha256": notebook_sha256,
+        "output_validation": None,
+        "payload_sha256": payload_sha256,
+        "platform_surface": "not-executed",
+        "projection_sha256": None,
+        "repetitions": 0,
+        "requirements_sha256": requirements_sha256,
+        "runtime_dependency_surface": "not-executed",
+        "status": "BLOCKED_PLATFORM",
+        "host_site_pth_bridge_present": None,
+    }
+
+
+def _notebook_runner_result(stdout: str) -> dict[str, JSONValue]:
+    lines = [line for line in stdout.splitlines() if line.strip()]
+    if not lines:
+        raise PackagingError("native notebook-entry runner emitted no receipt")
+    try:
+        parsed: object = json.loads(lines[-1])
+    except json.JSONDecodeError as error:
+        raise PackagingError("native notebook-entry runner receipt was not JSON") from error
+    if not isinstance(parsed, dict):
+        raise PackagingError("native notebook-entry runner receipt is not an object")
+    return cast(dict[str, JSONValue], parsed)
+
+
+def _validate_native_notebook_result(
+    raw: dict[str, JSONValue],
+    *,
+    expected_packages: Mapping[str, str],
+    expected_requirements_sha256: str,
+    expected_output_sha256: str,
+) -> None:
+    if (
+        raw.get("status") != "PASS"
+        or raw.get("runner_mode") != "native-linux-exact"
+        or raw.get("notebook_entrypoint") != "exact-generated-notebook-code-cells"
+        or raw.get("exact_generated_code_cells") != 4
+        or raw.get("production_rerun_exercised") is not True
+        or raw.get("exact_production_requirements") is not True
+        or raw.get("runtime_dependency_surface") != "exact-embedded-production-requirements"
+        or raw.get("rehearsal_requirements_sha256") != expected_requirements_sha256
+        or raw.get("target_installed_packages") != dict(expected_packages)
+        or raw.get("host_site_pth_bridge_present") is not False
+        or raw.get("external_site_pth_entries") != []
+        or raw.get("foreign_site_paths") != []
+        or raw.get("framework_fixture") is not True
+        or raw.get("framework_identity") != SAFE_FRAMEWORK_FIXTURE_IDENTITY
+        or raw.get("platform_surface") != "safe-loopback-gateway-and-framework-fixture"
+        or raw.get("network_attempts") != 0
+        or raw.get("network_enforcement") != PYTHON_NETWORK_ENFORCEMENT
+        or raw.get("network_attempt_scope") != "non-loopback Python socket attempts"
+        or raw.get("output_sha256") != expected_output_sha256
+        or raw.get("dependency_install_status") != "PASS"
+        or raw.get("secret_scan_status") != "PASS"
+    ):
+        raise PackagingError("native notebook-entry receipt is incomplete or weakened")
+    target_import_origins = raw.get("target_import_origins")
+    if not isinstance(target_import_origins, dict) or sorted(target_import_origins) != sorted(
+        expected_packages
+    ):
+        raise PackagingError("native notebook entry did not import the complete production lock")
+    peak = raw.get("peak_memory_bytes")
+    if not isinstance(peak, int) or peak <= 0:
+        raise PackagingError("native notebook entry has no positive peak-memory measurement")
+
+
 def run_linux_cold_start(
     manifest_path: Path,
     requirements_path: Path,
@@ -697,13 +811,14 @@ def run_linux_cold_start(
     payload_archive: Path,
     package_manifest_path: Path,
     *,
+    notebook_path: Path,
     source_commit: str,
     wall_timeout_seconds: float = _DEFAULT_WALL_TIMEOUT_SECONDS,
     memory_limit_bytes: int = _DEFAULT_MEMORY_LIMIT_BYTES,
     cpu_limit_seconds: int = _DEFAULT_CPU_LIMIT_SECONDS,
     deterministic_repetitions: int = 2,
 ) -> LinuxColdStartReceipt:
-    """Install and start twice in one fresh native-Linux CPython 3.12 venv."""
+    """Run one exact notebook entry plus two startup projections in a fresh venv."""
 
     if _COMMIT.fullmatch(source_commit) is None:
         raise PackagingError("cold-start source commit must be a full lowercase Git SHA")
@@ -736,6 +851,16 @@ def run_linux_cold_start(
     manifest_sha256 = sha256_file(manifest_path)
     requirements_sha256 = sha256_file(requirements_path)
     payload_sha256 = sha256_file(payload_archive)
+    notebook_path = notebook_path.resolve()
+    notebook = _json_object(notebook_path, label="generated notebook")
+    embedded = notebook_embedded_inputs(notebook)
+    if (
+        embedded.payload != payload_archive.read_bytes()
+        or embedded.requirements != requirements_path.read_bytes()
+        or embedded.source_commit != source_commit
+    ):
+        raise PackagingError("generated notebook does not bind the exact cold-start inputs")
+    notebook_sha256 = sha256_file(notebook_path)
     package_manifest_sha256 = _validate_package_binding(
         package_manifest_path.resolve(),
         source_commit=source_commit,
@@ -759,6 +884,7 @@ def run_linux_cold_start(
             manifest_sha256=manifest_sha256,
             requirements_sha256=requirements_sha256,
             payload_sha256=payload_sha256,
+            notebook_sha256=notebook_sha256,
             wheelhouse_package_count=package_count,
             wall_seconds=0.0,
             peak_memory_bytes=None,
@@ -768,6 +894,11 @@ def run_linux_cold_start(
             deterministic_repetitions=0,
             stable_projection_sha256=None,
             pip_version=None,
+            notebook_entry=_blocked_notebook_entry(
+                notebook_sha256=notebook_sha256,
+                requirements_sha256=requirements_sha256,
+                payload_sha256=payload_sha256,
+            ),
             limitations=(
                 "Native CPython 3.12 Linux x86_64 execution is required for PASS.",
                 "This host performed no cross-platform simulation and makes no Linux startup claim.",
@@ -775,6 +906,14 @@ def run_linux_cold_start(
         )
 
     started = time.perf_counter()
+    deadline = started + wall_timeout_seconds
+
+    def remaining_timeout() -> float:
+        remaining = deadline - time.perf_counter()
+        if remaining <= 0.0:
+            raise PackagingError("native Linux cold-start exceeded its global wall limit")
+        return remaining
+
     with tempfile.TemporaryDirectory(prefix="arc3-linux-cold-start-") as temporary:
         root = Path(temporary).resolve()
         venv = root / "venv"
@@ -785,7 +924,7 @@ def run_linux_cold_start(
         _run_checked(
             [sys.executable, "-I", "-E", "-s", "-m", "venv", str(venv)],
             environment=environment,
-            timeout_seconds=wall_timeout_seconds,
+            timeout_seconds=remaining_timeout(),
             label="isolated virtual-environment creation",
         )
         python = venv / "bin" / "python"
@@ -794,7 +933,7 @@ def run_linux_cold_start(
         pip_version_process = _run_checked(
             [str(python), "-I", "-E", "-s", "-m", "pip", "--version"],
             environment=environment,
-            timeout_seconds=wall_timeout_seconds,
+            timeout_seconds=remaining_timeout(),
             label="isolated pip inspection",
         )
         pip_version = pip_version_process.stdout.strip()
@@ -822,16 +961,147 @@ def run_linux_cold_start(
         _run_checked(
             install_command,
             environment=environment,
-            timeout_seconds=wall_timeout_seconds,
+            timeout_seconds=remaining_timeout(),
             label="offline no-index dependency installation",
         )
         _extract_payload(payload_archive, payload_root)
+        expected_package_map = {wheel.name: wheel.version for wheel in wheels}
         expected_packages = json.dumps(
-            {wheel.name: wheel.version for wheel in wheels},
+            expected_package_map,
             allow_nan=False,
             separators=(",", ":"),
             sort_keys=True,
         )
+        input_root = root / "input"
+        input_wheelhouse = input_root / "arc_agi_3_wheels"
+        input_wheelhouse.mkdir(parents=True)
+        for wheel in wheels:
+            shutil.copyfile(
+                wheelhouse.resolve() / wheel.filename,
+                input_wheelhouse / wheel.filename,
+            )
+        write_safe_framework_fixture(
+            input_root / "ARC-AGI-3-Agents",
+            embedded.validation_parquet,
+        )
+        notebook_run_root = root / "notebook-entry"
+        notebook_run_root.mkdir()
+        notebook_runner = root / "exact_notebook_runner.py"
+        write_bytes_atomic(notebook_runner, NOTEBOOK_REHEARSAL_RUNNER_SOURCE.encode("utf-8"))
+        notebook_completed = _run_checked(
+            [
+                str(python),
+                "-I",
+                "-E",
+                "-s",
+                str(notebook_runner),
+                str(notebook_path),
+                str(notebook_run_root),
+                str(input_root),
+                str(requirements_path.resolve()),
+                REHEARSAL_AUTHORITY,
+                "native-linux-exact",
+                expected_packages,
+                json.dumps(_DISTRIBUTION_IMPORTS, separators=(",", ":"), sort_keys=True),
+                requirements_sha256,
+                str(memory_limit_bytes),
+                str(cpu_limit_seconds),
+            ],
+            environment=environment,
+            timeout_seconds=remaining_timeout(),
+            label="isolated exact notebook-entry rehearsal",
+        )
+        raw_notebook_entry = _notebook_runner_result(notebook_completed.stdout)
+        expected_output_sha256 = sha256_bytes(embedded.validation_parquet)
+        _validate_native_notebook_result(
+            raw_notebook_entry,
+            expected_packages=expected_package_map,
+            expected_requirements_sha256=requirements_sha256,
+            expected_output_sha256=expected_output_sha256,
+        )
+        notebook_output = notebook_run_root / "submission.parquet"
+        output_validation = validate_submission_parquet(notebook_output).to_dict()
+        if output_validation.get("artifact_sha256") != expected_output_sha256:
+            raise PackagingError("native notebook entry emitted a different submission artifact")
+        notebook_projection_fields = (
+            "agent_action_cycle_status",
+            "agent_consequence_state",
+            "agent_cycle_actions",
+            "dependency_install_status",
+            "exact_generated_code_cells",
+            "exact_production_requirements",
+            "framework_commit",
+            "framework_fixture",
+            "framework_identity",
+            "host_site_pth_bridge_present",
+            "network_attempts",
+            "network_enforcement",
+            "network_attempt_scope",
+            "notebook_entrypoint",
+            "orchestration",
+            "output_sha256",
+            "platform_surface",
+            "production_rerun_exercised",
+            "rehearsal_requirements_sha256",
+            "runner_mode",
+            "runtime_dependency_surface",
+            "target_import_origins",
+            "target_installed_packages",
+        )
+        notebook_projection: dict[str, JSONValue] = {
+            field: raw_notebook_entry[field] for field in notebook_projection_fields
+        }
+        notebook_projection_sha256 = sha256_bytes(canonical_json_bytes(notebook_projection))
+        target_inventory_sha256 = sha256_bytes(
+            canonical_json_bytes(
+                {
+                    "import_origins": raw_notebook_entry["target_import_origins"],
+                    "installed_packages": raw_notebook_entry["target_installed_packages"],
+                }
+            )
+        )
+        raw_notebook_peak = raw_notebook_entry["peak_memory_bytes"]
+        if not isinstance(raw_notebook_peak, int):  # pragma: no cover - validated above
+            raise PackagingError("native notebook peak-memory receipt changed type")
+        notebook_entry: dict[str, JSONValue] = {
+            "entrypoint": "exact-generated-notebook-code-cells",
+            "executed": True,
+            "exact_generated_code_cells": 4,
+            "exact_production_requirements": True,
+            "external_site_pth_entries": [],
+            "foreign_site_paths": [],
+            "framework_fixture": True,
+            "framework_identity": SAFE_FRAMEWORK_FIXTURE_IDENTITY,
+            "gateway_connections": raw_notebook_entry["gateway_connections"],
+            "host_site_pth_bridge_present": False,
+            "kaggle_competition_rerun_branch": True,
+            "limitations": [
+                "The exact generated notebook cells ran against a deterministic safe framework "
+                "and loopback gateway fixture, not Kaggle's gateway or private evaluator.",
+                "The result proves native Linux package execution and pinned-public Parquet "
+                "structure; it does not establish Kaggle or private-evaluator parity.",
+                "Python socket guards count Python-level non-loopback attempts; no OS network "
+                "namespace contained native code or child-process system calls.",
+            ],
+            "network_attempts": 0,
+            "network_attempt_scope": "non-loopback Python socket attempts",
+            "network_enforcement": PYTHON_NETWORK_ENFORCEMENT,
+            "notebook_sha256": notebook_sha256,
+            "output_validation": output_validation,
+            "payload_sha256": payload_sha256,
+            "peak_memory_bytes": raw_notebook_peak,
+            "platform_surface": "safe-loopback-gateway-and-framework-fixture",
+            "production_requirement_count": package_count,
+            "projection_sha256": notebook_projection_sha256,
+            "repetitions": 1,
+            "requirements_sha256": requirements_sha256,
+            "runtime_dependency_surface": "exact-embedded-production-requirements",
+            "status": "PASS",
+            "target_inventory_sha256": target_inventory_sha256,
+            "target_import_count": package_count,
+            "validation_surface": "outer-build-environment-pyarrow==21.0.0",
+            "venv_site_pth_files": raw_notebook_entry["venv_site_pth_files"],
+        }
         projections: list[dict[str, JSONValue]] = []
         peaks: list[int] = []
         for ordinal in range(deterministic_repetitions):
@@ -854,7 +1124,7 @@ def run_linux_cold_start(
                     json.dumps(_DISTRIBUTION_IMPORTS, separators=(",", ":"), sort_keys=True),
                 ],
                 environment=environment,
-                timeout_seconds=wall_timeout_seconds,
+                timeout_seconds=remaining_timeout(),
                 label=f"isolated startup probe {ordinal + 1}",
             )
             try:
@@ -874,10 +1144,13 @@ def run_linux_cold_start(
             raise PackagingError("cold-start stable projection changed between repetitions")
         stable_projection_sha256 = sha256_bytes(projection_bytes[0])
 
+    wall_seconds = time.perf_counter() - started
+    if wall_seconds > wall_timeout_seconds:
+        raise PackagingError("native Linux cold-start exceeded its global wall limit")
     return LinuxColdStartReceipt(
         status="PASS",
         executed=True,
-        validation_level="native-linux-cp312-no-index-cold-start",
+        validation_level="native-linux-cp312-exact-notebook-cold-start",
         observed_system=system,
         observed_machine=machine,
         observed_implementation=implementation,
@@ -888,20 +1161,24 @@ def run_linux_cold_start(
         manifest_sha256=manifest_sha256,
         requirements_sha256=requirements_sha256,
         payload_sha256=payload_sha256,
+        notebook_sha256=notebook_sha256,
         wheelhouse_package_count=package_count,
-        wall_seconds=time.perf_counter() - started,
-        peak_memory_bytes=max(peaks),
+        wall_seconds=wall_seconds,
+        peak_memory_bytes=max((*peaks, raw_notebook_peak)),
         memory_limit_bytes=memory_limit_bytes,
         cpu_limit_seconds=cpu_limit_seconds,
         wall_timeout_seconds=wall_timeout_seconds,
         deterministic_repetitions=deterministic_repetitions,
         stable_projection_sha256=stable_projection_sha256,
         pip_version=pip_version,
+        notebook_entry=notebook_entry,
         limitations=(
-            "The pinned ARC toolkit imports through one loopback socket construction/bind; "
-            "the audit hook permits only that loopback bind and denies other Python socket events.",
-            "Python audit hooks observe Python socket operations, not arbitrary native syscalls.",
-            "This receipt validates local-public packaging compatibility, not Kaggle execution.",
+            "The exact generated notebook rerun cells used a safe loopback gateway and framework "
+            "fixture; Kaggle's gateway, competition service, and private evaluator were not used.",
+            "Python socket guards observe Python operations, not arbitrary native or child-process "
+            "system calls; the exact notebook pip command separately enforces no-index installation.",
+            "This is a native Linux packaging and entrypoint result, not Kaggle/private parity, "
+            "an official score, or an official RHAE result.",
         ),
     )
 

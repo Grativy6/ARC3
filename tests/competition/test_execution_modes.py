@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import shutil
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -9,7 +11,8 @@ import pytest
 from arc3.adapters import GridFrame, Observation
 from arc3.config import ARC3Config, RuntimePolicyConfig
 from arc3.errors import CompetitionIntegrityError, ConfigurationError
-from arc3.policy import ARC3Controller, ControllerPreset, RunContext
+from arc3.policy import ARC3Controller, ControllerPhase, ControllerPreset, RunContext
+from arc3.trace import ReplayEngine, verify_event_chain
 from arc3.types import (
     ActionName,
     ActionRequest,
@@ -169,3 +172,125 @@ def test_competition_suppresses_per_action_checkpoints_but_retains_sparse_recove
     assert restored.compact_trace_projection
     assert restored.interface_semantics_projection is not None
     restored.close()
+
+
+@pytest.mark.competition
+@pytest.mark.replay
+def test_competition_sparse_checkpoint_restores_and_replays_deterministically(
+    tmp_path: Path,
+) -> None:
+    config = ARC3Config.for_mode(EnvironmentMode.COMPETITION, seed=208)
+    interval = config.runtime_policy.sparse_checkpoint_interval_actions
+    assert config.execution_mode is ExecutionMode.COMPETITION_BOUNDED
+    assert config.runtime_policy.automatic_per_action_checkpoints is False
+    assert interval == 16
+
+    context = _context(tmp_path, config, "sparse-replay-source")
+    controller = ARC3Controller(ControllerPreset.COMPETITION)
+    controller.reset(context)
+    controller.observe(_observation())
+
+    for _ in range(interval - 1):
+        decision = controller.choose_action()
+        controller.apply_consequence(_observation(returned_action=decision.action))
+
+    before_due = tuple(
+        event
+        for event in controller.journal.verify_manifest()
+        if event.event_type == "run.checkpoint_written"
+    )
+    assert controller.snapshot.step_index == interval - 1
+    assert len(before_due) == 1
+
+    due_decision = controller.choose_action()
+    controller.apply_consequence(_observation(returned_action=due_decision.action))
+    after_due = tuple(
+        event
+        for event in controller.journal.verify_manifest()
+        if event.event_type == "run.checkpoint_written"
+    )
+    assert controller.snapshot.phase is ControllerPhase.OBSERVED
+    assert controller.snapshot.step_index == interval
+    assert controller.snapshot.actions_used == interval
+    assert len(after_due) == 2
+    assert after_due[-1].step_index == interval
+    assert controller._last_checkpoint is not None
+    sparse_checkpoint = controller._last_checkpoint.path
+    assert sparse_checkpoint.is_file()
+    assert (
+        after_due[-1].payload["checkpoint_hash"]
+        == controller._last_checkpoint.envelope.checkpoint_hash
+    )
+
+    expected_snapshot = controller.snapshot
+    source_replay = ReplayEngine(controller.journal)
+    source_events = source_replay.verify_integrity()
+    verify_event_chain(list(source_events))
+    source_frames = source_replay.replay_frames()
+    assert len(source_frames) == interval + 1
+    assert controller.compact_trace_projection
+    controller.journal.close()
+
+    def restore_branch(label: str) -> ARC3Controller:
+        branch_root = tmp_path / label
+        trace_root = branch_root / "trace"
+        checkpoint_root = branch_root / "checkpoints"
+        shutil.copytree(context.trace_root, trace_root)
+        shutil.copytree(context.checkpoint_root, checkpoint_root)
+        branch_context = replace(
+            context,
+            trace_root=trace_root,
+            checkpoint_root=checkpoint_root,
+        )
+        return ARC3Controller.restore(
+            branch_context,
+            preset=ControllerPreset.COMPETITION,
+            checkpoint_path=checkpoint_root / sparse_checkpoint.name,
+        )
+
+    restored_a = restore_branch("sparse-replay-a")
+    restored_b = restore_branch("sparse-replay-b")
+    for restored in (restored_a, restored_b):
+        assert restored.snapshot.phase is ControllerPhase.OBSERVED
+        assert restored.snapshot.step_index == expected_snapshot.step_index
+        assert restored.snapshot.actions_used == expected_snapshot.actions_used
+        assert restored.snapshot.fault_count == expected_snapshot.fault_count
+        assert restored.compact_trace_projection
+        assert restored.interface_semantics_projection is not None
+
+    continued_actions_a: list[ActionRequest] = []
+    continued_actions_b: list[ActionRequest] = []
+    for _ in range(3):
+        decision_a = restored_a.choose_action()
+        decision_b = restored_b.choose_action()
+        continued_actions_a.append(decision_a.action)
+        continued_actions_b.append(decision_b.action)
+        restored_a.apply_consequence(_observation(returned_action=decision_a.action))
+        restored_b.apply_consequence(_observation(returned_action=decision_b.action))
+
+    assert continued_actions_a == continued_actions_b
+    assert restored_a.snapshot == restored_b.snapshot
+
+    replay_a = ReplayEngine(restored_a.journal)
+    replay_b = ReplayEngine(restored_b.journal)
+    events_a = replay_a.verify_integrity()
+    events_b = replay_b.verify_integrity()
+    verify_event_chain(list(events_a))
+    verify_event_chain(list(events_b))
+    frame_projection_a = tuple(
+        (frame.level_index, frame.step_index, frame.frame_hash, frame.frame)
+        for frame in replay_a.replay_frames()
+    )
+    frame_projection_b = tuple(
+        (frame.level_index, frame.step_index, frame.frame_hash, frame.frame)
+        for frame in replay_b.replay_frames()
+    )
+    assert frame_projection_a == frame_projection_b
+    assert frame_projection_a[: len(source_frames)] == tuple(
+        (frame.level_index, frame.step_index, frame.frame_hash, frame.frame)
+        for frame in source_frames
+    )
+    assert len(frame_projection_a) == interval + 4
+
+    restored_a.close()
+    restored_b.close()

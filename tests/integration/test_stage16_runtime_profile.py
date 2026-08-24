@@ -49,11 +49,11 @@ def test_runtime_profile_restarts_pending_actions_and_replays_exact_trace(
     budget_assessment = cast(dict[str, JSONValue], result["budget_assessment"])
     assert set(budget_assessment) == {
         "checkpoint_bytes_within_declared_limit",
-        "checkpoint_latency_within_declared_limit",
-        "consequence_latency_within_declared_limit",
         "decision_latency_within_declared_limit",
+        "explicit_checkpoint_latency_recorded",
         "observation_latency_within_declared_limit",
         "peak_rss_within_declared_limit",
+        "production_controller_cycle_within_declared_limit",
         "total_step_latency_within_declared_limit",
         "trace_within_declared_limit",
         "wall_clock_within_declared_limit",
@@ -66,6 +66,10 @@ def test_runtime_profile_restarts_pending_actions_and_replays_exact_trace(
     assert result["wall_clock_cutoff_triggered"] is False
     assert cast(dict[str, JSONValue], result["checkpoint_latency_seconds"])["count"] > 0
     assert cast(dict[str, JSONValue], result["consequence_latency_seconds"])["count"] > 0
+    assert (
+        cast(dict[str, JSONValue], result["production_controller_cycle_latency_seconds"])["count"]
+        > 0
+    )
     assert cast(dict[str, JSONValue], result["total_step_latency_seconds"])["count"] > 0
     assert result["python_tracemalloc_peak_bytes"] is None
     controller_execution = cast(dict[str, JSONValue], result["controller_execution"])
@@ -187,6 +191,12 @@ def test_all_required_synthetic_robustness_axes_are_measured(tmp_path: Path) -> 
     assert all(case["complete_action_chains"] is True for case in cases)
     assert all(case["controller_fault_count"] == 0 for case in cases)
     assert all(case["duplicate_event_ids"] == 0 for case in cases)
+    for case in cases:
+        if case["variant"] == RobustnessVariant.ACTION_REMAP.value:
+            assert case["execution_mode"] == ExecutionMode.RESEARCH_UNBOUNDED.value
+            assert "opaque-action robustness" in cast(str, case["action_semantics_scope"])
+        else:
+            assert case["execution_mode"] == ExecutionMode.COMPETITION_BOUNDED.value
 
 
 @pytest.mark.integration

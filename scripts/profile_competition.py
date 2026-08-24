@@ -462,7 +462,7 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--component-count", type=int, default=64)
     parser.add_argument("--max-actions", type=int, default=int(frozen["max_actions"]))
     parser.add_argument("--max-resets", type=int, default=int(frozen["max_resets"]))
-    parser.add_argument("--restart-every", type=int, default=8)
+    parser.add_argument("--restart-every", type=int, default=0)
     parser.add_argument("--decision-seconds", type=float, default=float(frozen["decision_seconds"]))
     parser.add_argument(
         "--wall-clock-seconds",

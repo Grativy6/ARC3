@@ -1,6 +1,6 @@
 {
   "schema": "arc3.build-002.official-source-identities.v0.1",
-  "generated_at": "2026-08-24T03:26:38Z",
+  "generated_at": "2026-08-24T05:13:38Z",
   "status": "PARTIAL",
   "evidence_label": "source-identity",
   "claim_boundary": "available public source identity and discrepancy record only; private Kaggle compatibility and official scoring remain unmeasured",
@@ -84,14 +84,18 @@
       "repository": "arcprize/ARC-AGI-3-Agents",
       "path": "agents/agent.py",
       "blob": "50e3a03652226d2775779bfba90bc745256a44c5",
-      "sha256": "500a9b9055aa5023a84b2b19bc9a41cb53dff03b3224b8d1ceb00e738709256f",
+      "sha256": "49f1a349cd5e2123fceb266aec4a3a758d18ef5520e0212e808f695905d9e073",
+      "sha256_scope": "exact raw Git blob bytes with LF line endings",
+      "superseded_windows_checkout_sha256": "500a9b9055aa5023a84b2b19bc9a41cb53dff03b3224b8d1ceb00e738709256f",
       "controls": "agent interface"
     },
     {
       "repository": "arcprize/ARC-AGI-3-Agents",
       "path": "agents/swarm.py",
       "blob": "bb3a376220f636099dd910653db3e1918935f30f",
-      "sha256": "c1d35066acfccb0b982bc33bb07a732d70da4d938c80ce3cdafd67b1018212cc",
+      "sha256": "d9dc48f710f1b90a6552db0921293c7e89c8a925ed00a3faefa07ae19998ad39",
+      "sha256_scope": "exact raw Git blob bytes with LF line endings",
+      "superseded_windows_checkout_sha256": "c1d35066acfccb0b982bc33bb07a732d70da4d938c80ce3cdafd67b1018212cc",
       "controls": "multi-environment orchestration and action loop"
     },
     {
@@ -138,16 +142,18 @@
   },
   "project_lock": {
     "path": "upstream.lock.json",
-    "sha256": "sha256:b5474a8f36bda80bb629f204591610325045411bd5aac65f6765261b7fab6b0b",
+    "sha256": "sha256:fb3acb1e375dddaaa02e38dc39cd3a0cde7fe95045d4dca34d976d29e0f56c68",
     "build_002_overlay_schema": "arc3.upstream-lock.build-002.v0.1",
     "json_validation": "PASS",
     "prior_build_sections_preserved": true
   },
   "kaggle_competition_snapshot": {
     "endpoint": "https://www.kaggle.com/api/i/competitions.CompetitionService/GetCompetition?competitionName=arc-prize-2026-arc-agi-3",
-    "accessed_at": "2026-08-24T03:10:13.3556365Z",
+    "accessed_at": "2026-08-24T04:28:41.5202644Z",
     "http_status": 200,
-    "response_sha256": "de323841ab53bc7f0378a632a3176566111c8a4060009e7952b826661896e09e",
+    "response_sha256": "ca6253ca8e87ba6e4e5a435ee5f83bc27aaf62aa564860c1e31390349978de4f",
+    "response_size_bytes": 3080,
+    "response_byte_scope": "raw HTTP entity body captured without credentials",
     "competition_id": 133468,
     "cpu_runtime_limit_minutes": 540,
     "gpu_runtime_limit_minutes": 540,
@@ -168,9 +174,14 @@
     "level_resets_only": true,
     "game_resets": 0,
     "internet_dependency_during_evaluation": false,
-    "status": "REQUIRES_IMPLEMENTATION_AND_TEST_VERIFICATION"
+    "status": "IMPLEMENTED_AND_LOCALLY_TESTED"
   },
   "observed_discrepancies": [
+    {
+      "id": "SOURCE-SNAPSHOT-HASH-CONFLICT",
+      "observation": "The first Build 002 source receipt recorded de323841ab53... while the runtime lock recorded de323841e879... for the same alleged response, without retaining a representation distinction.",
+      "policy": "Neither older hash is used as controlling identity. A fresh anonymous raw response was captured at 2026-08-24T04:28:41.5202644Z, measured as 3080 bytes with SHA-256 ca6253ca8e87..., and cross-bound into the runtime and upstream locks. The inconsistency remains preserved as superseded evidence."
+    },
     {
       "id": "RUNTIME-LIMIT",
       "observation": "Generic Kaggle notebook guidance allows twelve hours, while current competition-specific metadata reports nine hours.",
@@ -207,6 +218,10 @@
     "exact private framework input",
     "exact private gateway",
     "exact private scorer",
+    "independently pinned ten-game static asset provenance",
+    "exact Kaggle platform cold start",
+    "exact packaged-runner import and evaluator attestation",
+    "OS-enforced evaluation network containment with gateway exception",
     "accepted-terms notebook execution",
     "hidden/private environments"
   ],

@@ -38,9 +38,10 @@ In progress. Final handoff must identify the exact implementation freeze and ver
 ## Public-run disposition
 
 Not started. All frozen preflight gates are still pending. Build 002 has `0/1` runs started, zero
-environment make interactions, and zero gameplay actions. If the run starts, any failure consumes
-the authority and must be reported without retry. Build 002 evidence cannot change Build 001's
-historical gate or status.
+environment make interactions, and zero gameplay actions. A run starts at the durable intent
+immediately before its first and only upstream scorecard open; any later failure consumes the
+authority and must be reported without retry, even if no environment `make` was reached. Build 002
+evidence cannot change Build 001's historical gate or status.
 
 ## Unresolved burdens
 

@@ -33,7 +33,7 @@
     "runs_completed": 0,
     "environment_make_interactions": 0,
     "environment_actions": 0,
-    "consumption_boundary": "first attempted environment open/make interaction after the frozen preflight receipt",
+    "consumption_boundary": "durable intent immediately before the first and only upstream scorecard open after the frozen preflight receipt",
     "failure_after_boundary_consumes_authority": true,
     "retry_authorized": false,
     "result_label": null,

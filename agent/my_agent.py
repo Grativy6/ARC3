@@ -6,6 +6,7 @@ import json
 import math
 import os
 import signal
+import sys
 import threading
 import time
 from collections.abc import Callable, Sequence
@@ -80,6 +81,51 @@ class _BoundedTournamentStop(RuntimeError):
 
 class _ActionDeadlineExpired(TimeoutError):
     """A competition call exceeded its explicit local wall-clock slice."""
+
+
+class _ResourceBudgetExceeded(RuntimeError):
+    """A measured competition resource crossed its frozen ceiling."""
+
+
+def _peak_rss_bytes() -> int | None:
+    """Return the process high-water RSS on the Linux competition runtime."""
+
+    try:
+        resource_module = import_module("resource")
+    except ImportError:
+        return None
+    getter = getattr(resource_module, "getrusage", None)
+    self_usage = getattr(resource_module, "RUSAGE_SELF", None)
+    if not callable(getter) or not isinstance(self_usage, int):
+        return None
+    usage = getattr(getter(self_usage), "ru_maxrss", None)
+    if not isinstance(usage, int | float):
+        return None
+    # Linux reports KiB; macOS reports bytes. Kaggle evaluation is Linux, but
+    # retaining the distinction keeps local diagnostics meaningful.
+    return int(usage if sys.platform == "darwin" else usage * 1024)
+
+
+def _directory_bytes(root: Path) -> int:
+    """Measure regular files without following aliases outside runtime state."""
+
+    if not root.exists():
+        return 0
+    total = 0
+    pending = [root]
+    while pending:
+        current = pending.pop()
+        with os.scandir(current) as entries:
+            for entry in entries:
+                if entry.is_symlink():
+                    raise CompetitionIntegrityError(
+                        f"competition runtime state contains an alias: {entry.path}"
+                    )
+                if entry.is_dir(follow_symlinks=False):
+                    pending.append(Path(entry.path))
+                elif entry.is_file(follow_symlinks=False):
+                    total += entry.stat(follow_symlinks=False).st_size
+    return total
 
 
 def _bounded_call[T](call: Callable[[], T], *, seconds: float, boundary: str) -> T:
@@ -327,10 +373,12 @@ class MyAgent(_AgentBase):  # type: ignore[misc,valid-type]
         super().__init__(*args, **forwarded)
         self.action_counter = 0
         self._controller: ARC3Controller | None = None
+        self._controller_closed = False
         self._controller_failed = False
         self._game_started = False
         self._game_finalized = False
         self._authorized_actions = 0
+        self._runtime_root: Path | None = None
         with self._tournament_lock:
             self._require_governor()
             if str(self.game_id) not in self._expected_games:
@@ -340,6 +388,14 @@ class MyAgent(_AgentBase):  # type: ignore[misc,valid-type]
     def name(self) -> str:
         base_name = getattr(super(), "name", type(self).__name__.lower())
         return f"{base_name}.arc3-controller-v2"
+
+    def start_recording(self) -> None:
+        """Disable the pinned framework's unbounded, nondeterministic frame recorder."""
+
+        # The research controller retains its own compact trace and sparse
+        # recovery checkpoints.  The inherited Agents recorder writes every
+        # full frame with UUIDs and wall-clock timestamps outside the governor,
+        # so it is deliberately absent only at this competition adapter.
 
     def _ensure_game_started(self) -> None:
         if self._game_started:
@@ -393,59 +449,90 @@ class MyAgent(_AgentBase):  # type: ignore[misc,valid-type]
     def _finalize_game(self, reason: GovernorStopReason) -> None:
         if self._game_finalized:
             return
+        effective_reason = reason
+        close_error = self._close_controller(boundary="controller-finalize")
+        if close_error is not None:
+            self._record_failure(
+                boundary="controller-finalize",
+                classification=(
+                    "budget exhaustion"
+                    if isinstance(close_error, _ActionDeadlineExpired)
+                    else "execution"
+                ),
+                error=close_error,
+            )
+            self._controller_failed = True
+            effective_reason = GovernorStopReason.FAILURE
+        post_close_resource_error = (
+            self._resource_budget_error(force_storage=True)
+            if self._controller is not None
+            else None
+        )
+        if post_close_resource_error is not None:
+            self._record_failure(
+                boundary="resource-budget-after-final-checkpoint",
+                classification="budget exhaustion",
+                error=post_close_resource_error,
+            )
+            self._controller_failed = True
+            effective_reason = GovernorStopReason.FAILURE
         with self._tournament_lock:
             governor = self._require_governor()
             if self._game_started and governor.active_game_id == str(self.game_id):
                 measured = governor.stop_decision(str(self.game_id))
-                effective_reason = (
-                    measured.reason
-                    if measured.should_stop and reason is not GovernorStopReason.WIN
-                    else reason
-                )
+                if measured.should_stop:
+                    effective_reason = measured.reason
                 receipt = _normalized_dict(
                     asdict(governor.finalize_game(str(self.game_id), reason=effective_reason))
                 )
                 identity = sha256_json({"game_id": str(self.game_id)}).removeprefix("sha256:")[:16]
                 self._write_receipt(f"game-{identity}.json", receipt)
             self._game_finalized = True
-        if self._controller is not None:
-            try:
-                _bounded_call(
-                    self._controller.close,
-                    seconds=30.0,
-                    boundary="controller-finalize",
-                )
-            except Exception as error:
-                self._record_failure(
-                    boundary="controller-finalize",
-                    classification="execution",
-                    error=error,
-                )
-                self._controller_failed = True
 
-    def _close_failed_controller(self) -> None:
-        if self._controller is None:
-            return
+    def _close_controller(self, *, boundary: str) -> Exception | None:
+        if self._controller is None or self._controller_closed:
+            return None
+        self._controller_closed = True
+        stop = self._require_governor().stop_decision(str(self.game_id))
+        seconds = min(
+            30.0,
+            stop.game_seconds_remaining,
+            stop.tournament_playable_seconds_remaining,
+        )
+        if seconds <= 0.0:
+            return _ActionDeadlineExpired(f"{boundary} has no remaining governed wall-clock slice")
         try:
             _bounded_call(
                 self._controller.close,
-                seconds=30.0,
-                boundary="controller-failure-finalize",
+                seconds=seconds,
+                boundary=boundary,
             )
         except Exception as error:
-            self._record_failure(
-                boundary="controller-failure-finalize",
-                classification="execution",
-                error=error,
-            )
+            return error
+        return None
 
     def is_done(self, frames: list[object], latest_frame: object) -> bool:
         del frames
         if self._game_finalized:
             return True
         self._ensure_game_started()
+        resource_error = self._resource_budget_error()
+        if resource_error is not None:
+            self._record_failure(
+                boundary="resource-budget",
+                classification="budget exhaustion",
+                error=resource_error,
+            )
+            self._finalize_game(GovernorStopReason.FAILURE)
+            return True
         if _enum_name(getattr(latest_frame, "state", "UNKNOWN")) == "WIN":
             self._finalize_game(GovernorStopReason.WIN)
+            return True
+        if _enum_name(getattr(latest_frame, "state", "UNKNOWN")) == "GAME_OVER":
+            # RESET from GAME_OVER is a whole-game reset in the official
+            # lifecycle. Competition mode permits level resets only, so this
+            # environment is terminal even though RESET is the sole SDK action.
+            self._finalize_game(GovernorStopReason.AGENT_DONE)
             return True
         stop = self._require_governor().stop_decision(str(self.game_id))
         if stop.should_stop:
@@ -463,6 +550,7 @@ class MyAgent(_AgentBase):  # type: ignore[misc,valid-type]
             raise ConfigurationError("competition working root is unavailable")
         runtime_root = root / "arc3-agent-state" / identity
         runtime_root.mkdir(parents=True, exist_ok=True)
+        self._runtime_root = runtime_root
         config = ARC3Config(
             mode=EnvironmentMode.COMPETITION,
             execution_mode=ExecutionMode.COMPETITION_BOUNDED,
@@ -490,11 +578,48 @@ class MyAgent(_AgentBase):  # type: ignore[misc,valid-type]
         )
         return controller
 
+    def _resource_budget_error(
+        self, *, force_storage: bool = False
+    ) -> _ResourceBudgetExceeded | None:
+        peak_rss = _peak_rss_bytes()
+        memory_limit = FROZEN_COMPETITION_RUNTIME.memory_megabytes * 1024 * 1024
+        if peak_rss is None and os.name == "posix":
+            return _ResourceBudgetExceeded(
+                "Linux peak RSS measurement is unavailable at the competition boundary"
+            )
+        if peak_rss is not None and peak_rss > memory_limit:
+            return _ResourceBudgetExceeded(
+                f"peak RSS {peak_rss} exceeded frozen memory ceiling {memory_limit}"
+            )
+        root = self._runtime_root
+        if root is None or (not force_storage and self._authorized_actions <= 0):
+            return None
+        try:
+            trace_bytes = _directory_bytes(root / "trace")
+            checkpoint_bytes = _directory_bytes(root / "checkpoints")
+        except (OSError, CompetitionIntegrityError) as error:
+            return _ResourceBudgetExceeded(f"runtime state measurement failed: {error}")
+        if trace_bytes > FROZEN_COMPETITION_RUNTIME.max_trace_bytes:
+            return _ResourceBudgetExceeded(
+                "trace bytes exceeded frozen ceiling: "
+                f"{trace_bytes}>{FROZEN_COMPETITION_RUNTIME.max_trace_bytes}"
+            )
+        if checkpoint_bytes > FROZEN_COMPETITION_RUNTIME.max_checkpoint_bytes:
+            return _ResourceBudgetExceeded(
+                "checkpoint bytes exceeded frozen ceiling: "
+                f"{checkpoint_bytes}>{FROZEN_COMPETITION_RUNTIME.max_checkpoint_bytes}"
+            )
+        return None
+
     @staticmethod
     def _legal_actions(observation: Observation) -> tuple[ActionName, ...]:
-        if observation.state in {GameStateName.NOT_PLAYED, GameStateName.GAME_OVER}:
+        if observation.state is GameStateName.NOT_PLAYED:
             return (ActionName.RESET,)
-        if observation.state in {GameStateName.WIN, GameStateName.UNKNOWN}:
+        if observation.state in {
+            GameStateName.WIN,
+            GameStateName.GAME_OVER,
+            GameStateName.UNKNOWN,
+        }:
             return ()
         return observation.available_actions
 
@@ -522,6 +647,15 @@ class MyAgent(_AgentBase):  # type: ignore[misc,valid-type]
 
         del frames
         self._ensure_game_started()
+        resource_error = self._resource_budget_error()
+        if resource_error is not None:
+            self._record_failure(
+                boundary="resource-budget",
+                classification="budget exhaustion",
+                error=resource_error,
+            )
+            self._finalize_game(GovernorStopReason.FAILURE)
+            raise _BoundedTournamentStop("resource-budget")
         observation = replace(normalize_frame_data(latest_frame), returned_action=None)
         legal = self._legal_actions(observation)
         if not legal:
@@ -531,7 +665,7 @@ class MyAgent(_AgentBase):  # type: ignore[misc,valid-type]
             )
             self._finalize_game(GovernorStopReason.NO_LEGAL_ACTIONS)
             raise error
-        if observation.full_reset and self._authorized_actions > 1:
+        if observation.full_reset and self._authorized_actions > 0:
             error = RuntimeError("competition lifecycle returned an unexpected full game reset")
             self._record_failure(boundary="reset-lifecycle", classification="platform", error=error)
             self._finalize_game(GovernorStopReason.FAILURE)
@@ -542,12 +676,23 @@ class MyAgent(_AgentBase):  # type: ignore[misc,valid-type]
         force_fallback = self._controller_failed
         if not self._controller_failed:
             try:
+                cycle_boundary = self._require_governor().stop_decision(str(self.game_id))
+                if cycle_boundary.should_stop:
+                    self._finalize_game(cycle_boundary.reason)
+                    raise _BoundedTournamentStop(cycle_boundary.reason.value)
+                cycle_seconds = min(
+                    FROZEN_COMPETITION_RUNTIME.decision_seconds,
+                    cycle_boundary.game_seconds_remaining,
+                    cycle_boundary.tournament_playable_seconds_remaining,
+                )
                 requested, selected_value = _bounded_call(
                     lambda: self._controller_request(observation),
-                    seconds=FROZEN_COMPETITION_RUNTIME.decision_seconds,
+                    seconds=cycle_seconds,
                     boundary="controller-decision",
                 )
                 validate_action_request(observation, requested)
+            except _BoundedTournamentStop:
+                raise
             except Exception as error:
                 self._record_failure(
                     boundary="controller-decision",
@@ -556,7 +701,6 @@ class MyAgent(_AgentBase):  # type: ignore[misc,valid-type]
                 )
                 self._controller_failed = True
                 force_fallback = True
-                self._close_failed_controller()
         try:
             authorization = self._require_governor().authorize_action(
                 str(self.game_id),
@@ -590,7 +734,6 @@ class MyAgent(_AgentBase):  # type: ignore[misc,valid-type]
                 error=replacement_error,
             )
             self._controller_failed = True
-            self._close_failed_controller()
         self._authorized_actions += 1
         try:
             return _translate_action(authorization.authorized_action)

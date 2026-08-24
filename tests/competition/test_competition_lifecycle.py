@@ -184,6 +184,7 @@ def test_launcher_enforces_and_receipts_exact_competition_lifecycle(
     discovered = ("fixture-c", "fixture-a", "fixture-b")
     monkeypatch.setattr(launcher_module, "_discover_games", lambda host, port: discovered)
     working_root = tmp_path / "working"
+    scorecard_open_intents: list[str] = []
     make_intents: list[tuple[str, int]] = []
 
     receipt = launch_competition_framework(
@@ -191,6 +192,7 @@ def test_launcher_enforces_and_receipts_exact_competition_lifecycle(
         agent,
         working_root=working_root,
         allow_test_fixture=True,
+        before_scorecard_open=lambda: scorecard_open_intents.append("open"),
         before_environment_make=lambda game_id, ordinal: make_intents.append((game_id, ordinal)),
     )
 
@@ -204,6 +206,7 @@ def test_launcher_enforces_and_receipts_exact_competition_lifecycle(
     assert receipt.all_environments_covered is True
     assert receipt.tournament_configured is True
     assert receipt.tournament_finalized is True
+    assert scorecard_open_intents == ["open"]
     assert make_intents == [(game_id, ordinal) for ordinal, game_id in enumerate(frozen)]
     assert isinstance(receipt.tournament_receipt, dict)
     assert receipt.tournament_receipt["status"] == "PASS"
@@ -320,6 +323,43 @@ def test_pre_make_callback_failure_prevents_underlying_make_and_is_receipted(
     failures = list(working.glob("arc3-launch-failure-*.json"))
     assert any(
         json.loads(path.read_text(encoding="utf-8"))["stage"] == "framework-run"
+        for path in failures
+    )
+
+
+@pytest.mark.competition
+def test_pre_open_callback_failure_prevents_upstream_scorecard_interaction(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    framework, agent, lifecycle_path, finalizer_path = _write_lifecycle_fixture(tmp_path)
+    monkeypatch.setattr(
+        launcher_module,
+        "_discover_games",
+        lambda host, port: ("fixture-a",),
+    )
+    intents = 0
+
+    def stop_before_open() -> None:
+        nonlocal intents
+        intents += 1
+        raise RuntimeError("durable scorecard intent write failed")
+
+    working = tmp_path / "working"
+    with pytest.raises(RuntimeError, match="durable scorecard intent write failed"):
+        launch_competition_framework(
+            framework,
+            agent,
+            working_root=working,
+            allow_test_fixture=True,
+            before_scorecard_open=stop_before_open,
+        )
+
+    assert intents == 1
+    assert not lifecycle_path.exists()
+    assert finalizer_path.is_file()
+    failures = list(working.glob("arc3-launch-failure-*.json"))
+    assert any(
+        json.loads(path.read_text(encoding="utf-8"))["lifecycle"]["open_scorecard_count"] == 0
         for path in failures
     )
 

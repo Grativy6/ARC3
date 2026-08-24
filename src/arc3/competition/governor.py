@@ -42,6 +42,7 @@ class GovernorStopReason(StrEnum):
     AGENT_DONE = "agent-done"
     FAILURE = "failure"
     NO_LEGAL_ACTIONS = "no-legal-actions"
+    GAME_RESET_LIMIT = "game-reset-limit"
     GAME_ACTION_LIMIT = "game-action-limit"
     TOURNAMENT_ACTION_LIMIT = "tournament-action-limit"
     GAME_TIME_LIMIT = "game-time-limit"
@@ -71,6 +72,7 @@ class TournamentGovernorConfig:
     minimum_fallback_seconds: float
     maximum_game_seconds: float
     maximum_actions_per_game: int
+    maximum_resets_per_game: int
     maximum_total_actions: int
     history_capacity: int = 256
     fallback_coordinate: Coordinate = field(default_factory=lambda: Coordinate(32, 32))
@@ -79,6 +81,7 @@ class TournamentGovernorConfig:
         for name in (
             "expected_environments",
             "maximum_actions_per_game",
+            "maximum_resets_per_game",
             "maximum_total_actions",
             "history_capacity",
         ):
@@ -124,6 +127,10 @@ class TournamentGovernorConfig:
             raise CompetitionIntegrityError(
                 "maximum_total_actions must protect at least one action per environment"
             )
+        if self.maximum_resets_per_game > self.maximum_actions_per_game:
+            raise CompetitionIntegrityError(
+                "maximum_resets_per_game cannot exceed maximum_actions_per_game"
+            )
         if not isinstance(self.fallback_coordinate, Coordinate):
             raise CompetitionIntegrityError("fallback_coordinate must be a Coordinate")
 
@@ -132,6 +139,12 @@ class TournamentGovernorConfig:
         """Tournament seconds available before entering the protected reserve."""
 
         return self.total_effective_ceiling_seconds - self.reserve_seconds
+
+    @property
+    def maximum_total_resets(self) -> int:
+        """Aggregate reset ceiling implied by the frozen per-game limit."""
+
+        return self.maximum_resets_per_game * self.expected_environments
 
 
 @dataclass(frozen=True, slots=True)
@@ -142,6 +155,8 @@ class TournamentStartReceipt:
     effective_ceiling_deadline_seconds: float
     expected_environments: int
     maximum_total_actions: int
+    maximum_resets_per_game: int
+    maximum_total_resets: int
 
 
 @dataclass(frozen=True, slots=True)
@@ -153,6 +168,7 @@ class GameAllocationReceipt:
     deadline_seconds: float
     allocated_seconds: float
     action_limit: int
+    reset_limit: int
     environments_remaining_including_current: int
     tournament_playable_seconds_remaining_before: float
     protected_future_seconds: float
@@ -167,6 +183,7 @@ class ActionAccountingReceipt:
     action_ordinal: int
     requested_action: ActionRequest
     authorized_action: ActionRequest
+    authorized_reset: bool
     legal_actions: tuple[ActionName, ...]
     fallback_used: bool
     selected_value: float
@@ -180,6 +197,10 @@ class ActionAccountingReceipt:
     tournament_playable_seconds_remaining: float
     game_actions_remaining: int
     tournament_actions_remaining: int
+    game_resets_authorized: int
+    game_resets_remaining: int
+    tournament_resets_authorized: int
+    tournament_resets_remaining: int
 
 
 @dataclass(frozen=True, slots=True)
@@ -192,6 +213,10 @@ class StopDecisionReceipt:
     tournament_playable_seconds_remaining: float
     game_actions_remaining: int
     tournament_actions_remaining: int
+    game_resets_authorized: int
+    game_resets_remaining: int
+    tournament_resets_authorized: int
+    tournament_resets_remaining: int
 
     @property
     def should_stop(self) -> bool:
@@ -210,6 +235,8 @@ class GameFinalReceipt:
     elapsed_seconds: float
     allocation_overrun_seconds: float
     actions_authorized: int
+    resets_authorized: int
+    reset_limit: int
     fallback_actions: int
     selected_value_total: float
     elapsed_action_cost_total_seconds: float
@@ -231,6 +258,9 @@ class TournamentFinalReceipt:
     finalized_environments: int
     total_actions_authorized: int
     maximum_total_actions: int
+    total_resets_authorized: int
+    maximum_resets_per_game: int
+    maximum_total_resets: int
     reserve_seconds: float
     reserve_remaining_seconds: float
     ceiling_remaining_seconds: float
@@ -258,6 +288,8 @@ class _ActiveGame:
     allocation: GameAllocationReceipt
     last_action_boundary_seconds: float
     actions_authorized: int = 0
+    resets_authorized: int = 0
+    reset_budget_exhausted: bool = False
     fallback_actions: int = 0
     selected_value_total: float = 0.0
     elapsed_action_cost_total_seconds: float = 0.0
@@ -267,6 +299,7 @@ class _ActiveGame:
 
 _RESOURCE_STOP_REASONS: Final[frozenset[GovernorStopReason]] = frozenset(
     {
+        GovernorStopReason.GAME_RESET_LIMIT,
         GovernorStopReason.GAME_ACTION_LIMIT,
         GovernorStopReason.TOURNAMENT_ACTION_LIMIT,
         GovernorStopReason.GAME_TIME_LIMIT,
@@ -303,6 +336,7 @@ class TournamentGovernor:
         self._begun_game_ids: set[str] = set()
         self._game_receipts: list[GameFinalReceipt] = []
         self._total_actions_authorized = 0
+        self._total_resets_authorized = 0
         self._selected_value_total = 0.0
         self._future_opportunity_cost_total_seconds = 0.0
         self._final_receipt: TournamentFinalReceipt | None = None
@@ -332,6 +366,11 @@ class TournamentGovernor:
     def total_actions_authorized(self) -> int:
         with self._lock:
             return self._total_actions_authorized
+
+    @property
+    def total_resets_authorized(self) -> int:
+        with self._lock:
+            return self._total_resets_authorized
 
     @property
     def finalized_game_receipts(self) -> tuple[GameFinalReceipt, ...]:
@@ -422,6 +461,8 @@ class TournamentGovernor:
             return GovernorStopReason.TOURNAMENT_ACTION_LIMIT
         if active.actions_authorized >= active.allocation.action_limit:
             return GovernorStopReason.GAME_ACTION_LIMIT
+        if active.reset_budget_exhausted:
+            return GovernorStopReason.GAME_RESET_LIMIT
         return GovernorStopReason.CONTINUE
 
     @staticmethod
@@ -481,6 +522,8 @@ class TournamentGovernor:
                 effective_ceiling_deadline_seconds=self._effective_ceiling_deadline_seconds,
                 expected_environments=self._config.expected_environments,
                 maximum_total_actions=self._config.maximum_total_actions,
+                maximum_resets_per_game=self._config.maximum_resets_per_game,
+                maximum_total_resets=self._config.maximum_total_resets,
             )
             self._start_receipt = receipt
             self._remember(receipt)
@@ -545,6 +588,7 @@ class TournamentGovernor:
                 deadline_seconds=now + allocated_seconds,
                 allocated_seconds=allocated_seconds,
                 action_limit=action_limit,
+                reset_limit=min(self._config.maximum_resets_per_game, action_limit),
                 environments_remaining_including_current=remaining_environments,
                 tournament_playable_seconds_remaining_before=remaining_playable,
                 protected_future_seconds=protected_future_seconds,
@@ -599,6 +643,21 @@ class TournamentGovernor:
 
             fallback_used = force_fallback or requested_action.name not in legal
             authorized = self._fallback_action(legal) if fallback_used else requested_action
+            if (
+                authorized.name is ActionName.RESET
+                and active.resets_authorized >= active.allocation.reset_limit
+            ):
+                non_reset_legal = tuple(
+                    action for action in legal if action is not ActionName.RESET
+                )
+                if non_reset_legal:
+                    authorized = self._fallback_action(non_reset_legal)
+                    fallback_used = True
+                else:
+                    active.reset_budget_exhausted = True
+                    raise CompetitionIntegrityError(
+                        "action authorization denied after game-reset-limit"
+                    )
             elapsed_cost = now - active.last_action_boundary_seconds
             future_environment_count = (
                 self._config.expected_environments - len(self._game_receipts) - 1
@@ -612,6 +671,8 @@ class TournamentGovernor:
             opportunity_actions = 1 if future_environment_count > 0 else 0
 
             active.actions_authorized += 1
+            authorized_reset = authorized.name is ActionName.RESET
+            active.resets_authorized += int(authorized_reset)
             active.fallback_actions += int(fallback_used)
             active.selected_value_total += normalized_value
             active.elapsed_action_cost_total_seconds += elapsed_cost
@@ -619,6 +680,7 @@ class TournamentGovernor:
             active.future_opportunity_cost_total_actions += opportunity_actions
             active.last_action_boundary_seconds = now
             self._total_actions_authorized += 1
+            self._total_resets_authorized += int(authorized_reset)
             self._selected_value_total += normalized_value
             self._future_opportunity_cost_total_seconds += opportunity_seconds
 
@@ -629,6 +691,7 @@ class TournamentGovernor:
                 action_ordinal=active.actions_authorized,
                 requested_action=requested_action,
                 authorized_action=authorized,
+                authorized_reset=authorized_reset,
                 legal_actions=legal,
                 fallback_used=fallback_used,
                 selected_value=normalized_value,
@@ -643,6 +706,12 @@ class TournamentGovernor:
                 game_actions_remaining=active.allocation.action_limit - active.actions_authorized,
                 tournament_actions_remaining=(
                     self._config.maximum_total_actions - self._total_actions_authorized
+                ),
+                game_resets_authorized=active.resets_authorized,
+                game_resets_remaining=(active.allocation.reset_limit - active.resets_authorized),
+                tournament_resets_authorized=self._total_resets_authorized,
+                tournament_resets_remaining=(
+                    self._config.maximum_total_resets - self._total_resets_authorized
                 ),
             )
             self._remember(receipt)
@@ -669,6 +738,14 @@ class TournamentGovernor:
                 ),
                 tournament_actions_remaining=max(
                     0, self._config.maximum_total_actions - self._total_actions_authorized
+                ),
+                game_resets_authorized=active.resets_authorized,
+                game_resets_remaining=max(
+                    0, active.allocation.reset_limit - active.resets_authorized
+                ),
+                tournament_resets_authorized=self._total_resets_authorized,
+                tournament_resets_remaining=max(
+                    0, self._config.maximum_total_resets - self._total_resets_authorized
                 ),
             )
             self._remember(receipt)
@@ -717,6 +794,8 @@ class TournamentGovernor:
                 elapsed_seconds=elapsed,
                 allocation_overrun_seconds=max(0.0, elapsed - active.allocation.allocated_seconds),
                 actions_authorized=active.actions_authorized,
+                resets_authorized=active.resets_authorized,
+                reset_limit=active.allocation.reset_limit,
                 fallback_actions=active.fallback_actions,
                 selected_value_total=active.selected_value_total,
                 elapsed_action_cost_total_seconds=(active.elapsed_action_cost_total_seconds),
@@ -732,6 +811,8 @@ class TournamentGovernor:
             )
             if now < started:
                 raise CompetitionIntegrityError("game finalized before tournament start")
+            if active.resets_authorized > active.allocation.reset_limit:
+                raise CompetitionIntegrityError("game reset accounting exceeded its frozen limit")
             self._game_receipts.append(receipt)
             self._active = None
             self._remember(receipt)
@@ -765,6 +846,12 @@ class TournamentGovernor:
                 outcome = TournamentOutcome.COMPLETE_RESERVE_CONSUMED
             else:
                 outcome = TournamentOutcome.COMPLETE_RESERVE_PRESERVED
+            measured_total_resets = sum(game.resets_authorized for game in self._game_receipts)
+            if (
+                measured_total_resets != self._total_resets_authorized
+                or measured_total_resets > self._config.maximum_total_resets
+            ):
+                raise CompetitionIntegrityError("tournament reset accounting does not reconcile")
             will_drop = int(len(self._history) == self._config.history_capacity)
             receipt = TournamentFinalReceipt(
                 sequence=self._next_sequence(),
@@ -776,6 +863,9 @@ class TournamentGovernor:
                 finalized_environments=finalized_count,
                 total_actions_authorized=self._total_actions_authorized,
                 maximum_total_actions=self._config.maximum_total_actions,
+                total_resets_authorized=self._total_resets_authorized,
+                maximum_resets_per_game=self._config.maximum_resets_per_game,
+                maximum_total_resets=self._config.maximum_total_resets,
                 reserve_seconds=self._config.reserve_seconds,
                 reserve_remaining_seconds=self._remaining_reserve(now),
                 ceiling_remaining_seconds=max(0.0, effective_deadline - now),

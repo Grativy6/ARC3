@@ -65,7 +65,14 @@ DEFAULT_NON_POLICY_PATHS: tuple[str, ...] = (
     "src/arc3/integrity",
     "src/arc3/lab",
     "src/arc3/packaging/builder.py",
+    "src/arc3/packaging/candidate.py",
+    "src/arc3/packaging/cold_start.py",
+    "src/arc3/packaging/notebook.py",
+    "src/arc3/packaging/requirements.py",
     "src/arc3/packaging/sandbox.py",
+    "src/arc3/packaging/sbom.py",
+    "src/arc3/packaging/submission.py",
+    "src/arc3/packaging/util.py",
 )
 
 _FORBIDDEN_MODULES: tuple[str, ...] = (

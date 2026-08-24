@@ -2,8 +2,8 @@
 
 ## Current result
 
-**Status:** `PARTIAL` — available public identities and repository ancestry verified; final lock
-integration and exact private Kaggle surfaces remain unresolved.
+**Status:** `PARTIAL` — available public identities, repository ancestry, and the additive project
+lock are verified; exact Kaggle and local evaluator surfaces remain unresolved.
 
 **Evidence label:** `source-identity`
 
@@ -20,9 +20,11 @@ ancestor check. No Build 000/001 evidence is changed.
 Build 001 remains `PARTIAL`, and its ten-game holdout remains `SEALED_UNCONSUMED` historical
 evidence. Build 002 has a distinct owner authorization for exactly one run after every frozen
 preflight passes. The current state is `AUTHORIZED_ONCE_NOT_YET_CONSUMED`, with zero runs and zero
-environment interactions. A run begins—and authority is consumed—at the first attempted
-environment open/make interaction after the launch receipt. Failure after that boundary does not
-authorize a retry.
+environment interactions. A run begins—and authority is consumed—when the runner durably records
+intent immediately before the first and only upstream scorecard open. This stricter boundary
+prevents an ambiguous scorecard-open failure from authorizing a second scorecard. Environment
+`make` interactions remain separately counted from zero, and failure after the scorecard boundary
+does not authorize a retry.
 
 The machine-readable transition is
 `docs/evidence/002-00-holdout-authority-transition.json`.
@@ -47,8 +49,8 @@ remain evidence-driven; the generic research action mechanism remains intact.
 ## Current competition metadata
 
 An anonymous official competition metadata request returned HTTP 200 at
-`2026-08-24T03:10:13.3556365Z`; response SHA-256 is
-`de323841ab53bc7f0378a632a3176566111c8a4060009e7952b826661896e09e`. It reports competition id
+`2026-08-24T04:28:41.5202644Z`; the 3,080-byte raw response SHA-256 is
+`ca6253ca8e87ba6e4e5a435ee5f83bc27aaf62aa564860c1e31390349978de4f`. It reports competition id
 133468, nine-hour CPU/GPU limits, notebook-only execution without internet, required
 `submission.parquet`, one daily submission, two scored submissions, synchronous rerun, and gateway
 kernel id 110953907.
@@ -56,6 +58,11 @@ kernel id 110953907.
 The nine-hour competition limit is narrower than the generic twelve-hour notebook ceiling and
 therefore controls. The planned governor reserve is 6,000 seconds inside nine hours. No terms were
 accepted, credentials used, upload made, or submission consumed.
+
+The earlier source receipt and runtime lock contained different hashes for one alleged response
+without a raw-versus-canonical distinction. Neither older hash is controlling. The fresh raw
+capture above is cross-bound into both `upstream.lock.json` and the frozen runtime; the prior
+inconsistency remains recorded as superseded evidence rather than silently corrected.
 
 ## Discrepancies and fail-closed policy
 
@@ -70,14 +77,19 @@ accepted, credentials used, upload made, or submission consumed.
 - Documentation names ACTION7 as undo while ARCEngine types expose a generic simple action. Build
   002 grants undo only at the bounded adapter boundary.
 
-Exact private wheels, framework input, gateway, scorer, accepted-terms runtime, and hidden games
-remain `BLOCKED_EXTERNAL`. This does not prevent local implementation, packaging, or structural
-validation; it does prevent an exact private-compatibility or official-score claim.
+Exact private wheels, framework input, gateway, scorer, accepted-terms runtime, exact Kaggle
+platform cold start, packaged-runner/import attestation, OS-enforced network containment,
+independently pinned ten-game asset provenance, and hidden games remain `BLOCKED_EXTERNAL`. In particular, game
+IDs plus self-hashes of caller-supplied files are not sufficient evidence that those bytes are the
+official public assets. This does not prevent local implementation, packaging, or structural
+validation; it does prevent an exact public-run, private-compatibility, or official-score claim.
 
 ## Stage 00 disposition
 
 The project lock now carries an additive Build 002 overlay and validates as JSON at SHA-256
-`b5474a8f36bda80bb629f204591610325045411bd5aac65f6765261b7fab6b0b`; prior-build sections are
-preserved. Available public source identity is therefore `PASS`. Exact private Kaggle surfaces stay
-`BLOCKED_EXTERNAL`, and the implementation/configuration/package freeze remains a later preflight.
+`fb3acb1e375dddaaa02e38dc39cd3a0cde7fe95045d4dca34d976d29e0f56c68`; prior-build sections are
+preserved. The available-public-source subcheck is therefore `PASS`, while the overall source
+receipt remains `PARTIAL`. Exact Kaggle and evaluator surfaces stay `BLOCKED_EXTERNAL`; the adapter
+and lifecycle are implemented and locally tested, while the final configuration/package freeze
+remains a later preflight.
 The one-run authority remains unconsumed.

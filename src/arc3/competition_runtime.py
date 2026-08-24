@@ -200,6 +200,7 @@ class CompetitionRuntimeConfig:
             minimum_fallback_seconds=self.minimum_fallback_seconds,
             maximum_game_seconds=self.per_game_wall_clock_seconds,
             maximum_actions_per_game=self.max_actions,
+            maximum_resets_per_game=self.max_resets,
             maximum_total_actions=min(
                 self.max_total_actions,
                 self.max_actions * expected_environments,

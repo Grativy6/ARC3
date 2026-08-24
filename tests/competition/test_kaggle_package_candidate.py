@@ -196,6 +196,12 @@ def test_stage17_candidate_is_cpu_only_secret_free_and_offline(tmp_path: Path) -
     )
 
     assert result.sandbox.status == "PASS"
+    assert result.sandbox.notebook_entrypoint == "exact-generated-notebook-code-cells"
+    assert result.sandbox.platform_surface == "safe-loopback-gateway-and-framework-fixture"
+    assert result.sandbox.runtime_dependency_surface == "host-assisted-canary"
+    assert result.sandbox.exact_generated_code_cells == 4
+    assert result.sandbox.exact_production_requirements is False
+    assert result.sandbox.host_site_pth_bridge_present is True
     assert result.sandbox.agent_action_cycle_status == "PASS"
     assert result.sandbox.agent_consequence_state == "NOT_FINISHED"
     assert result.sandbox.agent_cycle_actions[0] == "RESET"

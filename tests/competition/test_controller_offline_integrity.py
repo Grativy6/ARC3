@@ -11,7 +11,9 @@ from pathlib import Path
 import pytest
 from arcengine import FrameData, GameAction, GameState
 
+from arc3.adapters.normalization import normalize_frame_data
 from arc3.adapters.synthetic import SYNTHETIC_GAME_ID, SyntheticAdapter
+from arc3.competition import GovernorStopReason
 from arc3.competition_runtime import FROZEN_COMPETITION_RUNTIME
 from arc3.config import ARC3Config, BudgetConfig, RuntimePolicyConfig
 from arc3.policy import ARC3Controller, ControllerPhase, ControllerPreset, LocalProposal, RunContext
@@ -33,6 +35,21 @@ class _FakeClock:
 
     def advance(self, seconds: float) -> None:
         self.value += seconds
+
+
+class _FakeClosingController:
+    def __init__(self, close_call: object) -> None:
+        self._close_call = close_call
+        self.close_calls = 0
+
+    @property
+    def compact_trace_projection(self) -> tuple[object, ...]:
+        return ()
+
+    def close(self) -> None:
+        self.close_calls += 1
+        assert callable(self._close_call)
+        self._close_call()
 
 
 @pytest.mark.competition
@@ -162,7 +179,6 @@ def test_competition_wrapper_stops_after_an_unexpected_game_reset(tmp_path: Path
         )
 
     agent.choose_action([], frame())
-    agent.choose_action([], frame())
     with pytest.raises(RuntimeError, match="unexpected full game reset"):
         agent.choose_action([], frame(full_reset=True))
 
@@ -172,6 +188,63 @@ def test_competition_wrapper_stops_after_an_unexpected_game_reset(tmp_path: Path
     assert failures[-1]["boundary"] == "reset-lifecycle"
     receipt = MyAgent.finalize_tournament()
     assert receipt["finalized_environments"] == 1
+
+
+@pytest.mark.competition
+def test_competition_wrapper_stops_at_frozen_reset_budget_on_reset_only_surface(
+    tmp_path: Path,
+) -> None:
+    game_id = "reset-budget-fixture"
+    MyAgent.configure_tournament((game_id,), tmp_path / "reset-budget-runtime")
+    agent = MyAgent(game_id=game_id, seed=39)
+
+    def game_over_frame() -> FrameData:
+        return FrameData(
+            game_id=game_id,
+            frame=[[[0, 1, 0], [0, 0, 2], [0, 0, 0]]],
+            state=GameState.NOT_PLAYED,
+            levels_completed=0,
+            win_levels=2,
+            available_actions=[0],
+        )
+
+    for _ in range(FROZEN_COMPETITION_RUNTIME.max_resets):
+        action = agent.choose_action([], game_over_frame())
+        assert action.name == "RESET"
+
+    with pytest.raises(RuntimeError, match="game-reset-limit"):
+        agent.choose_action([], game_over_frame())
+
+    failures = MyAgent.failure_receipts()
+    assert failures[-1]["boundary"] == "governor-stop-before-action"
+    assert failures[-1]["classification"] == "budget exhaustion"
+    receipt = MyAgent.finalize_tournament()
+    assert receipt["total_resets_authorized"] == FROZEN_COMPETITION_RUNTIME.max_resets
+    assert receipt["maximum_resets_per_game"] == FROZEN_COMPETITION_RUNTIME.max_resets
+    assert receipt["games"][0]["resets_authorized"] == FROZEN_COMPETITION_RUNTIME.max_resets
+    assert receipt["games"][0]["reason"] == GovernorStopReason.GAME_RESET_LIMIT.value
+
+
+@pytest.mark.competition
+def test_competition_wrapper_treats_game_over_as_terminal_without_reset(tmp_path: Path) -> None:
+    game_id = "game-over-terminal-fixture"
+    MyAgent.configure_tournament((game_id,), tmp_path / "game-over-runtime")
+    agent = MyAgent(game_id=game_id, seed=41)
+    frame = FrameData(
+        game_id=game_id,
+        frame=[[[0, 1, 0], [0, 0, 2], [0, 0, 0]]],
+        state=GameState.GAME_OVER,
+        levels_completed=0,
+        win_levels=2,
+        available_actions=[0],
+    )
+
+    assert agent.is_done([], frame) is True
+    assert agent._legal_actions(normalize_frame_data(frame)) == ()
+    receipt = MyAgent.finalize_tournament()
+    assert receipt["total_actions_authorized"] == 0
+    assert receipt["total_resets_authorized"] == 0
+    assert receipt["games"][0]["reason"] == GovernorStopReason.AGENT_DONE.value
 
 
 @pytest.mark.competition
@@ -206,6 +279,151 @@ def test_competition_wrapper_emits_budget_receipt_when_decision_expires(
     receipt = MyAgent.finalize_tournament()
     assert receipt["total_actions_authorized"] == 0
     assert receipt["finalized_environments"] == 1
+
+
+@pytest.mark.competition
+def test_competition_wrapper_stops_on_measured_memory_ceiling(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    game_id = "resource-budget-fixture"
+    MyAgent.configure_tournament((game_id,), tmp_path / "resource-runtime")
+    agent = MyAgent(game_id=game_id, seed=43)
+    frame = FrameData(
+        game_id=game_id,
+        frame=[[[0, 1, 0], [0, 0, 2], [0, 0, 0]]],
+        state=GameState.NOT_FINISHED,
+        levels_completed=0,
+        win_levels=2,
+        available_actions=[1, 2, 3, 4],
+    )
+    memory_limit = FROZEN_COMPETITION_RUNTIME.memory_megabytes * 1024 * 1024
+    monkeypatch.setitem(
+        agent._resource_budget_error.__globals__,
+        "_peak_rss_bytes",
+        lambda: memory_limit + 1,
+    )
+
+    assert agent.is_done([], frame) is True
+    failures = MyAgent.failure_receipts()
+    assert failures[-1]["boundary"] == "resource-budget"
+    assert failures[-1]["classification"] == "budget exhaustion"
+    receipt = MyAgent.finalize_tournament()
+    assert receipt["total_actions_authorized"] == 0
+    assert receipt["finalized_environments"] == 1
+
+
+@pytest.mark.competition
+@pytest.mark.skipif(os.name != "posix", reason="missing Linux RSS is a Linux fail-closed boundary")
+def test_competition_wrapper_fails_closed_when_linux_rss_is_unavailable(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    game_id = "missing-rss-fixture"
+    MyAgent.configure_tournament((game_id,), tmp_path / "missing-rss-runtime")
+    agent = MyAgent(game_id=game_id, seed=45)
+    frame = FrameData(
+        game_id=game_id,
+        frame=[[[0, 1, 0], [0, 0, 2], [0, 0, 0]]],
+        state=GameState.NOT_FINISHED,
+        levels_completed=0,
+        win_levels=2,
+        available_actions=[1, 2, 3, 4],
+    )
+    monkeypatch.setitem(
+        agent._resource_budget_error.__globals__,
+        "_peak_rss_bytes",
+        lambda: None,
+    )
+
+    assert agent.is_done([], frame) is True
+    failures = MyAgent.failure_receipts()
+    assert failures[-1]["boundary"] == "resource-budget"
+    assert failures[-1]["classification"] == "budget exhaustion"
+    MyAgent.finalize_tournament()
+
+
+@pytest.mark.competition
+def test_competition_wrapper_stops_on_measured_trace_storage_ceiling(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    game_id = "trace-storage-budget-fixture"
+    MyAgent.configure_tournament((game_id,), tmp_path / "storage-runtime")
+    agent = MyAgent(game_id=game_id, seed=47)
+    frame = FrameData(
+        game_id=game_id,
+        frame=[[[0, 1, 0], [0, 0, 2], [0, 0, 0]]],
+        state=GameState.NOT_FINISHED,
+        levels_completed=0,
+        win_levels=2,
+        available_actions=[1, 2, 3, 4],
+    )
+    agent.choose_action([], frame)
+    trace_limit = FROZEN_COMPETITION_RUNTIME.max_trace_bytes
+
+    def measured_bytes(path: Path) -> int:
+        return trace_limit + 1 if path.name == "trace" else 0
+
+    monkeypatch.setitem(
+        agent._resource_budget_error.__globals__,
+        "_directory_bytes",
+        measured_bytes,
+    )
+
+    assert agent.is_done([], frame) is True
+    failures = MyAgent.failure_receipts()
+    assert failures[0]["boundary"] == "resource-budget"
+    assert failures[0]["classification"] == "budget exhaustion"
+    receipt = MyAgent.finalize_tournament()
+    assert receipt["total_actions_authorized"] == 1
+    assert receipt["finalized_environments"] == 1
+
+
+@pytest.mark.competition
+def test_controller_close_time_is_inside_governor_game_accounting(tmp_path: Path) -> None:
+    game_id = "close-accounting-fixture"
+    clock = _FakeClock()
+    MyAgent.configure_tournament((game_id,), tmp_path / "close-runtime", clock=clock)
+    agent = MyAgent(game_id=game_id, seed=49)
+    agent._ensure_game_started()
+    fake = _FakeClosingController(lambda: clock.advance(2.0))
+    agent._controller = fake
+
+    agent._finalize_game(GovernorStopReason.AGENT_DONE)
+
+    receipt = MyAgent.finalize_tournament()
+    assert fake.close_calls == 1
+    assert receipt["games"][0]["elapsed_seconds"] == 2.0
+
+
+@pytest.mark.competition
+def test_failed_controller_is_not_closed_before_bounded_fallback(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    game_id = "fallback-close-order-fixture"
+    MyAgent.configure_tournament((game_id,), tmp_path / "fallback-runtime")
+    agent = MyAgent(game_id=game_id, seed=51)
+    fake = _FakeClosingController(lambda: None)
+    agent._controller = fake
+    frame = FrameData(
+        game_id=game_id,
+        frame=[[[0, 1, 0], [0, 0, 2], [0, 0, 0]]],
+        state=GameState.NOT_FINISHED,
+        levels_completed=0,
+        win_levels=2,
+        available_actions=[1, 2, 3, 4],
+    )
+
+    def fail_controller(_observation: object) -> tuple[ActionRequest, float]:
+        raise RuntimeError("synthetic controller failure")
+
+    monkeypatch.setattr(agent, "_controller_request", fail_controller)
+    action = agent.choose_action([], frame)
+
+    assert action is not GameAction.RESET
+    assert fake.close_calls == 0
+    assert MyAgent.failure_receipts()[-1]["boundary"] == "controller-decision"
+    agent.cleanup()
+    MyAgent.finalize_tournament()
+    assert fake.close_calls == 1
 
 
 @pytest.mark.competition

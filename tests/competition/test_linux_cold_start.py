@@ -19,6 +19,7 @@ from arc3.packaging.cold_start import (
     run_linux_cold_start,
 )
 from arc3.packaging.models import PackagingError
+from arc3.packaging.notebook import build_notebook
 from arc3.packaging.requirements import build_linux_runtime_requirements
 from arc3.packaging.util import canonical_json_bytes, deterministic_zip_bytes, sha256_bytes
 
@@ -64,6 +65,23 @@ def test_build002_failed_subprocess_preserves_only_a_bounded_diagnostic_tail(
 
 
 @pytest.mark.competition
+def test_build002_timed_out_subprocess_becomes_a_bounded_packaging_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def timed_out(*_args: object, **_kwargs: object) -> subprocess.CompletedProcess[str]:
+        raise subprocess.TimeoutExpired(cmd=["probe"], timeout=1.25)
+
+    monkeypatch.setattr(cold_start.subprocess, "run", timed_out)
+    with pytest.raises(PackagingError, match=r"fixture probe exceeded the remaining 1\.250s"):
+        cold_start._run_checked(
+            ["probe"],
+            environment={},
+            timeout_seconds=1.25,
+            label="fixture probe",
+        )
+
+
+@pytest.mark.competition
 def test_build002_probe_allows_only_required_loopback_bind_socket_events() -> None:
     source = cold_start._PROBE_SOURCE
 
@@ -76,6 +94,64 @@ def test_build002_probe_allows_only_required_loopback_bind_socket_events() -> No
     assert 'network_denial_self_test = "PASS"' in source
     assert "FROZEN_COMPETITION_RUNTIME.configuration_sha256" in source
     assert "FROZEN_COMPETITION_RUNTIME.config_sha256" not in source
+
+    notebook_runner = cold_start.NOTEBOOK_REHEARSAL_RUNNER_SOURCE
+    assert 'runner_mode == "native-linux-exact"' in notebook_runner
+    assert 'os.environ["KAGGLE_IS_COMPETITION_RERUN"] = "1"' in notebook_runner
+    assert 'working_root / "arc3-runtime-linux-cp312.txt"' in notebook_runner
+    assert "executed_code_cells += 1" in notebook_runner
+    assert "resource.setrlimit(resource.RLIMIT_AS" in notebook_runner
+    assert "resource.setrlimit(resource.RLIMIT_CPU" in notebook_runner
+    assert 'raise RuntimeError("native notebook runner found a host-site .pth bridge")' in (
+        notebook_runner
+    )
+
+
+@pytest.mark.competition
+def test_build002_native_notebook_receipt_requires_exact_entry_and_zero_network() -> None:
+    expected_packages = {"arc-agi": "0.9.9"}
+    expected_hash = "sha256:" + "1" * 64
+    raw: dict[str, Any] = {
+        "dependency_install_status": "PASS",
+        "exact_generated_code_cells": 4,
+        "exact_production_requirements": True,
+        "external_site_pth_entries": [],
+        "foreign_site_paths": [],
+        "framework_fixture": True,
+        "framework_identity": "arc3.stage17.safe-framework.v0.1",
+        "host_site_pth_bridge_present": False,
+        "network_attempts": 0,
+        "network_attempt_scope": "non-loopback Python socket attempts",
+        "network_enforcement": cold_start.PYTHON_NETWORK_ENFORCEMENT,
+        "notebook_entrypoint": "exact-generated-notebook-code-cells",
+        "output_sha256": expected_hash,
+        "peak_memory_bytes": 1,
+        "platform_surface": "safe-loopback-gateway-and-framework-fixture",
+        "production_rerun_exercised": True,
+        "rehearsal_requirements_sha256": expected_hash,
+        "runner_mode": "native-linux-exact",
+        "runtime_dependency_surface": "exact-embedded-production-requirements",
+        "secret_scan_status": "PASS",
+        "status": "PASS",
+        "target_import_origins": {"arc-agi": "arc_agi/__init__.py"},
+        "target_installed_packages": expected_packages,
+    }
+
+    cold_start._validate_native_notebook_result(
+        raw,
+        expected_packages=expected_packages,
+        expected_requirements_sha256=expected_hash,
+        expected_output_sha256=expected_hash,
+    )
+
+    raw["network_attempts"] = 1
+    with pytest.raises(PackagingError, match="incomplete or weakened"):
+        cold_start._validate_native_notebook_result(
+            raw,
+            expected_packages=expected_packages,
+            expected_requirements_sha256=expected_hash,
+            expected_output_sha256=expected_hash,
+        )
 
 
 @pytest.mark.competition
@@ -107,8 +183,10 @@ def test_build002_cli_writes_failure_receipt_before_returning_nonzero(
 
     document = json.loads(receipt.read_text(encoding="utf-8"))
     assert exit_code == 1
+    assert document["schema"] == "arc3.build-002-cold-start-command.v0.2"
     assert document["status"] == "FAILED_INFRASTRUCTURE"
-    assert document["error"] == "linux import failed"
+    assert document["error_type"] == "PackagingError"
+    assert document["error_message_sha256"] == sha256_bytes(b"linux import failed")
     assert document["public_environment_interactions"] == 0
     assert document["kaggle_accessed"] is False
 
@@ -176,6 +254,26 @@ def _fixture_package_manifest(
         "source": {"git_commit": source_commit, "git_dirty": False},
     }
     path = tmp_path / "package-manifest.json"
+    path.write_bytes(canonical_json_bytes(document))
+    return path
+
+
+def _fixture_notebook(
+    tmp_path: Path,
+    *,
+    requirements: Path,
+    payload: Path,
+    source_commit: str,
+) -> Path:
+    document = build_notebook(
+        payload=payload.read_bytes(),
+        payload_sha256=sha256_bytes(payload.read_bytes()),
+        runtime_requirements=requirements.read_bytes(),
+        requirements_sha256=sha256_bytes(requirements.read_bytes()),
+        validation_parquet=b"PAR1fixturePAR1",
+        source_commit=source_commit,
+    )
+    path = tmp_path / "arc3-submission.ipynb"
     path.write_bytes(canonical_json_bytes(document))
     return path
 
@@ -283,6 +381,12 @@ def test_build002_non_linux_host_never_claims_linux_cold_start_pass(
         payload=payload,
         source_commit=source_commit,
     )
+    notebook = _fixture_notebook(
+        tmp_path,
+        requirements=requirements,
+        payload=payload,
+        source_commit=source_commit,
+    )
     monkeypatch.setattr(
         cold_start,
         "_host_identity",
@@ -296,6 +400,7 @@ def test_build002_non_linux_host_never_claims_linux_cold_start_pass(
         wheelhouse,
         payload,
         package_manifest,
+        notebook_path=notebook,
         source_commit=source_commit,
     )
 
@@ -303,6 +408,9 @@ def test_build002_non_linux_host_never_claims_linux_cold_start_pass(
     assert receipt.executed is False
     assert receipt.deterministic_repetitions == 0
     assert receipt.stable_projection_sha256 is None
+    assert receipt.notebook_entry["status"] == "BLOCKED_PLATFORM"
+    assert receipt.notebook_entry["executed"] is False
+    assert receipt.to_dict()["schema"] == "arc3.linux-cold-start.v0.2"
     assert receipt.to_dict()["pip"] == {
         "isolated": False,
         "no_deps": False,
@@ -333,6 +441,12 @@ def test_build002_payload_validation_rejects_traversal_before_platform_receipt(
         payload=payload,
         source_commit=source_commit,
     )
+    notebook = _fixture_notebook(
+        tmp_path,
+        requirements=requirements,
+        payload=payload,
+        source_commit=source_commit,
+    )
     monkeypatch.setattr(
         cold_start,
         "_host_identity",
@@ -347,6 +461,7 @@ def test_build002_payload_validation_rejects_traversal_before_platform_receipt(
             wheelhouse,
             payload,
             package_manifest,
+            notebook_path=notebook,
             source_commit=source_commit,
         )
 
@@ -376,6 +491,12 @@ def test_build002_cold_start_fails_closed_for_unmapped_runtime_distribution(
         payload=payload,
         source_commit=source_commit,
     )
+    notebook = _fixture_notebook(
+        tmp_path,
+        requirements=requirements,
+        payload=payload,
+        source_commit=source_commit,
+    )
     monkeypatch.delitem(cold_start._DISTRIBUTION_IMPORTS, "fixture", raising=False)
 
     with pytest.raises(PackagingError, match="lack explicit cold-start import targets"):
@@ -385,5 +506,6 @@ def test_build002_cold_start_fails_closed_for_unmapped_runtime_distribution(
             wheelhouse,
             payload,
             package_manifest,
+            notebook_path=notebook,
             source_commit=source_commit,
         )

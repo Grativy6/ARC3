@@ -20,7 +20,9 @@ class RuntimeProfileConfig:
     component_count: int = 64
     max_actions: int = FROZEN_COMPETITION_RUNTIME.max_actions
     max_resets: int = FROZEN_COMPETITION_RUNTIME.max_resets
-    restart_every: int = 8
+    # The frozen competition profile measures the production sparse-checkpoint
+    # path. Explicit restart injection remains opt-in for recovery tests.
+    restart_every: int = 0
     decision_seconds: float = FROZEN_COMPETITION_RUNTIME.decision_seconds
     wall_clock_seconds: float = FROZEN_COMPETITION_RUNTIME.per_game_wall_clock_seconds
     memory_megabytes: int = FROZEN_COMPETITION_RUNTIME.memory_megabytes

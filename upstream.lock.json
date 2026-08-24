@@ -231,10 +231,21 @@
       "arcprize/ARC-AGI-3-Kaggle-Starter:agent/my_agent.py": "sha256:229091656932824543bd63165c9607463a9cf0fc0108f534e70e6fe932158f58",
       "arcprize/ARC-AGI-3-Kaggle-Starter:scripts/build_notebook.py": "sha256:1eac7fbc51befce507fb3708d8187881849c0285753af313535b4647e00092c6"
     },
+    "controlling_file_sha256_scope": "captured Windows checkout bytes; retained as source-acquisition provenance and not used as the pinned Agents runtime identity",
+    "pinned_agents_git_blob_sha256": {
+      "LICENSE": "sha256:75c4276c506fd93082b38ad39f67ee97aa859574401ef978e701710c7a40af04",
+      "agents/agent.py": "sha256:49f1a349cd5e2123fceb266aec4a3a758d18ef5520e0212e808f695905d9e073",
+      "agents/recorder.py": "sha256:0a08d89f4067a760012767c05d4406bd2bf409f426e29a1193106abfcbb696c8",
+      "agents/swarm.py": "sha256:d9dc48f710f1b90a6552db0921293c7e89c8a925ed00a3faefa07ae19998ad39"
+    },
+    "pinned_agents_git_blob_sha256_scope": "exact raw bytes stored by Git commit 4743e7d0aaae0ded0d98a89a7e282e63564cd58b; controlling for the production launcher",
     "kaggle_competition_metadata": {
       "endpoint": "https://www.kaggle.com/api/i/competitions.CompetitionService/GetCompetition?competitionName=arc-prize-2026-arc-agi-3",
+      "accessed_at": "2026-08-24T04:28:41.5202644Z",
       "http_status": 200,
-      "response_sha256": "sha256:de323841e87991d99d3a33fe49b639c53c34037940ef18a3ed5108e8df286c57",
+      "response_sha256": "sha256:ca6253ca8e87ba6e4e5a435ee5f83bc27aaf62aa564860c1e31390349978de4f",
+      "response_size_bytes": 3080,
+      "response_byte_scope": "raw HTTP entity body captured without credentials",
       "competition_id": 133468,
       "cpu_runtime_limit_minutes": 540,
       "gpu_runtime_limit_minutes": 540,
