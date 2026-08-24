@@ -524,11 +524,33 @@ import_targets = json.loads(sys.argv[7])
 resource.setrlimit(resource.RLIMIT_AS, (memory_limit, memory_limit))
 resource.setrlimit(resource.RLIMIT_CPU, (cpu_limit, cpu_limit))
 network_attempts = []
-def guard(event, _args):
-    if event.startswith("socket."):
-        network_attempts.append(event)
-        raise PermissionError("cold-start probe forbids network access")
+permitted_loopback_socket_events = []
+def guard(event, args):
+    if not event.startswith("socket."):
+        return
+    if event == "socket.__new__":
+        permitted_loopback_socket_events.append(event)
+        return
+    if event == "socket.bind" and len(args) >= 2:
+        address = args[1]
+        if isinstance(address, tuple) and address and address[0] in {"127.0.0.1", "::1"}:
+            permitted_loopback_socket_events.append(event)
+            return
+    network_attempts.append(event)
+    raise PermissionError("cold-start probe forbids non-loopback socket access")
 sys.addaudithook(guard)
+
+# Prove that a real outbound operation is rejected before importing the runtime.
+with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as denial_probe:
+    try:
+        denial_probe.connect(("203.0.113.1", 9))
+    except PermissionError:
+        if network_attempts != ["socket.connect"]:
+            raise RuntimeError("cold-start network-denial self-test observed the wrong event")
+        network_attempts.clear()
+        network_denial_self_test = "PASS"
+    else:
+        raise RuntimeError("cold-start network-denial self-test did not deny connect")
 
 if sys.flags.isolated != 1 or site.ENABLE_USER_SITE is not False:
     raise RuntimeError("probe interpreter is not isolated from the user site")
@@ -595,6 +617,8 @@ projection = {
     "installed": installed,
     "imported_runtime": imported_runtime,
     "network_attempts": 0,
+    "network_denial_self_test": network_denial_self_test,
+    "permitted_loopback_socket_events": permitted_loopback_socket_events,
     "source_commit": source_commit,
     "source_runtime_config_sha256": wrapper.FROZEN_COMPETITION_RUNTIME.config_sha256,
     "tournament_finalized_environments": final.get("finalized_environments"),
@@ -874,6 +898,8 @@ def run_linux_cold_start(
         stable_projection_sha256=stable_projection_sha256,
         pip_version=pip_version,
         limitations=(
+            "The pinned ARC toolkit imports through one loopback socket construction/bind; "
+            "the audit hook permits only that loopback bind and denies other Python socket events.",
             "Python audit hooks observe Python socket operations, not arbitrary native syscalls.",
             "This receipt validates local-public packaging compatibility, not Kaggle execution.",
         ),

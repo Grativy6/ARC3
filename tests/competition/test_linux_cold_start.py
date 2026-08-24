@@ -64,6 +64,19 @@ def test_build002_failed_subprocess_preserves_only_a_bounded_diagnostic_tail(
 
 
 @pytest.mark.competition
+def test_build002_probe_allows_only_required_loopback_bind_socket_events() -> None:
+    source = cold_start._PROBE_SOURCE
+
+    assert 'event == "socket.__new__"' in source
+    assert 'event == "socket.bind"' in source
+    assert '{"127.0.0.1", "::1"}' in source
+    assert "forbids non-loopback socket access" in source
+    assert '"permitted_loopback_socket_events"' in source
+    assert 'denial_probe.connect(("203.0.113.1", 9))' in source
+    assert 'network_denial_self_test = "PASS"' in source
+
+
+@pytest.mark.competition
 def test_build002_cli_writes_failure_receipt_before_returning_nonzero(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
