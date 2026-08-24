@@ -986,6 +986,11 @@ def run_public_episode(
     while actions < max_actions:
         if observation.state is GameStateName.WIN:
             break
+        if (
+            observation.state in {GameStateName.GAME_OVER, GameStateName.NOT_PLAYED}
+            and resets >= max_resets
+        ):
+            break
         if trace_sink is not None:
             trace_sink.record_candidates(observation)
         decision_started = time.perf_counter()

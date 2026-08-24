@@ -286,6 +286,14 @@ def baseline_descriptor(agent: str) -> BaselineDescriptor:
 
     if agent == "crash-test":
         return BaselineDescriptor("TEST-CRASH", agent, agent, "fault injection", "supported")
+    if agent.strip().lower() == "mechanical":
+        return BaselineDescriptor(
+            "B5",
+            "mechanical",
+            "BLA/CLEF mechanical learner",
+            "Receipt-complete visual causal learner with bounded cross-level mechanics.",
+            "supported",
+        )
     try:
         return _BY_AGENT[agent.strip().lower()]
     except KeyError as error:
@@ -326,6 +334,10 @@ def make_evaluation_policy(
             hot_path_profiler=hot_path_profiler,
             automatic_checkpointing=automatic_checkpointing,
         )
+    if descriptor.baseline_id == "B5":
+        from arc3.mechanics.visual_causal import VisualCausalPolicy
+
+        return VisualCausalPolicy(max_coordinate_candidates=8)
     if descriptor.baseline_id == "TEST-CRASH":
         return _ManagedBaselinePolicy(_CrashTestPolicy())
     raise PolicyError(f"no policy factory exists for {descriptor.baseline_id}")

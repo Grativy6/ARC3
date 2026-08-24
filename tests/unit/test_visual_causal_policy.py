@@ -3,7 +3,11 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 
+import pytest
+
 from arc3.adapters import GridFrame, Observation
+from arc3.errors import PolicyError
+from arc3.exploration.causal_events import RiskLevel
 from arc3.mechanics.visual_causal import (
     VisualCausalPolicy,
     VisualObjectRole,
@@ -87,6 +91,8 @@ def _observation(
     levels_completed: int = 0,
     state: GameStateName = GameStateName.NOT_FINISHED,
     returned_action: ActionRequest | None = None,
+    available_actions: tuple[ActionName, ...] = (ActionName.ACTION6,),
+    full_reset: bool = False,
 ) -> Observation:
     return Observation(
         game_id=GameId("synthetic-visual-mechanics"),
@@ -94,7 +100,8 @@ def _observation(
         state=state,
         levels_completed=levels_completed,
         win_levels=2,
-        available_actions=(ActionName.ACTION6,),
+        available_actions=available_actions,
+        full_reset=full_reset,
         returned_action=returned_action,
     )
 
@@ -144,8 +151,22 @@ def test_one_discriminating_transition_opens_provisional_affine_mechanic() -> No
 
 def test_supported_affine_form_transfers_without_coordinates_or_object_identity() -> None:
     scene = extract_visual_scene(_three_endpoint_frame())
+    source_before = extract_visual_scene(_frame((8, 32), (32, 32), (20, 10)))
+    source_after = extract_visual_scene(_frame((12, 24), (32, 32), (20, 10)))
+    prior = infer_affine_mechanic(
+        source_before,
+        source_after,
+        level_index=0,
+        action=ActionRequest(ActionName.ACTION6, Coordinate(12, 24)),
+    )
+    assert prior is not None
 
-    mechanic = infer_transferred_affine_mechanic(scene, level_index=4, active_color=0)
+    mechanic = infer_transferred_affine_mechanic(
+        scene,
+        level_index=4,
+        active_color=0,
+        supported_prior=(prior,),
+    )
 
     assert mechanic is not None
     assert mechanic.mechanic_ref.startswith("affine-transfer:")
@@ -208,6 +229,65 @@ class _TwoEndpointEnvironment:
         return self.observation(returned_action=action)
 
 
+@dataclass
+class _TwoLevelEnvironment:
+    active: tuple[int, int] = (8, 32)
+    anchor: tuple[int, int] = (32, 32)
+    target: tuple[int, int] = (20, 10)
+    levels_completed: int = 0
+    state: GameStateName = GameStateName.NOT_FINISHED
+
+    def observation(self, returned_action: ActionRequest | None = None) -> Observation:
+        return _observation(
+            self.active,
+            self.anchor,
+            self.target,
+            levels_completed=self.levels_completed,
+            state=self.state,
+            returned_action=returned_action,
+        )
+
+    def step(self, action: ActionRequest) -> Observation:
+        assert action.coordinate is not None
+        clicked = (action.coordinate.x, action.coordinate.y)
+        if math.dist(clicked, self.anchor) <= 2.5:
+            self.active, self.anchor = self.anchor, self.active
+        else:
+            self.active = clicked
+        hub = (
+            (self.active[0] + self.anchor[0]) / 2,
+            (self.active[1] + self.anchor[1]) / 2,
+        )
+        if math.dist(hub, self.target) <= 1.0:
+            self.levels_completed += 1
+            if self.levels_completed == 1:
+                self.active = (7, 33)
+                self.anchor = (31, 31)
+                self.target = (22, 8)
+            else:
+                self.state = GameStateName.WIN
+        return self.observation(returned_action=action)
+
+
+@dataclass
+class _LocalTargetEnvironment(_TwoEndpointEnvironment):
+    solved: bool = False
+
+    def step(self, action: ActionRequest) -> Observation:
+        assert action.coordinate is not None
+        clicked = (action.coordinate.x, action.coordinate.y)
+        if math.dist(clicked, self.anchor) <= 2.5:
+            self.active, self.anchor = self.anchor, self.active
+        else:
+            self.active = clicked
+        hub = (
+            (self.active[0] + self.anchor[0]) / 2,
+            (self.active[1] + self.anchor[1]) / 2,
+        )
+        self.solved = math.dist(hub, self.target) <= 1.0
+        return self.observation(returned_action=action)
+
+
 def test_policy_learns_then_completes_target_relative_plan_without_grid_sweep() -> None:
     environment = _TwoEndpointEnvironment()
     policy = VisualCausalPolicy(max_coordinate_candidates=8)
@@ -231,11 +311,138 @@ def test_policy_learns_then_completes_target_relative_plan_without_grid_sweep() 
     assert all(receipt.before_state is GameStateName.NOT_FINISHED for receipt in policy.receipts)
 
 
+def test_policy_continues_after_level_transition_until_final_win() -> None:
+    environment = _TwoLevelEnvironment()
+    policy = VisualCausalPolicy(max_coordinate_candidates=8)
+    observation = environment.observation()
+
+    for _ in range(24):
+        if observation.state is GameStateName.WIN:
+            break
+        action = policy.select(observation)
+        observation = environment.step(action)
+        policy.accept_consequence(observation)
+
+    assert observation.state is GameStateName.WIN
+    assert observation.levels_completed == 2
+    assert policy.mechanical_learner is not None
+    assert policy.mechanical_learner.ledger.active()
+    with pytest.raises(PolicyError, match="already reports WIN"):
+        policy.select(observation)
+
+
+def test_local_target_success_is_not_mislabeled_as_level_failure() -> None:
+    environment = _LocalTargetEnvironment()
+    policy = VisualCausalPolicy()
+    observation = environment.observation()
+
+    for _ in range(10):
+        action = policy.select(observation)
+        observation = environment.step(action)
+        policy.accept_consequence(observation)
+        if environment.solved:
+            break
+
+    assert environment.solved
+    assert observation.state is GameStateName.NOT_FINISHED
+    assert observation.levels_completed == 0
+    assert policy.snapshot()["failed_plan_count"] == 0
+    assert policy.snapshot()["pending_plan_actions"] == 0
+
+
+def test_level_transition_frame_cannot_open_an_affine_mechanic() -> None:
+    policy = VisualCausalPolicy()
+    before = _observation((8, 32), (32, 32), (20, 10))
+    action = policy.select(before)
+    transitioned = _observation(
+        (9, 30),
+        (30, 30),
+        (21, 9),
+        levels_completed=1,
+        returned_action=action,
+    )
+
+    policy.accept_consequence(transitioned)
+
+    assert not policy.mechanics
+
+
+def test_large_plan_residual_aborts_the_stale_queue() -> None:
+    environment = _TwoEndpointEnvironment()
+    policy = VisualCausalPolicy()
+    observation = environment.observation()
+    probe = policy.select(observation)
+    observation = environment.step(probe)
+    policy.accept_consequence(observation)
+    assert policy.snapshot()["pending_plan_actions"]
+
+    planned = policy.select(observation)
+    wrong_rows = [[5 for _ in range(40)] for _ in range(40)]
+    for y in range(8, 24):
+        for x in range(8, 24):
+            wrong_rows[y][x] = 2
+    wrong = Observation(
+        game_id=observation.game_id,
+        frames=(GridFrame.from_rows(wrong_rows),),
+        state=GameStateName.NOT_FINISHED,
+        levels_completed=0,
+        win_levels=2,
+        available_actions=(ActionName.ACTION6,),
+        returned_action=planned,
+    )
+    policy.accept_consequence(wrong)
+
+    assert policy.snapshot()["pending_plan_actions"] == 0
+    assert policy.snapshot()["failed_plan_count"] == 1
+
+
+def test_pending_coordinate_plan_respects_changed_action_space() -> None:
+    environment = _TwoEndpointEnvironment()
+    policy = VisualCausalPolicy()
+    observation = environment.observation()
+    probe = policy.select(observation)
+    observation = environment.step(probe)
+    policy.accept_consequence(observation)
+    without_coordinate_action = _observation(
+        environment.active,
+        environment.anchor,
+        environment.target,
+        returned_action=probe,
+        available_actions=(ActionName.ACTION1,),
+    )
+
+    selected = policy.select(without_coordinate_action)
+
+    assert selected == ActionRequest(ActionName.ACTION1)
+    assert policy.snapshot()["pending_plan_actions"] == 0
+
+
+def test_no_readable_plan_residual_is_preserved_in_receipt(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    environment = _TwoEndpointEnvironment()
+    policy = VisualCausalPolicy()
+
+    def reject_plan(_policy: VisualCausalPolicy, _mechanic: object, _scene: object) -> bool:
+        return False
+
+    monkeypatch.setattr(VisualCausalPolicy, "_install_plan", reject_plan)
+    before = environment.observation()
+    action = policy.select(before)
+    after = environment.step(action)
+    policy.accept_consequence(after)
+
+    assert policy.receipts[-1].residual == "no readable target-relative affine plan"
+
+
 def test_game_over_consequence_is_receipted_before_mandatory_reset() -> None:
     environment = _TwoEndpointEnvironment()
     policy = VisualCausalPolicy()
-    before = environment.observation()
-    selected = policy.select(before)
+    observation = environment.observation()
+    probe = policy.select(observation)
+    observation = environment.step(probe)
+    policy.accept_consequence(observation)
+    selected = policy.select(observation)
     failed = _observation(
         environment.active,
         environment.anchor,
@@ -246,6 +453,21 @@ def test_game_over_consequence_is_receipted_before_mandatory_reset() -> None:
 
     policy.accept_consequence(failed)
     reset = policy.select(failed)
+    recovered = _observation(
+        (8, 32),
+        (32, 32),
+        (20, 10),
+        returned_action=reset,
+        full_reset=True,
+    )
+    policy.accept_consequence(recovered)
+    next_action = policy.select(recovered)
 
-    assert policy.receipts[-1].after_state is GameStateName.GAME_OVER
+    failure_receipt = policy.receipts[-2]
+    assert failure_receipt.after_state is GameStateName.GAME_OVER
+    assert (
+        failure_receipt.causal_action_receipt.resource_and_failure_risk.level is RiskLevel.TERMINAL
+    )
     assert reset == ActionRequest(ActionName.RESET)
+    assert policy.snapshot()["failed_plan_count"] == 1
+    assert next_action != selected

@@ -18,6 +18,45 @@ from enum import StrEnum
 
 from arc3.adapters import GridFrame, Observation
 from arc3.errors import PolicyError
+from arc3.exploration.causal_events import (
+    CausalActionReceipt,
+    EffectChannel,
+    EffectKnowledge,
+    EffectVector,
+    FactoredEffect,
+    ResourceFailureRisk,
+    RiskLevel,
+    compare_effect_vectors,
+    extract_observed_effects,
+)
+from arc3.exploration.causal_events import (
+    ResidualKind as CausalResidualKind,
+)
+from arc3.mechanics.learner import (
+    LearningReceipt,
+    MechanicalLearner,
+    MechanicPredictionReceipt,
+)
+from arc3.mechanics.models import (
+    ChannelValue,
+    CompositionMode,
+    ConsequenceChannel,
+    ConsequenceVector,
+    EvidenceProvenance,
+    LegalActionEffect,
+    MechanicContext,
+    MechanicRef,
+    MechanicScope,
+    MechanicStatus,
+    ObjectEffect,
+    ObjectOperation,
+    ScopeCeiling,
+    ScoreProgressEffect,
+    TerminalEffect,
+)
+from arc3.perception.delta import measure_delta
+from arc3.perception.layers import ResidualDisposition
+from arc3.perception.metadata import observation_metadata
 from arc3.types import ActionName, ActionRequest, Coordinate, GameStateName, JSONValue
 
 
@@ -116,7 +155,7 @@ class VisualScene:
     def is_open(self, x: int, y: int, *, radius: int = 2) -> bool:
         """Return whether a small readable neighborhood is mostly background."""
 
-        if not (radius <= x < self.width - radius and radius <= y < self.height - radius):
+        if not (radius < x < self.width - radius - 1 and radius < y < self.height - radius - 1):
             return False
         values = [
             self.cells[yy][xx]
@@ -176,6 +215,10 @@ class PlannedClick:
     mechanic_ref: str
     plan_id: str
     plan_signature: str
+    target_center: tuple[int, int]
+    mediator_color: int
+    arity: int
+    completes_local_target: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -197,6 +240,9 @@ class VisualActionReceipt:
     levels_before: int
     levels_after: int
     changed_cells: int
+    causal_action_receipt: CausalActionReceipt
+    mechanic_prediction_receipt: MechanicPredictionReceipt
+    mechanic_learning_receipt: LearningReceipt
 
     def to_dict(self) -> dict[str, JSONValue]:
         coordinate = self.action.coordinate
@@ -212,9 +258,12 @@ class VisualActionReceipt:
             "before_frame_hash": self.before_frame_hash,
             "before_state": self.before_state.value,
             "changed_cells": self.changed_cells,
+            "causal_action_receipt": self.causal_action_receipt.to_dict(),
             "level_index": self.level_index,
             "levels_after": self.levels_after,
             "levels_before": self.levels_before,
+            "mechanic_learning_receipt": self.mechanic_learning_receipt.to_dict(),
+            "mechanic_prediction_receipt": self.mechanic_prediction_receipt.to_dict(),
             "observed": self.observed,
             "prediction": self.prediction,
             "purpose": self.purpose.value,
@@ -502,15 +551,22 @@ def infer_transferred_affine_mechanic(
     *,
     level_index: int,
     active_color: int,
+    supported_prior: tuple[AffineMechanic, ...],
 ) -> AffineMechanic | None:
     """Apply a previously observed affine form to a new level layout.
 
-    Only the form transfers.  Current endpoints, mediator, arity, and target are
-    re-read from the new frame, and the relation must close geometrically before
-    it is used.  Raw coordinates and object identities never cross levels.
+    Only an already observed affine form transfers.  Current endpoints,
+    mediator, arity, and target are re-read from the new frame, and the relation
+    must close geometrically before it is used.  Raw coordinates and object
+    identities never cross levels.
     """
 
+    if not supported_prior or any(item.support_error > 6.0 for item in supported_prior):
+        return None
     active_candidates = tuple(item for item in scene.endpoints if item.color == active_color)
+    if not active_candidates:
+        color_counts = Counter(item.color for item in scene.endpoints)
+        active_candidates = tuple(item for item in scene.endpoints if color_counts[item.color] == 1)
     if not active_candidates:
         return None
     best: (
@@ -552,11 +608,15 @@ def infer_transferred_affine_mechanic(
     if best is None or best[0] > 1.5:
         return None
     error, arity, hub, anchors, target = best
-    identity = f"transfer|{level_index}|{active_color}|{hub.color}|{arity}|{scene.frame_hash}"
+    source_refs = ",".join(sorted(item.mechanic_ref for item in supported_prior))
+    identity = (
+        f"transfer|{source_refs}|{level_index}|{active.color}|{hub.color}|{arity}|"
+        f"{scene.frame_hash}"
+    )
     return AffineMechanic(
         mechanic_ref="affine-transfer:" + hashlib.sha256(identity.encode("utf-8")).hexdigest()[:20],
         level_index=level_index,
-        active_color=active_color,
+        active_color=active.color,
         mediator_color=hub.color,
         arity=arity,
         source_before_hash=scene.frame_hash,
@@ -599,6 +659,184 @@ def _radial_plan_points(
     return None
 
 
+_COORDINATE_TRANSFORM: dict[str, JSONValue] = {
+    "relation": "coordinate_action_transforms_readable_endpoint_system"
+}
+_COORDINATE_PLACEMENT: dict[str, JSONValue] = {
+    "relation": "selected_coordinate_becomes_readable_endpoint_center"
+}
+
+
+def _predicted_clef_effects(
+    *,
+    purpose: VisualActionPurpose,
+    mechanic_refs: tuple[str, ...],
+    action: ActionRequest,
+) -> EffectVector:
+    effects: list[FactoredEffect] = []
+    if mechanic_refs:
+        refs = tuple(f"mechanic:{item}" for item in mechanic_refs)
+        effects.append(
+            FactoredEffect(
+                EffectChannel.OTHER_OBJECT_CHANGE,
+                EffectKnowledge.KNOWN,
+                _COORDINATE_TRANSFORM,
+                refs,
+            )
+        )
+        if purpose is VisualActionPurpose.PROGRESS:
+            effects.append(
+                FactoredEffect(
+                    EffectChannel.CONTROLLABLE_OBJECT_DISPLACEMENT,
+                    EffectKnowledge.KNOWN,
+                    _COORDINATE_PLACEMENT,
+                    refs,
+                )
+            )
+    if action.name is ActionName.RESET:
+        effects.append(
+            FactoredEffect(
+                EffectChannel.TERMINAL_RESET_TRANSITION,
+                EffectKnowledge.KNOWN,
+                {"expected_after_state": GameStateName.NOT_FINISHED.value},
+            )
+        )
+    return EffectVector.from_effects(tuple(effects))
+
+
+def _coordinate_transform_observed(
+    before_scene: VisualScene,
+    after_scene: VisualScene,
+    *,
+    action: ActionRequest,
+    changed_cells: int,
+    level_progress: bool,
+    inferred_mechanic: AffineMechanic | None,
+) -> bool:
+    if action.name is not ActionName.ACTION6 or changed_cells == 0:
+        return False
+    if inferred_mechanic is not None or level_progress:
+        return True
+    if action.coordinate is None or not before_scene.endpoints:
+        return False
+    before_roles = {item.rounded_center: item.color for item in before_scene.endpoints}
+    after_roles = {item.rounded_center: item.color for item in after_scene.endpoints}
+    clicked = (action.coordinate.x, action.coordinate.y)
+    return (
+        before_roles.keys() == after_roles.keys()
+        and before_roles != after_roles
+        and any(_distance(item.rounded_center, clicked) <= 2.25 for item in after_scene.endpoints)
+        and {item.rounded_center for item in before_scene.mediators}
+        == {item.rounded_center for item in after_scene.mediators}
+    )
+
+
+def _local_target_satisfied(
+    scene: VisualScene,
+    *,
+    target_center: tuple[int, int] | None,
+    mediator_color: int | None,
+    arity: int | None,
+) -> bool:
+    if target_center is None or mediator_color is None or arity is None:
+        return False
+    targets = tuple(
+        item
+        for item in scene.targets
+        if item.color == mediator_color
+        and _distance((item.center_x, item.center_y), target_center) <= 2.0
+    )
+    mediators = tuple(item for item in scene.mediators if item.color == mediator_color)
+    visible_overlap = any(
+        _distance(
+            (mediator.center_x, mediator.center_y),
+            (target.center_x, target.center_y),
+        )
+        <= 2.0
+        for target in targets
+        for mediator in mediators
+    )
+    if visible_overlap:
+        return True
+    for endpoints in itertools.combinations(scene.endpoints, arity):
+        centroid = (
+            sum(item.center_x for item in endpoints) / arity,
+            sum(item.center_y for item in endpoints) / arity,
+        )
+        if _distance(centroid, target_center) <= 2.0:
+            return True
+    return False
+
+
+def _observed_bla_consequence(
+    before: Observation,
+    after: Observation,
+    *,
+    action: ActionRequest,
+    coordinate_transform: bool,
+    changed_cells: int,
+) -> ConsequenceVector:
+    vector = ConsequenceVector.unknown()
+    if coordinate_transform:
+        vector = vector.with_channel(
+            ConsequenceChannel.OTHER_OBJECT_EFFECTS,
+            ChannelValue.known(
+                ObjectEffect(
+                    "readable-endpoint-system",
+                    ObjectOperation.TRANSFORMED,
+                    "coordinate-causal",
+                )
+            ),
+        )
+    elif action.name is ActionName.ACTION6 and changed_cells == 0:
+        vector = vector.with_channel(
+            ConsequenceChannel.OTHER_OBJECT_EFFECTS,
+            ChannelValue.known_empty(),
+        )
+
+    before_actions = set(before.available_actions)
+    after_actions = set(after.available_actions)
+    if before_actions != after_actions:
+        legal_effects = tuple(
+            LegalActionEffect(item, item in after_actions)
+            for item in sorted(before_actions | after_actions, key=lambda value: value.value)
+            if (item in before_actions) != (item in after_actions)
+        )
+        vector = vector.with_channel(
+            ConsequenceChannel.LEGAL_ACTION_CHANGES,
+            ChannelValue.known(*legal_effects),
+        )
+    if before.levels_completed != after.levels_completed:
+        vector = vector.with_channel(
+            ConsequenceChannel.SCORE_PROGRESS_CHANGES,
+            ChannelValue.known(
+                ScoreProgressEffect(
+                    "levels_completed",
+                    after.levels_completed - before.levels_completed,
+                )
+            ),
+        )
+    if before.state is not after.state or before.full_reset != after.full_reset:
+        vector = vector.with_channel(
+            ConsequenceChannel.TERMINAL_CHANGES,
+            ChannelValue.known(TerminalEffect(after.state)),
+        )
+    return vector
+
+
+def _affine_base_consequence() -> ConsequenceVector:
+    return ConsequenceVector.unknown().with_channel(
+        ConsequenceChannel.OTHER_OBJECT_EFFECTS,
+        ChannelValue.known(
+            ObjectEffect(
+                "readable-endpoint-system",
+                ObjectOperation.TRANSFORMED,
+                "coordinate-causal",
+            )
+        ),
+    )
+
+
 class VisualCausalPolicy:
     """Bounded mechanical learner for readable coordinate-action scenes.
 
@@ -621,14 +859,24 @@ class VisualCausalPolicy:
         self._pending_prediction = "all factored channels UNKNOWN"
         self._pending_mechanic_refs: tuple[str, ...] = ()
         self._pending_plan_signature: str | None = None
+        self._pending_target_center: tuple[int, int] | None = None
+        self._pending_mediator_color: int | None = None
+        self._pending_arity: int | None = None
+        self._pending_completes_local_target = False
+        self._pending_clef_prediction = EffectVector.unknown()
+        self._pending_mechanic_prediction: MechanicPredictionReceipt | None = None
         self._plan: deque[PlannedClick] = deque()
         self._mechanics: list[AffineMechanic] = []
         self._receipts: list[VisualActionReceipt] = []
+        self._mechanical_learner: MechanicalLearner | None = None
+        self._affine_ledger_ref: MechanicRef | None = None
+        self._transfer_confirmed_levels: set[int] = set()
         self._failed_plan_signatures: set[str] = set()
         self._attempted_activation_refs: set[str] = set()
         self._last_probe_failed = False
         self._last_active_color: int | None = None
         self._probe_ordinal = 0
+        self._step_index = 0
 
     @property
     def mechanics(self) -> tuple[AffineMechanic, ...]:
@@ -638,8 +886,53 @@ class VisualCausalPolicy:
     def receipts(self) -> tuple[VisualActionReceipt, ...]:
         return tuple(self._receipts)
 
+    @property
+    def mechanical_learner(self) -> MechanicalLearner | None:
+        return self._mechanical_learner
+
+    def _ensure_learner(self, observation: Observation) -> MechanicalLearner:
+        if self._mechanical_learner is None:
+            digest = hashlib.sha256(str(observation.game_id).encode("utf-8")).hexdigest()[:20]
+            self._mechanical_learner = MechanicalLearner(
+                game_scope=f"runtime-game:{digest}",
+                level_scope=f"level:{observation.levels_completed}",
+            )
+        return self._mechanical_learner
+
+    def _mechanic_context(
+        self,
+        observation: Observation,
+        action: ActionRequest,
+        purpose: VisualActionPurpose,
+    ) -> MechanicContext:
+        learner = self._ensure_learner(observation)
+        scene = extract_visual_scene(observation.frames[-1])
+        coordinate = action.coordinate
+        coordinate_tag = (
+            "coordinate:none"
+            if coordinate is None
+            else f"coordinate-quadrant:{coordinate.x // 16}:{coordinate.y // 16}"
+        )
+        return MechanicContext(
+            learner.game_scope,
+            learner.level_scope,
+            object_roles=tuple(sorted({item.role.value for item in scene.objects})),
+            state_tags=(
+                coordinate_tag,
+                f"purpose:{purpose.value.lower()}",
+                f"endpoint-count:{len(scene.endpoints)}",
+                f"mediator-count:{len(scene.mediators)}",
+                f"target-count:{len(scene.targets)}",
+                f"unresolved-target-count:{len(self._unsolved_pairs(scene))}",
+            ),
+        )
+
     def _begin_level(self, observation: Observation) -> None:
         self._level_index = observation.levels_completed
+        learner = self._ensure_learner(observation)
+        level_scope = f"level:{observation.levels_completed}"
+        if learner.level_scope != level_scope:
+            learner.start_level(level_scope)
         self._plan.clear()
         self._failed_plan_signatures.clear()
         self._attempted_activation_refs.clear()
@@ -747,6 +1040,9 @@ class VisualCausalPolicy:
                     mechanic_ref=mechanic.mechanic_ref,
                     plan_id=plan_id,
                     plan_signature=signature,
+                    target_center=mechanic.target_center,
+                    mediator_color=mechanic.mediator_color,
+                    arity=mechanic.arity,
                 )
             )
             actions.append(
@@ -757,6 +1053,9 @@ class VisualCausalPolicy:
                     mechanic_ref=mechanic.mechanic_ref,
                     plan_id=plan_id,
                     plan_signature=signature,
+                    target_center=mechanic.target_center,
+                    mediator_color=mechanic.mediator_color,
+                    arity=mechanic.arity,
                 )
             )
         actions.append(
@@ -767,6 +1066,10 @@ class VisualCausalPolicy:
                 mechanic_ref=mechanic.mechanic_ref,
                 plan_id=plan_id,
                 plan_signature=signature,
+                target_center=mechanic.target_center,
+                mediator_color=mechanic.mediator_color,
+                arity=mechanic.arity,
+                completes_local_target=True,
             )
         )
         self._plan.extend(actions)
@@ -789,6 +1092,10 @@ class VisualCausalPolicy:
         if observation.levels_completed != self._level_index:
             self._begin_level(observation)
 
+        if self._plan and ActionName.ACTION6 not in observation.available_actions:
+            self._failed_plan_signatures.add(self._plan[0].plan_signature)
+            self._plan.clear()
+            self._last_probe_failed = True
         if self._plan:
             planned = self._plan.popleft()
             action = ActionRequest(ActionName.ACTION6, planned.coordinate)
@@ -799,16 +1106,25 @@ class VisualCausalPolicy:
                 prediction=planned.expectation,
                 mechanic_refs=(planned.mechanic_ref,),
                 plan_signature=planned.plan_signature,
+                target_center=planned.target_center,
+                mediator_color=planned.mediator_color,
+                arity=planned.arity,
+                completes_local_target=planned.completes_local_target,
             )
             return action
 
         if ActionName.ACTION6 in observation.available_actions:
             scene = extract_visual_scene(observation.frames[-1])
-            if self._last_active_color is not None and not self._last_probe_failed:
+            learner = self._ensure_learner(observation)
+            transferable = self._affine_ledger_ref is not None and learner.ledger.get(
+                self._affine_ledger_ref
+            ).status in {MechanicStatus.SUPPORTED, MechanicStatus.STABLE_WITHIN_SCOPE}
+            if self._last_active_color is not None and not self._last_probe_failed and transferable:
                 transferred = infer_transferred_affine_mechanic(
                     scene,
                     level_index=observation.levels_completed,
                     active_color=self._last_active_color,
+                    supported_prior=tuple(self._mechanics[-16:]),
                 )
                 if transferred is not None and self._install_plan(transferred, scene):
                     self._mechanics.append(transferred)
@@ -821,6 +1137,10 @@ class VisualCausalPolicy:
                         prediction=planned.expectation,
                         mechanic_refs=(planned.mechanic_ref,),
                         plan_signature=planned.plan_signature,
+                        target_center=planned.target_center,
+                        mediator_color=planned.mediator_color,
+                        arity=planned.arity,
+                        completes_local_target=planned.completes_local_target,
                     )
                     return action
             activation = self._activation_coordinate(scene) if self._last_probe_failed else None
@@ -876,20 +1196,39 @@ class VisualCausalPolicy:
         prediction: str,
         mechanic_refs: tuple[str, ...] = (),
         plan_signature: str | None = None,
+        target_center: tuple[int, int] | None = None,
+        mediator_color: int | None = None,
+        arity: int | None = None,
+        completes_local_target: bool = False,
     ) -> None:
         if self._pending_action is not None:
             raise PolicyError("a consequence is required before selecting another action")
+        learner = self._ensure_learner(observation)
+        context = self._mechanic_context(observation, action, purpose)
+        mechanic_prediction = learner.predict(action, context, emitted_step=self._step_index)
         self._pending_before = observation
         self._pending_action = action
         self._pending_purpose = purpose
         self._pending_prediction = prediction
         self._pending_mechanic_refs = mechanic_refs
         self._pending_plan_signature = plan_signature
+        self._pending_target_center = target_center
+        self._pending_mediator_color = mediator_color
+        self._pending_arity = arity
+        self._pending_completes_local_target = completes_local_target
+        self._pending_clef_prediction = _predicted_clef_effects(
+            purpose=purpose,
+            mechanic_refs=mechanic_refs,
+            action=action,
+        )
+        self._pending_mechanic_prediction = mechanic_prediction
 
     def accept_consequence(self, observation: Observation) -> None:
         before = self._pending_before
         action = self._pending_action
-        if before is None or action is None:
+        mechanic_prediction = self._pending_mechanic_prediction
+        learner = self._mechanical_learner
+        if before is None or action is None or mechanic_prediction is None or learner is None:
             raise PolicyError("mechanical policy received a consequence without a pending action")
         changed = _changed_cells(before.frames[-1], observation.frames[-1])
         level_progress = observation.levels_completed > before.levels_completed
@@ -905,11 +1244,14 @@ class VisualCausalPolicy:
         )
         residual: str | None = None
         mechanic: AffineMechanic | None = None
-        before_scene: VisualScene | None = None
-        after_scene: VisualScene | None = None
-        if action.name is ActionName.ACTION6 and action.coordinate is not None:
-            before_scene = extract_visual_scene(before.frames[-1])
-            after_scene = extract_visual_scene(observation.frames[-1])
+        before_scene = extract_visual_scene(before.frames[-1])
+        after_scene = extract_visual_scene(observation.frames[-1])
+        if (
+            action.name is ActionName.ACTION6
+            and action.coordinate is not None
+            and observation.levels_completed == before.levels_completed
+            and observation.state is GameStateName.NOT_FINISHED
+        ):
             mechanic = infer_affine_mechanic(
                 before_scene,
                 after_scene,
@@ -933,9 +1275,205 @@ class VisualCausalPolicy:
             f"{len(self._receipts)}|{before.frames[-1].digest}|{action!r}|"
             f"{observation.frames[-1].digest}|{observation.state.value}"
         )
+        receipt_id = (
+            "visual-receipt:" + hashlib.sha256(receipt_seed.encode("utf-8")).hexdigest()[:24]
+        )
+        local_target_satisfied = self._pending_completes_local_target and (
+            _local_target_satisfied(
+                after_scene,
+                target_center=self._pending_target_center,
+                mediator_color=self._pending_mediator_color,
+                arity=self._pending_arity,
+            )
+        )
+        coordinate_transform = local_target_satisfied or _coordinate_transform_observed(
+            before_scene,
+            after_scene,
+            action=action,
+            changed_cells=changed,
+            level_progress=level_progress,
+            inferred_mechanic=mechanic,
+        )
+        recognized_effects: list[FactoredEffect] = []
+        if coordinate_transform:
+            recognized_effects.append(
+                FactoredEffect(
+                    EffectChannel.OTHER_OBJECT_CHANGE,
+                    EffectKnowledge.KNOWN,
+                    _COORDINATE_TRANSFORM,
+                    (receipt_id,),
+                )
+            )
+        if mechanic is not None or local_target_satisfied:
+            recognized_effects.append(
+                FactoredEffect(
+                    EffectChannel.CONTROLLABLE_OBJECT_DISPLACEMENT,
+                    EffectKnowledge.KNOWN,
+                    _COORDINATE_PLACEMENT,
+                    (receipt_id,),
+                )
+            )
+        delta = measure_delta(
+            before.frames[-1],
+            observation.frames[-1],
+            before_metadata=observation_metadata(before),
+            after_metadata=observation_metadata(observation),
+            background_colors=frozenset({before_scene.background}),
+        )
+        observed_effects = extract_observed_effects(
+            before,
+            observation,
+            delta,
+            recognized_effects=tuple(recognized_effects),
+            evidence_refs=(receipt_id,),
+        )
+        effect_comparison = compare_effect_vectors(
+            self._pending_clef_prediction,
+            observed_effects,
+            dispositions={
+                EffectChannel.CONTROLLABLE_OBJECT_DISPLACEMENT: ResidualDisposition.PROMOTE,
+                EffectChannel.OTHER_OBJECT_CHANGE: ResidualDisposition.PROMOTE,
+                EffectChannel.RESOURCE_HUD_CHANGE: ResidualDisposition.PROMOTE,
+                EffectChannel.INVENTORY_COUNT_CHANGE: ResidualDisposition.PROMOTE,
+                EffectChannel.LEGAL_ACTION_CHANGE: ResidualDisposition.PROMOTE,
+                EffectChannel.TOPOLOGY_REACHABILITY_CHANGE: ResidualDisposition.PROMOTE,
+                EffectChannel.SCORE_PROGRESS_CHANGE: ResidualDisposition.PROMOTE,
+                EffectChannel.TERMINAL_RESET_TRANSITION: ResidualDisposition.PROMOTE,
+                EffectChannel.STATUS_ANIMATION_CHANGE: ResidualDisposition.STOP,
+                EffectChannel.DELAYED_UNRESOLVED: ResidualDisposition.PARK,
+            },
+        )
+        observed_consequence = _observed_bla_consequence(
+            before,
+            observation,
+            action=action,
+            coordinate_transform=coordinate_transform,
+            changed_cells=changed,
+        )
+        learning = learner.observe_consequence(
+            mechanic_prediction.prediction_id,
+            observed_consequence,
+            source_event_ids=(receipt_id,),
+            context_key=mechanic_prediction.context.context_key,
+            observed_step=self._step_index + 1,
+        )
+        if mechanic is not None and self._affine_ledger_ref is None:
+            opened = learner.ledger.open(
+                action=ActionName.ACTION6,
+                scope=MechanicScope(ScopeCeiling.GAME, game_scope=learner.game_scope),
+                consequence=_affine_base_consequence(),
+                composition_mode=CompositionMode.BASE,
+                created_step=self._step_index + 1,
+                created_from_event_ids=(receipt_id,),
+                provenance=EvidenceProvenance.OBSERVED_THIS_GAME,
+                priority=40,
+                note="coordinate action transformed a readable endpoint system and its mediator",
+            )
+            self._affine_ledger_ref = opened.ref
+            learner.resolve_residual(learning.residual.residual_id)
+        elif (
+            self._affine_ledger_ref is not None
+            and before.levels_completed > 0
+            and coordinate_transform
+            and before.levels_completed not in self._transfer_confirmed_levels
+        ):
+            transfer_seed = f"{self._affine_ledger_ref!r}|{before.levels_completed}|{receipt_id}"
+            learner.confirm_transfer(
+                self._affine_ledger_ref,
+                channels=(ConsequenceChannel.OTHER_OBJECT_EFFECTS,),
+                source_event_ids=(receipt_id,),
+                context_key=mechanic_prediction.context.context_key,
+                observed_step=self._step_index + 1,
+                receipt_id="mechanic-transfer:"
+                + hashlib.sha256(transfer_seed.encode("utf-8")).hexdigest()[:24],
+            )
+            self._transfer_confirmed_levels.add(before.levels_completed)
+        if learning.residual.consequential and residual is None:
+            residual = learning.residual.residual_id
+
+        active_refs = {
+            f"{ref.mechanic_id}@{ref.version}"
+            for channel in ConsequenceChannel
+            for ref in mechanic_prediction.composition.contributors_for(channel)
+        }
+        active_refs.update(self._pending_mechanic_refs)
+        causal_receipt = CausalActionReceipt(
+            receipt_id=receipt_id,
+            game_scope_id=learner.game_scope,
+            level_scope_id=mechanic_prediction.context.level_scope,
+            step_index=self._step_index,
+            before_state_ref=str(before.frames[-1].digest),
+            chosen_action_and_coordinates=action,
+            legal_actions_before=before.available_actions,
+            predicted_effects=self._pending_clef_prediction,
+            observed_effects=observed_effects,
+            explained_effects=effect_comparison.explained_effects,
+            residual_effects=effect_comparison.residual_effects,
+            objects_or_regions_implicated=tuple(
+                item.object_ref
+                for item in (
+                    *before_scene.endpoints,
+                    *before_scene.mediators,
+                    *before_scene.targets,
+                )[:8]
+            ),
+            active_hypotheses_used=tuple(sorted(active_refs)),
+            probe_or_progress_reason=self._pending_prediction,
+            resource_and_failure_risk=ResourceFailureRisk(
+                RiskLevel.TERMINAL
+                if observation.state is GameStateName.GAME_OVER
+                or before.state is GameStateName.GAME_OVER
+                else RiskLevel.ELEVATED,
+                "No readable resource quantity; preserve official failure and bound probes.",
+            ),
+            terminal_state=observation.state,
+        )
+        plan_prediction_failed = (
+            self._pending_plan_signature is not None
+            and not level_progress
+            and observation.state is GameStateName.NOT_FINISHED
+            and any(
+                item.channel
+                in {
+                    EffectChannel.CONTROLLABLE_OBJECT_DISPLACEMENT,
+                    EffectChannel.OTHER_OBJECT_CHANGE,
+                }
+                and item.predicted.knowledge is EffectKnowledge.KNOWN
+                and item.kind
+                in {
+                    CausalResidualKind.MISMATCH,
+                    CausalResidualKind.MISSING_EFFECT,
+                    CausalResidualKind.UNREADABLE,
+                }
+                for item in effect_comparison.residual_effects
+            )
+        )
+        if observation.state is GameStateName.GAME_OVER:
+            if self._pending_plan_signature is not None:
+                self._failed_plan_signatures.add(self._pending_plan_signature)
+            self._plan.clear()
+            self._last_probe_failed = True
+        elif observation.state is GameStateName.WIN:
+            self._plan.clear()
+            self._last_probe_failed = False
+        elif level_progress:
+            self._begin_level(observation)
+        elif mechanic is not None and not self._pending_mechanic_refs:
+            self._plan.clear()
+            if not self._install_plan(mechanic, after_scene):
+                residual = "no readable target-relative affine plan"
+                self._last_probe_failed = True
+        elif local_target_satisfied:
+            self._plan.clear()
+            self._last_probe_failed = False
+        elif plan_prediction_failed or self._pending_completes_local_target:
+            if self._pending_plan_signature is not None:
+                self._failed_plan_signatures.add(self._pending_plan_signature)
+            self._plan.clear()
+            self._last_probe_failed = True
+
         receipt = VisualActionReceipt(
-            receipt_id="visual-receipt:"
-            + hashlib.sha256(receipt_seed.encode("utf-8")).hexdigest()[:24],
+            receipt_id=receipt_id,
             level_index=before.levels_completed,
             before_frame_hash=str(before.frames[-1].digest),
             after_frame_hash=str(observation.frames[-1].digest),
@@ -950,35 +1488,11 @@ class VisualCausalPolicy:
             levels_before=before.levels_completed,
             levels_after=observation.levels_completed,
             changed_cells=changed,
+            causal_action_receipt=causal_receipt,
+            mechanic_prediction_receipt=mechanic_prediction,
+            mechanic_learning_receipt=learning,
         )
         self._receipts.append(receipt)
-
-        if observation.state is GameStateName.GAME_OVER:
-            self._plan.clear()
-        elif level_progress:
-            self._begin_level(observation)
-        elif mechanic is not None and after_scene is not None and not self._pending_mechanic_refs:
-            self._plan.clear()
-            if not self._install_plan(mechanic, after_scene):
-                residual = "no readable target-relative affine plan"
-                self._last_probe_failed = True
-        elif (
-            self._pending_purpose is VisualActionPurpose.PROGRESS
-            and not state_change
-            and changed <= 2
-        ):
-            if self._pending_plan_signature is not None:
-                self._failed_plan_signatures.add(self._pending_plan_signature)
-            self._plan.clear()
-            self._last_probe_failed = True
-
-        if (
-            self._pending_prediction
-            == "complete the observed affine composition at the matched target"
-            and not level_progress
-            and observation.state is GameStateName.NOT_FINISHED
-        ):
-            self._last_probe_failed = True
 
         self._previous_observation = observation
         self._pending_before = None
@@ -986,6 +1500,13 @@ class VisualCausalPolicy:
         self._pending_prediction = "all factored channels UNKNOWN"
         self._pending_mechanic_refs = ()
         self._pending_plan_signature = None
+        self._pending_target_center = None
+        self._pending_mediator_color = None
+        self._pending_arity = None
+        self._pending_completes_local_target = False
+        self._pending_clef_prediction = EffectVector.unknown()
+        self._pending_mechanic_prediction = None
+        self._step_index += 1
 
     def close(self) -> None:
         if self._pending_action is not None:
@@ -994,14 +1515,26 @@ class VisualCausalPolicy:
     def snapshot(self) -> dict[str, JSONValue]:
         """Return bounded, deterministic campaign evidence."""
 
+        learner = self._mechanical_learner
+        transfer_levels: list[JSONValue] = []
+        for level in sorted(self._transfer_confirmed_levels):
+            transfer_levels.append(level)
         return {
             "active_level_index": self._level_index,
+            "affine_ledger_ref": (
+                self._affine_ledger_ref.to_dict() if self._affine_ledger_ref is not None else None
+            ),
             "failed_plan_count": len(self._failed_plan_signatures),
+            "mechanical_learner": learner.to_dict() if learner is not None else None,
+            "mechanical_learner_compact_bytes": (
+                len(learner.compact_bytes()) if learner is not None else 0
+            ),
             "mechanics": [item.to_dict() for item in self._mechanics[-64:]],
             "pending_plan_actions": len(self._plan),
             "receipt_count": len(self._receipts),
             "receipts": [item.to_dict() for item in self._receipts[-192:]],
-            "schema": "arc3.visual-causal-policy.v0.1",
+            "schema": "arc3.visual-causal-policy.v0.2",
+            "transfer_confirmed_levels": transfer_levels,
         }
 
 

@@ -628,6 +628,12 @@ def _worker_body(
             hot_path_profiler=hot_path_profiler,
             pre_action_authorization=(lambda: _worker_holdout_authorization(spec, specification)),
         )
+        snapshot_method = getattr(policy, "snapshot", None)
+        if callable(snapshot_method):
+            snapshot = cast(Any, snapshot_method)()
+            if not isinstance(snapshot, dict):
+                raise EvaluationError("evaluation policy snapshot must be a JSON object")
+            metrics["policy_snapshot"] = snapshot
     except Exception as error:
         caught = error
     finally:

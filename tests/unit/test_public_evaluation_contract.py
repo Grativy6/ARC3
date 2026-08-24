@@ -141,6 +141,49 @@ def test_pre_action_authority_drift_blocks_the_next_environment_step() -> None:
     assert session.steps == 1
 
 
+def test_exhausted_reset_budget_stops_before_policy_stages_an_unsubmitted_reset() -> None:
+    observation = Observation(
+        game_id=GameId("opaque-reset-budget-fixture"),
+        frames=(GridFrame(((0,),)),),
+        state=GameStateName.GAME_OVER,
+        levels_completed=0,
+        win_levels=1,
+        available_actions=(),
+    )
+
+    class Session:
+        @property
+        def observation(self) -> Observation:
+            return observation
+
+        def close(self) -> None:
+            return None
+
+    class Policy:
+        manages_trace = False
+
+        def __init__(self) -> None:
+            self.select_calls = 0
+
+        def select(self, _current: Observation) -> ActionRequest:
+            self.select_calls += 1
+            return ActionRequest(ActionName.RESET)
+
+        def accept_consequence(self, _returned: Observation) -> None:
+            raise AssertionError("no reset was submitted")
+
+    policy = Policy()
+    _scorecard, metrics = run_public_episode(
+        cast(Any, Session()),
+        cast(Any, policy),
+        max_actions=1,
+        max_resets=0,
+    )
+
+    assert policy.select_calls == 0
+    assert metrics["final_state"] == GameStateName.GAME_OVER.value
+
+
 def test_frozen_manifest_recomputes_all_assignments_and_exposures() -> None:
     manifest = PublicPartitionManifest.load(MANIFEST)
 
