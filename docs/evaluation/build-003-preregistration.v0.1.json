@@ -1,0 +1,90 @@
+{
+  "schema": "arc3.build-003.preregistration.v0.1",
+  "registered_at": "2026-08-24T21:27:07.4196369Z",
+  "registered_before_final_experiments": true,
+  "claim": "A game-agnostic online learner can conserve reliable mechanics across progressive levels, identify prediction residuals, localize new mechanics at the smallest useful causal layer, and reduce unnecessary exploratory actions without using game-specific solutions or exhaustive interaction search.",
+  "hypotheses": {
+    "H1_transfer": "Cross-level mechanic persistence reduces later-level exploratory actions versus per-level reset without reducing completion.",
+    "H2_conservative_repair": "Local modifiers preserve still-correct base mechanics more often than they trigger global foundational rewrites.",
+    "H3_layer_relevance": "CLEF relevance and stopping reduce redundant probes or representational expansion versus BLA-only without reducing completion or worsening action efficiency."
+  },
+  "variants": [
+    "build_002_frozen_baseline",
+    "mechanical_learner_per_level_reset",
+    "bla_without_clef",
+    "full_bla_clef"
+  ],
+  "curriculum_families": [
+    "movement_resource_cost",
+    "blocking_walls",
+    "restoration_tile",
+    "reusable_vs_one_shot_restoration",
+    "gate_switch_inventory",
+    "push_other_object",
+    "terrain_status_modifier",
+    "delayed_hidden_state_response",
+    "decorative_animation",
+    "held_out_mechanic_compositions"
+  ],
+  "held_out_seeds_per_family": [73000,73001,73002,73003,73004,73005,73006,73007,73008,73009,73010,73011,73012,73013,73014,73015,73016,73017,73018,73019,73020,73021,73022,73023,73024,73025,73026,73027,73028,73029],
+  "development_seeds": [3030,3031,3032,3033,3034],
+  "seed_replacement_after_results": false,
+  "budgets": {
+    "synthetic_sequence_max_actions": 192,
+    "synthetic_level_max_actions": 48,
+    "synthetic_sequence_wall_seconds": 10,
+    "active_explanations_per_residual": 4,
+    "equivalent_probe_repeat_limit": 2,
+    "explicit_probe_ledger_limit": 8,
+    "competition_mode_memory_bytes": 2147483648,
+    "competition_mode_decision_seconds": 10,
+    "real_play_initial_max_non_reset_actions": 3000,
+    "real_play_initial_max_resets": 64,
+    "real_play_initial_wall_seconds": 21600
+  },
+  "primary_metrics": [
+    "levels_completed",
+    "total_environment_actions",
+    "exploratory_actions",
+    "progress_actions",
+    "redundant_probes",
+    "actions_until_supported_or_stable",
+    "prediction_error_by_consequence_channel",
+    "residual_localization_rate",
+    "residual_resolution_rate",
+    "later_level_transfer_savings",
+    "base_mechanic_retention",
+    "erroneous_global_reopenings",
+    "unresolved_ledger_count",
+    "active_ledger_pressure",
+    "wall_seconds",
+    "peak_memory_bytes",
+    "replay_determinism",
+    "receipt_completeness"
+  ],
+  "decision_rules": {
+    "H1": "paired median later-level exploratory actions for full persistence is strictly lower than per-level reset; completion count is not lower on more than 1 of 30 seeds in any family and aggregate completion is not lower",
+    "H2": "in every required local-modifier adversarial family, still-correct base consequences remain active; aggregate erroneous global reopenings are lower than local scoped revisions",
+    "H3": "full BLA+CLEF has strictly lower paired median redundant probes or active representational pressure than BLA-only; aggregate completions are not lower and median total actions do not increase by more than 5 percent",
+    "synthetic_confirmation": "all hidden-boundary, receipt, replay, bounded-mode, package, protected-regression, source, secret, lint, format, type, and full-test gates pass in addition to H1-H3",
+    "real_completion": "only the target official environment returning GameState.WIN"
+  },
+  "reporting": {
+    "surface": "synthetic for curriculum; local-public-source-preview-exposed for target play",
+    "official_rhae": "NOT_MEASURED",
+    "public_holdout_consumed": "0/1",
+    "arc3_generalization_claim": false,
+    "all_failures_retained": true
+  },
+  "target_play": {
+    "game_id": "r11l-495a7899",
+    "partition": "development",
+    "target_id_permitted_in_production_policy": false,
+    "source_semantic_inspection_permitted": false,
+    "network_enabled": false,
+    "credentials_used": false,
+    "continue_on_not_finished": true,
+    "game_over_action": "RESET_ONLY_AFTER_TRACE_PRESERVATION",
+    "terminal_success": "WIN"
+  }
+}

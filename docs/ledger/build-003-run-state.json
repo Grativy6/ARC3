@@ -1,0 +1,78 @@
+{
+  "schema": "arc3.build-003-run-state.v0.1",
+  "workflow": "docs/workflows/003-bla-clef-mechanical-learner.md",
+  "workflow_version": "0.1",
+  "repository": "Grativy6/ARC3",
+  "owner": "Christopher D. Pang",
+  "build_status": "ACTIVE",
+  "status": "IN_PROGRESS",
+  "current_stage": "01",
+  "current_task": "freeze the merge-equivalent Build 002 baseline and map reuse points",
+  "implementation_branch": "build/003-bla-clef-mechanical-learner",
+  "base": {
+    "main_commit": "bea1eac99cb0f1b351526b1dc487d132ba1d40ef",
+    "main_tree": "700718c09c2a1532cea16526b290f57be0120371",
+    "required_build_002_head": "5448c53f3b7e08f606cf292e6068f3f9c9db16d4",
+    "build_002_ancestral": true,
+    "main_tree_equals_build_002_tree": true,
+    "build_002_pull_request_merged": true
+  },
+  "prior_build_boundary": {
+    "build_001_status": "PARTIAL",
+    "build_001_holdout_status": "SEALED_UNCONSUMED",
+    "build_002_status": "PARTIAL",
+    "build_002_exact_evaluation": "BLOCKED_EXTERNAL",
+    "public_holdout_consumed": "0/1",
+    "retroactive_revision_permitted": false
+  },
+  "target": {
+    "game_id": "r11l-495a7899",
+    "partition": "development",
+    "surface": "local-public-source-preview-exposed",
+    "declared_levels": 6,
+    "asset_sha256": "sha256:483e583c88e91c2ae58ad1fa7b274d97813993796ce798551a563e1a9a78a7ff",
+    "source_semantically_inspected": false,
+    "completion_authority": "official returned GameState.WIN only",
+    "completion_observed": false
+  },
+  "stage_status": {
+    "00": "PASS",
+    "01": "IN_PROGRESS",
+    "02": "PENDING",
+    "03": "PENDING",
+    "04": "PENDING",
+    "05": "PENDING",
+    "06": "PENDING",
+    "07": "PENDING",
+    "08": "PENDING",
+    "09": "PENDING",
+    "10": "PENDING",
+    "11": "PENDING"
+  },
+  "evidence": {
+    "00": {
+      "status": "PASS",
+      "receipt": "docs/evidence/003-00-source-and-base-preflight.json",
+      "source_identity_gate": "PASS",
+      "holdout_untouched": true,
+      "environment_opened": false
+    }
+  },
+  "human_gates": {
+    "terms_accepted": false,
+    "credentials_used": false,
+    "holdout_accessed": false,
+    "notebook_uploaded": false,
+    "official_submission": false,
+    "money_spent": false,
+    "release_published": false,
+    "pull_request_merged": false,
+    "external_message_sent_as_owner": false
+  },
+  "next_action": "complete Stage 01 baseline, then implement the first typed action-effect and mechanic-ledger slice",
+  "notes": [
+    "Update atomically after each meaningful task and preserve failed attempts.",
+    "No synthetic or local result is completion unless the official target environment returns GameState.WIN.",
+    "Production policy must not contain target or other public game identifiers."
+  ]
+}
