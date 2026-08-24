@@ -696,5 +696,11 @@ def test_forged_all_true_v02_gates_cannot_bypass_semantic_evidence_validation(
     )
     monkeypatch.setattr(preflight_module, "_current_commit", lambda *_args, **_kwargs: commit)
 
-    with pytest.raises(EvaluationError, match="build receipt is not valid"):
+    with pytest.raises(
+        EvaluationError,
+        match=(
+            r"Kaggle build receipt is not valid|production preflight rejects "
+            r"fixture source-identity evidence"
+        ),
+    ):
         build002_holdout._validate_gate_receipts(REPOSITORY, gate_rows, artifact_rows)
