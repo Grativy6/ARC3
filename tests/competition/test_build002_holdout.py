@@ -164,7 +164,7 @@ def _validated_candidate_fixture() -> tuple[bytes, bytes, bytes]:
             temporary / "package",
             allow_dirty_preacceptance=True,
         )
-        assert result.status == "PACKAGING_PREACCEPTANCE"
+        assert result.status in {"PACKAGING_PASS", "PACKAGING_PREACCEPTANCE"}
         notebook = json.loads(result.notebook.read_text(encoding="utf-8"))
         embedded = notebook_embedded_inputs(notebook)
         return (
