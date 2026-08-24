@@ -17,6 +17,15 @@ from arc3.errors import ARC3ValidationError
 from arc3.trace.canonical import canonical_json, normalize_json, sha256_json
 from arc3.types import ActionName, GameStateName, JSONValue
 
+# The Build 003 development campaign is bounded at 3,064 total environment
+# submissions.  Its visual learner maintains one active affine mechanic, so a
+# submission can append at most one routine support event; declarations,
+# status changes, and cross-level confirmations consume only bounded overhead.
+# 4,096 therefore preserves the complete campaign history with 1,032 events of
+# headroom while keeping the append-only ledger finite.  Compact snapshots
+# serialize these authoritative events once and rebuild derived views on load.
+DEFAULT_MECHANIC_LEDGER_MAX_EVENTS = 4096
+
 
 class MechanicsError(ARC3ValidationError):
     """A mechanic value, transition, or bounded operation is invalid."""
@@ -1001,7 +1010,7 @@ class MechanicLedgerBudget:
 
     max_active_mechanics: int = 64
     max_versions: int = 192
-    max_events: int = 1024
+    max_events: int = DEFAULT_MECHANIC_LEDGER_MAX_EVENTS
     max_open_residuals: int = 8
     max_candidates_per_residual: int = 4
     max_contexts_per_channel: int = 32

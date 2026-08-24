@@ -22,6 +22,7 @@ from .learner import (
 from .ledger import MechanicEventType, MechanicLedger, MechanicLedgerEvent
 from .models import (
     CHANNEL_ORDER,
+    DEFAULT_MECHANIC_LEDGER_MAX_EVENTS,
     ChannelEvidenceSummary,
     ChannelValue,
     CompositionMode,
@@ -60,6 +61,7 @@ from .repair import LocalRepairPlanner, RepairCandidate, RepairCandidateKind, Re
 
 __all__ = [
     "CHANNEL_ORDER",
+    "DEFAULT_MECHANIC_LEDGER_MAX_EVENTS",
     "ChannelEvidenceSummary",
     "ChannelResidual",
     "ChannelValue",

@@ -1140,6 +1140,12 @@ def test_worker_seals_trace_score_resources_asset_and_close_after_policy_fault(
             self.closed = True
             self.journal.close()
 
+        def snapshot(self) -> dict[str, JSONValue]:
+            return {
+                "schema": "fixture.failure-diagnostic.v0.1",
+                "ledger": {"event_count": 1, "tail_hash": "sha256:" + "7" * 64},
+            }
+
     session = FaultSession()
     policy = FaultPolicy()
 
@@ -1220,6 +1226,8 @@ def test_worker_seals_trace_score_resources_asset_and_close_after_policy_fault(
     assert receipt["metrics"]["process_memory_before"]["measurement_source"]
     assert receipt["metrics"]["process_memory_after"]["measurement_source"]
     assert receipt["metrics"]["network_attempt_count"] == 0
+    assert receipt["metrics"]["policy_snapshot_capture_status"] == "captured-after-failure"
+    assert receipt["metrics"]["policy_snapshot"]["ledger"]["event_count"] == 1
     assert receipt["metrics"]["policy_close_status"] == "closed"
     assert receipt["metrics"]["session_close_status"] == "closed"
     assert receipt["metrics"]["journal_close_status"] == "closed-by-policy"

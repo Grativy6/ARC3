@@ -65,7 +65,7 @@ _TERMINAL_STATUSES = frozenset({"PASS", "NOT_FINISHED", "PARTIAL", "FAILED_INFRA
 _PUBLIC_SUMMARY_SCHEMA = "arc3.public-evaluation.summary.v0.2"
 _LEGACY_PUBLIC_SUMMARY_SCHEMA = "arc3.public-evaluation.summary.v0.1"
 _MECHANICAL_PUBLIC_SUMMARY_SCHEMA = "arc3.public-evaluation.summary.v0.3"
-_MECHANICAL_COMPLETION_SCHEMA = "arc3.build003.mechanical-completion.v0.1"
+_MECHANICAL_COMPLETION_SCHEMA = "arc3.build003.mechanical-completion.v0.2"
 
 # Kept as an injectable test seam without importing the environment adapter at
 # module import time.  Earned holdout workers resolve it only after their first
@@ -433,7 +433,10 @@ def _mechanical_completion_receipt(
         and submissions == environment_actions + resets
         and consequences == submissions
         and mechanical_receipts == consequences
-        and score.get("official_run_actions") == environment_actions
+        # The pinned local scorecard counts every environment submission in
+        # ``official_run_actions``, including RESET.  The replay trace retains
+        # the non-reset/reset partition separately.
+        and score.get("official_run_actions") == submissions
         and score.get("official_run_resets") == resets
     )
     level_counts_complete = bool(
@@ -494,6 +497,8 @@ def _mechanical_completion_receipt(
             "official_run_state": official_final_state,
             "score_completed": score.get("completed"),
             "score_boundary_consistent": score_boundary_consistent,
+            "official_run_action_count": score.get("official_run_actions"),
+            "non_reset_environment_action_count": environment_actions,
             "environment_action_count": environment_actions,
             "reset_count": resets,
             "submission_count": submissions,
@@ -1007,11 +1012,33 @@ def _worker_body(
             snapshot = cast(Any, snapshot_method)()
             if not isinstance(snapshot, dict):
                 raise EvaluationError("evaluation policy snapshot must be a JSON object")
+            canonical_json_bytes(snapshot)
             metrics["policy_snapshot"] = snapshot
+            metrics["policy_snapshot_capture_status"] = "captured-after-run"
     except Exception as error:
         caught = error
     finally:
         if policy is not None:
+            # Preserve learner/ledger diagnostics when the episode runner
+            # faults before its normal post-run snapshot.  This is best effort:
+            # a broken or non-JSON snapshot never replaces the primary failure.
+            snapshot_method = getattr(policy, "snapshot", None)
+            if (
+                caught is not None
+                and "policy_snapshot" not in metrics
+                and callable(snapshot_method)
+            ):
+                try:
+                    snapshot = cast(Any, snapshot_method)()
+                    if not isinstance(snapshot, dict):
+                        raise EvaluationError("evaluation policy snapshot must be a JSON object")
+                    canonical_json_bytes(snapshot)
+                    metrics["policy_snapshot"] = snapshot
+                    metrics["policy_snapshot_capture_status"] = "captured-after-failure"
+                except Exception as snapshot_error:
+                    metrics["policy_snapshot_capture_status"] = (
+                        f"failed-after-failure:{type(snapshot_error).__name__}"
+                    )
             try:
                 finalize_span = (
                     hot_path_profiler.span("finalize")

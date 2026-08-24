@@ -5,6 +5,7 @@ from copy import deepcopy
 import pytest
 
 from arc3.mechanics import (
+    DEFAULT_MECHANIC_LEDGER_MAX_EVENTS,
     ChannelValue,
     CompositionMode,
     ConfirmationMode,
@@ -145,10 +146,13 @@ def test_compact_restore_is_deterministic_hash_checked_and_game_bounded() -> Non
     ledger, ref = _opened_ledger()
     ledger.record_evidence(ref, _support("R-1", "context-a", 1))
     encoded = ledger.compact_bytes()
+    full = ledger.canonical_snapshot(compact=False).encode("utf-8")
 
     restored = MechanicLedger.from_compact_bytes(encoded, expected_game_scope="opaque-game")
 
     assert restored.compact_bytes() == encoded
+    assert "records" not in ledger.compact_dict()
+    assert len(encoded) < len(full)
     with pytest.raises(MechanicsError, match="different opaque game"):
         MechanicLedger.from_compact_bytes(encoded, expected_game_scope="other-game")
 
@@ -160,6 +164,16 @@ def test_compact_restore_is_deterministic_hash_checked_and_game_bounded() -> Non
     event["note"] = "changed without rehashing"
     with pytest.raises(MechanicsError, match="hash does not match"):
         MechanicLedger.from_dict(tampered, expected_game_scope="opaque-game")
+
+
+def test_default_event_bound_covers_declared_build003_campaign_with_finite_headroom() -> None:
+    declared_submission_bound = 3064
+    budget = MechanicLedgerBudget()
+
+    assert DEFAULT_MECHANIC_LEDGER_MAX_EVENTS == 4096
+    assert budget.max_events == DEFAULT_MECHANIC_LEDGER_MAX_EVENTS
+    assert budget.max_events - declared_submission_bound == 1032
+    assert budget.max_events < 8192
 
 
 def test_bounds_fail_closed_without_eviction_or_overwrite() -> None:

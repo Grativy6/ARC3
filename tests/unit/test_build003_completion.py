@@ -43,6 +43,7 @@ def _write_recording(root: Path, *, final_state: str = "WIN") -> None:
     path = scorecard / "opaque-build003-fixture-fixture-guid.jsonl"
     events = (
         _recording_event(state="NOT_FINISHED", levels=0, action="RESET"),
+        _recording_event(state="NOT_FINISHED", levels=0, action="RESET"),
         _recording_event(state=final_state, levels=1, action="ACTION1"),
     )
     path.write_text("".join(json.dumps(event) + "\n" for event in events), encoding="utf-8")
@@ -56,8 +57,8 @@ def _result(*, raw_state: str = "WIN", official_state: str = "WIN") -> dict[str,
             "verified": True,
             "levels_completed": 1,
             "official_run_game_id": "opaque-build003-fixture",
-            "official_run_actions": 1,
-            "official_run_resets": 0,
+            "official_run_actions": 2,
+            "official_run_resets": 1,
             "official_run_state": official_state,
         },
         "metrics": {
@@ -70,11 +71,14 @@ def _result(*, raw_state: str = "WIN", official_state: str = "WIN") -> dict[str,
             "replay_verified": True,
             "mechanical_receipts_replay_linked": True,
             "environment_action_count": 1,
-            "reset_count": 0,
-            "submitted_action_count": 1,
-            "consequence_count": 1,
-            "mechanical_action_receipt_count": 1,
-            "consequence_actions": [{"name": "ACTION1", "coordinate": None}],
+            "reset_count": 1,
+            "submitted_action_count": 2,
+            "consequence_count": 2,
+            "mechanical_action_receipt_count": 2,
+            "consequence_actions": [
+                {"name": "RESET", "coordinate": None},
+                {"name": "ACTION1", "coordinate": None},
+            ],
             "final_upstream_session_id": "fixture-guid",
             "final_state": raw_state,
             "final_levels_completed": 1,
@@ -110,6 +114,20 @@ def test_completion_requires_authoritative_win_and_strict_official_recording(
     assert completion["completion_observed"] is True
     assert completion["recording_verified"] is True
     assert completion["receipt_complete"] is True
+    assert completion["official_run_action_count"] == 2
+    assert completion["submission_count"] == 2
+    assert completion["non_reset_environment_action_count"] == 1
+    assert completion["reset_count"] == 1
+
+    stale_non_reset_binding = _result()
+    stale_non_reset_binding["score"]["official_run_actions"] = 1
+    invalid = _finalize_mechanical_result(
+        stale_non_reset_binding,
+        _specification(),
+        recording_artifacts=artifacts,
+    )
+    assert invalid["status"] == "failure"
+    assert invalid["failure"]["kind"] == "mechanical_run_evidence_incomplete"
 
     unfinished_recordings = tmp_path / "unfinished-recordings"
     _write_recording(unfinished_recordings, final_state="NOT_FINISHED")
