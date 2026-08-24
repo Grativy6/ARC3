@@ -61,3 +61,15 @@ Do not delete a burden when later evidence resolves it. Append a resolution with
 - **Current evidence:** Build 002 handoff; current official local-vs-online documentation.
 - **Next discriminating action:** None in Build 003; report `OFFICIAL_ARC3_RHAE = NOT_MEASURED`.
 - **Resolution condition:** A separately authorized official evaluator returns a scorecard bound to the frozen package.
+
+## B-003-0006 - Frozen Windows launcher identity test fails on the current uv alias topology
+
+- **Status:** OPEN / inherited `FAILED_INFRASTRUCTURE`
+- **Stage:** 01, 10
+- **Opened:** 2026-08-24
+- **Owner:** host tooling
+- **Burden:** `test_windows_direct_base_spawn_preserves_venv_identity_and_pid` reproducibly fails before Build 003 changes because `_runtime_identity` returns `verified=false` only for `direct_process_probe_exact`.
+- **Why it matters:** The final regression result must preserve this known failure rather than attribute it to the learner or silently call the full suite clean.
+- **Current evidence:** `docs/evidence/003-01-build-002-frozen-baseline.json`; the launcher probe reports the uv base Python through an unversioned lexical alias while direct execution reports its versioned resolved directory.
+- **Next discriminating action:** Re-run the exact test at Stage 10 and compare the predicate-level receipt. Do not modify the frozen baseline or weaken runtime identity validation merely to obtain green output.
+- **Resolution condition:** The final test passes on an authenticated stable launcher topology, or a separately scoped fix proves both launcher paths equivalent without weakening any identity predicate.

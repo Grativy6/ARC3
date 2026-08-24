@@ -6,8 +6,8 @@
   "owner": "Christopher D. Pang",
   "build_status": "ACTIVE",
   "status": "IN_PROGRESS",
-  "current_stage": "01",
-  "current_task": "freeze the merge-equivalent Build 002 baseline and map reuse points",
+  "current_stage": "02",
+  "current_task": "integrate structured action effects and the first versioned mechanic-ledger slice",
   "implementation_branch": "build/003-bla-clef-mechanical-learner",
   "base": {
     "main_commit": "bea1eac99cb0f1b351526b1dc487d132ba1d40ef",
@@ -37,7 +37,7 @@
   },
   "stage_status": {
     "00": "PASS",
-    "01": "IN_PROGRESS",
+    "01": "PASS",
     "02": "PENDING",
     "03": "PENDING",
     "04": "PENDING",
@@ -56,6 +56,15 @@
       "source_identity_gate": "PASS",
       "holdout_untouched": true,
       "environment_opened": false
+    },
+    "01": {
+      "status": "PASS",
+      "receipt": "docs/evidence/003-01-build-002-frozen-baseline.json",
+      "report": "docs/reports/003-01-existing-system-audit.md",
+      "full_suite": "FAILED_INFRASTRUCTURE",
+      "tests": "1463 passed, 21 skipped, 2 failed initially; 1 reproducible host-topology failure",
+      "holdout_untouched": true,
+      "environment_opened": false
     }
   },
   "human_gates": {
@@ -69,7 +78,7 @@
     "pull_request_merged": false,
     "external_message_sent_as_owner": false
   },
-  "next_action": "complete Stage 01 baseline, then implement the first typed action-effect and mechanic-ledger slice",
+  "next_action": "complete Stage 02 and Stage 03 integration, then run their focused acceptance suites",
   "notes": [
     "Update atomically after each meaningful task and preserve failed attempts.",
     "No synthetic or local result is completion unless the official target environment returns GameState.WIN.",
