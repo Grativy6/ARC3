@@ -69,6 +69,11 @@ BUILD001_BOUNDARY_EXCLUSIONS: tuple[tuple[str, str], ...] = (
         "the package builder transitively executes an isolated subprocess sandbox",
     ),
     (
+        "tests/integration/test_pinned_agents_framework.py",
+        "the POSIX-only exact pinned framework lifecycle transitively launches the competition "
+        "subprocess and inspects platform runtime paths",
+    ),
+    (
         "tests/integration/test_retrodiction_decision_integration.py",
         "experiment-harness integration is outside the package-only verification boundary",
     ),
