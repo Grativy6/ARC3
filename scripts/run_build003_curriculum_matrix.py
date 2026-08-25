@@ -12,6 +12,13 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import asdict
 from pathlib import Path
 
+MATRIX_VARIANTS = (
+    "BUILD002_FROZEN",
+    "BLA_CLEF_LEVEL_RESET",
+    "BLA_ONLY_PERSISTENT",
+    "BLA_CLEF_FULL",
+)
+
 
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
@@ -25,18 +32,8 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--variants",
         nargs="+",
-        choices=(
-            "BUILD002_FROZEN",
-            "BLA_CLEF_LEVEL_RESET",
-            "BLA_ONLY_PERSISTENT",
-            "BLA_CLEF_FULL",
-        ),
-        default=(
-            "BUILD002_FROZEN",
-            "BLA_CLEF_LEVEL_RESET",
-            "BLA_ONLY_PERSISTENT",
-            "BLA_CLEF_FULL",
-        ),
+        choices=MATRIX_VARIANTS,
+        default=MATRIX_VARIANTS,
     )
     return parser
 
@@ -56,6 +53,43 @@ def _git(source_root: Path, *arguments: str) -> str:
         encoding="utf-8",
         stderr=subprocess.STDOUT,
     ).strip()
+
+
+def _matrix_status(
+    *,
+    complete_preregistered_matrix: bool,
+    paired_summary: dict[str, object] | None,
+    status_counts: dict[str, int],
+) -> tuple[str, str]:
+    """Separate matrix structure from literal decisions and evidence validity."""
+
+    if not complete_preregistered_matrix:
+        return "PARTIAL", "INCOMPLETE_OR_NON_V02_SELECTION"
+    if status_counts.get("FAILED_INFRASTRUCTURE", 0) > 0:
+        return "FAILED_INFRASTRUCTURE", "ONE_OR_MORE_SEQUENCE_INFRASTRUCTURE_FAILURES"
+    if status_counts.get("POLICY_ERROR", 0) > 0:
+        return "FAILED_MECHANISM", "ONE_OR_MORE_SEQUENCE_POLICY_FAILURES"
+    if paired_summary is None:
+        return "FAILED_INFRASTRUCTURE", "COMPLETE_MATRIX_HAS_NO_PAIRED_SUMMARY"
+    decisions = paired_summary.get("decisions")
+    if not isinstance(decisions, dict):
+        return "FAILED_INFRASTRUCTURE", "PAIRED_SUMMARY_HAS_NO_DECISION_RECEIPT"
+    if decisions.get("matrix_passed") is True:
+        return "PASS", "PREREGISTERED_H1_H2_H3_AND_EVIDENCE_QUALITY_PASSED"
+    return "FAILED_MECHANISM", "PREREGISTERED_HYPOTHESIS_OR_EVIDENCE_GATE_FAILED"
+
+
+def _is_complete_v02_matrix(
+    *, protocol_version: str, seed_set: str, limit: int, variants: tuple[str, ...]
+) -> bool:
+    """Recognize only the exact frozen v0.2 held-out selector set."""
+
+    return (
+        protocol_version == "v0.2"
+        and seed_set == "heldout"
+        and limit == 30
+        and variants == MATRIX_VARIANTS
+    )
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -82,10 +116,13 @@ def main(argv: list[str] | None = None) -> int:
 
     from arc3.evaluation.build003_results import (
         FAMILIES,
-        VARIANTS,
         Build003ResultLedger,
         FrozenCase,
     )
+    from arc3.evaluation.build003_results import VARIANTS as RESULT_VARIANTS
+
+    if RESULT_VARIANTS != MATRIX_VARIANTS:
+        raise RuntimeError("matrix CLI and result-ledger variant identities diverged")
 
     definition = protocol_definition(args.protocol)
     if "BUILD002_FROZEN" in args.variants:
@@ -187,8 +224,11 @@ def main(argv: list[str] | None = None) -> int:
         newline="\n",
     )
 
-    complete_matrix = (
-        args.seed_set == "heldout" and limit == 30 and tuple(args.variants) == VARIANTS
+    complete_matrix = _is_complete_v02_matrix(
+        protocol_version=definition.version.value,
+        seed_set=args.seed_set,
+        limit=limit,
+        variants=tuple(args.variants),
     )
     paired_summary: dict[str, object] | None = None
     if complete_matrix:
@@ -207,13 +247,20 @@ def main(argv: list[str] | None = None) -> int:
         status = str(receipt["run_status"])
         status_counts[status] = status_counts.get(status, 0) + 1
         wins += receipt["final_state"] == "WIN"
+    matrix_status, matrix_status_reason = _matrix_status(
+        complete_preregistered_matrix=complete_matrix,
+        paired_summary=paired_summary,
+        status_counts=status_counts,
+    )
     protocol_path = repository / definition.protocol_path
     manifest_path = repository / definition.manifest_path
     preregistration_path = repository / definition.preregistration_path
     batch = {
         "schema": definition.matrix_receipt_schema,
         "surface": "synthetic",
-        "status": "PASS" if complete_matrix else "PARTIAL",
+        "status": matrix_status,
+        "status_reason": matrix_status_reason,
+        "matrix_structure_status": "COMPLETE_V02" if complete_matrix else "PARTIAL_SELECTION",
         "complete_preregistered_matrix": complete_matrix,
         "protocol_version": definition.version.value,
         "protocol_id": definition.protocol_id,
@@ -247,8 +294,10 @@ def main(argv: list[str] | None = None) -> int:
             else None
         ),
         "claim_boundary": (
-            "Synthetic curriculum evidence only. No public, holdout, or official target "
-            "game was opened, and this is not target-game WIN evidence."
+            "Synthetic curriculum evidence only. Matrix PASS, if earned, covers only the "
+            "preregistered H1-H3 and evidence-quality decisions; it is not overall Workflow "
+            "acceptance or target-game WIN evidence. No public, target holdout, or official "
+            "target game was opened."
         ),
     }
     receipt_path = output_root / "matrix-receipt.json"
@@ -260,6 +309,8 @@ def main(argv: list[str] | None = None) -> int:
                 "# Build 003 synthetic curriculum matrix",
                 "",
                 f"- Status: `{batch['status']}`",
+                f"- Status reason: `{batch['status_reason']}`",
+                f"- Structure: `{batch['matrix_structure_status']}`",
                 f"- Protocol: `{definition.protocol_id}`",
                 f"- Seed set: `{args.seed_set}`",
                 f"- Rows: `{len(rows)}` / `1200` preregistered",

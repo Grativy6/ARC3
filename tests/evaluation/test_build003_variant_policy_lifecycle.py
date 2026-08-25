@@ -5,7 +5,10 @@ from __future__ import annotations
 import copy
 
 from evaluation_only.arc3_build003_curriculum.broker import observation_to_bytes
-from evaluation_only.arc3_build003_curriculum.runner import _receipt_link_audit
+from evaluation_only.arc3_build003_curriculum.runner import (
+    _receipt_link_audit,
+    _sequence_counter_audit,
+)
 from evaluation_only.arc3_build003_curriculum.variant_policy import (
     ObservationOnlyVariantPolicy,
 )
@@ -122,11 +125,36 @@ def test_full_prediction_is_replay_linked_and_runner_rejects_tampering() -> None
     links = summary["action_links"]
     assert isinstance(links, list) and len(links) == 1
     assert links[0]["complete"] is True
-    assert all(_receipt_link_audit(summary, before, transcript))
+    audited = _receipt_link_audit(summary, before, transcript, require_prediction_links=True)
+    assert audited[0] is True
+    assert not any(audited[1:])
 
     tampered = copy.deepcopy(summary)
     tampered["action_links"][0]["after_ref"] = "sha256:" + "0" * 64
-    assert not _receipt_link_audit(tampered, before, transcript)[0]
+    assert not _receipt_link_audit(tampered, before, transcript, require_prediction_links=True)[0]
+
+
+def test_runner_rejects_worker_counter_or_transcript_mismatch() -> None:
+    levels = [
+        {
+            "environment_actions": 0,
+            "resets": 0,
+        }
+        for _ in range(10)
+    ]
+    levels[0] = {"environment_actions": 2, "resets": 1}
+    summary: dict[str, object] = {"levels": levels}
+    assert _sequence_counter_audit(
+        summary, environment_actions=2, resets=1, transcript_count=3
+    ) == (True, 2, 1)
+    assert (
+        _sequence_counter_audit(summary, environment_actions=2, resets=0, transcript_count=2)[0]
+        is False
+    )
+    assert (
+        _sequence_counter_audit(summary, environment_actions=2, resets=1, transcript_count=2)[0]
+        is False
+    )
 
 
 def test_consequential_residual_waits_for_passive_confirmation() -> None:

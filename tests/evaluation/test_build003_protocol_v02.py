@@ -33,6 +33,7 @@ from arc3.evaluation.build003_results import (
     CurriculumResultRow,
     FrozenCase,
 )
+from arc3.mechanics import CHANNEL_ORDER, CompositionMode
 from arc3.types import GameStateName
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -65,11 +66,26 @@ def _single_row(case: FrozenCase) -> CurriculumResultRow:
         resource_prediction_errors=0,
         access_prediction_errors=0,
         hazard_prediction_errors=0,
+        prediction_errors_by_channel=tuple((channel.value, 0) for channel in CHANNEL_ORDER),
         residuals_observed=0,
         residuals_localized=0,
         residuals_resolved=0,
         base_mechanics_retained=False,
+        observed_retained_matches=0,
         erroneous_global_reopenings=0,
+        passive_confirmations=0,
+        transfer_confirmations=0,
+        local_repair_candidates_opened=0,
+        local_repairs_confirmed=0,
+        local_repair_failures=0,
+        base_reopenings=0,
+        composition_events=tuple((mode.value, 0) for mode in CompositionMode),
+        clef_promotions=0,
+        clef_parks=0,
+        clef_stops=0,
+        other_object_effects_observed=0,
+        topology_changes_confirmed=0,
+        delayed_candidates_confirmed=0,
         unresolved_ledger_count=0,
         active_ledger_pressure=0,
         wall_time_seconds=0.01,
@@ -200,6 +216,74 @@ def test_matrix_cli_requires_explicit_protocol_and_seed_set(tmp_path: Path) -> N
     )
     assert parsed.protocol == "v0.2"
     assert parsed.seed_set == "development"
+
+
+def test_only_exact_v02_heldout_selection_is_structurally_complete() -> None:
+    assert matrix_cli._is_complete_v02_matrix(
+        protocol_version="v0.2",
+        seed_set="heldout",
+        limit=30,
+        variants=(
+            "BUILD002_FROZEN",
+            "BLA_CLEF_LEVEL_RESET",
+            "BLA_ONLY_PERSISTENT",
+            "BLA_CLEF_FULL",
+        ),
+    )
+    assert not matrix_cli._is_complete_v02_matrix(
+        protocol_version="v0.1",
+        seed_set="heldout",
+        limit=30,
+        variants=(
+            "BUILD002_FROZEN",
+            "BLA_CLEF_LEVEL_RESET",
+            "BLA_ONLY_PERSISTENT",
+            "BLA_CLEF_FULL",
+        ),
+    )
+
+
+def test_matrix_status_never_promotes_structure_without_decision_receipt() -> None:
+    assert (
+        matrix_cli._matrix_status(
+            complete_preregistered_matrix=False,
+            paired_summary=None,
+            status_counts={},
+        )[0]
+        == "PARTIAL"
+    )
+    assert (
+        matrix_cli._matrix_status(
+            complete_preregistered_matrix=True,
+            paired_summary={"decisions": {"matrix_passed": False}},
+            status_counts={"SUCCESS": 120},
+        )[0]
+        == "FAILED_MECHANISM"
+    )
+    assert (
+        matrix_cli._matrix_status(
+            complete_preregistered_matrix=True,
+            paired_summary={"decisions": {"matrix_passed": True}},
+            status_counts={"FAILED_INFRASTRUCTURE": 1, "SUCCESS": 119},
+        )[0]
+        == "FAILED_INFRASTRUCTURE"
+    )
+    assert (
+        matrix_cli._matrix_status(
+            complete_preregistered_matrix=True,
+            paired_summary={"decisions": {"matrix_passed": True}},
+            status_counts={"POLICY_ERROR": 1, "SUCCESS": 119},
+        )[0]
+        == "FAILED_MECHANISM"
+    )
+    assert (
+        matrix_cli._matrix_status(
+            complete_preregistered_matrix=True,
+            paired_summary={"decisions": {"matrix_passed": True}},
+            status_counts={"SUCCESS": 120},
+        )[0]
+        == "PASS"
+    )
 
 
 def test_matrix_cli_rejects_nonempty_output_before_running(tmp_path: Path) -> None:

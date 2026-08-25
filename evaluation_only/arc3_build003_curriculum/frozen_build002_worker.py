@@ -168,12 +168,31 @@ def main(argv: list[str] | None = None) -> int:
 
     def consume(observation: Observation) -> None:
         nonlocal pending_action, pending_level
-        if observation.full_reset or controller is None:
+        if observation.full_reset:
+            if pending_action is not None and pending_level is not None:
+                metric = levels[pending_level]
+                metric["receipt_count"] += 1
+                metric["complete_receipt_count"] += int(
+                    pending_action.name is ActionName.RESET
+                    and observation.returned_action == pending_action
+                )
+            initialize(observation)
+            pending_action = None
+            pending_level = None
+            return
+        if controller is None:
             initialize(observation)
             pending_action = None
             pending_level = None
             return
         if pending_action is None or pending_level is None:
+            return
+        if pending_action.name is ActionName.RESET:
+            metric = levels[pending_level]
+            metric["receipt_count"] += 1
+            metric["complete_receipt_count"] += int(observation.returned_action == pending_action)
+            pending_action = None
+            pending_level = None
             return
         receipt = controller.apply_consequence(observation)
         metric = levels[pending_level]
@@ -237,9 +256,9 @@ def main(argv: list[str] | None = None) -> int:
                 if observation.state is GameStateName.GAME_OVER:
                     level = min(observation.levels_completed, 9)
                     levels[level]["resets"] += 1
-                    levels[level]["receipt_count"] += 1
-                    levels[level]["complete_receipt_count"] += 1
                     action = ActionRequest(ActionName.RESET)
+                    pending_level = level
+                    pending_action = action
                     _emit(
                         {
                             "schema": "arc3.build003.frozen-build002-action.v0.1",

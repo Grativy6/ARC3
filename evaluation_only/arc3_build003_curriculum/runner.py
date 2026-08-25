@@ -358,30 +358,40 @@ def _receipt_link_audit(
     summary: dict[str, object],
     initial: Observation,
     transcript: list[tuple[ActionRequest, bytes]],
+    *,
+    require_prediction_links: bool,
 ) -> tuple[bool, ...]:
     """Independently tie every worker receipt to the replayed public transition."""
 
     valid = [True for _ in FAMILIES]
     counts = [0 for _ in FAMILIES]
     raw_links = summary.get("action_links")
-    if not isinstance(raw_links, list) or len(raw_links) != len(transcript):
+    if require_prediction_links and (
+        not isinstance(raw_links, list) or len(raw_links) != len(transcript)
+    ):
         return tuple(False for _ in FAMILIES)
+    links = raw_links if isinstance(raw_links, list) else [None for _ in transcript]
     before = initial
     for step, ((action, payload), raw_link) in enumerate(
-        zip(transcript, raw_links, strict=True), start=1
+        zip(transcript, links, strict=True), start=1
     ):
         level_index = min(before.levels_completed, len(FAMILIES) - 1)
         counts[level_index] += 1
+        after = observation_from_bytes(payload)
+        returned_action_matches = after.returned_action == action
+        if not require_prediction_links:
+            valid[level_index] &= returned_action_matches
+            before = after
+            continue
         if not isinstance(raw_link, dict):
             valid[level_index] = False
-            after = observation_from_bytes(payload)
             before = after
             continue
         link = cast(dict[str, object], raw_link)
-        after = observation_from_bytes(payload)
         expected_action = _action_value(action)
         valid[level_index] &= (
-            link.get("step") == step
+            returned_action_matches
+            and link.get("step") == step
             and link.get("level_index") == level_index
             and link.get("action") == expected_action
             and link.get("before_ref") == _observation_ref(before)
@@ -395,9 +405,14 @@ def _receipt_link_audit(
         )
         before = after
     for index in range(len(FAMILIES)):
-        expected = _integer(_level_metrics(summary, index).get("receipt_count"))
+        metric = _level_metrics(summary, index)
+        expected = _integer(metric.get("receipt_count"))
         complete = _integer(_level_metrics(summary, index).get("complete_receipt_count"))
-        valid[index] &= counts[index] == expected == complete
+        submissions = _integer(metric.get("environment_actions")) + _integer(metric.get("resets"))
+        attempted_or_completed = submissions > 0 or _boolean(metric.get("completed"))
+        valid[index] &= (
+            attempted_or_completed and counts[index] == submissions == expected == complete
+        )
     return tuple(valid)
 
 
@@ -407,6 +422,30 @@ def _level_metrics(summary: dict[str, object], index: int) -> dict[str, object]:
         return {}
     value = raw_levels[index]
     return cast(dict[str, object], value) if isinstance(value, dict) else {}
+
+
+def _sequence_counter_audit(
+    summary: dict[str, object],
+    *,
+    environment_actions: int,
+    resets: int,
+    transcript_count: int,
+) -> tuple[bool, int, int]:
+    """Reconcile worker rows with runner-owned submitted-action counters."""
+
+    reported_environment_actions = sum(
+        _integer(_level_metrics(summary, index).get("environment_actions"))
+        for index in range(len(FAMILIES))
+    )
+    reported_resets = sum(
+        _integer(_level_metrics(summary, index).get("resets")) for index in range(len(FAMILIES))
+    )
+    reconciled = (
+        reported_environment_actions == environment_actions
+        and reported_resets == resets
+        and environment_actions + resets == transcript_count
+    )
+    return reconciled, reported_environment_actions, reported_resets
 
 
 def _rows(
@@ -423,6 +462,7 @@ def _rows(
     replay_digest: str,
     replay_deterministic: bool,
     receipt_links_complete: tuple[bool, ...],
+    sequence_counts_reconciled: bool,
 ) -> tuple[CurriculumResultRow, ...]:
     total_actions = sum(
         _integer(_level_metrics(summary, index).get("environment_actions"))
@@ -518,6 +558,7 @@ def _rows(
                     run_status != "FAILED_INFRASTRUCTURE"
                     and receipt_count == complete_receipts
                     and receipt_links_complete[index]
+                    and sequence_counts_reconciled
                 ),
                 run_status=run_status,
                 failure_reason=failure_reason,
@@ -651,7 +692,22 @@ def run_sequence(
     deterministic = _replay(spec, transcript) and not (
         status == "FAILED_INFRASTRUCTURE" and not transcript
     )
-    receipt_links_complete = _receipt_link_audit(summary, initial_observation, transcript)
+    receipt_links_complete = _receipt_link_audit(
+        summary,
+        initial_observation,
+        transcript,
+        require_prediction_links=variant_name != CurriculumVariant.BUILD002_FROZEN.value,
+    )
+    (
+        sequence_counts_reconciled,
+        reported_environment_actions,
+        reported_resets,
+    ) = _sequence_counter_audit(
+        summary,
+        environment_actions=environment_actions,
+        resets=resets,
+        transcript_count=len(transcript),
+    )
     rows = _rows(
         spec=spec,
         variant=variant_name,
@@ -665,6 +721,7 @@ def run_sequence(
         replay_digest=digest,
         replay_deterministic=deterministic,
         receipt_links_complete=receipt_links_complete,
+        sequence_counts_reconciled=sequence_counts_reconciled,
     )
     receipt: dict[str, object] = {
         "schema": definition.sequence_receipt_schema,
@@ -690,6 +747,9 @@ def run_sequence(
         "replay_digest": digest,
         "replay_deterministic": deterministic,
         "receipt_links_complete": all(receipt_links_complete),
+        "sequence_counts_reconciled": sequence_counts_reconciled,
+        "reported_environment_actions": reported_environment_actions,
+        "reported_resets": reported_resets,
         "worker_summary": summary,
         "claim_boundary": "No public, holdout, or official target game was opened.",
     }

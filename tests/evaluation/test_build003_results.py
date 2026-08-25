@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from pathlib import Path
 
 from evaluation_only.arc3_build003_curriculum.generator import (
@@ -154,8 +155,17 @@ def test_preregistered_paired_metrics_use_identical_seed_family_pairs() -> None:
     assert summary["h2_conservative_repair"] == {
         "modifier_rows": 150,
         "base_mechanic_retention_rate": 1.0,
+        "base_mechanic_retention_rate_by_family": {
+            family: 1.0
+            for family in (FAMILIES[2], FAMILIES[3], FAMILIES[6], FAMILIES[7], FAMILIES[9])
+        },
+        "observed_retained_matches_by_family": {
+            family: 30
+            for family in (FAMILIES[2], FAMILIES[3], FAMILIES[6], FAMILIES[7], FAMILIES[9])
+        },
         "erroneous_global_reopenings": 0,
         "erroneous_global_reopenings_assessed_rows": 150,
+        "local_scoped_revisions": 150,
     }
     paired = summary["paired"]
     assert paired["h3_redundant_probes"]["mean_delta"] == -1.0
@@ -163,4 +173,54 @@ def test_preregistered_paired_metrics_use_identical_seed_family_pairs() -> None:
     assert summary["evidence_quality"] == {
         "replay_determinism_rate": 1.0,
         "receipt_completeness_rate": 1.0,
+        "infrastructure_failure_rows": 0,
+        "policy_error_rows": 0,
     }
+    decisions = summary["decisions"]
+    assert decisions["H1"]["status"] == decisions["H2"]["status"] == "PASS"
+    assert decisions["H3"]["status"] == "PASS"
+    assert decisions["all_hypotheses_passed"] is True
+    assert decisions["evidence_quality_passed"] is True
+    assert decisions["matrix_passed"] is True
+
+
+def test_structurally_complete_anti_result_cannot_pass_decision_gates() -> None:
+    cases = _cases()
+    rows = []
+    for case in cases:
+        for variant in VARIANTS:
+            for family in FAMILIES:
+                row = _row(case, variant, family)
+                if variant == "BLA_CLEF_FULL":
+                    row = replace(
+                        row,
+                        environment_actions=14,
+                        exploratory_actions=4,
+                        redundant_probes=2,
+                        erroneous_global_reopenings=None,
+                    )
+                rows.append(row)
+    ledger = Build003ResultLedger(cases)
+    ledger.append_many(rows)
+    assert ledger.completeness_errors() == ()
+    decisions = ledger.preregistered_summary()["decisions"]
+    assert decisions["H1"]["status"] == "FAIL"
+    assert decisions["H2"]["status"] == "NOT_MEASURED"
+    assert decisions["all_hypotheses_passed"] is False
+    assert decisions["matrix_passed"] is False
+
+
+def test_one_replay_or_receipt_failure_invalidates_matrix_evidence() -> None:
+    cases = _cases()
+    rows = [
+        _row(case, variant, family) for case in cases for variant in VARIANTS for family in FAMILIES
+    ]
+    rows[0] = replace(rows[0], replay_deterministic=False)
+    rows[1] = replace(rows[1], receipt_complete=False)
+    rows[2] = replace(rows[2], run_status="POLICY_ERROR", failure_reason="measured failure")
+    ledger = Build003ResultLedger(cases)
+    ledger.append_many(rows)
+    decisions = ledger.preregistered_summary()["decisions"]
+    assert decisions["all_hypotheses_passed"] is True
+    assert decisions["evidence_quality_passed"] is False
+    assert decisions["matrix_passed"] is False

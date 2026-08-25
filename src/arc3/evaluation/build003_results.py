@@ -6,6 +6,7 @@ import math
 import statistics
 from collections.abc import Iterable, Mapping
 from dataclasses import asdict, dataclass
+from typing import cast
 
 from arc3.mechanics import CHANNEL_ORDER, CompositionMode
 from arc3.types import GameStateName
@@ -395,7 +396,7 @@ class Build003ResultLedger:
         )
 
     def preregistered_summary(self) -> dict[str, object]:
-        """Return H1/H2/H3-aligned paired evidence after enforcing all rows."""
+        """Return literal preregistered H1/H2/H3 decisions and paired evidence."""
 
         self.require_complete()
         later_families = FAMILIES[1:]
@@ -420,6 +421,23 @@ class Build003ResultLedger:
             if row.erroneous_global_reopenings is not None
         ]
         h2_global_reopenings = None if not assessed_reopenings else sum(assessed_reopenings)
+        h2_local_scoped_revisions = sum(
+            row.local_repair_candidates_opened for row in full_modifier_rows
+        )
+        h2_retention_by_family = {
+            family: statistics.fmean(
+                float(row.base_mechanics_retained)
+                for row in full_modifier_rows
+                if row.family == family
+            )
+            for family in modifier_families
+        }
+        h2_observed_matches_by_family = {
+            family: sum(
+                row.observed_retained_matches for row in full_modifier_rows if row.family == family
+            )
+            for family in modifier_families
+        }
         comparisons: Mapping[str, tuple[str, str, str, Iterable[str]]] = {
             "h1_later_exploration": (
                 "BLA_CLEF_LEVEL_RESET",
@@ -437,6 +455,12 @@ class Build003ResultLedger:
                 "BLA_ONLY_PERSISTENT",
                 "BLA_CLEF_FULL",
                 "redundant_probes",
+                FAMILIES,
+            ),
+            "h3_active_ledger_pressure": (
+                "BLA_ONLY_PERSISTENT",
+                "BLA_CLEF_FULL",
+                "active_ledger_pressure",
                 FAMILIES,
             ),
             "h3_environment_actions": (
@@ -469,6 +493,100 @@ class Build003ResultLedger:
             )
             for name, (reference, treatment, metric, families) in comparisons.items()
         }
+        indexed = {(row.seed, row.variant, row.family): row for row in self._rows.values()}
+        h1_completion_losses_by_family = {
+            family: sum(
+                indexed[(seed, "BLA_CLEF_FULL", family)].completed
+                < indexed[(seed, "BLA_CLEF_LEVEL_RESET", family)].completed
+                for seed in sorted(self._cases)
+            )
+            for family in later_families
+        }
+        h1_reference_completions = sum(
+            indexed[(seed, "BLA_CLEF_LEVEL_RESET", family)].completed
+            for seed in sorted(self._cases)
+            for family in later_families
+        )
+        h1_treatment_completions = sum(
+            indexed[(seed, "BLA_CLEF_FULL", family)].completed
+            for seed in sorted(self._cases)
+            for family in later_families
+        )
+        h3_reference_completions = sum(
+            indexed[(seed, "BLA_ONLY_PERSISTENT", family)].completed
+            for seed in sorted(self._cases)
+            for family in FAMILIES
+        )
+        h3_treatment_completions = sum(
+            indexed[(seed, "BLA_CLEF_FULL", family)].completed
+            for seed in sorted(self._cases)
+            for family in FAMILIES
+        )
+        h3_reference_action_median = statistics.median(
+            indexed[(seed, "BLA_ONLY_PERSISTENT", family)].environment_actions
+            for seed in sorted(self._cases)
+            for family in FAMILIES
+        )
+        h3_treatment_action_median = statistics.median(
+            indexed[(seed, "BLA_CLEF_FULL", family)].environment_actions
+            for seed in sorted(self._cases)
+            for family in FAMILIES
+        )
+        h3_action_ratio = (
+            1.0
+            if h3_reference_action_median == h3_treatment_action_median == 0
+            else (
+                None
+                if h3_reference_action_median == 0
+                else h3_treatment_action_median / h3_reference_action_median
+            )
+        )
+        replay_rate = statistics.fmean(
+            float(row.replay_deterministic) for row in self._rows.values()
+        )
+        receipt_rate = statistics.fmean(float(row.receipt_complete) for row in self._rows.values())
+        infrastructure_failure_rows = sum(
+            row.run_status == "FAILED_INFRASTRUCTURE" for row in self._rows.values()
+        )
+        policy_error_rows = sum(row.run_status == "POLICY_ERROR" for row in self._rows.values())
+        h1_exploration_median_delta = cast(
+            float,
+            cast(dict[str, object], paired["h1_later_exploration"])["median_delta"],
+        )
+        h3_redundant_probe_median_delta = cast(
+            float,
+            cast(dict[str, object], paired["h3_redundant_probes"])["median_delta"],
+        )
+        h3_active_pressure_median_delta = cast(
+            float,
+            cast(dict[str, object], paired["h3_active_ledger_pressure"])["median_delta"],
+        )
+        h1_passed = (
+            h1_exploration_median_delta < 0
+            and max(h1_completion_losses_by_family.values()) <= 1
+            and h1_treatment_completions >= h1_reference_completions
+        )
+        h2_passed = (
+            len(assessed_reopenings) == len(full_modifier_rows)
+            and all(value == 1.0 for value in h2_retention_by_family.values())
+            and all(value > 0 for value in h2_observed_matches_by_family.values())
+            and h2_global_reopenings is not None
+            and h2_local_scoped_revisions > 0
+            and h2_global_reopenings < h2_local_scoped_revisions
+        )
+        h3_passed = (
+            (h3_redundant_probe_median_delta < 0 or h3_active_pressure_median_delta < 0)
+            and h3_treatment_completions >= h3_reference_completions
+            and h3_action_ratio is not None
+            and h3_action_ratio <= 1.05
+        )
+        evidence_quality_passed = (
+            replay_rate == 1.0
+            and receipt_rate == 1.0
+            and infrastructure_failure_rows == 0
+            and policy_error_rows == 0
+        )
+        hypotheses_passed = h1_passed and h2_passed and h3_passed
         return {
             "schema": BUILD003_SUMMARY_SCHEMA,
             "row_count": len(self._rows),
@@ -477,16 +595,59 @@ class Build003ResultLedger:
             "h2_conservative_repair": {
                 "modifier_rows": len(full_modifier_rows),
                 "base_mechanic_retention_rate": h2_retention,
+                "base_mechanic_retention_rate_by_family": h2_retention_by_family,
+                "observed_retained_matches_by_family": h2_observed_matches_by_family,
                 "erroneous_global_reopenings": h2_global_reopenings,
                 "erroneous_global_reopenings_assessed_rows": len(assessed_reopenings),
+                "local_scoped_revisions": h2_local_scoped_revisions,
             },
             "evidence_quality": {
-                "replay_determinism_rate": statistics.fmean(
-                    float(row.replay_deterministic) for row in self._rows.values()
-                ),
-                "receipt_completeness_rate": statistics.fmean(
-                    float(row.receipt_complete) for row in self._rows.values()
-                ),
+                "replay_determinism_rate": replay_rate,
+                "receipt_completeness_rate": receipt_rate,
+                "infrastructure_failure_rows": infrastructure_failure_rows,
+                "policy_error_rows": policy_error_rows,
+            },
+            "decisions": {
+                "H1": {
+                    "status": "PASS" if h1_passed else "FAIL",
+                    "passed": h1_passed,
+                    "later_exploration_median_delta": h1_exploration_median_delta,
+                    "completion_losses_by_family": h1_completion_losses_by_family,
+                    "reference_completions": h1_reference_completions,
+                    "treatment_completions": h1_treatment_completions,
+                },
+                "H2": {
+                    "status": (
+                        "NOT_MEASURED"
+                        if len(assessed_reopenings) != len(full_modifier_rows)
+                        else ("PASS" if h2_passed else "FAIL")
+                    ),
+                    "passed": h2_passed,
+                    "all_modifier_rows_assessed": len(assessed_reopenings)
+                    == len(full_modifier_rows),
+                    "all_required_families_retained": all(
+                        value == 1.0 for value in h2_retention_by_family.values()
+                    ),
+                    "all_required_families_have_observed_matches": all(
+                        value > 0 for value in h2_observed_matches_by_family.values()
+                    ),
+                    "erroneous_global_reopenings": h2_global_reopenings,
+                    "local_scoped_revisions": h2_local_scoped_revisions,
+                },
+                "H3": {
+                    "status": "PASS" if h3_passed else "FAIL",
+                    "passed": h3_passed,
+                    "redundant_probe_median_delta": h3_redundant_probe_median_delta,
+                    "active_ledger_pressure_median_delta": h3_active_pressure_median_delta,
+                    "reference_completions": h3_reference_completions,
+                    "treatment_completions": h3_treatment_completions,
+                    "reference_action_median": h3_reference_action_median,
+                    "treatment_action_median": h3_treatment_action_median,
+                    "treatment_to_reference_action_ratio": h3_action_ratio,
+                },
+                "all_hypotheses_passed": hypotheses_passed,
+                "evidence_quality_passed": evidence_quality_passed,
+                "matrix_passed": hypotheses_passed and evidence_quality_passed,
             },
         }
 
