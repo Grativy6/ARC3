@@ -244,6 +244,7 @@ class PlannedClick:
     completes_local_target: bool = False
     completes_hierarchy: bool = False
     completes_child_isolation: bool = False
+    completes_child_recovery: bool = False
     stages_for_switch: bool = False
     expected_child_mediator_center: tuple[int, int] | None = None
     expected_child_mediator_signature: _VisualObjectStateSignature | None = None
@@ -257,6 +258,8 @@ class PlannedClick:
     expected_child_raster_signature: _RasterStateSignature = ()
     expected_occluded_endpoint_centers: tuple[tuple[int, int], ...] = ()
     expected_occluded_endpoint_cells: tuple[tuple[int, int], ...] = ()
+    expected_visible_endpoint_count: int | None = None
+    expected_visible_mediator_count: int | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -317,6 +320,7 @@ class _ChildIsolationPlan:
     frozen_connector_signature: _ConnectorStateSignature
     frozen_mediator_color: int
     target_signature: _TargetSurfaceSignature
+    recovery_actions: tuple[PlannedClick, ...]
 
 
 @dataclass(frozen=True, slots=True)
@@ -332,6 +336,19 @@ class _ChildIsolationStateCertificate:
     selected_raster_signature: _RasterStateSignature
     occluded_endpoint_centers: tuple[tuple[int, int], ...]
     occluded_endpoint_cells: tuple[tuple[int, int], ...]
+    visible_endpoint_count: int
+    visible_mediator_count: int
+
+
+@dataclass(frozen=True, slots=True)
+class _ChildIsolationRestoreCertificate:
+    """Exact pre-discriminator state required after a bounded inverse replay."""
+
+    protected_raster_hash: str
+    relation_raster_signature: _RasterStateSignature
+    visible_endpoint_count: int
+    visible_mediator_count: int
+    active_center: tuple[int, int]
 
 
 @dataclass(frozen=True, slots=True)
@@ -4945,6 +4962,8 @@ def _child_isolation_projected_state_is_safe(
             selected_raster_signature=selected_raster_signature,
             occluded_endpoint_centers=(),
             occluded_endpoint_cells=(),
+            visible_endpoint_count=len(projected.endpoints),
+            visible_mediator_count=len(projected.mediators),
         )
 
     occlusion = _projected_mediator_occluded_endpoint_centers(
@@ -4984,6 +5003,8 @@ def _child_isolation_projected_state_is_safe(
         selected_raster_signature=selected_raster_signature,
         occluded_endpoint_centers=occlusion[0],
         occluded_endpoint_cells=occlusion[1],
+        visible_endpoint_count=len(projected.endpoints),
+        visible_mediator_count=len(projected.mediators),
     )
 
 
@@ -5110,6 +5131,7 @@ def _build_child_isolation_plan(
     activation: VisualObject,
     layout: _HierarchyChildLayout,
     state_certificates: tuple[_ChildIsolationStateCertificate, ...],
+    restore_certificate: _ChildIsolationRestoreCertificate,
     frozen_group: _AffineChildGroup,
     target_signature: _TargetSurfaceSignature,
     relation_key: str,
@@ -5155,6 +5177,8 @@ def _build_child_isolation_plan(
             expected_child_raster_signature=initial_certificate.selected_raster_signature,
             expected_occluded_endpoint_centers=(initial_certificate.occluded_endpoint_centers),
             expected_occluded_endpoint_cells=initial_certificate.occluded_endpoint_cells,
+            expected_visible_endpoint_count=initial_certificate.visible_endpoint_count,
+            expected_visible_mediator_count=initial_certificate.visible_mediator_count,
         )
     ]
     for mover_index, (_mover, point) in enumerate(zip(layout.movers, layout.points, strict=True)):
@@ -5204,6 +5228,8 @@ def _build_child_isolation_plan(
                 expected_child_raster_signature=(movement_certificate.selected_raster_signature),
                 expected_occluded_endpoint_centers=(movement_certificate.occluded_endpoint_centers),
                 expected_occluded_endpoint_cells=(movement_certificate.occluded_endpoint_cells),
+                expected_visible_endpoint_count=(movement_certificate.visible_endpoint_count),
+                expected_visible_mediator_count=(movement_certificate.visible_mediator_count),
             )
         )
         if not final_action:
@@ -5251,12 +5277,98 @@ def _build_child_isolation_plan(
                         switch_certificate.occluded_endpoint_centers
                     ),
                     expected_occluded_endpoint_cells=(switch_certificate.occluded_endpoint_cells),
+                    expected_visible_endpoint_count=(switch_certificate.visible_endpoint_count),
+                    expected_visible_mediator_count=(switch_certificate.visible_mediator_count),
                 )
             )
     if certificate_index != len(state_certificates):
         raise ValueError("unused child-isolation state certificate")
+    forward_actions = tuple(actions)
+    recovery_signature = (
+        "affine-child-recovery:"
+        + hashlib.sha256(f"{signature}:recovery".encode("ascii")).hexdigest()[:24]
+    )
+    recovery_plan_id = "visual-child-isolation-recovery:" + signature.rsplit(":", 1)[-1]
+    recovery_actions: list[PlannedClick] = []
+    required_certificate = state_certificates[-1]
+    for source_action, expected_certificate in zip(
+        reversed(forward_actions[:-1]),
+        reversed(state_certificates[:-1]),
+        strict=True,
+    ):
+        reverse_purpose = (
+            VisualActionPurpose.PROGRESS
+            if source_action.purpose is VisualActionPurpose.PROBE
+            else VisualActionPurpose.PROBE
+        )
+        recovery_actions.append(
+            PlannedClick(
+                coordinate=source_action.coordinate,
+                purpose=reverse_purpose,
+                expectation=(
+                    "restore one endpoint to its exact pre-discriminator position"
+                    if reverse_purpose is VisualActionPurpose.PROGRESS
+                    else "reverse one certified active-role exchange"
+                ),
+                mechanic_ref=hierarchy.mechanic_ref,
+                plan_id=recovery_plan_id,
+                plan_signature=recovery_signature,
+                target_center=hierarchy.target.rounded_center,
+                mediator_color=layout.group.mediator.color,
+                arity=layout.group.arity,
+                expected_child_mediator_center=(
+                    expected_certificate.selected_mediator_signature[0]
+                ),
+                expected_child_mediator_signature=(
+                    expected_certificate.selected_mediator_signature
+                ),
+                expected_child_endpoint_centers=tuple(
+                    item[0] for item in expected_certificate.selected_endpoint_signature
+                ),
+                expected_child_endpoint_signature=(
+                    expected_certificate.selected_endpoint_signature
+                ),
+                expected_child_connector_signature=(
+                    expected_certificate.selected_connector_signature
+                ),
+                expected_active_center=expected_certificate.active_center,
+                required_child_protected_raster_hash=(required_certificate.protected_raster_hash),
+                expected_child_protected_raster_hash=(expected_certificate.protected_raster_hash),
+                required_child_raster_signature=(required_certificate.selected_raster_signature),
+                expected_child_raster_signature=(expected_certificate.selected_raster_signature),
+                expected_occluded_endpoint_centers=(expected_certificate.occluded_endpoint_centers),
+                expected_occluded_endpoint_cells=(expected_certificate.occluded_endpoint_cells),
+                expected_visible_endpoint_count=(expected_certificate.visible_endpoint_count),
+                expected_visible_mediator_count=(expected_certificate.visible_mediator_count),
+            )
+        )
+        required_certificate = expected_certificate
+    recovery_actions.append(
+        PlannedClick(
+            coordinate=Coordinate(*restore_certificate.active_center),
+            purpose=VisualActionPurpose.PROBE,
+            expectation=(
+                "restore the exact pre-discriminator active-role binding before testing "
+                "a distinct hierarchy hypothesis"
+            ),
+            mechanic_ref=hierarchy.mechanic_ref,
+            plan_id=recovery_plan_id,
+            plan_signature=recovery_signature,
+            target_center=hierarchy.target.rounded_center,
+            mediator_color=layout.group.mediator.color,
+            arity=layout.group.arity,
+            completes_child_recovery=True,
+            expected_active_center=restore_certificate.active_center,
+            required_child_protected_raster_hash=(required_certificate.protected_raster_hash),
+            expected_child_protected_raster_hash=(restore_certificate.protected_raster_hash),
+            required_child_raster_signature=(required_certificate.selected_raster_signature),
+            expected_child_raster_signature=(restore_certificate.relation_raster_signature),
+            expected_visible_endpoint_count=restore_certificate.visible_endpoint_count,
+            expected_visible_mediator_count=restore_certificate.visible_mediator_count,
+        )
+    )
     return _ChildIsolationPlan(
-        actions=tuple(actions),
+        actions=forward_actions,
         signature=signature,
         relation_key=relation_key,
         frozen_mediator_center=frozen_group.mediator.rounded_center,
@@ -5268,6 +5380,7 @@ def _build_child_isolation_plan(
         frozen_connector_signature=initial_certificate.frozen_connector_signature,
         frozen_mediator_color=frozen_group.mediator.color,
         target_signature=target_signature,
+        recovery_actions=tuple(recovery_actions),
     )
 
 
@@ -5288,6 +5401,18 @@ def _child_isolation_plan(
     active = tuple(item for item in scene.endpoints if item.color == hierarchy.active_color)
     if len(active) != 1:
         return None
+    restore_cells = frozenset(
+        cell for child in hierarchy.children for cell in _hierarchy_dynamic_footprint(scene, child)
+    )
+    restore_certificate = _ChildIsolationRestoreCertificate(
+        protected_raster_hash=_child_isolation_protected_raster_hash(scene),
+        relation_raster_signature=tuple(
+            sorted((x, y, scene.cells[y][x]) for x, y in restore_cells)
+        ),
+        visible_endpoint_count=len(scene.endpoints),
+        visible_mediator_count=len(scene.mediators),
+        active_center=active[0].rounded_center,
+    )
     active_group = hierarchy.children[0]
     inactive_group = hierarchy.children[1]
     if active[0] not in active_group.endpoints:
@@ -5421,6 +5546,7 @@ def _child_isolation_plan(
                 activation=activation,
                 layout=layout,
                 state_certificates=state_certificates,
+                restore_certificate=restore_certificate,
                 frozen_group=frozen_group,
                 target_signature=_child_isolation_target_surface_signature(
                     role_scene,
@@ -5567,7 +5693,9 @@ def _hierarchy_planned_click_is_safe(
 ) -> bool:
     """Revalidate one queued hierarchy action against the returned frame."""
 
-    if not planned.plan_signature.startswith(("affine-hierarchy:", "affine-child-isolation:")):
+    if not planned.plan_signature.startswith(
+        ("affine-hierarchy:", "affine-child-isolation:", "affine-child-recovery:")
+    ):
         return True
     if not any(target.rounded_center == planned.target_center for target in scene.targets):
         return False
@@ -5876,6 +6004,7 @@ class VisualCausalPolicy:
         self._pending_completes_local_target = False
         self._pending_completes_hierarchy = False
         self._pending_completes_child_isolation = False
+        self._pending_completes_child_recovery = False
         self._pending_expected_child_mediator_center: tuple[int, int] | None = None
         self._pending_expected_child_mediator_signature: _VisualObjectStateSignature | None = None
         self._pending_expected_child_endpoint_centers: tuple[tuple[int, int], ...] = ()
@@ -5886,6 +6015,8 @@ class VisualCausalPolicy:
         self._pending_expected_child_raster_signature: _RasterStateSignature = ()
         self._pending_expected_occluded_endpoint_centers: tuple[tuple[int, int], ...] = ()
         self._pending_expected_occluded_endpoint_cells: tuple[tuple[int, int], ...] = ()
+        self._pending_expected_visible_endpoint_count: int | None = None
+        self._pending_expected_visible_mediator_count: int | None = None
         self._pending_clef_prediction = EffectVector.unknown()
         self._pending_mechanic_prediction: MechanicPredictionReceipt | None = None
         self._plan: deque[PlannedClick] = deque()
@@ -5918,6 +6049,7 @@ class VisualCausalPolicy:
         self._active_child_isolation_frozen_connector_signature: _ConnectorStateSignature = None
         self._active_child_isolation_frozen_mediator_color: int | None = None
         self._active_child_isolation_target_signature: _TargetSurfaceSignature | None = None
+        self._active_child_isolation_recovery_actions: tuple[PlannedClick, ...] = ()
         self._failed_child_isolation_relation_keys: set[str] = set()
         self._failed_child_isolation_relation_reasons: dict[str, str] = {}
         self._hierarchy_search_deferred_count = 0
@@ -6043,6 +6175,7 @@ class VisualCausalPolicy:
         self._active_child_isolation_frozen_connector_signature = None
         self._active_child_isolation_frozen_mediator_color = None
         self._active_child_isolation_target_signature = None
+        self._active_child_isolation_recovery_actions = ()
 
     def _latch_hierarchy_lineage_failure(
         self,
@@ -6364,6 +6497,7 @@ class VisualCausalPolicy:
         self._active_child_isolation_frozen_connector_signature = plan.frozen_connector_signature
         self._active_child_isolation_frozen_mediator_color = plan.frozen_mediator_color
         self._active_child_isolation_target_signature = plan.target_signature
+        self._active_child_isolation_recovery_actions = plan.recovery_actions
 
     def select(self, observation: Observation) -> ActionRequest:
         if observation.state in {GameStateName.GAME_OVER, GameStateName.NOT_PLAYED}:
@@ -6393,7 +6527,7 @@ class VisualCausalPolicy:
             blocked_plan = self._plan[0]
             self._failed_plan_signatures.add(blocked_plan.plan_signature)
             hierarchy_blocked = blocked_plan.plan_signature.startswith(
-                ("affine-hierarchy:", "affine-child-isolation:")
+                ("affine-hierarchy:", "affine-child-isolation:", "affine-child-recovery:")
             )
             if hierarchy_blocked:
                 self._latch_hierarchy_lineage_failure(
@@ -6415,7 +6549,7 @@ class VisualCausalPolicy:
         if ActionName.ACTION6 in observation.available_actions and not (
             self._plan
             and self._plan[0].plan_signature.startswith(
-                ("affine-hierarchy:", "affine-child-isolation:")
+                ("affine-hierarchy:", "affine-child-isolation:", "affine-child-recovery:")
             )
         ):
             marker_scene = extract_visual_scene(observation.frames[-1])
@@ -6543,7 +6677,7 @@ class VisualCausalPolicy:
         if (
             self._plan
             and self._plan[0].plan_signature.startswith(
-                ("affine-hierarchy:", "affine-child-isolation:")
+                ("affine-hierarchy:", "affine-child-isolation:", "affine-child-recovery:")
             )
             and (
                 self._last_active_color is None
@@ -6586,6 +6720,7 @@ class VisualCausalPolicy:
                 completes_local_target=planned.completes_local_target,
                 completes_hierarchy=planned.completes_hierarchy,
                 completes_child_isolation=planned.completes_child_isolation,
+                completes_child_recovery=planned.completes_child_recovery,
                 expected_child_mediator_center=(planned.expected_child_mediator_center),
                 expected_child_mediator_signature=(planned.expected_child_mediator_signature),
                 expected_child_endpoint_centers=(planned.expected_child_endpoint_centers),
@@ -6596,6 +6731,8 @@ class VisualCausalPolicy:
                 expected_child_raster_signature=(planned.expected_child_raster_signature),
                 expected_occluded_endpoint_centers=(planned.expected_occluded_endpoint_centers),
                 expected_occluded_endpoint_cells=(planned.expected_occluded_endpoint_cells),
+                expected_visible_endpoint_count=planned.expected_visible_endpoint_count,
+                expected_visible_mediator_count=planned.expected_visible_mediator_count,
             )
             return action
 
@@ -6627,27 +6764,29 @@ class VisualCausalPolicy:
                             hierarchy,
                             level_index=observation.levels_completed,
                         )
-                        if hierarchy_relation_key in self._failed_child_isolation_relation_keys:
-                            rejection_reason = self._failed_child_isolation_relation_reasons.get(
-                                hierarchy_relation_key,
-                                "was already rejected by a prior returned consequence",
-                            )
-                            raise PolicyError(
-                                f"readable affine child-isolation relation {rejection_reason}"
-                            )
-                        child_isolation_plan = _child_isolation_plan(
-                            scene,
-                            hierarchy,
-                            level_index=observation.levels_completed,
-                            rejected_signatures=self._failed_plan_signatures,
-                            search_budget=search_budget,
+                        child_relation_rejected = (
+                            hierarchy_relation_key in self._failed_child_isolation_relation_keys
                         )
+                        if not child_relation_rejected:
+                            child_isolation_plan = _child_isolation_plan(
+                                scene,
+                                hierarchy,
+                                level_index=observation.levels_completed,
+                                rejected_signatures=self._failed_plan_signatures,
+                                search_budget=search_budget,
+                            )
                         if child_isolation_plan is None:
                             if hierarchy_relation_key in self._failed_hierarchy_relation_keys:
                                 deferred_hierarchy_reason = (
-                                    "readable affine hierarchy has no exact child-isolation "
-                                    "layout and its joint completion hypothesis was already "
-                                    "falsified by an official NOT_FINISHED consequence"
+                                    "readable affine hierarchy child-only sufficiency and its "
+                                    "joint completion hypothesis were already falsified by "
+                                    "official NOT_FINISHED consequences"
+                                    if child_relation_rejected
+                                    else (
+                                        "readable affine hierarchy has no exact child-isolation "
+                                        "layout and its joint completion hypothesis was already "
+                                        "falsified by an official NOT_FINISHED consequence"
+                                    )
                                 )
                             else:
                                 hierarchy_plan = _hierarchy_joint_layout(
@@ -6659,9 +6798,15 @@ class VisualCausalPolicy:
                         if child_isolation_plan is None and hierarchy_plan is None:
                             if deferred_hierarchy_reason is None:
                                 deferred_hierarchy_reason = (
-                                    "readable affine hierarchy has neither an exact "
-                                    "child-isolation layout nor a fully joint "
+                                    "readable affine hierarchy child-only sufficiency was "
+                                    "already falsified and it has no fully joint "
                                     "target-protected layout"
+                                    if child_relation_rejected
+                                    else (
+                                        "readable affine hierarchy has neither an exact "
+                                        "child-isolation layout nor a fully joint "
+                                        "target-protected layout"
+                                    )
                                 )
                 except _HierarchySearchExhausted as exc:
                     deferred_hierarchy_reason = str(exc)
@@ -6681,6 +6826,7 @@ class VisualCausalPolicy:
                             mediator_color=planned.mediator_color,
                             arity=planned.arity,
                             completes_child_isolation=planned.completes_child_isolation,
+                            completes_child_recovery=planned.completes_child_recovery,
                             expected_child_mediator_center=(planned.expected_child_mediator_center),
                             expected_child_mediator_signature=(
                                 planned.expected_child_mediator_signature
@@ -6706,6 +6852,12 @@ class VisualCausalPolicy:
                             ),
                             expected_occluded_endpoint_cells=(
                                 planned.expected_occluded_endpoint_cells
+                            ),
+                            expected_visible_endpoint_count=(
+                                planned.expected_visible_endpoint_count
+                            ),
+                            expected_visible_mediator_count=(
+                                planned.expected_visible_mediator_count
                             ),
                         )
                         return action
@@ -6874,6 +7026,7 @@ class VisualCausalPolicy:
         completes_local_target: bool = False,
         completes_hierarchy: bool = False,
         completes_child_isolation: bool = False,
+        completes_child_recovery: bool = False,
         expected_child_mediator_center: tuple[int, int] | None = None,
         expected_child_mediator_signature: _VisualObjectStateSignature | None = None,
         expected_child_endpoint_centers: tuple[tuple[int, int], ...] = (),
@@ -6884,6 +7037,8 @@ class VisualCausalPolicy:
         expected_child_raster_signature: _RasterStateSignature = (),
         expected_occluded_endpoint_centers: tuple[tuple[int, int], ...] = (),
         expected_occluded_endpoint_cells: tuple[tuple[int, int], ...] = (),
+        expected_visible_endpoint_count: int | None = None,
+        expected_visible_mediator_count: int | None = None,
         affine_reacquisition: bool = False,
     ) -> None:
         if self._pending_action is not None:
@@ -6903,6 +7058,7 @@ class VisualCausalPolicy:
         self._pending_completes_local_target = completes_local_target
         self._pending_completes_hierarchy = completes_hierarchy
         self._pending_completes_child_isolation = completes_child_isolation
+        self._pending_completes_child_recovery = completes_child_recovery
         self._pending_expected_child_mediator_center = expected_child_mediator_center
         self._pending_expected_child_mediator_signature = expected_child_mediator_signature
         self._pending_expected_child_endpoint_centers = expected_child_endpoint_centers
@@ -6913,6 +7069,8 @@ class VisualCausalPolicy:
         self._pending_expected_child_raster_signature = expected_child_raster_signature
         self._pending_expected_occluded_endpoint_centers = expected_occluded_endpoint_centers
         self._pending_expected_occluded_endpoint_cells = expected_occluded_endpoint_cells
+        self._pending_expected_visible_endpoint_count = expected_visible_endpoint_count
+        self._pending_expected_visible_mediator_count = expected_visible_mediator_count
         self._pending_affine_reacquisition = affine_reacquisition
         self._pending_clef_prediction = _predicted_clef_effects(
             purpose=purpose,
@@ -6948,9 +7106,15 @@ class VisualCausalPolicy:
             self._pending_plan_signature is not None
             and self._pending_plan_signature.startswith("affine-hierarchy:")
         )
+        child_recovery_action = (
+            self._pending_plan_signature is not None
+            and self._pending_plan_signature.startswith("affine-child-recovery:")
+        )
         child_isolation_action = (
             self._pending_plan_signature is not None
-            and self._pending_plan_signature.startswith("affine-child-isolation:")
+            and self._pending_plan_signature.startswith(
+                ("affine-child-isolation:", "affine-child-recovery:")
+            )
         )
         hierarchy_action = joint_hierarchy_action or child_isolation_action
         hierarchy_relation_key = (
@@ -7009,6 +7173,22 @@ class VisualCausalPolicy:
             and all(
                 after_scene.cells[y][x] == value
                 for x, y, value in self._pending_expected_child_raster_signature
+            )
+        )
+        child_isolation_visible_counts_certified = bool(
+            child_isolation_action
+            and child_isolation_raster_certified
+            and self._pending_expected_visible_endpoint_count is not None
+            and self._pending_expected_visible_mediator_count is not None
+            and len(after_scene.endpoints) == self._pending_expected_visible_endpoint_count
+            and len(after_scene.mediators) == self._pending_expected_visible_mediator_count
+        )
+        hierarchy_visible_counts_certified = bool(
+            child_isolation_visible_counts_certified
+            if child_isolation_action
+            else (
+                len(before_scene.endpoints) == len(after_scene.endpoints)
+                and len(before_scene.mediators) == len(after_scene.mediators)
             )
         )
         child_isolation_occlusion_certified = bool(
@@ -7099,6 +7279,34 @@ class VisualCausalPolicy:
             )
             or child_isolation_occlusion_certified
         )
+        child_recovery_restoration_certified = bool(
+            child_recovery_action
+            and self._pending_completes_child_recovery
+            and observation.state is GameStateName.NOT_FINISHED
+            and observation.levels_completed == before.levels_completed
+            and changed > 0
+            and hierarchy_target_readable
+            and hierarchy_parent_target_preserved
+            and child_isolation_raster_certified
+            and child_isolation_visible_counts_certified
+            and after_hierarchy is not None
+            and len(after_hierarchy.children) == 2
+            and self._pending_target_center is not None
+            and self._active_child_isolation_target_signature is not None
+            and _child_isolation_target_surface_signature(
+                after_scene,
+                sink_center=self._pending_target_center,
+            )
+            == self._active_child_isolation_target_signature
+            and self._last_active_color is not None
+            and self._pending_expected_active_center is not None
+            and any(
+                endpoint.color == self._last_active_color
+                and endpoint.rounded_center == self._pending_expected_active_center
+                for endpoint in after_scene.endpoints
+            )
+            and endpoint_role_switch
+        )
         hierarchy_structure_readable = bool(
             hierarchy_action
             and changed > 0
@@ -7106,8 +7314,7 @@ class VisualCausalPolicy:
             and hierarchy_parent_target_preserved
             and child_isolation_constraints_preserved
             and after_hierarchy is not None
-            and len(before_scene.endpoints) == len(after_scene.endpoints)
-            and len(before_scene.mediators) == len(after_scene.mediators)
+            and hierarchy_visible_counts_certified
             and (
                 endpoint_role_switch
                 if self._pending_purpose is VisualActionPurpose.PROBE
@@ -7120,7 +7327,9 @@ class VisualCausalPolicy:
             )
         )
         hierarchy_consequence_certified = bool(
-            hierarchy_structure_readable or child_isolation_occlusion_certified
+            hierarchy_structure_readable
+            or child_isolation_occlusion_certified
+            or child_recovery_restoration_certified
         )
         hierarchy_supports_observed = bool(
             joint_hierarchy_action
@@ -7290,9 +7499,13 @@ class VisualCausalPolicy:
             and residual is None
         ):
             residual = (
-                "planned child-isolation consequence was not structurally readable"
-                if child_isolation_action
-                else "planned hierarchy consequence was not structurally readable"
+                "planned child-recovery inverse certificate was not structurally readable"
+                if child_recovery_action
+                else (
+                    "planned child-isolation consequence was not structurally readable"
+                    if child_isolation_action
+                    else "planned hierarchy consequence was not structurally readable"
+                )
             )
         coordinate_transform = (
             local_target_satisfied
@@ -7567,16 +7780,36 @@ class VisualCausalPolicy:
                     "NOT_FINISHED consequence"
                 )
             self._plan.clear()
-            self._clear_child_isolation_execution()
-            self._last_probe_failed = True
             if child_isolation_observed:
+                if self._active_child_isolation_recovery_actions:
+                    self._plan.extend(self._active_child_isolation_recovery_actions)
+                    self._last_probe_failed = False
+                else:
+                    self._latch_hierarchy_lineage_failure(
+                        level_index=before.levels_completed,
+                        plan_signature=(self._pending_plan_signature or "unbound-child-plan"),
+                        phase=f"missing-recovery-lineage:{self._step_index}",
+                    )
+                    self._clear_child_isolation_execution()
+                    self._last_probe_failed = True
                 residual = (
                     "the selected child mediator reached the parent target while its "
                     "sibling remained distinct, but the official environment remained "
                     "NOT_FINISHED"
                 )
-            elif residual is None:
-                residual = "planned child-isolation consequence was not structurally readable"
+            else:
+                self._clear_child_isolation_execution()
+                self._last_probe_failed = True
+                if residual is None:
+                    residual = "planned child-isolation consequence was not structurally readable"
+        elif self._pending_completes_child_recovery and child_recovery_restoration_certified:
+            self._plan.clear()
+            self._clear_child_isolation_execution()
+            self._last_probe_failed = False
+            residual = (
+                "exact pre-discriminator hierarchy restored after child-only sufficiency "
+                "was falsified"
+            )
         elif self._pending_completes_hierarchy and observation.state is GameStateName.NOT_FINISHED:
             if self._pending_plan_signature is not None:
                 self._failed_plan_signatures.add(self._pending_plan_signature)
@@ -7668,6 +7901,7 @@ class VisualCausalPolicy:
         self._pending_completes_local_target = False
         self._pending_completes_hierarchy = False
         self._pending_completes_child_isolation = False
+        self._pending_completes_child_recovery = False
         self._pending_expected_child_mediator_center = None
         self._pending_expected_child_mediator_signature = None
         self._pending_expected_child_endpoint_centers = ()
@@ -7678,6 +7912,8 @@ class VisualCausalPolicy:
         self._pending_expected_child_raster_signature = ()
         self._pending_expected_occluded_endpoint_centers = ()
         self._pending_expected_occluded_endpoint_cells = ()
+        self._pending_expected_visible_endpoint_count = None
+        self._pending_expected_visible_mediator_count = None
         self._pending_affine_reacquisition = False
         self._pending_clef_prediction = EffectVector.unknown()
         self._pending_mechanic_prediction = None

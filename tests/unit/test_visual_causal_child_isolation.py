@@ -4,6 +4,7 @@ from dataclasses import replace
 from typing import Any
 
 import pytest
+import test_visual_causal_policy as visual_policy_fixtures
 from test_visual_causal_policy import (
     _ENDPOINT_SHAPE,
     _HIERARCHY_PARENT_TARGET,
@@ -392,14 +393,114 @@ def test_fresh_two_child_hierarchy_isolates_the_initially_nonactive_child() -> N
     assert isolation_signature in policy._failed_plan_signatures
     assert isolation_relation_key in policy._failed_child_isolation_relation_keys
     assert policy.snapshot()["child_isolation_relation_rejected_count"] == 1
-    assert policy._last_probe_failed is True
-    with pytest.raises(PolicyError, match=r"already falsified.*NOT_FINISHED"):
-        policy.select(observation)
+    assert policy._last_probe_failed is False
+    assert policy.snapshot()["pending_plan_actions"] == 6
+    recovery = policy.select(observation)
+    assert recovery.name is ActionName.ACTION6
+    assert policy._pending_plan_signature is not None
+    assert policy._pending_plan_signature.startswith("affine-child-recovery:")
 
-    policy._begin_reset_epoch()
-    assert isolation_relation_key in policy._failed_child_isolation_relation_keys
-    with pytest.raises(PolicyError, match=r"already falsified.*NOT_FINISHED"):
-        policy.select(observation)
+
+def test_child_isolation_accepts_exact_projected_endpoint_deocclusion(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    parent_target = (53, 28)
+    monkeypatch.setattr(
+        visual_policy_fixtures,
+        "_HIERARCHY_PARENT_TARGET",
+        parent_target,
+    )
+    environment = _TwoLayerAffineEnvironment(
+        groups=[
+            [(43, 34), (25, 35)],
+            [(34, 55), (41, 47), (52, 55)],
+        ],
+        active_group=0,
+        active_index=0,
+        win_on_hierarchy=False,
+    )
+    policy = VisualCausalPolicy(max_coordinate_candidates=8)
+    observation = _reach_two_layer_hierarchy(environment, policy)
+    entry_frame = observation.frames[-1]
+    entry_active = tuple(
+        endpoint.rounded_center
+        for endpoint in extract_visual_scene(entry_frame).endpoints
+        if endpoint.color == 0
+    )
+    assert len(entry_active) == 1
+
+    deocclusion_observed = False
+    terminal_observed = False
+    relation_key: str | None = None
+    forward_coordinates: list[tuple[int, int]] = []
+    for _ in range(16):
+        before_scene = extract_visual_scene(observation.frames[-1])
+        action = policy.select(observation)
+        assert action.coordinate is not None
+        forward_coordinates.append((action.coordinate.x, action.coordinate.y))
+        relation_key = policy._active_child_isolation_relation_key
+        completes_isolation = policy._pending_completes_child_isolation
+        expected_endpoint_count = policy._pending_expected_visible_endpoint_count
+        expected_mediator_count = policy._pending_expected_visible_mediator_count
+        expected_raster_hash = policy._pending_expected_child_protected_raster_hash
+
+        observation = environment.step(action)
+        after_scene = extract_visual_scene(observation.frames[-1])
+        if len(after_scene.endpoints) > len(before_scene.endpoints):
+            deocclusion_observed = True
+            assert len(before_scene.endpoints) == 4
+            assert len(after_scene.endpoints) == 5
+            assert expected_endpoint_count == len(after_scene.endpoints)
+            assert expected_mediator_count == len(after_scene.mediators)
+            assert (
+                visual_causal._child_isolation_protected_raster_hash(after_scene)
+                == expected_raster_hash
+            )
+
+        policy.accept_consequence(observation)
+        assert policy.snapshot()["hierarchy_lineage_lost"] is False
+        if completes_isolation:
+            terminal_observed = True
+            break
+    else:
+        raise AssertionError("the child-isolation plan never reached its terminal action")
+
+    assert deocclusion_observed
+    assert terminal_observed
+    assert relation_key is not None
+    assert relation_key in policy._failed_child_isolation_relation_keys
+    assert policy.receipts[-1].residual == (
+        "the selected child mediator reached the parent target while its sibling "
+        "remained distinct, but the official environment remained NOT_FINISHED"
+    )
+    assert policy.snapshot()["pending_plan_actions"] == 6
+    recovery_actions = 0
+    recovery_coordinates: list[tuple[int, int]] = []
+    for _ in range(8):
+        recovery = policy.select(observation)
+        assert recovery.coordinate is not None
+        recovery_coordinates.append((recovery.coordinate.x, recovery.coordinate.y))
+        completes_recovery = policy._pending_completes_child_recovery
+        observation = environment.step(recovery)
+        policy.accept_consequence(observation)
+        recovery_actions += 1
+        assert policy.snapshot()["hierarchy_lineage_lost"] is False
+        if completes_recovery:
+            break
+    else:
+        raise AssertionError("the exact child-isolation rollback never completed")
+
+    assert recovery_actions == 6
+    assert recovery_coordinates == [*reversed(forward_coordinates[:-1]), entry_active[0]]
+    assert observation.frames[-1].digest == entry_frame.digest
+    assert relation_key in policy._failed_child_isolation_relation_keys
+    assert policy.receipts[-1].residual == (
+        "exact pre-discriminator hierarchy restored after child-only sufficiency was falsified"
+    )
+    continuation = policy.select(observation)
+    assert continuation.name is ActionName.ACTION6
+    assert policy._pending_plan_signature is not None
+    assert policy._pending_plan_signature.startswith("affine-hierarchy:")
 
 
 def test_child_isolation_rejects_only_the_failed_layout_after_sibling_displacement() -> None:
@@ -442,6 +543,150 @@ def test_child_isolation_rejects_only_the_failed_layout_after_sibling_displaceme
     policy._begin_reset_epoch()
     assert policy.snapshot()["hierarchy_lineage_lost"] is False
     assert policy.snapshot()["hierarchy_lineage_failure_count"] == 1
+
+
+def test_child_isolation_recovery_raster_mismatch_latches_lineage() -> None:
+    environment = _TwoLayerAffineEnvironment(win_on_hierarchy=False)
+    policy = VisualCausalPolicy(max_coordinate_candidates=8)
+    observation = _reach_two_layer_hierarchy(environment, policy)
+
+    for _ in range(16):
+        action = policy.select(observation)
+        completes_isolation = policy._pending_completes_child_isolation
+        observation = environment.step(action)
+        policy.accept_consequence(observation)
+        if completes_isolation:
+            break
+    else:
+        raise AssertionError("the child-isolation plan never reached its terminal action")
+
+    recovery = policy.select(observation)
+    returned = environment.step(recovery)
+    rows = [list(row) for row in returned.frames[-1].cells]
+    rows[1][1] = 6
+    mutated = replace(returned, frames=(GridFrame.from_rows(rows),))
+    policy.accept_consequence(mutated)
+
+    assert policy.receipts[-1].residual == (
+        "planned child-recovery inverse certificate was not structurally readable"
+    )
+    assert policy.snapshot()["hierarchy_lineage_lost"] is True
+    assert policy.snapshot()["child_isolation_rejected_count"] == 1
+    assert policy.snapshot()["pending_plan_actions"] == 0
+    with pytest.raises(PolicyError, match="hierarchy lineage was lost"):
+        policy.select(mutated)
+
+
+def test_child_isolation_terminal_recovery_mismatch_latches_lineage() -> None:
+    environment = _TwoLayerAffineEnvironment(win_on_hierarchy=False)
+    policy = VisualCausalPolicy(max_coordinate_candidates=8)
+    observation = _reach_two_layer_hierarchy(environment, policy)
+
+    for _ in range(16):
+        action = policy.select(observation)
+        completes_isolation = policy._pending_completes_child_isolation
+        observation = environment.step(action)
+        policy.accept_consequence(observation)
+        if completes_isolation:
+            break
+    else:
+        raise AssertionError("the child-isolation plan never reached its terminal action")
+
+    for _ in range(8):
+        recovery = policy.select(observation)
+        completes_recovery = policy._pending_completes_child_recovery
+        returned = environment.step(recovery)
+        if completes_recovery:
+            rows = [list(row) for row in returned.frames[-1].cells]
+            rows[1][1] = 6
+            mutated = replace(returned, frames=(GridFrame.from_rows(rows),))
+            policy.accept_consequence(mutated)
+            observation = mutated
+            break
+        policy.accept_consequence(returned)
+        observation = returned
+    else:
+        raise AssertionError("the exact child-isolation rollback never reached restoration")
+
+    assert policy.receipts[-1].residual == (
+        "planned child-recovery inverse certificate was not structurally readable"
+    )
+    assert policy.snapshot()["hierarchy_lineage_lost"] is True
+    assert policy.snapshot()["child_isolation_rejected_count"] == 1
+    assert policy.snapshot()["pending_plan_actions"] == 0
+    with pytest.raises(PolicyError, match="hierarchy lineage was lost"):
+        policy.select(observation)
+
+
+def test_queued_child_recovery_precondition_mismatch_fails_closed() -> None:
+    environment = _TwoLayerAffineEnvironment(win_on_hierarchy=False)
+    policy = VisualCausalPolicy(max_coordinate_candidates=8)
+    observation = _reach_two_layer_hierarchy(environment, policy)
+
+    for _ in range(16):
+        action = policy.select(observation)
+        completes_isolation = policy._pending_completes_child_isolation
+        observation = environment.step(action)
+        policy.accept_consequence(observation)
+        if completes_isolation:
+            break
+    else:
+        raise AssertionError("the child-isolation plan never reached its terminal action")
+
+    recovery = policy.select(observation)
+    recovery_signature = policy._pending_plan_signature
+    assert recovery_signature is not None
+    assert recovery_signature.startswith("affine-child-recovery:")
+    returned = environment.step(recovery)
+    policy.accept_consequence(returned)
+    assert policy.snapshot()["pending_plan_actions"] == 5
+
+    rows = [list(row) for row in returned.frames[-1].cells]
+    rows[1][1] = 6
+    mutated = replace(returned, frames=(GridFrame.from_rows(rows),))
+    with pytest.raises(PolicyError, match="queued hierarchy precondition"):
+        policy.select(mutated)
+
+    assert recovery_signature in policy._failed_plan_signatures
+    assert policy.snapshot()["hierarchy_lineage_lost"] is True
+    assert policy.snapshot()["child_isolation_rejected_count"] == 1
+    assert policy.snapshot()["pending_plan_actions"] == 0
+
+
+def test_game_over_reset_during_child_recovery_preserves_relation_rejection() -> None:
+    environment = _TwoLayerAffineEnvironment(win_on_hierarchy=False)
+    policy = VisualCausalPolicy(max_coordinate_candidates=8)
+    entry = _reach_two_layer_hierarchy(environment, policy)
+    observation = entry
+
+    for _ in range(16):
+        action = policy.select(observation)
+        completes_isolation = policy._pending_completes_child_isolation
+        observation = environment.step(action)
+        policy.accept_consequence(observation)
+        if completes_isolation:
+            break
+    else:
+        raise AssertionError("the child-isolation plan never reached its terminal action")
+
+    relation_key = next(iter(policy._failed_child_isolation_relation_keys))
+    recovery = policy.select(observation)
+    game_over = replace(environment.step(recovery), state=GameStateName.GAME_OVER)
+    policy.accept_consequence(game_over)
+
+    assert policy.snapshot()["child_isolation_active"] is False
+    assert policy.snapshot()["pending_plan_actions"] == 0
+    assert relation_key in policy._failed_child_isolation_relation_keys
+    reset = policy.select(game_over)
+    assert reset.name is ActionName.RESET
+    recovered = replace(entry, returned_action=reset)
+    policy.accept_consequence(recovered)
+
+    assert relation_key in policy._failed_child_isolation_relation_keys
+    continuation = policy.select(recovered)
+    assert continuation.name is ActionName.ACTION6
+    assert policy._pending_plan_signature is not None
+    assert policy._pending_plan_signature.startswith("affine-hierarchy:")
 
 
 def test_readable_child_consequence_with_one_raster_residual_latches_lineage() -> None:
