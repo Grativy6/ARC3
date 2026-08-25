@@ -194,6 +194,7 @@ type _VisualObjectStateSignature = tuple[
 ]
 type _EndpointStateSignature = tuple[_VisualObjectStateSignature, ...]
 type _ConnectorStateSignature = tuple[int, tuple[tuple[int, int], ...]] | None
+type _RasterStateSignature = tuple[tuple[int, int, int], ...]
 type _ExplorationRootKey = tuple[str, str, int, int]
 
 
@@ -250,6 +251,12 @@ class PlannedClick:
     expected_child_endpoint_signature: _EndpointStateSignature = ()
     expected_child_connector_signature: _ConnectorStateSignature = None
     expected_active_center: tuple[int, int] | None = None
+    required_child_protected_raster_hash: str | None = None
+    expected_child_protected_raster_hash: str | None = None
+    required_child_raster_signature: _RasterStateSignature = ()
+    expected_child_raster_signature: _RasterStateSignature = ()
+    expected_occluded_endpoint_centers: tuple[tuple[int, int], ...] = ()
+    expected_occluded_endpoint_cells: tuple[tuple[int, int], ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -321,6 +328,10 @@ class _ChildIsolationStateCertificate:
     selected_connector_signature: _ConnectorStateSignature
     frozen_connector_signature: _ConnectorStateSignature
     active_center: tuple[int, int]
+    protected_raster_hash: str
+    selected_raster_signature: _RasterStateSignature
+    occluded_endpoint_centers: tuple[tuple[int, int], ...]
+    occluded_endpoint_cells: tuple[tuple[int, int], ...]
 
 
 @dataclass(frozen=True, slots=True)
@@ -3879,17 +3890,20 @@ def _hierarchy_projected_scene(
         rows[center[1]][center[0]] = item.center_cell
 
     for group in hierarchy.children:
-        paint_object(
-            group.mediator,
-            center=mediator_centers[group.mediator.object_ref],
-            color=group.mediator.color,
-        )
         for endpoint in group.endpoints:
             paint_object(
                 endpoint,
                 center=positions[endpoint.object_ref],
                 color=colors[endpoint.object_ref],
             )
+        # The official renderer layers each recomputed mediator over its
+        # endpoints.  Matching that order makes parser preflight reject a
+        # projected layout whenever the mediator would occlude an endpoint.
+        paint_object(
+            group.mediator,
+            center=mediator_centers[group.mediator.object_ref],
+            color=group.mediator.color,
+        )
     return extract_visual_scene(GridFrame.from_rows(rows))
 
 
@@ -4598,6 +4612,28 @@ def _endpoint_state_signature(
     )
 
 
+def _state_signature_footprint(
+    signature: _VisualObjectStateSignature,
+) -> frozenset[tuple[int, int]] | None:
+    """Reconstruct one odd-bounded glyph footprint from its exact state signature."""
+
+    center, _color, _center_cell, relative_cells = signature
+    if not relative_cells:
+        return None
+    max_x = max(x for x, _y in relative_cells)
+    max_y = max(y for _x, y in relative_cells)
+    if max_x % 2 != 0 or max_y % 2 != 0:
+        return None
+    min_x = center[0] - (max_x // 2)
+    min_y = center[1] - (max_y // 2)
+    return frozenset(
+        (
+            *((min_x + x, min_y + y) for x, y in relative_cells),
+            center,
+        )
+    )
+
+
 def _child_group_matches_geometry(
     group: _AffineChildGroup,
     *,
@@ -4649,6 +4685,136 @@ def _child_isolation_target_regions(
         for center, region in endpoint_regions
     )
     return dynamic_regions, endpoint_regions
+
+
+def _child_isolation_selected_raster_signature(
+    scene: VisualScene,
+    projected: VisualScene,
+    selected_group: _AffineChildGroup,
+    *,
+    positions: dict[str, tuple[int, int]],
+) -> _RasterStateSignature:
+    """Capture the exact selected-child raster over every mutable relation cell."""
+
+    endpoint_centers = tuple(positions[item.object_ref] for item in selected_group.endpoints)
+    mediator_center = (
+        sum(center[0] for center in endpoint_centers) // selected_group.arity,
+        sum(center[1] for center in endpoint_centers) // selected_group.arity,
+    )
+    mutable_cells = _hierarchy_dynamic_footprint(
+        scene,
+        selected_group,
+    ) | _hierarchy_projected_group_footprint(
+        selected_group,
+        endpoint_centers=endpoint_centers,
+        mediator_center=mediator_center,
+    )
+    return tuple(sorted((x, y, projected.cells[y][x]) for x, y in mutable_cells))
+
+
+def _child_isolation_protected_raster_hash(scene: VisualScene) -> str:
+    """Hash every board cell except the observation-derived left HUD column."""
+
+    payload = repr(
+        (
+            scene.width,
+            scene.height,
+            tuple(tuple(row[1:]) for row in scene.cells),
+        )
+    ).encode("ascii")
+    return "sha256:" + hashlib.sha256(payload).hexdigest()
+
+
+def _projected_mediator_occluded_endpoint_centers(
+    projected: VisualScene,
+    hierarchy: _AffineHierarchy,
+    selected_group: _AffineChildGroup,
+    *,
+    positions: dict[str, tuple[int, int]],
+    colors: dict[str, int],
+) -> tuple[tuple[tuple[int, int], ...], tuple[tuple[int, int], ...]] | None:
+    """Certify one passive endpoint hidden only by its recomputed mediator.
+
+    The latent endpoint geometry comes from the unique pre-action hierarchy.
+    The projected frame must contain every other endpoint and both mediators
+    exactly; no arbitrary parser loss is accepted as occlusion evidence.
+    """
+
+    expected_endpoints = tuple(
+        (
+            endpoint,
+            _visual_object_state_signature(
+                endpoint,
+                position=positions[endpoint.object_ref],
+                color=colors[endpoint.object_ref],
+            ),
+        )
+        for child in hierarchy.children
+        for endpoint in child.endpoints
+    )
+    expected_endpoint_signatures = {signature for _endpoint, signature in expected_endpoints}
+    observed_endpoint_signatures = {
+        _visual_object_state_signature(endpoint) for endpoint in projected.endpoints
+    }
+    if (
+        len(expected_endpoint_signatures) != len(expected_endpoints)
+        or len(observed_endpoint_signatures) != len(projected.endpoints)
+        or len(projected.endpoints) != len(expected_endpoints) - 1
+        or not observed_endpoint_signatures < expected_endpoint_signatures
+    ):
+        return None
+    missing_signatures = expected_endpoint_signatures - observed_endpoint_signatures
+    if len(missing_signatures) != 1:
+        return None
+    missing = next(
+        (
+            endpoint
+            for endpoint, signature in expected_endpoints
+            if signature in missing_signatures and endpoint in selected_group.endpoints
+        ),
+        None,
+    )
+    if missing is None or colors[missing.object_ref] == hierarchy.active_color:
+        return None
+
+    selected_centers = tuple(positions[item.object_ref] for item in selected_group.endpoints)
+    selected_mediator_center = (
+        sum(center[0] for center in selected_centers) // selected_group.arity,
+        sum(center[1] for center in selected_centers) // selected_group.arity,
+    )
+    expected_mediator_signatures = {
+        _visual_object_state_signature(
+            child.mediator,
+            position=(
+                sum(positions[item.object_ref][0] for item in child.endpoints) // child.arity,
+                sum(positions[item.object_ref][1] for item in child.endpoints) // child.arity,
+            ),
+        )
+        for child in hierarchy.children
+    }
+    observed_mediator_signatures = {
+        _visual_object_state_signature(mediator) for mediator in projected.mediators
+    }
+    if (
+        len(expected_mediator_signatures) != len(hierarchy.children)
+        or observed_mediator_signatures != expected_mediator_signatures
+    ):
+        return None
+
+    missing_center = positions[missing.object_ref]
+    missing_footprint = _translated_object_footprint(missing, center=missing_center)
+    mediator_footprint = _translated_object_footprint(
+        selected_group.mediator,
+        center=selected_mediator_center,
+    )
+    overlap = missing_footprint & mediator_footprint
+    if (
+        not overlap
+        or missing_center in mediator_footprint
+        or colors[missing.object_ref] == selected_group.mediator.color
+    ):
+        return None
+    return ((missing_center,), tuple(sorted(overlap)))
 
 
 def _child_isolation_projected_state_is_safe(
@@ -4706,15 +4872,17 @@ def _child_isolation_projected_state_is_safe(
         positions=positions,
         colors=colors,
     )
-    if (
-        len(projected.endpoints) != len(scene.endpoints)
-        or len(projected.mediators) != len(scene.mediators)
-        or _child_isolation_target_surface_signature(
-            projected,
-            sink_center=hierarchy.target.rounded_center,
-        )
-        != target_signature
-        or set(_visible_target_regions(projected)) != set(_visible_target_regions(scene))
+    selected_raster_signature = _child_isolation_selected_raster_signature(
+        scene,
+        projected,
+        selected_group,
+        positions=positions,
+    )
+    if _child_isolation_target_surface_signature(
+        projected,
+        sink_center=hierarchy.target.rounded_center,
+    ) != target_signature or set(_visible_target_regions(projected)) != set(
+        _visible_target_regions(scene)
     ):
         return None
     parsed = _unique_affine_hierarchy(
@@ -4722,15 +4890,13 @@ def _child_isolation_projected_state_is_safe(
         active_color=hierarchy.active_color,
         search_budget=search_budget,
     )
-    if parsed is None or len(parsed.children) != 2:
-        return None
     active = tuple(item for item in projected.endpoints if item.color == hierarchy.active_color)
     if len(active) != 1:
         return None
     frozen_endpoint_signature = _endpoint_state_signature(frozen_group.endpoints)
     frozen_matches = tuple(
         child
-        for child in parsed.children
+        for child in (() if parsed is None else parsed.children)
         if _child_group_matches_state(
             child,
             mediator_signature=_visual_object_state_signature(frozen_group.mediator),
@@ -4744,32 +4910,80 @@ def _child_isolation_projected_state_is_safe(
     )
     selected_matches = tuple(
         child
-        for child in parsed.children
+        for child in (() if parsed is None else parsed.children)
         if child.mediator.rounded_center == selected_mediator
         and child.mediator.color == selected_group.mediator.color
         and _endpoint_state_signature(child.endpoints) == selected_endpoint_signature
         and any(item.color == hierarchy.active_color for item in child.endpoints)
     )
-    if not (
-        len(frozen_matches) == 1
+    if (
+        len(projected.endpoints) == len(scene.endpoints)
+        and len(projected.mediators) == len(scene.mediators)
+        and parsed is not None
+        and len(parsed.children) == 2
+        and len(frozen_matches) == 1
         and len(selected_matches) == 1
         and frozen_matches[0] is not selected_matches[0]
         and parsed.target.rounded_center == hierarchy.target.rounded_center
         and parsed.target.color == hierarchy.target.color
     ):
+        return _ChildIsolationStateCertificate(
+            selected_mediator_signature=_visual_object_state_signature(
+                selected_matches[0].mediator
+            ),
+            selected_endpoint_signature=selected_endpoint_signature,
+            selected_connector_signature=_hierarchy_connector_state_signature(
+                projected,
+                selected_matches[0],
+            ),
+            frozen_connector_signature=_hierarchy_connector_state_signature(
+                projected,
+                frozen_matches[0],
+            ),
+            active_center=active[0].rounded_center,
+            protected_raster_hash=_child_isolation_protected_raster_hash(projected),
+            selected_raster_signature=selected_raster_signature,
+            occluded_endpoint_centers=(),
+            occluded_endpoint_cells=(),
+        )
+
+    occlusion = _projected_mediator_occluded_endpoint_centers(
+        projected,
+        hierarchy,
+        selected_group,
+        positions=positions,
+        colors=colors,
+    )
+    if not (
+        occlusion is not None
+        and _visual_object_state_signature(
+            selected_group.mediator,
+            position=selected_mediator,
+        )
+        in {_visual_object_state_signature(item) for item in projected.mediators}
+    ):
+        return None
+    frozen_connector_signature = _hierarchy_connector_state_signature(
+        projected,
+        frozen_group,
+    )
+    if not (
+        frozen_connector_signature == _hierarchy_connector_state_signature(scene, frozen_group)
+    ):
         return None
     return _ChildIsolationStateCertificate(
-        selected_mediator_signature=_visual_object_state_signature(selected_matches[0].mediator),
+        selected_mediator_signature=_visual_object_state_signature(
+            selected_group.mediator,
+            position=selected_mediator,
+        ),
         selected_endpoint_signature=selected_endpoint_signature,
-        selected_connector_signature=_hierarchy_connector_state_signature(
-            projected,
-            selected_matches[0],
-        ),
-        frozen_connector_signature=_hierarchy_connector_state_signature(
-            projected,
-            frozen_matches[0],
-        ),
+        selected_connector_signature=None,
+        frozen_connector_signature=frozen_connector_signature,
         active_center=active[0].rounded_center,
+        protected_raster_hash=_child_isolation_protected_raster_hash(projected),
+        selected_raster_signature=selected_raster_signature,
+        occluded_endpoint_centers=occlusion[0],
+        occluded_endpoint_cells=occlusion[1],
     )
 
 
@@ -4880,7 +5094,9 @@ def _child_isolation_sequence_is_safe(
     centers = tuple(positions[item.object_ref] for item in selected_group.endpoints)
     target = hierarchy.target.rounded_center
     if not (
-        sum(center[0] for center in centers) == selected_group.arity * target[0]
+        not certificates[-1].occluded_endpoint_centers
+        and not certificates[-1].occluded_endpoint_cells
+        and sum(center[0] for center in centers) == selected_group.arity * target[0]
         and sum(center[1] for center in centers) == selected_group.arity * target[1]
         and layout.support == target
     ):
@@ -4935,10 +5151,15 @@ def _build_child_isolation_plan(
             expected_child_endpoint_signature=(initial_certificate.selected_endpoint_signature),
             expected_child_connector_signature=(initial_certificate.selected_connector_signature),
             expected_active_center=initial_certificate.active_center,
+            expected_child_protected_raster_hash=(initial_certificate.protected_raster_hash),
+            expected_child_raster_signature=initial_certificate.selected_raster_signature,
+            expected_occluded_endpoint_centers=(initial_certificate.occluded_endpoint_centers),
+            expected_occluded_endpoint_cells=initial_certificate.occluded_endpoint_cells,
         )
     ]
     for mover_index, (_mover, point) in enumerate(zip(layout.movers, layout.points, strict=True)):
         final_action = mover_index + 1 == len(layout.movers)
+        movement_before_certificate = state_certificates[certificate_index - 1]
         movement_certificate = state_certificates[certificate_index]
         certificate_index += 1
         actions.append(
@@ -4973,6 +5194,16 @@ def _build_child_isolation_plan(
                     movement_certificate.selected_connector_signature
                 ),
                 expected_active_center=movement_certificate.active_center,
+                required_child_protected_raster_hash=(
+                    movement_before_certificate.protected_raster_hash
+                ),
+                expected_child_protected_raster_hash=(movement_certificate.protected_raster_hash),
+                required_child_raster_signature=(
+                    movement_before_certificate.selected_raster_signature
+                ),
+                expected_child_raster_signature=(movement_certificate.selected_raster_signature),
+                expected_occluded_endpoint_centers=(movement_certificate.occluded_endpoint_centers),
+                expected_occluded_endpoint_cells=(movement_certificate.occluded_endpoint_cells),
             )
         )
         if not final_action:
@@ -5008,6 +5239,18 @@ def _build_child_isolation_plan(
                         switch_certificate.selected_connector_signature
                     ),
                     expected_active_center=switch_certificate.active_center,
+                    required_child_protected_raster_hash=(
+                        movement_certificate.protected_raster_hash
+                    ),
+                    expected_child_protected_raster_hash=(switch_certificate.protected_raster_hash),
+                    required_child_raster_signature=(
+                        movement_certificate.selected_raster_signature
+                    ),
+                    expected_child_raster_signature=(switch_certificate.selected_raster_signature),
+                    expected_occluded_endpoint_centers=(
+                        switch_certificate.occluded_endpoint_centers
+                    ),
+                    expected_occluded_endpoint_cells=(switch_certificate.occluded_endpoint_cells),
                 )
             )
     if certificate_index != len(state_certificates):
@@ -5190,6 +5433,102 @@ def _child_isolation_plan(
     return None
 
 
+def _child_isolation_occlusion_certificate_matches(
+    scene: VisualScene,
+    *,
+    expected_protected_raster_hash: str,
+    active_color: int,
+    sink_center: tuple[int, int],
+    target_signature: _TargetSurfaceSignature,
+    selected_mediator_signature: _VisualObjectStateSignature,
+    selected_endpoint_signature: _EndpointStateSignature,
+    selected_raster_signature: _RasterStateSignature,
+    occluded_endpoint_centers: tuple[tuple[int, int], ...],
+    occluded_endpoint_cells: tuple[tuple[int, int], ...],
+    expected_active_center: tuple[int, int],
+    frozen_mediator_signature: _VisualObjectStateSignature,
+    frozen_endpoint_signature: _EndpointStateSignature,
+    frozen_connector_signature: _ConnectorStateSignature,
+) -> bool:
+    """Match one predeclared passive-endpoint occlusion without reparsing history."""
+
+    if (
+        _child_isolation_protected_raster_hash(scene) != expected_protected_raster_hash
+        or len(occluded_endpoint_centers) != 1
+        or not occluded_endpoint_cells
+        or occluded_endpoint_centers[0] in occluded_endpoint_cells
+        or _child_isolation_target_surface_signature(scene, sink_center=sink_center)
+        != target_signature
+        or any(scene.cells[y][x] != value for x, y, value in selected_raster_signature)
+        or not set(occluded_endpoint_cells)
+        <= {(x, y) for x, y, _value in selected_raster_signature}
+    ):
+        return False
+
+    occluded_centers = set(occluded_endpoint_centers)
+    occluded_endpoint_signatures = tuple(
+        signature for signature in selected_endpoint_signature if signature[0] in occluded_centers
+    )
+    if len(occluded_endpoint_signatures) != 1:
+        return False
+    endpoint_footprint = _state_signature_footprint(occluded_endpoint_signatures[0])
+    mediator_footprint = _state_signature_footprint(selected_mediator_signature)
+    if (
+        endpoint_footprint is None
+        or mediator_footprint is None
+        or endpoint_footprint & mediator_footprint != set(occluded_endpoint_cells)
+    ):
+        return False
+    expected_visible_selected = tuple(
+        signature
+        for signature in selected_endpoint_signature
+        if signature[0] not in occluded_centers
+    )
+    if len(expected_visible_selected) + 1 != len(selected_endpoint_signature):
+        return False
+    observed_endpoint_signature = tuple(
+        sorted(_visual_object_state_signature(endpoint) for endpoint in scene.endpoints)
+    )
+    if observed_endpoint_signature != tuple(
+        sorted((*expected_visible_selected, *frozen_endpoint_signature))
+    ):
+        return False
+
+    observed_mediator_signature = tuple(
+        sorted(_visual_object_state_signature(mediator) for mediator in scene.mediators)
+    )
+    if observed_mediator_signature != tuple(
+        sorted((selected_mediator_signature, frozen_mediator_signature))
+    ):
+        return False
+    active = tuple(endpoint for endpoint in scene.endpoints if endpoint.color == active_color)
+    if len(active) != 1 or active[0].rounded_center != expected_active_center:
+        return False
+
+    frozen_endpoints = tuple(
+        endpoint
+        for endpoint in scene.endpoints
+        if _visual_object_state_signature(endpoint) in set(frozen_endpoint_signature)
+    )
+    frozen_mediators = tuple(
+        mediator
+        for mediator in scene.mediators
+        if _visual_object_state_signature(mediator) == frozen_mediator_signature
+    )
+    return bool(
+        len(frozen_endpoints) == len(frozen_endpoint_signature)
+        and len(frozen_mediators) == 1
+        and _hierarchy_connector_state_signature(
+            scene,
+            _AffineChildGroup(
+                mediator=frozen_mediators[0],
+                endpoints=frozen_endpoints,
+            ),
+        )
+        == frozen_connector_signature
+    )
+
+
 def _child_isolation_was_observed(
     hierarchy: _AffineHierarchy,
     *,
@@ -5231,6 +5570,15 @@ def _hierarchy_planned_click_is_safe(
     if not planned.plan_signature.startswith(("affine-hierarchy:", "affine-child-isolation:")):
         return True
     if not any(target.rounded_center == planned.target_center for target in scene.targets):
+        return False
+    if planned.required_child_protected_raster_hash is not None and (
+        _child_isolation_protected_raster_hash(scene)
+        != planned.required_child_protected_raster_hash
+    ):
+        return False
+    if planned.required_child_raster_signature and any(
+        scene.cells[y][x] != value for x, y, value in planned.required_child_raster_signature
+    ):
         return False
     if planned.purpose is VisualActionPurpose.PROBE:
         selected = tuple(
@@ -5534,6 +5882,10 @@ class VisualCausalPolicy:
         self._pending_expected_child_endpoint_signature: _EndpointStateSignature = ()
         self._pending_expected_child_connector_signature: _ConnectorStateSignature = None
         self._pending_expected_active_center: tuple[int, int] | None = None
+        self._pending_expected_child_protected_raster_hash: str | None = None
+        self._pending_expected_child_raster_signature: _RasterStateSignature = ()
+        self._pending_expected_occluded_endpoint_centers: tuple[tuple[int, int], ...] = ()
+        self._pending_expected_occluded_endpoint_cells: tuple[tuple[int, int], ...] = ()
         self._pending_clef_prediction = EffectVector.unknown()
         self._pending_mechanic_prediction: MechanicPredictionReceipt | None = None
         self._plan: deque[PlannedClick] = deque()
@@ -5554,6 +5906,8 @@ class VisualCausalPolicy:
         self._active_hierarchy_relation_key: str | None = None
         self._active_hierarchy_supports: tuple[tuple[int, int], ...] = ()
         self._failed_hierarchy_relation_keys: set[str] = set()
+        self._hierarchy_lineage_lost: tuple[int, str, str, str] | None = None
+        self._failed_hierarchy_lineages: set[tuple[int, str, str, str]] = set()
         self._active_child_isolation_relation_key: str | None = None
         self._active_child_isolation_frozen_mediator_center: tuple[int, int] | None = None
         self._active_child_isolation_frozen_mediator_signature: (
@@ -5646,6 +6000,8 @@ class VisualCausalPolicy:
         self._active_hierarchy_relation_key = None
         self._active_hierarchy_supports = ()
         self._failed_hierarchy_relation_keys.clear()
+        self._hierarchy_lineage_lost = None
+        self._failed_hierarchy_lineages.clear()
         self._clear_child_isolation_execution()
         self._failed_child_isolation_relation_keys.clear()
         self._failed_child_isolation_relation_reasons.clear()
@@ -5671,6 +6027,7 @@ class VisualCausalPolicy:
         self._active_hierarchy_signature = None
         self._active_hierarchy_relation_key = None
         self._active_hierarchy_supports = ()
+        self._hierarchy_lineage_lost = None
         self._clear_child_isolation_execution()
         self._marker_structural_actions.clear()
         self._marker_structural_action_order.clear()
@@ -5686,6 +6043,22 @@ class VisualCausalPolicy:
         self._active_child_isolation_frozen_connector_signature = None
         self._active_child_isolation_frozen_mediator_color = None
         self._active_child_isolation_target_signature = None
+
+    def _latch_hierarchy_lineage_failure(
+        self,
+        *,
+        level_index: int,
+        plan_signature: str,
+        phase: str,
+    ) -> None:
+        relation_key = (
+            self._active_child_isolation_relation_key
+            or self._active_hierarchy_relation_key
+            or "unbound-hierarchy-relation"
+        )
+        failure = (level_index, relation_key, plan_signature, phase)
+        self._failed_hierarchy_lineages.add(failure)
+        self._hierarchy_lineage_lost = failure
 
     @staticmethod
     def _exploration_root_key(
@@ -6010,15 +6383,35 @@ class VisualCausalPolicy:
             raise PolicyError("levels_completed regressed within one policy lifetime")
         if observation.levels_completed > self._level_index:
             self._begin_level(observation)
+        if self._hierarchy_lineage_lost is not None:
+            raise PolicyError(
+                "hierarchy lineage was lost after a nonmatching returned consequence; "
+                "no unrelated fallback is authorized"
+            )
 
         if self._plan and ActionName.ACTION6 not in observation.available_actions:
-            self._failed_plan_signatures.add(self._plan[0].plan_signature)
+            blocked_plan = self._plan[0]
+            self._failed_plan_signatures.add(blocked_plan.plan_signature)
+            hierarchy_blocked = blocked_plan.plan_signature.startswith(
+                ("affine-hierarchy:", "affine-child-isolation:")
+            )
+            if hierarchy_blocked:
+                self._latch_hierarchy_lineage_failure(
+                    level_index=observation.levels_completed,
+                    plan_signature=blocked_plan.plan_signature,
+                    phase=f"queued-action-unavailable:{self._step_index}",
+                )
             self._plan.clear()
             self._active_hierarchy_signature = None
             self._active_hierarchy_relation_key = None
             self._active_hierarchy_supports = ()
             self._clear_child_isolation_execution()
             self._last_probe_failed = True
+            if hierarchy_blocked:
+                raise PolicyError(
+                    "queued hierarchy action became unavailable; no unrelated fallback "
+                    "is authorized"
+                )
         if ActionName.ACTION6 in observation.available_actions and not (
             self._plan
             and self._plan[0].plan_signature.startswith(
@@ -6161,12 +6554,22 @@ class VisualCausalPolicy:
                 )
             )
         ):
-            self._failed_plan_signatures.add(self._plan[0].plan_signature)
+            unsafe_plan = self._plan[0]
+            self._failed_plan_signatures.add(unsafe_plan.plan_signature)
+            self._latch_hierarchy_lineage_failure(
+                level_index=observation.levels_completed,
+                plan_signature=unsafe_plan.plan_signature,
+                phase=f"queued-precondition-mismatch:{self._step_index}",
+            )
             self._plan.clear()
             self._active_hierarchy_signature = None
             self._active_hierarchy_relation_key = None
             self._active_hierarchy_supports = ()
             self._clear_child_isolation_execution()
+            raise PolicyError(
+                "queued hierarchy precondition no longer matches the returned frame; "
+                "no unrelated fallback is authorized"
+            )
         if self._plan:
             planned = self._plan.popleft()
             action = ActionRequest(ActionName.ACTION6, planned.coordinate)
@@ -6189,6 +6592,10 @@ class VisualCausalPolicy:
                 expected_child_endpoint_signature=(planned.expected_child_endpoint_signature),
                 expected_child_connector_signature=(planned.expected_child_connector_signature),
                 expected_active_center=planned.expected_active_center,
+                expected_child_protected_raster_hash=(planned.expected_child_protected_raster_hash),
+                expected_child_raster_signature=(planned.expected_child_raster_signature),
+                expected_occluded_endpoint_centers=(planned.expected_occluded_endpoint_centers),
+                expected_occluded_endpoint_cells=(planned.expected_occluded_endpoint_cells),
             )
             return action
 
@@ -6288,6 +6695,18 @@ class VisualCausalPolicy:
                                 planned.expected_child_connector_signature
                             ),
                             expected_active_center=planned.expected_active_center,
+                            expected_child_protected_raster_hash=(
+                                planned.expected_child_protected_raster_hash
+                            ),
+                            expected_child_raster_signature=(
+                                planned.expected_child_raster_signature
+                            ),
+                            expected_occluded_endpoint_centers=(
+                                planned.expected_occluded_endpoint_centers
+                            ),
+                            expected_occluded_endpoint_cells=(
+                                planned.expected_occluded_endpoint_cells
+                            ),
                         )
                         return action
                     if hierarchy_plan is not None:
@@ -6461,6 +6880,10 @@ class VisualCausalPolicy:
         expected_child_endpoint_signature: _EndpointStateSignature = (),
         expected_child_connector_signature: _ConnectorStateSignature = None,
         expected_active_center: tuple[int, int] | None = None,
+        expected_child_protected_raster_hash: str | None = None,
+        expected_child_raster_signature: _RasterStateSignature = (),
+        expected_occluded_endpoint_centers: tuple[tuple[int, int], ...] = (),
+        expected_occluded_endpoint_cells: tuple[tuple[int, int], ...] = (),
         affine_reacquisition: bool = False,
     ) -> None:
         if self._pending_action is not None:
@@ -6486,6 +6909,10 @@ class VisualCausalPolicy:
         self._pending_expected_child_endpoint_signature = expected_child_endpoint_signature
         self._pending_expected_child_connector_signature = expected_child_connector_signature
         self._pending_expected_active_center = expected_active_center
+        self._pending_expected_child_protected_raster_hash = expected_child_protected_raster_hash
+        self._pending_expected_child_raster_signature = expected_child_raster_signature
+        self._pending_expected_occluded_endpoint_centers = expected_occluded_endpoint_centers
+        self._pending_expected_occluded_endpoint_cells = expected_occluded_endpoint_cells
         self._pending_affine_reacquisition = affine_reacquisition
         self._pending_clef_prediction = _predicted_clef_effects(
             purpose=purpose,
@@ -6571,10 +6998,61 @@ class VisualCausalPolicy:
             len(before_parent_targets) == len(after_parent_targets) == 1
             and before_parent_targets[0].object_ref == after_parent_targets[0].object_ref
         )
+        expected_child_protected_raster_hash = self._pending_expected_child_protected_raster_hash
+        expected_child_protected_raster_hash_value = expected_child_protected_raster_hash or ""
+        child_isolation_raster_certified = bool(
+            child_isolation_action
+            and expected_child_protected_raster_hash is not None
+            and self._pending_expected_child_raster_signature
+            and _child_isolation_protected_raster_hash(after_scene)
+            == expected_child_protected_raster_hash
+            and all(
+                after_scene.cells[y][x] == value
+                for x, y, value in self._pending_expected_child_raster_signature
+            )
+        )
+        child_isolation_occlusion_certified = bool(
+            child_isolation_action
+            and child_isolation_raster_certified
+            and not self._pending_completes_child_isolation
+            and observation.state is GameStateName.NOT_FINISHED
+            and observation.levels_completed == before.levels_completed
+            and changed > 0
+            and self._last_active_color is not None
+            and self._pending_target_center is not None
+            and self._active_child_isolation_target_signature is not None
+            and self._pending_expected_child_mediator_signature is not None
+            and self._pending_expected_child_endpoint_signature
+            and self._pending_expected_child_raster_signature
+            and self._pending_expected_occluded_endpoint_centers
+            and self._pending_expected_occluded_endpoint_cells
+            and self._pending_expected_active_center is not None
+            and self._active_child_isolation_frozen_mediator_signature is not None
+            and self._active_child_isolation_frozen_endpoint_signature
+            and _child_isolation_occlusion_certificate_matches(
+                after_scene,
+                expected_protected_raster_hash=(expected_child_protected_raster_hash_value),
+                active_color=self._last_active_color,
+                sink_center=self._pending_target_center,
+                target_signature=self._active_child_isolation_target_signature,
+                selected_mediator_signature=(self._pending_expected_child_mediator_signature),
+                selected_endpoint_signature=self._pending_expected_child_endpoint_signature,
+                selected_raster_signature=self._pending_expected_child_raster_signature,
+                occluded_endpoint_centers=(self._pending_expected_occluded_endpoint_centers),
+                occluded_endpoint_cells=self._pending_expected_occluded_endpoint_cells,
+                expected_active_center=self._pending_expected_active_center,
+                frozen_mediator_signature=(self._active_child_isolation_frozen_mediator_signature),
+                frozen_endpoint_signature=(self._active_child_isolation_frozen_endpoint_signature),
+                frozen_connector_signature=(
+                    self._active_child_isolation_frozen_connector_signature
+                ),
+            )
+        )
         child_isolation_constraints_preserved = bool(
             not child_isolation_action
             or (
                 after_hierarchy is not None
+                and child_isolation_raster_certified
                 and self._pending_target_center is not None
                 and self._active_child_isolation_frozen_mediator_center is not None
                 and self._active_child_isolation_frozen_mediator_signature is not None
@@ -6619,6 +7097,7 @@ class VisualCausalPolicy:
                     for child in after_hierarchy.children
                 )
             )
+            or child_isolation_occlusion_certified
         )
         hierarchy_structure_readable = bool(
             hierarchy_action
@@ -6639,6 +7118,9 @@ class VisualCausalPolicy:
                     for endpoint in after_scene.endpoints
                 )
             )
+        )
+        hierarchy_consequence_certified = bool(
+            hierarchy_structure_readable or child_isolation_occlusion_certified
         )
         hierarchy_supports_observed = bool(
             joint_hierarchy_action
@@ -6804,7 +7286,7 @@ class VisualCausalPolicy:
             hierarchy_action
             and not level_progress
             and observation.state is GameStateName.NOT_FINISHED
-            and not hierarchy_structure_readable
+            and not hierarchy_consequence_certified
             and residual is None
         ):
             residual = (
@@ -6814,7 +7296,7 @@ class VisualCausalPolicy:
             )
         coordinate_transform = (
             local_target_satisfied
-            or hierarchy_structure_readable
+            or hierarchy_consequence_certified
             or marker_action_structure_readable
             or marker_bootstrap_succeeded
             or _coordinate_transform_observed(
@@ -6840,6 +7322,7 @@ class VisualCausalPolicy:
         if (
             mechanic is not None
             or local_target_satisfied
+            or child_isolation_occlusion_certified
             or marker_action_structure_readable
             or marker_bootstrap_succeeded
         ):
@@ -6971,7 +7454,7 @@ class VisualCausalPolicy:
             and not level_progress
             and observation.state is GameStateName.NOT_FINISHED
             and (
-                (hierarchy_action and not hierarchy_structure_readable)
+                (hierarchy_action and not hierarchy_consequence_certified)
                 or (
                     not hierarchy_action
                     and (
@@ -6995,6 +7478,21 @@ class VisualCausalPolicy:
                 )
             )
         )
+        if (
+            plan_prediction_failed
+            and hierarchy_action
+            and (
+                hierarchy_recognition_residual is None
+                or (child_isolation_action and not child_isolation_raster_certified)
+            )
+        ):
+            relation_key = child_isolation_relation_key or hierarchy_relation_key
+            if relation_key is not None and self._pending_plan_signature is not None:
+                self._latch_hierarchy_lineage_failure(
+                    level_index=before.levels_completed,
+                    plan_signature=self._pending_plan_signature,
+                    phase=f"returned-consequence:{self._step_index}",
+                )
         if marker_action_structure_readable:
             self._marker_reacquire_after_local_solve = False
             self._affine_reacquire_target_center = None
@@ -7176,6 +7674,10 @@ class VisualCausalPolicy:
         self._pending_expected_child_endpoint_signature = ()
         self._pending_expected_child_connector_signature = None
         self._pending_expected_active_center = None
+        self._pending_expected_child_protected_raster_hash = None
+        self._pending_expected_child_raster_signature = ()
+        self._pending_expected_occluded_endpoint_centers = ()
+        self._pending_expected_occluded_endpoint_cells = ()
         self._pending_affine_reacquisition = False
         self._pending_clef_prediction = EffectVector.unknown()
         self._pending_mechanic_prediction = None
@@ -7199,6 +7701,27 @@ class VisualCausalPolicy:
         transfer_levels: list[JSONValue] = []
         for level in sorted(self._transfer_confirmed_levels):
             transfer_levels.append(level)
+        lineage_failures: list[JSONValue] = []
+        for level_index, relation_key, plan_signature, phase in sorted(
+            self._failed_hierarchy_lineages
+        )[-32:]:
+            lineage_failures.append(
+                {
+                    "level_index": level_index,
+                    "relation_key": relation_key,
+                    "plan_signature": plan_signature,
+                    "phase": phase,
+                }
+            )
+        current_lineage_failure: JSONValue = None
+        if self._hierarchy_lineage_lost is not None:
+            level_index, relation_key, plan_signature, phase = self._hierarchy_lineage_lost
+            current_lineage_failure = {
+                "level_index": level_index,
+                "relation_key": relation_key,
+                "plan_signature": plan_signature,
+                "phase": phase,
+            }
         return {
             "active_level_index": self._level_index,
             "affine_reacquire_after_local_solve": (
@@ -7225,6 +7748,10 @@ class VisualCausalPolicy:
             ),
             "hierarchy_relation_key": self._active_hierarchy_relation_key,
             "hierarchy_relation_rejected_count": len(self._failed_hierarchy_relation_keys),
+            "hierarchy_lineage_failure": current_lineage_failure,
+            "hierarchy_lineage_failures": lineage_failures,
+            "hierarchy_lineage_lost": self._hierarchy_lineage_lost is not None,
+            "hierarchy_lineage_failure_count": len(self._failed_hierarchy_lineages),
             "hierarchy_search_deferred_count": self._hierarchy_search_deferred_count,
             "hierarchy_search_residual": self._last_hierarchy_search_residual,
             "hierarchy_signature": self._active_hierarchy_signature,

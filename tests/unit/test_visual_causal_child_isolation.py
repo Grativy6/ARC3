@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import replace
+from typing import Any
 
 import pytest
 from test_visual_causal_policy import (
@@ -12,6 +13,7 @@ from test_visual_causal_policy import (
     _TwoLayerAffineEnvironment,
 )
 
+import arc3.mechanics.visual_causal as visual_causal
 from arc3.adapters import GridFrame
 from arc3.errors import PolicyError
 from arc3.mechanics.visual_causal import (
@@ -19,6 +21,7 @@ from arc3.mechanics.visual_causal import (
     VisualCausalPolicy,
     _child_isolation_target_surface_signature,
     _hierarchy_connector_evidence,
+    _hierarchy_projected_scene,
     _hierarchy_relation_key,
     _raster_line_cells,
     _unique_affine_hierarchy,
@@ -89,6 +92,216 @@ def test_connector_evidence_accepts_independently_rendered_start_tie_leg() -> No
     assert len(cells) == 13
     assert (51, 41) in cells
     assert (50, 41) not in cells
+
+
+def test_hierarchy_projection_layers_mediator_over_an_overlapping_endpoint() -> None:
+    scene = extract_visual_scene(_two_layer_affine_frame())
+    hierarchy = _unique_affine_hierarchy(scene, active_color=0)
+    assert hierarchy is not None
+    selected = next(child for child in hierarchy.children if child.arity == 3)
+    positions = {
+        endpoint.object_ref: endpoint.rounded_center
+        for child in hierarchy.children
+        for endpoint in child.endpoints
+    }
+    colors = {
+        endpoint.object_ref: endpoint.color
+        for child in hierarchy.children
+        for endpoint in child.endpoints
+    }
+    projected_centers = {
+        (44, 48): (41, 47),
+        (56, 48): (56, 31),
+        (50, 36): (53, 36),
+    }
+    for endpoint in selected.endpoints:
+        positions[endpoint.object_ref] = projected_centers[endpoint.rounded_center]
+
+    projected = _hierarchy_projected_scene(
+        scene,
+        hierarchy,
+        positions=positions,
+        colors=colors,
+    )
+
+    # The recomputed mediator is centered at (50, 38).  Its outer glyph
+    # occludes the stationary endpoint at (53, 36) on the official surface.
+    assert projected.cells[36][51] == selected.mediator.color
+    assert len(projected.endpoints) == len(scene.endpoints) - 1
+
+
+def _occluded_child_certificate_fixture() -> tuple[
+    visual_causal.VisualScene,
+    dict[str, Any],
+]:
+    scene = extract_visual_scene(_two_layer_affine_frame(connector_color=9))
+    hierarchy = _unique_affine_hierarchy(scene, active_color=0)
+    assert hierarchy is not None
+    active_group = next(child for child in hierarchy.children if child.arity == 2)
+    inactive_group = next(child for child in hierarchy.children if child.arity == 3)
+    active = next(endpoint for endpoint in active_group.endpoints if endpoint.color == 0)
+    activation = next(
+        endpoint for endpoint in inactive_group.endpoints if endpoint.rounded_center == (44, 48)
+    )
+    positions = {
+        endpoint.object_ref: endpoint.rounded_center
+        for child in hierarchy.children
+        for endpoint in child.endpoints
+    }
+    colors = {
+        endpoint.object_ref: endpoint.color
+        for child in hierarchy.children
+        for endpoint in child.endpoints
+    }
+    colors[active.object_ref], colors[activation.object_ref] = (
+        colors[activation.object_ref],
+        colors[active.object_ref],
+    )
+    role_scene = _hierarchy_projected_scene(
+        scene,
+        hierarchy,
+        positions=positions,
+        colors=colors,
+    )
+    role_hierarchy = _unique_affine_hierarchy(role_scene, active_color=0)
+    assert role_hierarchy is not None
+    selected = next(child for child in role_hierarchy.children if child.arity == 3)
+    frozen = next(child for child in role_hierarchy.children if child.arity == 2)
+    positions = {
+        endpoint.object_ref: endpoint.rounded_center
+        for child in role_hierarchy.children
+        for endpoint in child.endpoints
+    }
+    colors = {
+        endpoint.object_ref: endpoint.color
+        for child in role_hierarchy.children
+        for endpoint in child.endpoints
+    }
+    projected_centers = {
+        (44, 48): (41, 47),
+        (56, 48): (56, 31),
+        (50, 36): (53, 36),
+    }
+    for endpoint in selected.endpoints:
+        positions[endpoint.object_ref] = projected_centers[endpoint.rounded_center]
+    projected = _hierarchy_projected_scene(
+        role_scene,
+        role_hierarchy,
+        positions=positions,
+        colors=colors,
+    )
+    occlusion = visual_causal._projected_mediator_occluded_endpoint_centers(
+        projected,
+        role_hierarchy,
+        selected,
+        positions=positions,
+        colors=colors,
+    )
+    assert occlusion == (((53, 36),), ((51, 36), (52, 37)))
+    selected_centers = tuple(positions[item.object_ref] for item in selected.endpoints)
+    selected_mediator_center = (
+        sum(center[0] for center in selected_centers) // selected.arity,
+        sum(center[1] for center in selected_centers) // selected.arity,
+    )
+    return projected, {
+        "expected_protected_raster_hash": (
+            visual_causal._child_isolation_protected_raster_hash(projected)
+        ),
+        "active_color": role_hierarchy.active_color,
+        "sink_center": role_hierarchy.target.rounded_center,
+        "target_signature": _child_isolation_target_surface_signature(
+            role_scene,
+            sink_center=role_hierarchy.target.rounded_center,
+        ),
+        "selected_mediator_signature": visual_causal._visual_object_state_signature(
+            selected.mediator,
+            position=selected_mediator_center,
+        ),
+        "selected_endpoint_signature": visual_causal._endpoint_state_signature(
+            selected.endpoints,
+            positions=positions,
+            colors=colors,
+        ),
+        "selected_raster_signature": (
+            visual_causal._child_isolation_selected_raster_signature(
+                role_scene,
+                projected,
+                selected,
+                positions=positions,
+            )
+        ),
+        "occluded_endpoint_centers": occlusion[0],
+        "occluded_endpoint_cells": occlusion[1],
+        "expected_active_center": (41, 47),
+        "frozen_mediator_signature": visual_causal._visual_object_state_signature(frozen.mediator),
+        "frozen_endpoint_signature": visual_causal._endpoint_state_signature(frozen.endpoints),
+        "frozen_connector_signature": visual_causal._hierarchy_connector_state_signature(
+            projected,
+            frozen,
+        ),
+    }
+
+
+def _mutated_scene(
+    scene: visual_causal.VisualScene,
+    coordinate: tuple[int, int],
+) -> visual_causal.VisualScene:
+    rows = [list(row) for row in scene.cells]
+    x, y = coordinate
+    rows[y][x] = (rows[y][x] + 1) % 16
+    return extract_visual_scene(GridFrame.from_rows(rows))
+
+
+def test_exact_child_occlusion_certificate_matches_the_projected_raster() -> None:
+    projected, certificate = _occluded_child_certificate_fixture()
+
+    assert visual_causal._child_isolation_occlusion_certificate_matches(
+        projected,
+        **certificate,
+    )
+
+
+@pytest.mark.parametrize(
+    "coordinate",
+    [
+        (51, 36),  # exact mediator/endpoint overlap
+        (41, 45),  # active endpoint shell
+        (12, 46),  # frozen endpoint center marker
+        (16, 46),  # frozen connector
+        (31, 13),  # parent-target surface
+        (48, 42),  # selected connector
+        (1, 1),  # unrelated interior surface
+        (63, 10),  # non-HUD border surface
+    ],
+)
+def test_child_occlusion_certificate_rejects_any_protected_raster_mutation(
+    coordinate: tuple[int, int],
+) -> None:
+    projected, certificate = _occluded_child_certificate_fixture()
+
+    assert not visual_causal._child_isolation_occlusion_certificate_matches(
+        _mutated_scene(projected, coordinate),
+        **certificate,
+    )
+
+
+def test_child_occlusion_certificate_allows_only_left_column_hud_evolution() -> None:
+    projected, certificate = _occluded_child_certificate_fixture()
+
+    assert visual_causal._child_isolation_occlusion_certificate_matches(
+        _mutated_scene(projected, (0, 3)),
+        **certificate,
+    )
+
+
+def test_child_occlusion_certificate_binds_the_exact_overlap_cells() -> None:
+    projected, certificate = _occluded_child_certificate_fixture()
+
+    certificate["occluded_endpoint_cells"] = ((51, 36),)
+    assert not visual_causal._child_isolation_occlusion_certificate_matches(
+        projected,
+        **certificate,
+    )
 
 
 def test_fresh_two_child_hierarchy_isolates_the_initially_nonactive_child() -> None:
@@ -215,6 +428,108 @@ def test_child_isolation_rejects_only_the_failed_layout_after_sibling_displaceme
     assert relation_key not in policy._failed_child_isolation_relation_keys
     assert policy.snapshot()["child_isolation_relation_rejected_count"] == 0
     assert policy._active_child_isolation_relation_key is None
+    assert policy.snapshot()["hierarchy_lineage_lost"] is True
+    assert policy.snapshot()["hierarchy_lineage_failure_count"] == 1
+    lineage_failure = policy.snapshot()["hierarchy_lineage_failure"]
+    assert isinstance(lineage_failure, dict)
+    assert lineage_failure["level_index"] == displaced.levels_completed
+    assert lineage_failure["relation_key"] == relation_key
+    assert lineage_failure["plan_signature"] in policy._failed_plan_signatures
+    assert str(lineage_failure["phase"]).startswith("returned-consequence:")
+    with pytest.raises(PolicyError, match="hierarchy lineage was lost"):
+        policy.select(displaced)
+
+    policy._begin_reset_epoch()
+    assert policy.snapshot()["hierarchy_lineage_lost"] is False
+    assert policy.snapshot()["hierarchy_lineage_failure_count"] == 1
+
+
+def test_readable_child_consequence_with_one_raster_residual_latches_lineage() -> None:
+    environment = _TwoLayerAffineEnvironment(win_on_hierarchy=False)
+    policy = VisualCausalPolicy(max_coordinate_candidates=8)
+    observation = _reach_two_layer_hierarchy(environment, policy)
+
+    action = policy.select(observation)
+    plan_signature = policy._pending_plan_signature
+    assert plan_signature is not None
+    returned = environment.step(action)
+    rows = [list(row) for row in returned.frames[-1].cells]
+    rows[47][46] = 6
+    mutated = replace(returned, frames=(GridFrame.from_rows(rows),))
+    assert (
+        _unique_affine_hierarchy(
+            extract_visual_scene(mutated.frames[-1]),
+            active_color=0,
+        )
+        is not None
+    )
+
+    policy.accept_consequence(mutated)
+
+    assert policy.receipts[-1].residual == (
+        "planned child-isolation consequence was not structurally readable"
+    )
+    assert plan_signature in policy._failed_plan_signatures
+    assert policy.snapshot()["hierarchy_lineage_lost"] is True
+    assert policy.snapshot()["pending_plan_actions"] == 0
+    with pytest.raises(PolicyError, match="hierarchy lineage was lost"):
+        policy.select(mutated)
+
+
+def test_child_raster_residual_latches_even_when_hierarchy_search_exhausts(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    environment = _TwoLayerAffineEnvironment(win_on_hierarchy=False)
+    policy = VisualCausalPolicy(max_coordinate_candidates=8)
+    observation = _reach_two_layer_hierarchy(environment, policy)
+
+    action = policy.select(observation)
+    returned = environment.step(action)
+    rows = [list(row) for row in returned.frames[-1].cells]
+    rows[1][1] = 6
+    mutated = replace(returned, frames=(GridFrame.from_rows(rows),))
+
+    def exhaust_hierarchy_search(*_args: object, **_kwargs: object) -> None:
+        raise visual_causal._HierarchySearchExhausted("test consequence exhaustion")
+
+    monkeypatch.setattr(
+        visual_causal,
+        "_unique_affine_hierarchy",
+        exhaust_hierarchy_search,
+    )
+    policy.accept_consequence(mutated)
+
+    assert policy.receipts[-1].residual == (
+        "returned hierarchy recognition failed closed: test consequence exhaustion"
+    )
+    assert policy.snapshot()["hierarchy_lineage_lost"] is True
+    assert policy.snapshot()["hierarchy_lineage_failure_count"] == 1
+    with pytest.raises(PolicyError, match="hierarchy lineage was lost"):
+        policy.select(mutated)
+
+
+def test_queued_child_precondition_mismatch_fails_closed_before_fallback() -> None:
+    environment = _TwoLayerAffineEnvironment(win_on_hierarchy=False)
+    policy = VisualCausalPolicy(max_coordinate_candidates=8)
+    observation = _reach_two_layer_hierarchy(environment, policy)
+
+    action = policy.select(observation)
+    plan_signature = policy._pending_plan_signature
+    assert plan_signature is not None
+    returned = environment.step(action)
+    policy.accept_consequence(returned)
+    assert policy.snapshot()["pending_plan_actions"] > 0
+
+    rows = [list(row) for row in returned.frames[-1].cells]
+    rows[1][1] = 6
+    changed_before_selection = replace(returned, frames=(GridFrame.from_rows(rows),))
+    with pytest.raises(PolicyError, match="queued hierarchy precondition"):
+        policy.select(changed_before_selection)
+
+    assert plan_signature in policy._failed_plan_signatures
+    assert policy.snapshot()["hierarchy_lineage_lost"] is True
+    assert policy.snapshot()["hierarchy_lineage_failure_count"] == 1
+    assert policy.snapshot()["pending_plan_actions"] == 0
 
 
 @pytest.mark.parametrize(
@@ -291,6 +606,46 @@ def test_child_isolation_unknown_terminal_state_does_not_claim_not_finished() ->
     assert relation_key not in policy._failed_child_isolation_relation_keys
     assert policy.snapshot()["child_isolation_active"] is False
     assert policy.snapshot()["pending_plan_actions"] == 0
+
+
+def test_child_isolation_terminal_raster_residual_does_not_falsify_the_relation() -> None:
+    environment = _TwoLayerAffineEnvironment(win_on_hierarchy=False)
+    policy = VisualCausalPolicy(max_coordinate_candidates=8)
+    observation = _reach_two_layer_hierarchy(environment, policy)
+    selection = policy.select(observation)
+    relation_key = policy._active_child_isolation_relation_key
+    assert relation_key is not None
+
+    for _ in range(16):
+        action = selection
+        completes_isolation = policy._pending_completes_child_isolation
+        observation = environment.step(action)
+        if completes_isolation:
+            rows = [list(row) for row in observation.frames[-1].cells]
+            rows[1][1] = 6
+            mutated = replace(observation, frames=(GridFrame.from_rows(rows),))
+            assert (
+                _unique_affine_hierarchy(
+                    extract_visual_scene(mutated.frames[-1]),
+                    active_color=0,
+                )
+                is not None
+            )
+            policy.accept_consequence(mutated)
+            observation = mutated
+            break
+        policy.accept_consequence(observation)
+        selection = policy.select(observation)
+    else:
+        raise AssertionError("the child-isolation plan never reached its terminal action")
+
+    assert policy.receipts[-1].residual == (
+        "planned child-isolation consequence was not structurally readable"
+    )
+    assert relation_key not in policy._failed_child_isolation_relation_keys
+    assert policy.snapshot()["hierarchy_lineage_lost"] is True
+    with pytest.raises(PolicyError, match="hierarchy lineage was lost"):
+        policy.select(observation)
 
 
 def test_joint_hierarchy_unknown_terminal_state_does_not_claim_not_finished() -> None:
