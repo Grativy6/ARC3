@@ -469,7 +469,58 @@ def test_marker_planner_does_not_emit_an_unreadable_direct_destination(
     assert policy.snapshot()["pending_plan_actions"] == 0
 
 
-def test_ambiguous_marker_active_role_fails_closed_without_legacy_relocation() -> None:
+def test_marker_planner_uses_previously_observed_unique_active_color_for_arity_two() -> None:
+    environment = _MarkerAffineEnvironment(
+        groups=[[(10, 50), (30, 50)]],
+        targets=((20, 28),),
+        marker_colors=(12,),
+    )
+    policy = VisualCausalPolicy()
+    policy._last_active_color = environment.active_color
+
+    action = policy.select(environment.observation())
+
+    assert action.coordinate == Coordinate(*environment.direct_solution())
+    assert policy.snapshot()["marker_bootstrap_attempted"] is False
+    assert policy.snapshot()["pending_plan_actions"] == 0
+
+
+@pytest.mark.parametrize("stale_active_color", (None, 9))
+def test_ambiguous_arity_two_bootstraps_once_then_replans_from_learned_color(
+    stale_active_color: int | None,
+) -> None:
+    environment = _MarkerAffineEnvironment(
+        groups=[[(10, 50), (30, 50)]],
+        targets=((20, 28),),
+        marker_colors=(12,),
+    )
+    policy = VisualCausalPolicy()
+    policy._last_active_color = stale_active_color
+    before = environment.observation()
+    scene = extract_visual_scene(before.frames[-1])
+
+    bootstrap = policy.select(before)
+
+    assert bootstrap.coordinate is not None
+    assert scene.is_open(bootstrap.coordinate.x, bootstrap.coordinate.y)
+    assert all(
+        math.dist((bootstrap.coordinate.x, bootstrap.coordinate.y), endpoint) > 2.25
+        for endpoint in environment.groups[0]
+    )
+    assert "identify the active marker endpoint" in policy._pending_prediction
+    assert policy.snapshot()["marker_bootstrap_attempted"] is True
+    assert policy.snapshot()["pending_plan_actions"] == 0
+
+    observation = environment.step(bootstrap)
+    policy.accept_consequence(observation)
+
+    assert policy._last_active_color == environment.active_color
+    assert policy.snapshot()["pending_plan_actions"] == 0
+    direct = policy.select(observation)
+    assert direct.coordinate == Coordinate(*environment.direct_solution())
+
+
+def test_failed_marker_bootstrap_is_not_repeated_or_replaced_by_legacy_relocation() -> None:
     environment = _MarkerAffineEnvironment(
         groups=[[(10, 50), (30, 50)], [(38, 52), (58, 52)]],
         targets=((20, 28), (48, 32)),
@@ -478,10 +529,20 @@ def test_ambiguous_marker_active_role_fails_closed_without_legacy_relocation() -
         fixed_color=3,
     )
     policy = VisualCausalPolicy()
+    before = environment.observation()
+
+    bootstrap = policy.select(before)
+    assert bootstrap.coordinate is not None
+    assert policy.snapshot()["pending_plan_actions"] == 0
+    policy.accept_consequence(environment.observation(returned_action=bootstrap))
 
     with pytest.raises(PolicyError, match="no bounded same-group action"):
         policy.select(environment.observation())
 
+    assert len(policy.receipts) == 1
+    assert policy.receipts[0].action == bootstrap
+    assert policy.receipts[0].residual == "probe did not localize a supported affine response"
+    assert policy.snapshot()["failed_plan_count"] == 1
     assert policy.snapshot()["pending_plan_actions"] == 0
 
 

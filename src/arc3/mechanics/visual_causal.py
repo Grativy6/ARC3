@@ -825,16 +825,17 @@ def _embedded_marker_plan(
     scene: VisualScene,
     *,
     level_index: int,
+    active_color: int | None,
     rejected_signatures: set[str],
 ) -> PlannedClick | None:
     """Plan one direct, target-relative action from visible marker evidence.
 
-    The globally unique endpoint outer color identifies the currently active
-    endpoint.  If its embedded marker belongs to an unresolved group, the
-    affine centroid is solved directly.  Otherwise one fixed endpoint in the
-    next unresolved group is clicked to transfer the active role.  The caller
-    re-reads the next frame before planning again, so coordinates and object
-    identities never become a cross-action script.
+    A previously observed active outer color controls when it identifies one
+    marked endpoint.  Otherwise the globally unique outer color is used only
+    when another outer color repeats.  If the active endpoint remains
+    ambiguous, the caller must learn it with one bounded open-space probe.
+    The caller re-reads the next frame before planning again, so coordinates
+    and object identities never become a cross-action script.
     """
 
     groups = _embedded_marker_groups(scene)
@@ -846,12 +847,20 @@ def _embedded_marker_plan(
         if endpoint.center_cell not in {scene.background, endpoint.color}
     )
     outer_color_counts = Counter(endpoint.color for endpoint in marked_endpoints)
-    active_candidates = tuple(
-        endpoint for endpoint in marked_endpoints if outer_color_counts[endpoint.color] == 1
+    observed_active = tuple(
+        endpoint for endpoint in marked_endpoints if endpoint.color == active_color
     )
-    if len(active_candidates) != 1 or not any(count > 1 for count in outer_color_counts.values()):
-        return None
-    active = active_candidates[0]
+    if len(observed_active) == 1:
+        active = observed_active[0]
+    else:
+        active_candidates = tuple(
+            endpoint for endpoint in marked_endpoints if outer_color_counts[endpoint.color] == 1
+        )
+        if len(active_candidates) != 1 or not any(
+            count > 1 for count in outer_color_counts.values()
+        ):
+            return None
+        active = active_candidates[0]
     unresolved = tuple(
         group for group in groups if group.mediator.rounded_center != group.target.rounded_center
     )
@@ -1175,6 +1184,7 @@ class VisualCausalPolicy:
         self._transfer_confirmed_levels: set[int] = set()
         self._failed_plan_signatures: set[str] = set()
         self._attempted_activation_refs: set[str] = set()
+        self._marker_bootstrap_attempted = False
         self._last_probe_failed = False
         self._last_active_color: int | None = None
         self._probe_ordinal = 0
@@ -1238,6 +1248,7 @@ class VisualCausalPolicy:
         self._plan.clear()
         self._failed_plan_signatures.clear()
         self._attempted_activation_refs.clear()
+        self._marker_bootstrap_attempted = False
         self._last_probe_failed = False
         self._probe_ordinal = 0
 
@@ -1404,6 +1415,7 @@ class VisualCausalPolicy:
             marker_plan = _embedded_marker_plan(
                 marker_scene,
                 level_index=observation.levels_completed,
+                active_color=self._last_active_color,
                 rejected_signatures=self._failed_plan_signatures,
             )
             if marker_plan is not None:
@@ -1430,6 +1442,34 @@ class VisualCausalPolicy:
                 group.mediator.rounded_center != group.target.rounded_center
                 for group in marker_groups
             ):
+                if not self._marker_bootstrap_attempted:
+                    coordinate = self._probe_coordinate(marker_scene)
+                    if any(
+                        _distance(endpoint.rounded_center, (coordinate.x, coordinate.y)) <= 2.25
+                        for group in marker_groups
+                        for endpoint in group.endpoints
+                    ):
+                        raise PolicyError(
+                            "embedded marker bootstrap coordinate overlaps an endpoint"
+                        )
+                    self._plan.clear()
+                    action = ActionRequest(ActionName.ACTION6, coordinate)
+                    signature = (
+                        f"marker-bootstrap:{observation.levels_completed}:"
+                        f"{marker_scene.frame_hash}:{coordinate.x},{coordinate.y}"
+                    )
+                    self._stage_pending(
+                        observation,
+                        action,
+                        purpose=VisualActionPurpose.PROBE,
+                        prediction=(
+                            "identify the active marker endpoint with one bounded "
+                            "open-space intervention"
+                        ),
+                        plan_signature=signature,
+                    )
+                    self._marker_bootstrap_attempted = True
+                    return action
                 raise PolicyError(
                     "embedded marker group is unresolved but has no bounded same-group action"
                 )
@@ -1785,6 +1825,10 @@ class VisualCausalPolicy:
                 for item in effect_comparison.residual_effects
             )
         )
+        marker_bootstrap = (
+            self._pending_plan_signature is not None
+            and self._pending_plan_signature.startswith("marker-bootstrap:")
+        )
         if observation.state is GameStateName.GAME_OVER:
             if self._pending_plan_signature is not None:
                 self._failed_plan_signatures.add(self._pending_plan_signature)
@@ -1795,6 +1839,14 @@ class VisualCausalPolicy:
             self._last_probe_failed = False
         elif level_progress:
             self._begin_level(observation)
+        elif marker_bootstrap:
+            self._plan.clear()
+            if mechanic is None:
+                if self._pending_plan_signature is not None:
+                    self._failed_plan_signatures.add(self._pending_plan_signature)
+                self._last_probe_failed = True
+            else:
+                self._last_probe_failed = False
         elif mechanic is not None and not self._pending_mechanic_refs:
             self._plan.clear()
             if not self._install_plan(mechanic, after_scene):
@@ -1875,6 +1927,7 @@ class VisualCausalPolicy:
                 len(learner.compact_bytes()) if learner is not None else 0
             ),
             "mechanics": [item.to_dict() for item in self._mechanics[-64:]],
+            "marker_bootstrap_attempted": self._marker_bootstrap_attempted,
             "pending_plan_actions": len(self._plan),
             "receipt_count": len(self._receipts),
             "receipts": [item.to_dict() for item in self._receipts[-192:]],
