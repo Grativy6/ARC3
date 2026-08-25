@@ -53,3 +53,16 @@ This ledger is append-oriented. Supersede decisions with new entries; do not era
 - **Why:** Existing contracts already provide deterministic receipts, legal-action checks, replay, bounded modes, and packaging; Build 003 gaps are mechanic learning and cross-level reuse.
 - **Consequences:** New source should live in already packaged top-level modules unless the package allowlist is explicitly extended and tested.
 - **Reopening condition:** A measured integration need cannot be expressed safely through existing contracts.
+
+## D-003-0005 - Scope cross-group occlusion guards to observed composite glyphs
+
+- **Status:** ADOPTED
+- **Stage:** 10
+- **Date:** 2026-08-25
+- **Commit:** pending
+- **Decision:** Apply whole-box target preservation and predicted cross-mediator separation only when the active affine group was assembled from an observed multicolor composite glyph. Preserve the earlier sparse-cell and endpoint-clearance rules for ordinary single-color affine groups.
+- **Alternatives:** Apply the new guards to every affine group; remove the guards entirely; encode a target-level exception.
+- **Evidence:** Campaign 13 reached level 3 and showed that composite target and mediator occlusion destroys the remaining group identity. Campaign 14 then failed at level 2 after the global inter-mediator guard removed a valid ordinary affine route. The first divergence was between ordinary rotations `(34,9)` and `(23,21)`; disabling the target-box gate alone did not repair it. With composite-only scope, a clean policy matches all 29 pre-transition Campaign 13 actions and the returned observation is level 3 / `NOT_FINISHED`; 40 visual-policy tests, Ruff, and strict mypy pass.
+- **Why:** The safety rule is earned by a composite-glyph failure mode and must not backflow into mechanics whose readable identity is a single observed component.
+- **Consequences:** Production logic remains observation-derived and contains no game ID, fixed board coordinate, color exception, or walkthrough. Composite preservation remains covered by the multicolor fixture; ordinary target-box and inter-mediator proximity semantics have regression assertions.
+- **Reopening condition:** A later official residual demonstrates the same destructive cross-group occlusion for a non-composite group and a generic observable discriminator can be established.

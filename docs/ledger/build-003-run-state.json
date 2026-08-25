@@ -6,8 +6,8 @@
   "owner": "Christopher D. Pang",
   "build_status": "ACTIVE",
   "status": "IN_PROGRESS",
-  "current_stage": "02",
-  "current_task": "integrate structured action effects and the first versioned mechanic-ledger slice",
+  "current_stage": "10",
+  "current_task": "continue official public target play from the composite-affine repair",
   "implementation_branch": "build/003-bla-clef-mechanical-learner",
   "base": {
     "main_commit": "bea1eac99cb0f1b351526b1dc487d132ba1d40ef",
@@ -33,7 +33,14 @@
     "asset_sha256": "sha256:483e583c88e91c2ae58ad1fa7b274d97813993796ce798551a563e1a9a78a7ff",
     "source_semantically_inspected": false,
     "completion_authority": "official returned GameState.WIN only",
-    "completion_observed": false
+    "completion_observed": false,
+    "best_levels_completed": 3,
+    "latest_campaign": "build003-r11l-mechanical-seed7-b1a695ec-campaign14",
+    "latest_campaign_status": "FAILED_INFRASTRUCTURE",
+    "latest_campaign_levels_completed": 2,
+    "latest_campaign_final_state": "NOT_FINISHED",
+    "latest_campaign_actions": 29,
+    "latest_campaign_recording_sha256": "sha256:993031c8909e386c89a0fb35a9604c32e88260ddba151b082747709de4c43245"
   },
   "stage_status": {
     "00": "PASS",
@@ -78,7 +85,7 @@
     "pull_request_merged": false,
     "external_message_sent_as_owner": false
   },
-  "next_action": "complete Stage 02 and Stage 03 integration, then run their focused acceptance suites",
+  "next_action": "commit the composite-only preservation repair and start a fresh official target campaign",
   "notes": [
     "Update atomically after each meaningful task and preserve failed attempts.",
     "No synthetic or local result is completion unless the official target environment returns GameState.WIN.",

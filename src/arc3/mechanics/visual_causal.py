@@ -235,6 +235,12 @@ class _EmbeddedMarkerGroup:
     def arity(self) -> int:
         return len(self.endpoints)
 
+    @property
+    def is_composite(self) -> bool:
+        """Whether this group was assembled from a multicolor observed glyph."""
+
+        return self.mediator.object_ref.startswith("visual-composite-mediator:")
+
 
 @dataclass(frozen=True, slots=True)
 class VisualActionReceipt:
@@ -1039,24 +1045,26 @@ def _marker_relocation_candidates(
     current_sum_x = sum(item.rounded_center[0] for item in group.endpoints)
     current_sum_y = sum(item.rounded_center[1] for item in group.endpoints)
     final_overlap_cells = _final_marker_target_overlap_cells(scene, group)
-    visible_targets = tuple(
-        {
-            item.object_ref: item
-            for item in (
-                *scene.targets,
-                *(candidate for candidate, _signature in _composite_sparse_targets(scene)),
-            )
-        }.values()
-    )
-    other_target_regions = tuple(
-        frozenset(
-            (target_x, target_y)
-            for target_y in range(item.min_y, item.max_y + 1)
-            for target_x in range(item.min_x, item.max_x + 1)
+    other_target_regions: tuple[frozenset[tuple[int, int]], ...] = ()
+    if group.is_composite:
+        visible_targets = tuple(
+            {
+                item.object_ref: item
+                for item in (
+                    *scene.targets,
+                    *(candidate for candidate, _signature in _composite_sparse_targets(scene)),
+                )
+            }.values()
         )
-        for item in visible_targets
-        if item.rounded_center != group.target.rounded_center
-    )
+        other_target_regions = tuple(
+            frozenset(
+                (target_x, target_y)
+                for target_y in range(item.min_y, item.max_y + 1)
+                for target_x in range(item.min_x, item.max_x + 1)
+            )
+            for item in visible_targets
+            if item.rounded_center != group.target.rounded_center
+        )
     candidates: list[Coordinate] = []
     for x, y in sorted(raw, key=lambda item: (item[1], item[0])):
         potential = _marker_group_potential(
@@ -1271,7 +1279,7 @@ def _marker_mediator_remains_readable(
     ):
         return False
     mediator_radius = _glyph_radius(group.mediator)
-    if any(
+    if group.is_composite and any(
         _chebyshev_distance(mediator_after, other.rounded_center)
         < mediator_radius + _glyph_radius(other) + 1
         for other in (
@@ -1543,10 +1551,14 @@ def _best_marker_staging_relocation(
         scene,
         reference_footprint_size=len(_object_footprint(group.mediator)),
     )
-    other_mediators = tuple(
-        candidate.mediator
-        for candidate in _embedded_marker_groups(scene)
-        if candidate.marker_color != group.marker_color
+    other_mediators = (
+        tuple(
+            candidate.mediator
+            for candidate in _embedded_marker_groups(scene)
+            if candidate.marker_color != group.marker_color
+        )
+        if group.is_composite
+        else ()
     )
     best: tuple[int, int, int, str, Coordinate] | None = None
     for coordinate in _marker_relocation_candidates(scene, group, endpoint):
@@ -1570,16 +1582,28 @@ def _best_marker_staging_relocation(
             resulting_sum_x // group.arity,
             resulting_sum_y // group.arity,
         )
-        if not _marker_mediator_remains_readable(
-            scene,
-            group,
-            endpoint,
-            coordinate=coordinate,
-            mediator_after=mediator_after,
-            final=False,
-            static_cells=static_cells,
-            other_mediators=other_mediators,
-        ):
+        if group.is_composite:
+            remains_readable = _marker_mediator_remains_readable(
+                scene,
+                group,
+                endpoint,
+                coordinate=coordinate,
+                mediator_after=mediator_after,
+                final=False,
+                static_cells=static_cells,
+                other_mediators=other_mediators,
+            )
+        else:
+            remains_readable = _marker_mediator_remains_readable(
+                scene,
+                group,
+                endpoint,
+                coordinate=coordinate,
+                mediator_after=mediator_after,
+                final=False,
+                static_cells=static_cells,
+            )
+        if not remains_readable:
             continue
         projection = _scene_after_marker_stage(
             scene,
@@ -1634,10 +1658,14 @@ def _best_marker_relocation(
         scene,
         reference_footprint_size=len(_object_footprint(group.mediator)),
     )
-    other_mediators = tuple(
-        candidate.mediator
-        for candidate in _embedded_marker_groups(scene)
-        if candidate.marker_color != group.marker_color
+    other_mediators = (
+        tuple(
+            candidate.mediator
+            for candidate in _embedded_marker_groups(scene)
+            if candidate.marker_color != group.marker_color
+        )
+        if group.is_composite
+        else ()
     )
     ordinary = _marker_relocation_candidates(scene, group, endpoint)
     candidate_batches = [ordinary]
@@ -1666,16 +1694,28 @@ def _best_marker_relocation(
                 resulting_sum_x // group.arity,
                 resulting_sum_y // group.arity,
             )
-            if not _marker_mediator_remains_readable(
-                scene,
-                group,
-                endpoint,
-                coordinate=coordinate,
-                mediator_after=mediator_after,
-                final=potential == 0,
-                static_cells=static_cells,
-                other_mediators=other_mediators,
-            ):
+            if group.is_composite:
+                remains_readable = _marker_mediator_remains_readable(
+                    scene,
+                    group,
+                    endpoint,
+                    coordinate=coordinate,
+                    mediator_after=mediator_after,
+                    final=potential == 0,
+                    static_cells=static_cells,
+                    other_mediators=other_mediators,
+                )
+            else:
+                remains_readable = _marker_mediator_remains_readable(
+                    scene,
+                    group,
+                    endpoint,
+                    coordinate=coordinate,
+                    mediator_after=mediator_after,
+                    final=potential == 0,
+                    static_cells=static_cells,
+                )
+            if not remains_readable:
                 continue
             signature_kind = "solve" if potential == 0 else "improve"
             signature = (

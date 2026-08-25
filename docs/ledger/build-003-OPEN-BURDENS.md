@@ -73,3 +73,16 @@ Do not delete a burden when later evidence resolves it. Append a resolution with
 - **Current evidence:** `docs/evidence/003-01-build-002-frozen-baseline.json`; the launcher probe reports the uv base Python through an unversioned lexical alias while direct execution reports its versioned resolved directory.
 - **Next discriminating action:** Re-run the exact test at Stage 10 and compare the predicate-level receipt. Do not modify the frozen baseline or weaken runtime identity validation merely to obtain green output.
 - **Resolution condition:** The final test passes on an authenticated stable launcher topology, or a separately scoped fix proves both launcher paths equivalent without weakening any identity predicate.
+
+## B-003-0007 - Global composite-preservation guards regressed ordinary affine play
+
+- **Status:** RESOLVED LOCALLY; OFFICIAL RECHECK PENDING
+- **Stage:** 10
+- **Opened:** 2026-08-25
+- **Owner:** Codex
+- **Burden:** Campaign 14 ended after 29 official actions at `NOT_FINISHED`, `levels_completed=2/6`, when a cross-mediator separation guard learned from a composite level was applied to ordinary single-color affine groups. The policy exhausted its bounded same-group action set and raised `PolicyError`.
+- **Why it matters:** A repair that preserves later mechanics but removes a valid earlier route is not progress toward authoritative `WIN`.
+- **Failure evidence:** `C:\a\arc3-b003-play\build003-r11l-mechanical-seed7-b1a695ec-campaign14`; official recording SHA-256 `993031c8909e386c89a0fb35a9604c32e88260ddba151b082747709de4c43245`.
+- **Local resolution evidence:** The guards are now scoped by observed composite-mediator identity. Disabling only the target-box gate did not repair the first divergent action; disabling ordinary inter-mediator separation did. The repaired policy exactly matches all 29 pre-transition actions from Campaign 13 and reaches its returned level-3 `NOT_FINISHED` observation. The visual-policy suite reports 40 passed; Ruff and strict mypy pass.
+- **Next discriminating action:** Run a fresh official target campaign from the committed repair and require progress beyond the failed state without losing the level-3 composite preservation behavior.
+- **Resolution condition:** The fresh official campaign reaches level 3 through ordinary affine play and retains all unresolved composite groups after each accepted action.

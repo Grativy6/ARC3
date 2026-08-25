@@ -584,7 +584,16 @@ def test_predicted_mediator_permits_endpoint_tangent_but_rejects_overlap() -> No
         )
     )
     group = next(item for item in _embedded_marker_groups(scene) if item.marker_color == 12)
+    other_group = next(
+        item for item in _embedded_marker_groups(scene) if item.marker_color == 14
+    )
     endpoint = next(item for item in group.endpoints if item.color == 0)
+    nearby_ordinary_mediator = visual_causal._translated_visual_object(
+        other_group.mediator,
+        center=(36, 35),
+        width=scene.width,
+        height=scene.height,
+    )
 
     assert _marker_mediator_remains_readable(
         scene,
@@ -593,6 +602,7 @@ def test_predicted_mediator_permits_endpoint_tangent_but_rejects_overlap() -> No
         coordinate=Coordinate(25, 25),
         mediator_after=(35, 35),
         final=False,
+        other_mediators=(nearby_ordinary_mediator,),
     )
     assert not _marker_mediator_remains_readable(
         scene,
@@ -628,6 +638,11 @@ def test_unmatched_hollow_overlay_does_not_block_matched_marker_planning() -> No
         coordinate=Coordinate(50, 10),
         mediator_after=(40, 30),
         final=False,
+    )
+    assert Coordinate(37, 27) in visual_causal._marker_relocation_candidates(
+        scene,
+        group,
+        endpoint,
     )
 
 
