@@ -7,10 +7,11 @@ import statistics
 from collections.abc import Iterable, Mapping
 from dataclasses import asdict, dataclass
 
+from arc3.mechanics import CHANNEL_ORDER, CompositionMode
 from arc3.types import GameStateName
 
-BUILD003_RESULT_SCHEMA = "arc3.build003.curriculum-result.v0.2"
-BUILD003_SUMMARY_SCHEMA = "arc3.build003.paired-summary.v0.1"
+BUILD003_RESULT_SCHEMA = "arc3.build003.curriculum-result.v0.3"
+BUILD003_SUMMARY_SCHEMA = "arc3.build003.paired-summary.v0.2"
 FROZEN_SEED_COUNT = 30
 
 VARIANTS = (
@@ -82,11 +83,26 @@ class CurriculumResultRow:
     resource_prediction_errors: int
     access_prediction_errors: int
     hazard_prediction_errors: int
+    prediction_errors_by_channel: tuple[tuple[str, int], ...]
     residuals_observed: int
     residuals_localized: int
     residuals_resolved: int
     base_mechanics_retained: bool
-    erroneous_global_reopenings: int
+    observed_retained_matches: int
+    erroneous_global_reopenings: int | None
+    passive_confirmations: int
+    transfer_confirmations: int
+    local_repair_candidates_opened: int
+    local_repairs_confirmed: int
+    local_repair_failures: int
+    base_reopenings: int
+    composition_events: tuple[tuple[str, int], ...]
+    clef_promotions: int
+    clef_parks: int
+    clef_stops: int
+    other_object_effects_observed: int
+    topology_changes_confirmed: int
+    delayed_candidates_confirmed: int
     unresolved_ledger_count: int
     active_ledger_pressure: int
     wall_time_seconds: float
@@ -144,10 +160,22 @@ class CurriculumResultRow:
             "resource_prediction_errors": self.resource_prediction_errors,
             "access_prediction_errors": self.access_prediction_errors,
             "hazard_prediction_errors": self.hazard_prediction_errors,
+            "observed_retained_matches": self.observed_retained_matches,
             "residuals_observed": self.residuals_observed,
             "residuals_localized": self.residuals_localized,
             "residuals_resolved": self.residuals_resolved,
-            "erroneous_global_reopenings": self.erroneous_global_reopenings,
+            "passive_confirmations": self.passive_confirmations,
+            "transfer_confirmations": self.transfer_confirmations,
+            "local_repair_candidates_opened": self.local_repair_candidates_opened,
+            "local_repairs_confirmed": self.local_repairs_confirmed,
+            "local_repair_failures": self.local_repair_failures,
+            "base_reopenings": self.base_reopenings,
+            "clef_promotions": self.clef_promotions,
+            "clef_parks": self.clef_parks,
+            "clef_stops": self.clef_stops,
+            "other_object_effects_observed": self.other_object_effects_observed,
+            "topology_changes_confirmed": self.topology_changes_confirmed,
+            "delayed_candidates_confirmed": self.delayed_candidates_confirmed,
             "unresolved_ledger_count": self.unresolved_ledger_count,
             "active_ledger_pressure": self.active_ledger_pressure,
             "peak_memory_bytes": self.peak_memory_bytes,
@@ -157,6 +185,23 @@ class CurriculumResultRow:
             for value in integer_fields.values()
         ):
             raise ValueError("result count fields must be non-negative integers")
+        if self.erroneous_global_reopenings is not None and (
+            isinstance(self.erroneous_global_reopenings, bool)
+            or not isinstance(self.erroneous_global_reopenings, int)
+            or self.erroneous_global_reopenings < 0
+        ):
+            raise ValueError("erroneous_global_reopenings must be non-negative or null")
+        expected_channels = tuple(channel.value for channel in CHANNEL_ORDER)
+        if tuple(name for name, _ in self.prediction_errors_by_channel) != expected_channels:
+            raise ValueError("per-channel prediction errors must name all channels in order")
+        expected_modes = tuple(mode.value for mode in CompositionMode)
+        if tuple(name for name, _ in self.composition_events) != expected_modes:
+            raise ValueError("composition events must name all modes in order")
+        if any(
+            isinstance(count, bool) or not isinstance(count, int) or count < 0
+            for _, count in (*self.prediction_errors_by_channel, *self.composition_events)
+        ):
+            raise ValueError("factorized result counts must be non-negative integers")
         if self.actions_to_stable is not None and (
             isinstance(self.actions_to_stable, bool)
             or not isinstance(self.actions_to_stable, int)
@@ -369,7 +414,12 @@ class Build003ResultLedger:
         h2_retention = statistics.fmean(
             float(row.base_mechanics_retained) for row in full_modifier_rows
         )
-        h2_global_reopenings = sum(row.erroneous_global_reopenings for row in full_modifier_rows)
+        assessed_reopenings = [
+            row.erroneous_global_reopenings
+            for row in full_modifier_rows
+            if row.erroneous_global_reopenings is not None
+        ]
+        h2_global_reopenings = None if not assessed_reopenings else sum(assessed_reopenings)
         comparisons: Mapping[str, tuple[str, str, str, Iterable[str]]] = {
             "h1_later_exploration": (
                 "BLA_CLEF_LEVEL_RESET",
@@ -428,6 +478,7 @@ class Build003ResultLedger:
                 "modifier_rows": len(full_modifier_rows),
                 "base_mechanic_retention_rate": h2_retention,
                 "erroneous_global_reopenings": h2_global_reopenings,
+                "erroneous_global_reopenings_assessed_rows": len(assessed_reopenings),
             },
             "evidence_quality": {
                 "replay_determinism_rate": statistics.fmean(

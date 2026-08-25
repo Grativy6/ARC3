@@ -15,9 +15,10 @@ from typing import cast
 
 from arc3.adapters import Observation
 from arc3.evaluation.build003_results import FAMILIES, CurriculumResultRow
+from arc3.mechanics import CHANNEL_ORDER, CompositionMode
 from arc3.types import ActionName, ActionRequest, Coordinate, GameStateName
 
-from .broker import PolicyProcess, observation_to_bytes
+from .broker import PolicyProcess, observation_from_bytes, observation_to_bytes
 from .engine import CurriculumSession
 from .models import CurriculumSpec, CurriculumVariant
 from .protocol import (
@@ -315,6 +316,91 @@ def _boolean(value: object) -> bool:
     return value if isinstance(value, bool) else False
 
 
+def _nullable_integer(value: object) -> int | None:
+    return None if value is None else _integer(value)
+
+
+def _counter_pairs(value: object, names: tuple[str, ...]) -> tuple[tuple[str, int], ...]:
+    source = cast(dict[str, object], value) if isinstance(value, dict) else {}
+    return tuple((name, _integer(source.get(name))) for name in names)
+
+
+def _observation_ref(observation: Observation) -> str:
+    value = {
+        "frames": [
+            {"digest": str(frame.digest), "width": frame.width, "height": frame.height}
+            for frame in observation.frames
+        ],
+        "state": observation.state.value,
+        "levels_completed": observation.levels_completed,
+        "win_levels": observation.win_levels,
+        "available_actions": [action.value for action in observation.available_actions],
+        "full_reset": observation.full_reset,
+        "returned_action": (
+            None
+            if observation.returned_action is None
+            else _action_value(observation.returned_action)
+        ),
+        "metadata": list(observation.upstream_metadata),
+    }
+    payload = json.dumps(value, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return "sha256:" + hashlib.sha256(payload).hexdigest()
+
+
+def _is_digest(value: object) -> bool:
+    if not isinstance(value, str) or not value.startswith("sha256:"):
+        return False
+    digest = value.removeprefix("sha256:")
+    return len(digest) == 64 and all(character in "0123456789abcdef" for character in digest)
+
+
+def _receipt_link_audit(
+    summary: dict[str, object],
+    initial: Observation,
+    transcript: list[tuple[ActionRequest, bytes]],
+) -> tuple[bool, ...]:
+    """Independently tie every worker receipt to the replayed public transition."""
+
+    valid = [True for _ in FAMILIES]
+    counts = [0 for _ in FAMILIES]
+    raw_links = summary.get("action_links")
+    if not isinstance(raw_links, list) or len(raw_links) != len(transcript):
+        return tuple(False for _ in FAMILIES)
+    before = initial
+    for step, ((action, payload), raw_link) in enumerate(
+        zip(transcript, raw_links, strict=True), start=1
+    ):
+        level_index = min(before.levels_completed, len(FAMILIES) - 1)
+        counts[level_index] += 1
+        if not isinstance(raw_link, dict):
+            valid[level_index] = False
+            after = observation_from_bytes(payload)
+            before = after
+            continue
+        link = cast(dict[str, object], raw_link)
+        after = observation_from_bytes(payload)
+        expected_action = _action_value(action)
+        valid[level_index] &= (
+            link.get("step") == step
+            and link.get("level_index") == level_index
+            and link.get("action") == expected_action
+            and link.get("before_ref") == _observation_ref(before)
+            and link.get("after_ref") == _observation_ref(after)
+            and isinstance(link.get("prediction_id"), str)
+            and bool(link.get("prediction_id"))
+            and _is_digest(link.get("prediction_digest"))
+            and _is_digest(link.get("learning_digest"))
+            and _is_digest(link.get("causal_receipt_digest"))
+            and link.get("complete") is True
+        )
+        before = after
+    for index in range(len(FAMILIES)):
+        expected = _integer(_level_metrics(summary, index).get("receipt_count"))
+        complete = _integer(_level_metrics(summary, index).get("complete_receipt_count"))
+        valid[index] &= counts[index] == expected == complete
+    return tuple(valid)
+
+
 def _level_metrics(summary: dict[str, object], index: int) -> dict[str, object]:
     raw_levels = summary.get("levels")
     if not isinstance(raw_levels, list) or index >= len(raw_levels):
@@ -336,6 +422,7 @@ def _rows(
     peak_memory_bytes: int,
     replay_digest: str,
     replay_deterministic: bool,
+    receipt_links_complete: tuple[bool, ...],
 ) -> tuple[CurriculumResultRow, ...]:
     total_actions = sum(
         _integer(_level_metrics(summary, index).get("environment_actions"))
@@ -385,6 +472,10 @@ def _rows(
                 resource_prediction_errors=_integer(metric.get("resource_prediction_errors")),
                 access_prediction_errors=_integer(metric.get("access_prediction_errors")),
                 hazard_prediction_errors=_integer(metric.get("hazard_prediction_errors")),
+                prediction_errors_by_channel=_counter_pairs(
+                    metric.get("prediction_errors_by_channel"),
+                    tuple(channel.value for channel in CHANNEL_ORDER),
+                ),
                 residuals_observed=_integer(metric.get("residuals_observed")),
                 residuals_localized=min(
                     _integer(metric.get("residuals_observed")),
@@ -395,7 +486,28 @@ def _rows(
                     _integer(metric.get("residuals_resolved")),
                 ),
                 base_mechanics_retained=_boolean(metric.get("base_mechanics_retained")),
-                erroneous_global_reopenings=_integer(metric.get("erroneous_global_reopenings")),
+                observed_retained_matches=_integer(metric.get("observed_retained_matches")),
+                erroneous_global_reopenings=_nullable_integer(
+                    metric.get("erroneous_global_reopenings")
+                ),
+                passive_confirmations=_integer(metric.get("passive_confirmations")),
+                transfer_confirmations=_integer(metric.get("transfer_confirmations")),
+                local_repair_candidates_opened=_integer(
+                    metric.get("local_repair_candidates_opened")
+                ),
+                local_repairs_confirmed=_integer(metric.get("local_repairs_confirmed")),
+                local_repair_failures=_integer(metric.get("local_repair_failures")),
+                base_reopenings=_integer(metric.get("base_reopenings")),
+                composition_events=_counter_pairs(
+                    metric.get("composition_events"),
+                    tuple(mode.value for mode in CompositionMode),
+                ),
+                clef_promotions=_integer(metric.get("clef_promotions")),
+                clef_parks=_integer(metric.get("clef_parks")),
+                clef_stops=_integer(metric.get("clef_stops")),
+                other_object_effects_observed=_integer(metric.get("other_object_effects_observed")),
+                topology_changes_confirmed=_integer(metric.get("topology_changes_confirmed")),
+                delayed_candidates_confirmed=_integer(metric.get("delayed_candidates_confirmed")),
                 unresolved_ledger_count=_integer(metric.get("unresolved_ledger_count")),
                 active_ledger_pressure=_integer(metric.get("active_ledger_pressure")),
                 wall_time_seconds=allocated_wall,
@@ -403,7 +515,9 @@ def _rows(
                 replay_digest=replay_digest,
                 replay_deterministic=replay_deterministic,
                 receipt_complete=(
-                    run_status != "FAILED_INFRASTRUCTURE" and receipt_count == complete_receipts
+                    run_status != "FAILED_INFRASTRUCTURE"
+                    and receipt_count == complete_receipts
+                    and receipt_links_complete[index]
                 ),
                 run_status=run_status,
                 failure_reason=failure_reason,
@@ -427,6 +541,7 @@ def run_sequence(
     variant_name = variant.value if isinstance(variant, CurriculumVariant) else variant
     started = time.perf_counter()
     session = CurriculumSession(spec)
+    initial_observation = session.observation
     transcript: list[tuple[ActionRequest, bytes]] = []
     environment_actions = 0
     level_attempt_actions = 0
@@ -536,6 +651,7 @@ def run_sequence(
     deterministic = _replay(spec, transcript) and not (
         status == "FAILED_INFRASTRUCTURE" and not transcript
     )
+    receipt_links_complete = _receipt_link_audit(summary, initial_observation, transcript)
     rows = _rows(
         spec=spec,
         variant=variant_name,
@@ -548,6 +664,7 @@ def run_sequence(
         peak_memory_bytes=peak_memory,
         replay_digest=digest,
         replay_deterministic=deterministic,
+        receipt_links_complete=receipt_links_complete,
     )
     receipt: dict[str, object] = {
         "schema": definition.sequence_receipt_schema,
@@ -572,6 +689,7 @@ def run_sequence(
         "peak_memory_bytes": peak_memory,
         "replay_digest": digest,
         "replay_deterministic": deterministic,
+        "receipt_links_complete": all(receipt_links_complete),
         "worker_summary": summary,
         "claim_boundary": "No public, holdout, or official target game was opened.",
     }

@@ -21,6 +21,7 @@ from arc3.evaluation.build003_results import (
     CurriculumResultRow,
     FrozenCase,
 )
+from arc3.mechanics import CHANNEL_ORDER, CompositionMode
 from arc3.types import GameStateName
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -65,11 +66,26 @@ def _row(case: FrozenCase, variant: str, family: str) -> CurriculumResultRow:
         resource_prediction_errors=0,
         access_prediction_errors=0,
         hazard_prediction_errors=0,
+        prediction_errors_by_channel=tuple((channel.value, 0) for channel in CHANNEL_ORDER),
         residuals_observed=1,
         residuals_localized=1,
         residuals_resolved=1,
         base_mechanics_retained=variant == "BLA_CLEF_FULL",
+        observed_retained_matches=1 if variant == "BLA_CLEF_FULL" else 0,
         erroneous_global_reopenings=0 if variant == "BLA_CLEF_FULL" else 1,
+        passive_confirmations=1,
+        transfer_confirmations=1 if variant == "BLA_CLEF_FULL" else 0,
+        local_repair_candidates_opened=1,
+        local_repairs_confirmed=1,
+        local_repair_failures=0,
+        base_reopenings=0,
+        composition_events=tuple((mode.value, 0) for mode in CompositionMode),
+        clef_promotions=0,
+        clef_parks=0,
+        clef_stops=0,
+        other_object_effects_observed=0,
+        topology_changes_confirmed=0,
+        delayed_candidates_confirmed=0,
         unresolved_ledger_count=0,
         active_ledger_pressure=2,
         wall_time_seconds=0.01,
@@ -139,6 +155,7 @@ def test_preregistered_paired_metrics_use_identical_seed_family_pairs() -> None:
         "modifier_rows": 150,
         "base_mechanic_retention_rate": 1.0,
         "erroneous_global_reopenings": 0,
+        "erroneous_global_reopenings_assessed_rows": 150,
     }
     paired = summary["paired"]
     assert paired["h3_redundant_probes"]["mean_delta"] == -1.0
