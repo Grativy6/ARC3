@@ -7,7 +7,7 @@
   "build_status": "ACTIVE",
   "status": "IN_PROGRESS",
   "current_stage": "10",
-  "current_task": "analyze and repair the Campaign 21 flat palette-mismatched target reuse residual without disturbing observed mechanics",
+  "current_task": "freeze and run Campaign 22 from the verified distinct-support hierarchy repair, reobserving every official consequence",
   "implementation_branch": "build/003-bla-clef-mechanical-learner",
   "base": {
     "main_commit": "bea1eac99cb0f1b351526b1dc487d132ba1d40ef",
@@ -56,8 +56,11 @@
     "latest_campaign_completion_observed": false,
     "campaign20_frozen_commit": "25afad247b6037aee1d6ab80f1ccc9b490930b52",
     "campaign21_frozen_commit": "2702c4d5a1f8e604cb806bdb7d811a4df0c3da4d",
-    "candidate_repair_commit": "858650c4b6494faaeee5e8ef24cd1bf27257e82d",
-    "candidate_repair_replay": "matched Campaign 20 non-reset actions 1-64; first divergence action 65 from (53,17) to parser-safe remaining-group role exchange (34,55); exact returned swap transfers arity 3 and yields dynamically color-safe radial supports (57,18);(60,37);(42,29)"
+    "campaign21_reacquisition_repair_commit": "858650c4b6494faaeee5e8ef24cd1bf27257e82d",
+    "candidate_repair_commit": "cfc1d245750574b6545b964c31142d77c24e14a2",
+    "candidate_repair_replay": "matched Campaign 21 actions 1-61; first divergence action 62 from flat target reuse (60,28) to exact hierarchy action (58,37); distinct child supports (59,31) and (47,25) have parent centroid (53,28); full nine-action sequence is projected and reparsed one action at a time",
+    "candidate_repair_search_budget": "37471/131072 units remain on the recorded Campaign 21 level-entry frame",
+    "candidate_repair_verification": "87 visual-policy tests; 11 focused hierarchy/recovery regressions; Ruff; strict mypy; compilation; diff checks; 9 secret tests; exact 61-action replay; independent review clean"
   },
   "stage_status": {
     "00": "PASS",
@@ -102,7 +105,7 @@
     "pull_request_merged": false,
     "external_message_sent_as_owner": false
   },
-  "next_action": "finish the bounded hierarchy audit, implement and verify only the implicated composition-layer repair, bind it, then freeze and run Campaign 22",
+  "next_action": "commit and push the cfc1d245 repair binding, freeze that clean head, then run Campaign 22 and require every returned hierarchy consequence through official WIN or a new bounded residual",
   "notes": [
     "Update atomically after each meaningful task and preserve failed attempts.",
     "No synthetic or local result is completion unless the official target environment returns GameState.WIN.",
