@@ -711,6 +711,57 @@ def test_marker_planner_does_not_emit_an_unreadable_direct_destination(
     assert policy.snapshot()["pending_plan_actions"] == 0
 
 
+def test_marker_relocation_uses_board_derived_rings_after_local_exhaustion(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    scene = extract_visual_scene(
+        _marker_frame(
+            (((10, 50), (30, 50)),),
+            ((20, 28),),
+            (12,),
+            active_group=0,
+            active_index=0,
+            background=5,
+            active_color=0,
+            fixed_color=3,
+        )
+    )
+    group = _embedded_marker_groups(scene)[0]
+    endpoint = next(item for item in group.endpoints if item.color == 0)
+    calls: list[tuple[int, int]] = []
+
+    def candidate_batches(
+        _scene: VisualScene,
+        _group: visual_causal._EmbeddedMarkerGroup,
+        _endpoint: visual_causal.VisualObject,
+        *,
+        minimum_radius: int = 6,
+        maximum_radius: int = 27,
+    ) -> tuple[Coordinate, ...]:
+        calls.append((minimum_radius, maximum_radius))
+        if maximum_radius == 27:
+            return ()
+        return (Coordinate(10, 6),)
+
+    monkeypatch.setattr(
+        visual_causal,
+        "_marker_relocation_candidates",
+        candidate_batches,
+    )
+
+    result = visual_causal._best_marker_relocation(
+        scene,
+        group,
+        endpoint,
+        rejected_signatures=set(),
+    )
+
+    assert result == (0, Coordinate(10, 6))
+    assert calls[0] == (6, 27)
+    assert calls[1][0] == 28
+    assert calls[1][1] == math.ceil(math.hypot(scene.width - 1, scene.height - 1))
+
+
 def test_marker_planner_prefers_safe_same_group_transfer_before_deferral(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -879,6 +930,89 @@ def test_marker_staging_reobserves_then_switches_before_exact_solve(
     assert final_potential < initial_potential
     assert policy.snapshot()["marker_stage_pending_switch"] is None
     assert policy.snapshot()["pending_plan_actions"] == 0
+
+
+def test_marker_planner_switches_to_endpoint_with_certified_staged_route(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    environment = _MarkerAffineEnvironment(
+        groups=[[(8, 48), (48, 8), (48, 48)]],
+        targets=((18, 38),),
+        marker_colors=(12,),
+    )
+    policy = VisualCausalPolicy()
+    policy._last_active_color = environment.active_color
+    staged_endpoint = environment.groups[0][1]
+
+    monkeypatch.setattr(
+        visual_causal,
+        "_best_marker_relocation",
+        lambda *_args, **_kwargs: None,
+    )
+
+    def staged_route(
+        _scene: VisualScene,
+        _group: visual_causal._EmbeddedMarkerGroup,
+        endpoint: visual_causal.VisualObject,
+        **_kwargs: object,
+    ) -> Coordinate | None:
+        if endpoint.rounded_center == staged_endpoint:
+            return Coordinate(20, 20)
+        return None
+
+    monkeypatch.setattr(
+        visual_causal,
+        "_best_marker_staging_relocation",
+        staged_route,
+    )
+
+    action = policy.select(environment.observation())
+
+    assert action.coordinate == Coordinate(*staged_endpoint)
+    assert "expose a bounded staged continuation" in policy._pending_prediction
+
+
+def test_structural_marker_cycle_is_rejected_despite_frame_animation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    environment = _MarkerAffineEnvironment(
+        groups=[[(10, 50), (30, 50)]],
+        targets=((20, 28),),
+        marker_colors=(12,),
+    )
+    policy = VisualCausalPolicy()
+    policy._last_active_color = environment.active_color
+
+    def switch_only(
+        _scene: VisualScene,
+        _group: visual_causal._EmbeddedMarkerGroup,
+        endpoint: visual_causal.VisualObject,
+        **_kwargs: object,
+    ) -> tuple[int, Coordinate] | None:
+        if endpoint.color == environment.fixed_color:
+            return (0, Coordinate(20, 20))
+        return None
+
+    monkeypatch.setattr(visual_causal, "_best_marker_relocation", switch_only)
+    monkeypatch.setattr(
+        visual_causal,
+        "_best_marker_staging_relocation",
+        lambda *_args, **_kwargs: None,
+    )
+
+    observation = environment.observation()
+    first = policy.select(observation)
+    observation = environment.step(first)
+    policy.accept_consequence(observation)
+    second = policy.select(observation)
+    observation = environment.step(second)
+    policy.accept_consequence(observation)
+
+    assert first.coordinate == Coordinate(30, 50)
+    assert second.coordinate == Coordinate(10, 50)
+    with pytest.raises(PolicyError, match="no bounded same-group action"):
+        policy.select(observation)
+    assert policy.snapshot()["marker_structural_action_count"] == 2
 
 
 def test_marker_planner_uses_previously_observed_unique_active_color_for_arity_two() -> None:

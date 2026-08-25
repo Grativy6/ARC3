@@ -761,6 +761,9 @@ def _marker_relocation_candidates(
     scene: VisualScene,
     group: _EmbeddedMarkerGroup,
     endpoint: VisualObject,
+    *,
+    minimum_radius: int = 6,
+    maximum_radius: int = 27,
 ) -> tuple[Coordinate, ...]:
     """Return a bounded target-relative candidate set for one group endpoint."""
 
@@ -778,7 +781,7 @@ def _marker_relocation_candidates(
         for x in range(lower_x - sum_other_x, lower_x + group.arity - sum_other_x)
         for y in range(lower_y - sum_other_y, lower_y + group.arity - sum_other_y)
     }
-    for radius in range(6, 28):
+    for radius in range(minimum_radius, maximum_radius + 1):
         for rotation_index in range(16):
             rotation = (2 * math.pi * rotation_index) / 16
             raw.add(
@@ -1127,6 +1130,7 @@ def _best_marker_staging_relocation(
                 projected_group,
                 switch_endpoint,
                 rejected_signatures=rejected_signatures,
+                allow_extended=False,
             )
             if followup is None:
                 continue
@@ -1151,6 +1155,7 @@ def _best_marker_relocation(
     endpoint: VisualObject,
     *,
     rejected_signatures: set[str],
+    allow_extended: bool = True,
 ) -> tuple[int, Coordinate] | None:
     sum_x = sum(item.rounded_center[0] for item in group.endpoints)
     sum_y = sum(item.rounded_center[1] for item in group.endpoints)
@@ -1159,37 +1164,78 @@ def _best_marker_relocation(
         scene,
         reference_footprint_size=len(_object_footprint(group.mediator)),
     )
+    ordinary = _marker_relocation_candidates(scene, group, endpoint)
+    candidate_batches = [ordinary]
+    if allow_extended:
+        board_diagonal = math.ceil(math.hypot(scene.width - 1, scene.height - 1))
+        candidate_batches.append(
+            _marker_relocation_candidates(
+                scene,
+                group,
+                endpoint,
+                minimum_radius=28,
+                maximum_radius=board_diagonal,
+            )
+        )
     best: tuple[int, int, int, Coordinate] | None = None
-    for coordinate in _marker_relocation_candidates(scene, group, endpoint):
-        resulting_sum_x = sum_x - endpoint.rounded_center[0] + coordinate.x
-        resulting_sum_y = sum_y - endpoint.rounded_center[1] + coordinate.y
-        potential = _marker_group_potential(
-            group,
-            sum_x=resulting_sum_x,
-            sum_y=resulting_sum_y,
-        )
-        mediator_after = (
-            resulting_sum_x // group.arity,
-            resulting_sum_y // group.arity,
-        )
-        if not _marker_mediator_remains_readable(
-            scene,
-            group,
-            endpoint,
-            coordinate=coordinate,
-            mediator_after=mediator_after,
-            final=potential == 0,
-            static_cells=static_cells,
-        ):
-            continue
-        signature_kind = "solve" if potential == 0 else "improve"
-        signature = f"marker:{group.marker_color}:{signature_kind}:{coordinate.x},{coordinate.y}"
-        if potential >= current or signature in rejected_signatures:
-            continue
-        candidate = (potential, coordinate.y, coordinate.x, coordinate)
-        if best is None or candidate[:3] < best[:3]:
-            best = candidate
+    for coordinates in candidate_batches:
+        for coordinate in coordinates:
+            resulting_sum_x = sum_x - endpoint.rounded_center[0] + coordinate.x
+            resulting_sum_y = sum_y - endpoint.rounded_center[1] + coordinate.y
+            potential = _marker_group_potential(
+                group,
+                sum_x=resulting_sum_x,
+                sum_y=resulting_sum_y,
+            )
+            mediator_after = (
+                resulting_sum_x // group.arity,
+                resulting_sum_y // group.arity,
+            )
+            if not _marker_mediator_remains_readable(
+                scene,
+                group,
+                endpoint,
+                coordinate=coordinate,
+                mediator_after=mediator_after,
+                final=potential == 0,
+                static_cells=static_cells,
+            ):
+                continue
+            signature_kind = "solve" if potential == 0 else "improve"
+            signature = (
+                f"marker:{group.marker_color}:{signature_kind}:{coordinate.x},{coordinate.y}"
+            )
+            if potential >= current or signature in rejected_signatures:
+                continue
+            candidate = (potential, coordinate.y, coordinate.x, coordinate)
+            if best is None or candidate[:3] < best[:3]:
+                best = candidate
+        if best is not None:
+            break
     return None if best is None else (best[0], best[3])
+
+
+def _marker_structural_action_key(
+    scene: VisualScene,
+    active: VisualObject,
+    plan_signature: str,
+) -> str:
+    """Hash marker geometry, active role, and action while ignoring HUD animation."""
+
+    groups = _embedded_marker_groups(scene)
+    parts = [f"active:{active.rounded_center[0]},{active.rounded_center[1]}"]
+    for group in groups:
+        endpoints = ";".join(
+            f"{item.rounded_center[0]},{item.rounded_center[1]}"
+            for item in sorted(group.endpoints, key=lambda item: item.rounded_center)
+        )
+        parts.append(
+            f"group:{group.marker_color}:{group.arity}:{endpoints}:"
+            f"m={group.mediator.rounded_center[0]},{group.mediator.rounded_center[1]}:"
+            f"t={group.target.rounded_center[0]},{group.target.rounded_center[1]}"
+        )
+    parts.append(f"action:{plan_signature}")
+    return hashlib.sha256("|".join(parts).encode("ascii")).hexdigest()
 
 
 def _best_marker_group_transfer(
@@ -1391,6 +1437,7 @@ def _embedded_marker_plan(
         )
 
     switch_candidates: list[tuple[int, str, VisualObject]] = []
+    fallback_stage_switch_candidates: list[tuple[int, str, VisualObject]] = []
     for endpoint in group.endpoints:
         if endpoint.object_ref == active.object_ref:
             continue
@@ -1406,6 +1453,25 @@ def _embedded_marker_plan(
         )
         if prospective is not None:
             switch_candidates.append((prospective[0], endpoint.object_ref, endpoint))
+            continue
+        staged_coordinate = _best_marker_staging_relocation(
+            scene,
+            group,
+            endpoint,
+            rejected_signatures=rejected_signatures,
+        )
+        if staged_coordinate is None:
+            continue
+        sum_x = sum(item.rounded_center[0] for item in group.endpoints)
+        sum_y = sum(item.rounded_center[1] for item in group.endpoints)
+        staged_sum_x = sum_x - endpoint.rounded_center[0] + staged_coordinate.x
+        staged_sum_y = sum_y - endpoint.rounded_center[1] + staged_coordinate.y
+        staged_potential = _marker_group_potential(
+            group,
+            sum_x=staged_sum_x,
+            sum_y=staged_sum_y,
+        )
+        fallback_stage_switch_candidates.append((staged_potential, endpoint.object_ref, endpoint))
     if not switch_candidates:
         stage = _best_marker_staging_relocation(
             scene,
@@ -1413,6 +1479,27 @@ def _embedded_marker_plan(
             active,
             rejected_signatures=rejected_signatures,
         )
+        if stage is None and fallback_stage_switch_candidates:
+            _potential, _object_ref, selected = min(
+                fallback_stage_switch_candidates,
+                key=lambda item: item[:2],
+            )
+            coordinate = Coordinate(*selected.rounded_center)
+            signature = f"marker:{group.marker_color}:rotate:{coordinate.x},{coordinate.y}"
+            return PlannedClick(
+                coordinate=coordinate,
+                purpose=VisualActionPurpose.PROBE,
+                expectation=(
+                    "transfer the active role within the same marker group to expose a "
+                    "bounded staged continuation"
+                ),
+                mechanic_ref=mechanic_ref,
+                plan_id=plan_id,
+                plan_signature=signature,
+                target_center=group.target.rounded_center,
+                mediator_color=group.marker_color,
+                arity=group.arity,
+            )
         if stage is None:
             deferred_groups = tuple(item for item in unresolved if item != group)
             transfer = _best_marker_group_transfer(
@@ -1670,6 +1757,7 @@ class VisualCausalPolicy:
     """
 
     manages_trace = False
+    _MAX_MARKER_STRUCTURAL_ACTIONS = 512
 
     def __init__(self, *, max_coordinate_candidates: int = 8) -> None:
         if not 1 <= max_coordinate_candidates <= 32:
@@ -1700,6 +1788,8 @@ class VisualCausalPolicy:
         self._attempted_activation_refs: set[str] = set()
         self._marker_bootstrap_attempted = False
         self._marker_stage_pending_switch: int | None = None
+        self._marker_structural_actions: set[str] = set()
+        self._marker_structural_action_order: deque[str] = deque()
         self._last_probe_failed = False
         self._last_active_color: int | None = None
         self._probe_ordinal = 0
@@ -1765,6 +1855,8 @@ class VisualCausalPolicy:
         self._attempted_activation_refs.clear()
         self._marker_bootstrap_attempted = False
         self._marker_stage_pending_switch = None
+        self._marker_structural_actions.clear()
+        self._marker_structural_action_order.clear()
         self._last_probe_failed = False
         self._probe_ordinal = 0
 
@@ -1928,13 +2020,42 @@ class VisualCausalPolicy:
         if ActionName.ACTION6 in observation.available_actions:
             marker_scene = extract_visual_scene(observation.frames[-1])
             marker_groups = _embedded_marker_groups(marker_scene)
-            marker_plan = _embedded_marker_plan(
-                marker_scene,
-                level_index=observation.levels_completed,
-                active_color=self._last_active_color,
-                staged_marker_color=self._marker_stage_pending_switch,
-                rejected_signatures=self._failed_plan_signatures,
-            )
+            marker_plan: PlannedClick | None = None
+            structural_rejections: set[str] = set()
+            for _attempt in range(64):
+                candidate_plan = _embedded_marker_plan(
+                    marker_scene,
+                    level_index=observation.levels_completed,
+                    active_color=self._last_active_color,
+                    staged_marker_color=self._marker_stage_pending_switch,
+                    rejected_signatures=(self._failed_plan_signatures | structural_rejections),
+                )
+                if candidate_plan is None:
+                    break
+                active_endpoint = _embedded_marker_active_endpoint(
+                    marker_scene,
+                    active_color=self._last_active_color,
+                )
+                if active_endpoint is None:
+                    marker_plan = candidate_plan
+                    break
+                structural_key = _marker_structural_action_key(
+                    marker_scene,
+                    active_endpoint,
+                    candidate_plan.plan_signature,
+                )
+                if structural_key not in self._marker_structural_actions:
+                    marker_plan = candidate_plan
+                    self._marker_structural_actions.add(structural_key)
+                    self._marker_structural_action_order.append(structural_key)
+                    while (
+                        len(self._marker_structural_action_order)
+                        > self._MAX_MARKER_STRUCTURAL_ACTIONS
+                    ):
+                        expired = self._marker_structural_action_order.popleft()
+                        self._marker_structural_actions.discard(expired)
+                    break
+                structural_rejections.add(candidate_plan.plan_signature)
             if marker_plan is not None:
                 # Marker plans contain exactly one locally justified action and
                 # are recomputed from the returned frame.  A queued radial
@@ -2460,6 +2581,7 @@ class VisualCausalPolicy:
             "mechanics": [item.to_dict() for item in self._mechanics[-64:]],
             "marker_bootstrap_attempted": self._marker_bootstrap_attempted,
             "marker_stage_pending_switch": self._marker_stage_pending_switch,
+            "marker_structural_action_count": len(self._marker_structural_actions),
             "pending_plan_actions": len(self._plan),
             "receipt_count": len(self._receipts),
             "receipts": [item.to_dict() for item in self._receipts[-192:]],
