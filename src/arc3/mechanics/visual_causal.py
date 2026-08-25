@@ -488,6 +488,8 @@ _HIERARCHY_PLAN_PREFIXES = (
     "affine-hierarchy-recovery:",
     "affine-weighted-hierarchy:",
     "affine-weighted-hierarchy-recovery:",
+    "affine-visible-node-hierarchy:",
+    "affine-visible-node-hierarchy-recovery:",
     "affine-child-isolation:",
     "affine-child-recovery:",
 )
@@ -4622,11 +4624,10 @@ def _build_hierarchy_plan(
         )
         required = expected
 
-    recovery_prefix = (
-        "affine-weighted-hierarchy-recovery"
-        if signature_prefix == "affine-weighted-hierarchy"
-        else "affine-hierarchy-recovery"
-    )
+    recovery_prefix = {
+        "affine-weighted-hierarchy": "affine-weighted-hierarchy-recovery",
+        "affine-visible-node-hierarchy": "affine-visible-node-hierarchy-recovery",
+    }.get(signature_prefix, "affine-hierarchy-recovery")
     recovery_signature = (
         recovery_prefix
         + ":"
@@ -4827,12 +4828,17 @@ def _hierarchy_joint_layout(
 def _weighted_translation_support_candidates(
     hierarchy: _AffineHierarchy,
     *,
+    support_weights: tuple[int, ...] | None = None,
     max_translation: int = 24,
     limit: int = 128,
 ) -> tuple[tuple[tuple[int, int], ...], ...]:
-    """Rank small child translations that make the flattened centroid exact."""
+    """Rank small child translations for one explicit parent weighting."""
 
-    weights = tuple(child.arity for child in hierarchy.children)
+    weights = (
+        tuple(child.arity for child in hierarchy.children)
+        if support_weights is None
+        else support_weights
+    )
     if (
         len(weights) != 2
         or weights[0] < 1
@@ -5203,12 +5209,19 @@ def _hierarchy_weighted_layout(
     *,
     rejected_signatures: set[str],
     search_budget: _HierarchySearchBudget | None = None,
+    support_weights: tuple[int, ...] | None = None,
+    signature_prefix: str = "affine-weighted-hierarchy",
+    terminal_expectation: str = ("complete the arity-weighted child-mediator centroid relation"),
 ) -> _HierarchyPlan | None:
-    """Test the flattened endpoint centroid after equal child weighting fails."""
+    """Test one explicit weighted parent composition after equal weighting fails."""
 
     if search_budget is None:
         search_budget = _HierarchySearchBudget(_MAX_HIERARCHY_SEARCH_BUDGET)
-    weights = tuple(child.arity for child in hierarchy.children)
+    weights = (
+        tuple(child.arity for child in hierarchy.children)
+        if support_weights is None
+        else support_weights
+    )
     if len(weights) != 2 or weights[0] == weights[1]:
         return None
     target_regions = _visible_target_regions(scene)
@@ -5245,7 +5258,15 @@ def _hierarchy_weighted_layout(
     ] = {}
     best_plan: tuple[int, int, float, str, _HierarchyPlan] | None = None
     first_competitive_support_index: int | None = None
-    for support_index, supports in enumerate(_weighted_translation_support_candidates(hierarchy)):
+    support_candidates = (
+        _weighted_translation_support_candidates(hierarchy)
+        if support_weights is None
+        else _weighted_translation_support_candidates(
+            hierarchy,
+            support_weights=weights,
+        )
+    )
+    for support_index, supports in enumerate(support_candidates):
         if (
             first_competitive_support_index is not None
             and support_index
@@ -5336,10 +5357,8 @@ def _hierarchy_weighted_layout(
                     scene=scene,
                     move_order=move_order,
                     support_weights=weights,
-                    signature_prefix="affine-weighted-hierarchy",
-                    terminal_expectation=(
-                        "complete the arity-weighted child-mediator centroid relation"
-                    ),
+                    signature_prefix=signature_prefix,
+                    terminal_expectation=terminal_expectation,
                 )
                 if plan.signature in rejected_signatures:
                     continue
@@ -5372,6 +5391,28 @@ def _hierarchy_weighted_layout(
             ):
                 break
     return None if best_plan is None else best_plan[4]
+
+
+def _hierarchy_visible_node_layout(
+    scene: VisualScene,
+    hierarchy: _AffineHierarchy,
+    *,
+    rejected_signatures: set[str],
+    search_budget: _HierarchySearchBudget | None = None,
+) -> _HierarchyPlan | None:
+    """Test weighting each child by its endpoints plus its visible mediator."""
+
+    return _hierarchy_weighted_layout(
+        scene,
+        hierarchy,
+        rejected_signatures=rejected_signatures,
+        search_budget=search_budget,
+        support_weights=tuple(child.arity + 1 for child in hierarchy.children),
+        signature_prefix="affine-visible-node-hierarchy",
+        terminal_expectation=(
+            "complete the visible-node-weighted child-mediator centroid relation"
+        ),
+    )
 
 
 def _visual_object_state_signature(
@@ -6910,6 +6951,7 @@ class VisualCausalPolicy:
         self._active_hierarchy_recovery_actions: tuple[PlannedClick, ...] = ()
         self._failed_hierarchy_relation_keys: set[str] = set()
         self._failed_weighted_hierarchy_relation_keys: set[str] = set()
+        self._failed_visible_node_hierarchy_relation_keys: set[str] = set()
         self._hierarchy_lineage_lost: tuple[int, str, str, str] | None = None
         self._failed_hierarchy_lineages: set[tuple[int, str, str, str]] = set()
         self._active_child_isolation_relation_key: str | None = None
@@ -7028,6 +7070,7 @@ class VisualCausalPolicy:
         self._active_hierarchy_recovery_actions = ()
         self._failed_hierarchy_relation_keys.clear()
         self._failed_weighted_hierarchy_relation_keys.clear()
+        self._failed_visible_node_hierarchy_relation_keys.clear()
         self._hierarchy_lineage_lost = None
         self._failed_hierarchy_lineages.clear()
         self._clear_child_isolation_execution()
@@ -7649,6 +7692,10 @@ class VisualCausalPolicy:
                         weighted_relation_rejected = (
                             hierarchy_relation_key in self._failed_weighted_hierarchy_relation_keys
                         )
+                        visible_node_relation_rejected = (
+                            hierarchy_relation_key
+                            in self._failed_visible_node_hierarchy_relation_keys
+                        )
                         if untested_child_hypotheses:
                             child_isolation_plan = _child_isolation_plan(
                                 scene,
@@ -7661,20 +7708,37 @@ class VisualCausalPolicy:
                                 search_budget=search_budget,
                             )
                         if child_isolation_plan is None:
-                            if joint_relation_rejected and weighted_relation_rejected:
+                            if (
+                                joint_relation_rejected
+                                and weighted_relation_rejected
+                                and visible_node_relation_rejected
+                            ):
                                 deferred_hierarchy_reason = (
                                     "all structurally distinct child-only sufficiency, "
-                                    "equal-weight, and arity-weighted hierarchy hypotheses "
-                                    "were already falsified by exact official NOT_FINISHED "
-                                    "consequences"
+                                    "equal-weight, arity-weighted, and visible-node-weighted "
+                                    "hierarchy hypotheses were already falsified by exact "
+                                    "official NOT_FINISHED consequences"
                                     if all_child_hypotheses_rejected
                                     else (
                                         "an unfalsified structural child stratum has no exact "
-                                        "target-protected isolation layout and both bounded "
+                                        "target-protected isolation layout and all three bounded "
                                         "joint completion hypotheses were already falsified by "
                                         "official NOT_FINISHED consequences"
                                     )
                                 )
+                            elif joint_relation_rejected and weighted_relation_rejected:
+                                hierarchy_plan = _hierarchy_visible_node_layout(
+                                    scene,
+                                    hierarchy,
+                                    rejected_signatures=self._failed_plan_signatures,
+                                    search_budget=search_budget,
+                                )
+                                if hierarchy_plan is None:
+                                    deferred_hierarchy_reason = (
+                                        "equal-weight and arity-weighted joint completion were "
+                                        "falsified and the distinct visible-node-weighted "
+                                        "composition has no target-protected layout"
+                                    )
                             elif joint_relation_rejected:
                                 hierarchy_plan = _hierarchy_weighted_layout(
                                     scene,
@@ -8000,10 +8064,18 @@ class VisualCausalPolicy:
             self._pending_plan_signature is not None
             and self._pending_plan_signature.startswith("affine-weighted-hierarchy:")
         )
+        visible_node_hierarchy_action = (
+            self._pending_plan_signature is not None
+            and self._pending_plan_signature.startswith("affine-visible-node-hierarchy:")
+        )
         joint_hierarchy_action = (
             self._pending_plan_signature is not None
             and self._pending_plan_signature.startswith(
-                ("affine-hierarchy:", "affine-weighted-hierarchy:")
+                (
+                    "affine-hierarchy:",
+                    "affine-weighted-hierarchy:",
+                    "affine-visible-node-hierarchy:",
+                )
             )
         )
         hierarchy_recovery_action = (
@@ -8012,6 +8084,7 @@ class VisualCausalPolicy:
                 (
                     "affine-hierarchy-recovery:",
                     "affine-weighted-hierarchy-recovery:",
+                    "affine-visible-node-hierarchy-recovery:",
                 )
             )
         )
@@ -8099,7 +8172,7 @@ class VisualCausalPolicy:
             and len(after_scene.endpoints) == self._pending_expected_visible_endpoint_count
             and len(after_scene.mediators) == self._pending_expected_visible_mediator_count
         )
-        hierarchy_raster_certified = bool(
+        hierarchy_expected_raster_matches = bool(
             (joint_hierarchy_action or hierarchy_recovery_action)
             and expected_child_protected_raster_hash is not None
             and _child_isolation_protected_raster_hash(after_scene)
@@ -8108,11 +8181,19 @@ class VisualCausalPolicy:
             and self._pending_expected_visible_mediator_count is not None
             and len(after_scene.endpoints) == self._pending_expected_visible_endpoint_count
             and len(after_scene.mediators) == self._pending_expected_visible_mediator_count
-            and observation.state is GameStateName.NOT_FINISHED
             and observation.levels_completed == before.levels_completed
             and changed > 0
             and hierarchy_target_readable
             and hierarchy_parent_target_preserved
+        )
+        hierarchy_raster_certified = bool(
+            hierarchy_expected_raster_matches and observation.state is GameStateName.NOT_FINISHED
+        )
+        hierarchy_terminal_game_over_observed = bool(
+            joint_hierarchy_action
+            and self._pending_completes_hierarchy
+            and hierarchy_expected_raster_matches
+            and observation.state is GameStateName.GAME_OVER
         )
         hierarchy_visible_counts_certified = bool(
             child_isolation_visible_counts_certified
@@ -8642,6 +8723,18 @@ class VisualCausalPolicy:
         if observation.state in {GameStateName.GAME_OVER, GameStateName.NOT_PLAYED}:
             if self._pending_plan_signature is not None:
                 self._failed_plan_signatures.add(self._pending_plan_signature)
+            if hierarchy_terminal_game_over_observed and hierarchy_relation_key is not None:
+                if visible_node_hierarchy_action:
+                    self._failed_visible_node_hierarchy_relation_keys.add(hierarchy_relation_key)
+                    residual = (
+                        "the exact visible-node-weighted hierarchy terminal returned GAME_OVER"
+                    )
+                elif weighted_hierarchy_action:
+                    self._failed_weighted_hierarchy_relation_keys.add(hierarchy_relation_key)
+                    residual = "the exact arity-weighted hierarchy terminal returned GAME_OVER"
+                else:
+                    self._failed_hierarchy_relation_keys.add(hierarchy_relation_key)
+                    residual = "the exact equal-weight hierarchy terminal returned GAME_OVER"
             if (
                 observation.state is GameStateName.GAME_OVER
                 and self._pending_completes_child_isolation
@@ -8769,7 +8862,9 @@ class VisualCausalPolicy:
             if self._pending_plan_signature is not None:
                 self._failed_plan_signatures.add(self._pending_plan_signature)
             if hierarchy_supports_observed and hierarchy_relation_key is not None:
-                if weighted_hierarchy_action:
+                if visible_node_hierarchy_action:
+                    self._failed_visible_node_hierarchy_relation_keys.add(hierarchy_relation_key)
+                elif weighted_hierarchy_action:
                     self._failed_weighted_hierarchy_relation_keys.add(hierarchy_relation_key)
                 else:
                     self._failed_hierarchy_relation_keys.add(hierarchy_relation_key)
@@ -8787,12 +8882,19 @@ class VisualCausalPolicy:
                 self._last_probe_failed = True
             if hierarchy_supports_observed:
                 residual = (
-                    "the arity-weighted child-mediator centroid reached the parent "
-                    "target but the official environment remained NOT_FINISHED"
-                    if weighted_hierarchy_action
+                    (
+                        "the visible-node-weighted child-mediator centroid reached the "
+                        "parent target but the official environment remained NOT_FINISHED"
+                    )
+                    if visible_node_hierarchy_action
                     else (
-                        "distinct child mediators reached the predicted parent centroid "
-                        "but the official environment remained NOT_FINISHED"
+                        "the arity-weighted child-mediator centroid reached the parent "
+                        "target but the official environment remained NOT_FINISHED"
+                        if weighted_hierarchy_action
+                        else (
+                            "distinct child mediators reached the predicted parent centroid "
+                            "but the official environment remained NOT_FINISHED"
+                        )
                     )
                 )
             elif residual is None:
@@ -8964,20 +9066,32 @@ class VisualCausalPolicy:
             ),
             "hierarchy_active": self._active_hierarchy_signature is not None,
             "hierarchy_rejected_count": sum(
-                item.startswith(("affine-hierarchy:", "affine-weighted-hierarchy:"))
+                item.startswith(
+                    (
+                        "affine-hierarchy:",
+                        "affine-weighted-hierarchy:",
+                        "affine-visible-node-hierarchy:",
+                    )
+                )
                 for item in self._failed_plan_signatures
             ),
             "hierarchy_relation_key": self._active_hierarchy_relation_key,
             "hierarchy_relation_rejected_count": len(
-                self._failed_hierarchy_relation_keys | self._failed_weighted_hierarchy_relation_keys
+                self._failed_hierarchy_relation_keys
+                | self._failed_weighted_hierarchy_relation_keys
+                | self._failed_visible_node_hierarchy_relation_keys
             ),
             "hierarchy_hypothesis_rejected_count": (
                 len(self._failed_hierarchy_relation_keys)
                 + len(self._failed_weighted_hierarchy_relation_keys)
+                + len(self._failed_visible_node_hierarchy_relation_keys)
             ),
             "hierarchy_equal_relation_rejected_count": len(self._failed_hierarchy_relation_keys),
             "hierarchy_weighted_relation_rejected_count": len(
                 self._failed_weighted_hierarchy_relation_keys
+            ),
+            "hierarchy_visible_node_relation_rejected_count": len(
+                self._failed_visible_node_hierarchy_relation_keys
             ),
             "hierarchy_lineage_failure": current_lineage_failure,
             "hierarchy_lineage_failures": lineage_failures,
@@ -8994,6 +9108,7 @@ class VisualCausalPolicy:
                     (
                         "affine-hierarchy-recovery:",
                         "affine-weighted-hierarchy-recovery:",
+                        "affine-visible-node-hierarchy-recovery:",
                     )
                 )
             ),
@@ -9004,6 +9119,7 @@ class VisualCausalPolicy:
                     (
                         "affine-hierarchy-recovery:",
                         "affine-weighted-hierarchy-recovery:",
+                        "affine-visible-node-hierarchy-recovery:",
                     )
                 )
                 else None
