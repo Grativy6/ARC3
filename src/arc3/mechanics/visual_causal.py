@@ -304,6 +304,17 @@ class _HierarchyPlan:
     actions: tuple[PlannedClick, ...]
     signature: str
     supports: tuple[tuple[int, int], ...]
+    support_weights: tuple[int, ...]
+    recovery_actions: tuple[PlannedClick, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class _HierarchyRasterCertificate:
+    """Exact observation-derived board identity for one hierarchy action boundary."""
+
+    protected_raster_hash: str
+    visible_endpoint_count: int
+    visible_mediator_count: int
 
 
 @dataclass(frozen=True, slots=True)
@@ -459,6 +470,17 @@ _MAX_HIERARCHY_CHILD_LAYOUTS = 8
 _MAX_HIERARCHY_LAYOUT_COMBINATIONS = 512
 _MAX_HIERARCHY_SEARCH_BUDGET = 131_072
 _HIERARCHY_SEQUENCE_EVALUATION_COST = 1_024
+_HIERARCHY_TRANSIENT_SEQUENCE_EVALUATION_COST = 32
+_MAX_WEIGHTED_HIERARCHY_MOVE_ORDERS = 22
+_WEIGHTED_HIERARCHY_SUPPORT_LOOKAHEAD = 1
+_HIERARCHY_PLAN_PREFIXES = (
+    "affine-hierarchy:",
+    "affine-hierarchy-recovery:",
+    "affine-weighted-hierarchy:",
+    "affine-weighted-hierarchy-recovery:",
+    "affine-child-isolation:",
+    "affine-child-recovery:",
+)
 
 
 class _HierarchySearchExhausted(PolicyError):
@@ -4109,9 +4131,24 @@ def _hierarchy_child_layouts(
         )
     )
     # The joint parser check is deliberately expensive.  Preserve a fair
-    # radius shell above, then keep only the best bounded discriminators for
-    # each child instead of exhaustively enumerating equivalent placements.
-    return tuple(layouts[:result_limit])
+    # radius shell above, then keep only the best bounded *distinct*
+    # discriminators for each child.  Several rotations can round to the same
+    # ordered endpoint geometry; applying the cap before deduplication would
+    # let those aliases hide a later viable layout.
+    distinct_layouts: list[_HierarchyChildLayout] = []
+    seen_layouts: set[tuple[tuple[str, ...], tuple[tuple[int, int], ...]]] = set()
+    for layout in layouts:
+        identity = (
+            tuple(item.object_ref for item in layout.movers),
+            layout.points,
+        )
+        if identity in seen_layouts:
+            continue
+        seen_layouts.add(identity)
+        distinct_layouts.append(layout)
+        if len(distinct_layouts) == result_limit:
+            break
+    return tuple(distinct_layouts)
 
 
 def _fair_index_products(
@@ -4266,6 +4303,7 @@ def _hierarchy_sequence_is_safe(
     static_cells: frozenset[tuple[int, int]],
     target_regions: _TargetRegions,
     search_budget: _HierarchySearchBudget,
+    support_weights: tuple[int, ...] | None = None,
 ) -> bool:
     """Validate every projected move and role exchange, not only the endpoint."""
 
@@ -4342,39 +4380,29 @@ def _hierarchy_sequence_is_safe(
             return False
 
     supports = tuple(layout.support for layout in layouts)
+    weights = tuple(1 for _support in supports) if support_weights is None else support_weights
+    if len(weights) != len(supports) or any(weight < 1 for weight in weights):
+        return False
+    total_weight = sum(weights)
     target = hierarchy.target.rounded_center
     return (
         len(set(supports)) == len(supports)
-        and sum(item[0] for item in supports) == len(supports) * target[0]
-        and sum(item[1] for item in supports) == len(supports) * target[1]
-    )
-
-
-def _hierarchy_supports_were_observed(
-    hierarchy: _AffineHierarchy,
-    *,
-    expected_supports: tuple[tuple[int, int], ...],
-    expected_target: tuple[int, int] | None,
-) -> bool:
-    """Require the returned child mediators to occupy the planned parent relation."""
-
-    observed_supports = tuple(child.mediator.rounded_center for child in hierarchy.children)
-    return bool(
-        expected_target is not None
-        and hierarchy.target.rounded_center == expected_target
-        and len(observed_supports) == len(expected_supports) >= 2
-        and len(set(observed_supports)) == len(observed_supports)
-        and sorted(observed_supports) == sorted(expected_supports)
-        and sum(item[0] for item in observed_supports)
-        == len(observed_supports) * expected_target[0]
-        and sum(item[1] for item in observed_supports)
-        == len(observed_supports) * expected_target[1]
+        and sum(weight * item[0] for weight, item in zip(weights, supports, strict=True))
+        == total_weight * target[0]
+        and sum(weight * item[1] for weight, item in zip(weights, supports, strict=True))
+        == total_weight * target[1]
     )
 
 
 def _build_hierarchy_plan(
     hierarchy: _AffineHierarchy,
     layouts: tuple[_HierarchyChildLayout, ...],
+    *,
+    scene: VisualScene,
+    move_order: tuple[str, ...] | None = None,
+    support_weights: tuple[int, ...] | None = None,
+    signature_prefix: str = "affine-hierarchy",
+    terminal_expectation: str = "complete the distinct child-mediator centroid relation",
 ) -> _HierarchyPlan:
     geometry = "|".join(
         f"{layout.support[0]},{layout.support[1]}:"
@@ -4384,22 +4412,94 @@ def _build_hierarchy_plan(
         )
         for layout in layouts
     )
-    signature = (
-        "affine-hierarchy:"
-        + hashlib.sha256(f"{hierarchy.mechanic_ref}|{geometry}".encode()).hexdigest()[:24]
+    weights = tuple(1 for _layout in layouts) if support_weights is None else support_weights
+    if len(weights) != len(layouts) or any(weight < 1 for weight in weights):
+        raise ValueError("hierarchy support weights must be positive and match the layouts")
+
+    moves = {
+        mover.object_ref: (layout, mover, point)
+        for layout in layouts
+        for mover, point in zip(layout.movers, layout.points, strict=True)
+    }
+    if len(moves) != sum(len(layout.movers) for layout in layouts):
+        raise ValueError("hierarchy layouts must move each endpoint at most once")
+    ordered_refs = (
+        tuple(mover.object_ref for layout in layouts for mover in layout.movers)
+        if move_order is None
+        else move_order
     )
+    if len(ordered_refs) != len(moves) or set(ordered_refs) != set(moves):
+        raise ValueError("hierarchy move order must contain every planned endpoint exactly once")
+
+    identity = f"{hierarchy.mechanic_ref}|{geometry}"
+    if support_weights is not None:
+        identity = f"{identity}|weights={','.join(str(item) for item in weights)}"
+    if move_order is not None:
+        identity = f"{identity}|order={','.join(ordered_refs)}"
+    signature = signature_prefix + ":" + hashlib.sha256(identity.encode()).hexdigest()[:24]
     plan_id = "visual-hierarchy-plan:" + signature.rsplit(":", 1)[-1]
+
+    initial_positions = {
+        endpoint.object_ref: endpoint.rounded_center
+        for child in hierarchy.children
+        for endpoint in child.endpoints
+    }
+    initial_colors = {
+        endpoint.object_ref: endpoint.color
+        for child in hierarchy.children
+        for endpoint in child.endpoints
+    }
+    positions = dict(initial_positions)
+    colors = dict(initial_colors)
+    active = tuple(ref for ref, color in colors.items() if color == hierarchy.active_color)
+    if len(active) != 1:
+        raise ValueError("hierarchy plan requires exactly one active endpoint")
+    active_ref = active[0]
+
+    def certificate() -> _HierarchyRasterCertificate:
+        projected = _hierarchy_projected_scene(
+            scene,
+            hierarchy,
+            positions=positions,
+            colors=colors,
+        )
+        return _HierarchyRasterCertificate(
+            protected_raster_hash=_child_isolation_protected_raster_hash(projected),
+            visible_endpoint_count=len(projected.endpoints),
+            visible_mediator_count=len(projected.mediators),
+        )
+
+    initial_certificate = certificate()
+    if initial_certificate.protected_raster_hash != _child_isolation_protected_raster_hash(scene):
+        raise ValueError("projected hierarchy origin does not match the observed protected board")
+
     actions: list[PlannedClick] = []
-    for child_index, layout in enumerate(layouts):
-        if child_index:
-            selected = layout.movers[0]
+    inverse_specs: list[tuple[VisualActionPurpose, str, tuple[int, int], _AffineChildGroup]] = []
+    required = initial_certificate
+    for move_index, mover_ref in enumerate(ordered_refs):
+        layout, _mover, point = moves[mover_ref]
+        if mover_ref != active_ref:
+            old_active_ref = active_ref
+            old_active_group = next(
+                child
+                for child in hierarchy.children
+                if any(endpoint.object_ref == old_active_ref for endpoint in child.endpoints)
+            )
+            selected_at = positions[mover_ref]
+            old_active_at = positions[old_active_ref]
+            colors[old_active_ref], colors[mover_ref] = (
+                colors[mover_ref],
+                colors[old_active_ref],
+            )
+            active_ref = mover_ref
+            expected = certificate()
             actions.append(
                 PlannedClick(
-                    coordinate=Coordinate(*selected.rounded_center),
+                    coordinate=Coordinate(*selected_at),
                     purpose=VisualActionPurpose.PROBE,
                     expectation=(
-                        "exchange the active role into the next affine child group "
-                        "without moving a completed child mediator"
+                        "exchange the active role while preserving the certified "
+                        "two-layer hierarchy raster"
                     ),
                     mechanic_ref=hierarchy.mechanic_ref,
                     plan_id=plan_id,
@@ -4407,51 +4507,121 @@ def _build_hierarchy_plan(
                     target_center=hierarchy.target.rounded_center,
                     mediator_color=layout.group.mediator.color,
                     arity=layout.group.arity,
+                    expected_active_center=selected_at,
+                    required_child_protected_raster_hash=required.protected_raster_hash,
+                    expected_child_protected_raster_hash=expected.protected_raster_hash,
+                    expected_visible_endpoint_count=expected.visible_endpoint_count,
+                    expected_visible_mediator_count=expected.visible_mediator_count,
                 )
             )
-        for mover_index, (_mover, point) in enumerate(
-            zip(layout.movers, layout.points, strict=True)
-        ):
-            final_action = child_index + 1 == len(layouts) and mover_index + 1 == len(layout.movers)
-            actions.append(
-                PlannedClick(
-                    coordinate=Coordinate(*point),
-                    purpose=VisualActionPurpose.PROGRESS,
-                    expectation=(
-                        "complete the distinct child-mediator centroid relation"
-                        if final_action
-                        else "place the active endpoint on a protected child-support layout"
-                    ),
-                    mechanic_ref=hierarchy.mechanic_ref,
-                    plan_id=plan_id,
-                    plan_signature=signature,
-                    target_center=hierarchy.target.rounded_center,
-                    mediator_color=layout.group.mediator.color,
-                    arity=layout.group.arity,
-                    completes_hierarchy=final_action,
+            inverse_specs.append(
+                (
+                    VisualActionPurpose.PROBE,
+                    old_active_ref,
+                    old_active_at,
+                    old_active_group,
                 )
             )
-            if mover_index + 1 < len(layout.movers):
-                selected = layout.movers[mover_index + 1]
-                actions.append(
-                    PlannedClick(
-                        coordinate=Coordinate(*selected.rounded_center),
-                        purpose=VisualActionPurpose.PROBE,
-                        expectation=(
-                            "exchange active and fixed endpoint roles within one affine child"
-                        ),
-                        mechanic_ref=hierarchy.mechanic_ref,
-                        plan_id=plan_id,
-                        plan_signature=signature,
-                        target_center=hierarchy.target.rounded_center,
-                        mediator_color=layout.group.mediator.color,
-                        arity=layout.group.arity,
-                    )
-                )
+            required = expected
+
+        before_position = positions[mover_ref]
+        positions[mover_ref] = point
+        expected = certificate()
+        final_action = move_index + 1 == len(ordered_refs)
+        actions.append(
+            PlannedClick(
+                coordinate=Coordinate(*point),
+                purpose=VisualActionPurpose.PROGRESS,
+                expectation=(
+                    terminal_expectation
+                    if final_action
+                    else "place the active endpoint on a protected child-support layout"
+                ),
+                mechanic_ref=hierarchy.mechanic_ref,
+                plan_id=plan_id,
+                plan_signature=signature,
+                target_center=hierarchy.target.rounded_center,
+                mediator_color=layout.group.mediator.color,
+                arity=layout.group.arity,
+                completes_hierarchy=final_action,
+                expected_active_center=point,
+                required_child_protected_raster_hash=required.protected_raster_hash,
+                expected_child_protected_raster_hash=expected.protected_raster_hash,
+                expected_visible_endpoint_count=expected.visible_endpoint_count,
+                expected_visible_mediator_count=expected.visible_mediator_count,
+            )
+        )
+        inverse_specs.append(
+            (
+                VisualActionPurpose.PROGRESS,
+                mover_ref,
+                before_position,
+                layout.group,
+            )
+        )
+        required = expected
+
+    recovery_prefix = (
+        "affine-weighted-hierarchy-recovery"
+        if signature_prefix == "affine-weighted-hierarchy"
+        else "affine-hierarchy-recovery"
+    )
+    recovery_signature = (
+        recovery_prefix
+        + ":"
+        + hashlib.sha256(f"{signature}:recovery".encode("ascii")).hexdigest()[:24]
+    )
+    recovery_plan_id = "visual-hierarchy-recovery:" + signature.rsplit(":", 1)[-1]
+    recovery_actions: list[PlannedClick] = []
+    for purpose, endpoint_ref, inverse_coordinate, group in reversed(inverse_specs):
+        if purpose is VisualActionPurpose.PROBE:
+            if endpoint_ref == active_ref or colors[endpoint_ref] == hierarchy.active_color:
+                raise ValueError("hierarchy recovery role exchange is not reversible")
+            colors[active_ref], colors[endpoint_ref] = (
+                colors[endpoint_ref],
+                colors[active_ref],
+            )
+            active_ref = endpoint_ref
+            expectation = "reverse one certified hierarchy active-role exchange"
+        else:
+            if endpoint_ref != active_ref:
+                raise ValueError("hierarchy recovery movement lost active-endpoint lineage")
+            positions[active_ref] = inverse_coordinate
+            expectation = "restore one endpoint to its exact pre-hypothesis position"
+        expected = certificate()
+        recovery_actions.append(
+            PlannedClick(
+                coordinate=Coordinate(*inverse_coordinate),
+                purpose=purpose,
+                expectation=expectation,
+                mechanic_ref=hierarchy.mechanic_ref,
+                plan_id=recovery_plan_id,
+                plan_signature=recovery_signature,
+                target_center=hierarchy.target.rounded_center,
+                mediator_color=group.mediator.color,
+                arity=group.arity,
+                expected_active_center=positions[active_ref],
+                required_child_protected_raster_hash=required.protected_raster_hash,
+                expected_child_protected_raster_hash=expected.protected_raster_hash,
+                expected_visible_endpoint_count=expected.visible_endpoint_count,
+                expected_visible_mediator_count=expected.visible_mediator_count,
+            )
+        )
+        required = expected
+
+    if (
+        positions != initial_positions
+        or colors != initial_colors
+        or required != initial_certificate
+    ):
+        raise ValueError("hierarchy recovery did not return to its exact observed origin")
+
     return _HierarchyPlan(
         actions=tuple(actions),
         signature=signature,
         supports=tuple(layout.support for layout in layouts),
+        support_weights=weights,
+        recovery_actions=tuple(recovery_actions),
     )
 
 
@@ -4573,7 +4743,11 @@ def _hierarchy_joint_layout(
                         for left, right in itertools.combinations(typed_layouts, 2)
                     ):
                         continue
-                    plan = _build_hierarchy_plan(hierarchy, typed_layouts)
+                    plan = _build_hierarchy_plan(
+                        hierarchy,
+                        typed_layouts,
+                        scene=scene,
+                    )
                     if plan.signature in rejected_signatures:
                         continue
                     search_budget.consume(_HIERARCHY_SEQUENCE_EVALUATION_COST)
@@ -4587,6 +4761,556 @@ def _hierarchy_joint_layout(
                     ):
                         return plan
     return None
+
+
+def _weighted_translation_support_candidates(
+    hierarchy: _AffineHierarchy,
+    *,
+    max_translation: int = 24,
+    limit: int = 128,
+) -> tuple[tuple[tuple[int, int], ...], ...]:
+    """Rank small child translations that make the flattened centroid exact."""
+
+    weights = tuple(child.arity for child in hierarchy.children)
+    if (
+        len(weights) != 2
+        or weights[0] < 1
+        or weights[1] < 1
+        or weights[0] == weights[1]
+        or max_translation < 1
+        or limit < 1
+    ):
+        return ()
+    current = tuple(child.mediator.rounded_center for child in hierarchy.children)
+    target = hierarchy.target.rounded_center
+    total_weight = sum(weights)
+    required = (
+        total_weight * target[0]
+        - sum(weight * support[0] for weight, support in zip(weights, current, strict=True)),
+        total_weight * target[1]
+        - sum(weight * support[1] for weight, support in zip(weights, current, strict=True)),
+    )
+    ranked: list[tuple[int, int, tuple[tuple[int, int], ...]]] = []
+    seen: set[tuple[tuple[int, int], ...]] = set()
+    for first_dx in range(-max_translation, max_translation + 1):
+        for first_dy in range(-max_translation, max_translation + 1):
+            first_delta = (first_dx, first_dy)
+            if first_delta == (0, 0):
+                continue
+            second_numerator = (
+                required[0] - weights[0] * first_dx,
+                required[1] - weights[0] * first_dy,
+            )
+            if second_numerator[0] % weights[1] != 0 or second_numerator[1] % weights[1] != 0:
+                continue
+            second_delta = (
+                second_numerator[0] // weights[1],
+                second_numerator[1] // weights[1],
+            )
+            if (
+                second_delta == (0, 0)
+                or max(abs(second_delta[0]), abs(second_delta[1])) > max_translation
+            ):
+                continue
+            supports = (
+                (current[0][0] + first_dx, current[0][1] + first_dy),
+                (
+                    current[1][0] + second_delta[0],
+                    current[1][1] + second_delta[1],
+                ),
+            )
+            if supports in seen or len(set(supports)) != len(supports):
+                continue
+            if (
+                sum(weight * support[0] for weight, support in zip(weights, supports, strict=True))
+                != total_weight * target[0]
+                or sum(
+                    weight * support[1] for weight, support in zip(weights, supports, strict=True)
+                )
+                != total_weight * target[1]
+            ):
+                continue
+            seen.add(supports)
+            squared_cost = weights[0] * (first_dx**2 + first_dy**2) + weights[1] * (
+                second_delta[0] ** 2 + second_delta[1] ** 2
+            )
+            max_shift = max(
+                abs(first_dx),
+                abs(first_dy),
+                abs(second_delta[0]),
+                abs(second_delta[1]),
+            )
+            ranked.append((squared_cost, max_shift, supports))
+    ranked.sort()
+    return tuple(item[2] for item in ranked[:limit])
+
+
+def _translated_hierarchy_child_layouts(
+    scene: VisualScene,
+    group: _AffineChildGroup,
+    *,
+    support: tuple[int, int],
+    active_ref: str | None,
+    static_cells: frozenset[tuple[int, int]],
+    target_regions: _TargetRegions,
+    search_budget: _HierarchySearchBudget,
+) -> tuple[_HierarchyChildLayout, ...]:
+    """Preserve one learned child relation while translating its mediator."""
+
+    delta = (
+        support[0] - group.mediator.rounded_center[0],
+        support[1] - group.mediator.rounded_center[1],
+    )
+    if delta == (0, 0):
+        return ()
+    layouts: list[_HierarchyChildLayout] = []
+    for movers in _hierarchy_endpoint_orders(group, active_ref=active_ref):
+        search_budget.consume()
+        points = tuple(
+            (mover.rounded_center[0] + delta[0], mover.rounded_center[1] + delta[1])
+            for mover in movers
+        )
+        dynamic = _hierarchy_projected_group_footprint(
+            group,
+            endpoint_centers=points,
+            mediator_center=support,
+            endpoints=movers,
+        )
+        if (
+            not _hierarchy_cells_in_bounds(scene, dynamic)
+            or dynamic & static_cells
+            or not _hierarchy_avoids_target_regions(dynamic, target_regions)
+        ):
+            continue
+        layouts.append(
+            _HierarchyChildLayout(
+                group=group,
+                support=support,
+                movers=movers,
+                points=points,
+                dynamic_footprint=dynamic,
+                radius=max(abs(delta[0]), abs(delta[1])),
+                movement_cost=sum(
+                    _distance(mover.rounded_center, point)
+                    for mover, point in zip(movers, points, strict=True)
+                ),
+            )
+        )
+    return tuple(layouts)
+
+
+def _bounded_weighted_move_orders(
+    mover_refs: tuple[str, ...],
+    *,
+    active_ref: str,
+    limit: int = _MAX_WEIGHTED_HIERARCHY_MOVE_ORDERS,
+) -> tuple[tuple[str, ...], ...]:
+    """Stratify a small deterministic order sample across possible first movers."""
+
+    if (
+        limit < 1
+        or len(mover_refs) < 2
+        or len(set(mover_refs)) != len(mover_refs)
+        or active_ref not in mover_refs
+    ):
+        return ()
+    others = tuple(ref for ref in mover_refs if ref != active_ref)
+    candidates: list[tuple[str, ...]] = []
+
+    def append(first: str, second: str) -> None:
+        remainder = tuple(ref for ref in mover_refs if ref not in {first, second})
+        candidate = (first, second, *remainder)
+        if candidate not in candidates:
+            candidates.append(candidate)
+
+    # Prefer moving the currently active endpoint, but cover every possible
+    # immediate successor instead of taking a lexicographic permutation prefix.
+    for second in others:
+        append(active_ref, second)
+    # Preserve bounded fallback diversity for layouts that must free another
+    # endpoint's destination before the current active endpoint can move.
+    for first in others:
+        append(first, active_ref)
+    if len(others) > 1:
+        for index, first in enumerate(others):
+            append(first, others[(index + 1) % len(others)])
+    return tuple(candidates[:limit])
+
+
+def _hierarchy_transient_state_gap(
+    scene: VisualScene,
+    hierarchy: _AffineHierarchy,
+    *,
+    positions: dict[str, tuple[int, int]],
+    colors: dict[str, int],
+    static_cells: frozenset[tuple[int, int]],
+    target_regions: _TargetRegions,
+    search_budget: _HierarchySearchBudget,
+) -> int | None:
+    """Return the mediator parse gap for one safe exact-lineage transient state."""
+
+    search_budget.consume()
+    group_dynamic: list[frozenset[tuple[int, int]]] = []
+    mediator_footprints: list[frozenset[tuple[int, int]]] = []
+    endpoint_footprints: list[tuple[str, frozenset[tuple[int, int]]]] = []
+    for group in hierarchy.children:
+        centers = tuple(positions[item.object_ref] for item in group.endpoints)
+        mediator_center = (
+            sum(center[0] for center in centers) // group.arity,
+            sum(center[1] for center in centers) // group.arity,
+        )
+        dynamic = _hierarchy_projected_group_footprint(
+            group,
+            endpoint_centers=centers,
+            mediator_center=mediator_center,
+        )
+        if (
+            not _hierarchy_cells_in_bounds(scene, dynamic)
+            or dynamic & static_cells
+            or not _hierarchy_avoids_target_regions(dynamic, target_regions)
+        ):
+            return None
+        group_dynamic.append(dynamic)
+        mediator_footprints.append(
+            _translated_object_footprint(group.mediator, center=mediator_center)
+        )
+        endpoint_footprints.extend(
+            (endpoint.object_ref, _translated_object_footprint(endpoint, center=center))
+            for endpoint, center in zip(group.endpoints, centers, strict=True)
+        )
+    if any(left & right for left, right in itertools.combinations(group_dynamic, 2)):
+        return None
+    if any(
+        not _footprints_have_gap(left, right, gap=1)
+        for left, right in itertools.combinations(mediator_footprints, 2)
+    ):
+        return None
+    if any(
+        colors[left_ref] == colors[right_ref] and not _footprints_have_gap(left, right, gap=1)
+        for (left_ref, left), (right_ref, right) in itertools.combinations(
+            endpoint_footprints,
+            2,
+        )
+    ):
+        return None
+
+    projected = _hierarchy_projected_scene(
+        scene,
+        hierarchy,
+        positions=positions,
+        colors=colors,
+    )
+    active_refs = tuple(ref for ref, color in colors.items() if color == hierarchy.active_color)
+    active = tuple(
+        endpoint for endpoint in projected.endpoints if endpoint.color == hierarchy.active_color
+    )
+    if not (
+        len(active_refs) == len(active) == 1
+        and active[0].rounded_center == positions[active_refs[0]]
+        and len(projected.endpoints) == len(scene.endpoints)
+        and sorted(item.rounded_center for item in projected.endpoints)
+        == sorted(positions.values())
+        and 1 <= len(projected.mediators) <= len(scene.mediators)
+        and set(_visible_target_regions(projected)) == set(target_regions)
+    ):
+        return None
+    return int(len(projected.mediators) != len(scene.mediators))
+
+
+def _hierarchy_interleaved_sequence_is_certified(
+    scene: VisualScene,
+    hierarchy: _AffineHierarchy,
+    layouts: tuple[_HierarchyChildLayout, ...],
+    *,
+    move_order: tuple[str, ...],
+    static_cells: frozenset[tuple[int, int]],
+    target_regions: _TargetRegions,
+    search_budget: _HierarchySearchBudget,
+    support_weights: tuple[int, ...],
+) -> int | None:
+    """Preflight a finite weighted plan while retaining endpoint raster identity."""
+
+    if tuple(layout.group for layout in layouts) != hierarchy.children:
+        return None
+    moves = {
+        mover.object_ref: point
+        for layout in layouts
+        for mover, point in zip(layout.movers, layout.points, strict=True)
+    }
+    if (
+        len(moves) != sum(len(layout.movers) for layout in layouts)
+        or len(move_order) != len(moves)
+        or set(move_order) != set(moves)
+        or any(
+            mover.rounded_center == point
+            for layout in layouts
+            for mover, point in zip(layout.movers, layout.points, strict=True)
+        )
+    ):
+        return None
+    positions = {
+        endpoint.object_ref: endpoint.rounded_center
+        for child in hierarchy.children
+        for endpoint in child.endpoints
+    }
+    colors = {
+        endpoint.object_ref: endpoint.color
+        for child in hierarchy.children
+        for endpoint in child.endpoints
+    }
+    active = tuple(ref for ref, color in colors.items() if color == hierarchy.active_color)
+    if len(active) != 1:
+        return None
+    active_ref = active[0]
+    initial_gap = _hierarchy_transient_state_gap(
+        scene,
+        hierarchy,
+        positions=positions,
+        colors=colors,
+        static_cells=static_cells,
+        target_regions=target_regions,
+        search_budget=search_budget,
+    )
+    if initial_gap is None:
+        return None
+
+    transient_gap_states = 0
+
+    for mover_ref in move_order:
+        if mover_ref != active_ref:
+            if colors[mover_ref] == hierarchy.active_color:
+                return None
+            colors[active_ref], colors[mover_ref] = colors[mover_ref], colors[active_ref]
+            active_ref = mover_ref
+            role_gap = _hierarchy_transient_state_gap(
+                scene,
+                hierarchy,
+                positions=positions,
+                colors=colors,
+                static_cells=static_cells,
+                target_regions=target_regions,
+                search_budget=search_budget,
+            )
+            if role_gap is None:
+                return None
+            transient_gap_states += role_gap
+        positions[active_ref] = moves[mover_ref]
+        move_gap = _hierarchy_transient_state_gap(
+            scene,
+            hierarchy,
+            positions=positions,
+            colors=colors,
+            static_cells=static_cells,
+            target_regions=target_regions,
+            search_budget=search_budget,
+        )
+        if move_gap is None:
+            return None
+        transient_gap_states += move_gap
+
+    supports = tuple(layout.support for layout in layouts)
+    total_weight = sum(support_weights)
+    target = hierarchy.target.rounded_center
+    final_state_is_safe = bool(
+        len(support_weights) == len(supports)
+        and all(weight >= 1 for weight in support_weights)
+        and len(set(supports)) == len(supports)
+        and sum(
+            weight * support[0] for weight, support in zip(support_weights, supports, strict=True)
+        )
+        == total_weight * target[0]
+        and sum(
+            weight * support[1] for weight, support in zip(support_weights, supports, strict=True)
+        )
+        == total_weight * target[1]
+        and _hierarchy_projected_state_is_safe(
+            scene,
+            hierarchy,
+            positions=positions,
+            colors=colors,
+            static_cells=static_cells,
+            target_regions=target_regions,
+            search_budget=search_budget,
+        )
+    )
+    return transient_gap_states if final_state_is_safe else None
+
+
+def _hierarchy_weighted_layout(
+    scene: VisualScene,
+    hierarchy: _AffineHierarchy,
+    *,
+    rejected_signatures: set[str],
+    search_budget: _HierarchySearchBudget | None = None,
+) -> _HierarchyPlan | None:
+    """Test the flattened endpoint centroid after equal child weighting fails."""
+
+    if search_budget is None:
+        search_budget = _HierarchySearchBudget(_MAX_HIERARCHY_SEARCH_BUDGET)
+    weights = tuple(child.arity for child in hierarchy.children)
+    if len(weights) != 2 or weights[0] == weights[1]:
+        return None
+    target_regions = _visible_target_regions(scene)
+    initial_dynamic = frozenset(
+        cell for child in hierarchy.children for cell in _hierarchy_dynamic_footprint(scene, child)
+    )
+    occupied = frozenset(
+        (x, y)
+        for y, row in enumerate(scene.cells)
+        for x, value in enumerate(row)
+        if value != scene.background
+    )
+    static_cells = occupied - initial_dynamic
+    if not _hierarchy_cells_in_bounds(
+        scene, initial_dynamic
+    ) or not _hierarchy_avoids_target_regions(initial_dynamic, target_regions):
+        return None
+    active = tuple(
+        item
+        for child in hierarchy.children
+        for item in child.endpoints
+        if item.color == hierarchy.active_color
+    )
+    if len(active) != 1:
+        return None
+
+    ignored_refs = frozenset(
+        item.object_ref
+        for child in hierarchy.children
+        for item in (*child.endpoints, child.mediator)
+    )
+    layout_cache: dict[
+        tuple[str, tuple[int, int], str | None], tuple[_HierarchyChildLayout, ...]
+    ] = {}
+    best_plan: tuple[int, int, float, str, _HierarchyPlan] | None = None
+    first_competitive_support_index: int | None = None
+    for support_index, supports in enumerate(_weighted_translation_support_candidates(hierarchy)):
+        if (
+            first_competitive_support_index is not None
+            and support_index
+            > first_competitive_support_index + _WEIGHTED_HIERARCHY_SUPPORT_LOOKAHEAD
+        ):
+            break
+        search_budget.consume()
+        choices: list[tuple[_HierarchyChildLayout, ...]] = []
+        for group, support in zip(hierarchy.children, supports, strict=True):
+            mediator_footprint = _translated_object_footprint(
+                group.mediator,
+                center=support,
+            )
+            if (
+                not _hierarchy_cells_in_bounds(scene, mediator_footprint)
+                or mediator_footprint & static_cells
+                or not _hierarchy_avoids_target_regions(mediator_footprint, target_regions)
+            ):
+                choices = []
+                break
+            active_ref = (
+                active[0].object_ref
+                if any(item.object_ref == active[0].object_ref for item in group.endpoints)
+                else None
+            )
+            cache_key = (group.mediator.object_ref, support, active_ref)
+            candidates = layout_cache.get(cache_key)
+            if candidates is None:
+                candidates = _hierarchy_child_layouts(
+                    scene,
+                    hierarchy,
+                    group,
+                    support=support,
+                    active_ref=active_ref,
+                    static_cells=static_cells,
+                    target_regions=target_regions,
+                    ignored_refs=ignored_refs,
+                    search_budget=search_budget,
+                )
+                layout_cache[cache_key] = candidates
+            if not candidates:
+                choices = []
+                break
+            choices.append(candidates)
+        if not choices:
+            continue
+        support_has_competitive_plan = False
+        for indices in _fair_index_products(
+            tuple(len(items) for items in choices),
+            limit=min(8, _MAX_HIERARCHY_LAYOUT_COMBINATIONS),
+        ):
+            search_budget.consume()
+            typed_layouts = tuple(
+                items[index] for items, index in zip(choices, indices, strict=True)
+            )
+            if any(
+                left.dynamic_footprint & right.dynamic_footprint
+                for left, right in itertools.combinations(typed_layouts, 2)
+            ):
+                continue
+            mover_refs = tuple(
+                mover.object_ref for layout in typed_layouts for mover in layout.movers
+            )
+            active_ref = active[0].object_ref
+            if active_ref not in mover_refs:
+                continue
+            move_orders = _bounded_weighted_move_orders(
+                mover_refs,
+                active_ref=active_ref,
+            )
+            for move_order in move_orders:
+                search_budget.consume(_HIERARCHY_TRANSIENT_SEQUENCE_EVALUATION_COST)
+                transient_gap_states = _hierarchy_interleaved_sequence_is_certified(
+                    scene,
+                    hierarchy,
+                    typed_layouts,
+                    move_order=move_order,
+                    static_cells=static_cells,
+                    target_regions=target_regions,
+                    search_budget=search_budget,
+                    support_weights=weights,
+                )
+                if transient_gap_states is None:
+                    continue
+                plan = _build_hierarchy_plan(
+                    hierarchy,
+                    typed_layouts,
+                    scene=scene,
+                    move_order=move_order,
+                    support_weights=weights,
+                    signature_prefix="affine-weighted-hierarchy",
+                    terminal_expectation=(
+                        "complete the arity-weighted child-mediator centroid relation"
+                    ),
+                )
+                if plan.signature in rejected_signatures:
+                    continue
+                score = (
+                    transient_gap_states,
+                    len(plan.actions),
+                    sum(layout.movement_cost for layout in typed_layouts),
+                    plan.signature,
+                    plan,
+                )
+                if best_plan is None or score[:4] < best_plan[:4]:
+                    best_plan = score
+                if transient_gap_states == 0:
+                    return plan
+                if transient_gap_states <= 2:
+                    support_has_competitive_plan = True
+                    # The first low-gap order is enough to compare the remaining
+                    # bounded layout/support candidates.  A merely safe order
+                    # with a larger parser gap must not hide a later sampled
+                    # order that preserves more of the readable hierarchy.
+                    break
+            if support_has_competitive_plan:
+                break
+        if support_has_competitive_plan:
+            if first_competitive_support_index is None:
+                first_competitive_support_index = support_index
+            if (
+                support_index
+                >= first_competitive_support_index + _WEIGHTED_HIERARCHY_SUPPORT_LOOKAHEAD
+            ):
+                break
+    return None if best_plan is None else best_plan[4]
 
 
 def _visual_object_state_signature(
@@ -5693,9 +6417,7 @@ def _hierarchy_planned_click_is_safe(
 ) -> bool:
     """Revalidate one queued hierarchy action against the returned frame."""
 
-    if not planned.plan_signature.startswith(
-        ("affine-hierarchy:", "affine-child-isolation:", "affine-child-recovery:")
-    ):
+    if not planned.plan_signature.startswith(_HIERARCHY_PLAN_PREFIXES):
         return True
     if not any(target.rounded_center == planned.target_center for target in scene.targets):
         return False
@@ -6036,7 +6758,10 @@ class VisualCausalPolicy:
         self._active_hierarchy_signature: str | None = None
         self._active_hierarchy_relation_key: str | None = None
         self._active_hierarchy_supports: tuple[tuple[int, int], ...] = ()
+        self._active_hierarchy_support_weights: tuple[int, ...] = ()
+        self._active_hierarchy_recovery_actions: tuple[PlannedClick, ...] = ()
         self._failed_hierarchy_relation_keys: set[str] = set()
+        self._failed_weighted_hierarchy_relation_keys: set[str] = set()
         self._hierarchy_lineage_lost: tuple[int, str, str, str] | None = None
         self._failed_hierarchy_lineages: set[tuple[int, str, str, str]] = set()
         self._active_child_isolation_relation_key: str | None = None
@@ -6131,7 +6856,10 @@ class VisualCausalPolicy:
         self._active_hierarchy_signature = None
         self._active_hierarchy_relation_key = None
         self._active_hierarchy_supports = ()
+        self._active_hierarchy_support_weights = ()
+        self._active_hierarchy_recovery_actions = ()
         self._failed_hierarchy_relation_keys.clear()
+        self._failed_weighted_hierarchy_relation_keys.clear()
         self._hierarchy_lineage_lost = None
         self._failed_hierarchy_lineages.clear()
         self._clear_child_isolation_execution()
@@ -6159,6 +6887,8 @@ class VisualCausalPolicy:
         self._active_hierarchy_signature = None
         self._active_hierarchy_relation_key = None
         self._active_hierarchy_supports = ()
+        self._active_hierarchy_support_weights = ()
+        self._active_hierarchy_recovery_actions = ()
         self._hierarchy_lineage_lost = None
         self._clear_child_isolation_execution()
         self._marker_structural_actions.clear()
@@ -6485,6 +7215,8 @@ class VisualCausalPolicy:
         self._active_hierarchy_signature = plan.signature
         self._active_hierarchy_relation_key = relation_key
         self._active_hierarchy_supports = plan.supports
+        self._active_hierarchy_support_weights = plan.support_weights
+        self._active_hierarchy_recovery_actions = plan.recovery_actions
 
     def _install_child_isolation_plan(self, plan: _ChildIsolationPlan) -> None:
         self._plan.clear()
@@ -6526,9 +7258,7 @@ class VisualCausalPolicy:
         if self._plan and ActionName.ACTION6 not in observation.available_actions:
             blocked_plan = self._plan[0]
             self._failed_plan_signatures.add(blocked_plan.plan_signature)
-            hierarchy_blocked = blocked_plan.plan_signature.startswith(
-                ("affine-hierarchy:", "affine-child-isolation:", "affine-child-recovery:")
-            )
+            hierarchy_blocked = blocked_plan.plan_signature.startswith(_HIERARCHY_PLAN_PREFIXES)
             if hierarchy_blocked:
                 self._latch_hierarchy_lineage_failure(
                     level_index=observation.levels_completed,
@@ -6539,6 +7269,8 @@ class VisualCausalPolicy:
             self._active_hierarchy_signature = None
             self._active_hierarchy_relation_key = None
             self._active_hierarchy_supports = ()
+            self._active_hierarchy_support_weights = ()
+            self._active_hierarchy_recovery_actions = ()
             self._clear_child_isolation_execution()
             self._last_probe_failed = True
             if hierarchy_blocked:
@@ -6547,10 +7279,7 @@ class VisualCausalPolicy:
                     "is authorized"
                 )
         if ActionName.ACTION6 in observation.available_actions and not (
-            self._plan
-            and self._plan[0].plan_signature.startswith(
-                ("affine-hierarchy:", "affine-child-isolation:", "affine-child-recovery:")
-            )
+            self._plan and self._plan[0].plan_signature.startswith(_HIERARCHY_PLAN_PREFIXES)
         ):
             marker_scene = extract_visual_scene(observation.frames[-1])
             marker_groups = _embedded_marker_groups(marker_scene)
@@ -6676,9 +7405,7 @@ class VisualCausalPolicy:
                 )
         if (
             self._plan
-            and self._plan[0].plan_signature.startswith(
-                ("affine-hierarchy:", "affine-child-isolation:", "affine-child-recovery:")
-            )
+            and self._plan[0].plan_signature.startswith(_HIERARCHY_PLAN_PREFIXES)
             and (
                 self._last_active_color is None
                 or not _hierarchy_planned_click_is_safe(
@@ -6699,6 +7426,8 @@ class VisualCausalPolicy:
             self._active_hierarchy_signature = None
             self._active_hierarchy_relation_key = None
             self._active_hierarchy_supports = ()
+            self._active_hierarchy_support_weights = ()
+            self._active_hierarchy_recovery_actions = ()
             self._clear_child_isolation_execution()
             raise PolicyError(
                 "queued hierarchy precondition no longer matches the returned frame; "
@@ -6767,6 +7496,12 @@ class VisualCausalPolicy:
                         child_relation_rejected = (
                             hierarchy_relation_key in self._failed_child_isolation_relation_keys
                         )
+                        joint_relation_rejected = (
+                            hierarchy_relation_key in self._failed_hierarchy_relation_keys
+                        )
+                        weighted_relation_rejected = (
+                            hierarchy_relation_key in self._failed_weighted_hierarchy_relation_keys
+                        )
                         if not child_relation_rejected:
                             child_isolation_plan = _child_isolation_plan(
                                 scene,
@@ -6776,18 +7511,33 @@ class VisualCausalPolicy:
                                 search_budget=search_budget,
                             )
                         if child_isolation_plan is None:
-                            if hierarchy_relation_key in self._failed_hierarchy_relation_keys:
+                            if joint_relation_rejected and weighted_relation_rejected:
                                 deferred_hierarchy_reason = (
                                     "readable affine hierarchy child-only sufficiency and its "
-                                    "joint completion hypothesis were already falsified by "
-                                    "official NOT_FINISHED consequences"
+                                    "equal-weight and arity-weighted joint completion "
+                                    "hypotheses were already falsified by official "
+                                    "NOT_FINISHED consequences"
                                     if child_relation_rejected
                                     else (
                                         "readable affine hierarchy has no exact child-isolation "
-                                        "layout and its joint completion hypothesis was already "
-                                        "falsified by an official NOT_FINISHED consequence"
+                                        "layout and both bounded joint completion hypotheses "
+                                        "were already falsified by official NOT_FINISHED "
+                                        "consequences"
                                     )
                                 )
+                            elif joint_relation_rejected:
+                                hierarchy_plan = _hierarchy_weighted_layout(
+                                    scene,
+                                    hierarchy,
+                                    rejected_signatures=self._failed_plan_signatures,
+                                    search_budget=search_budget,
+                                )
+                                if hierarchy_plan is None:
+                                    deferred_hierarchy_reason = (
+                                        "equal-weight joint completion was falsified and the "
+                                        "distinct arity-weighted endpoint-centroid hypothesis "
+                                        "has no target-protected layout"
+                                    )
                             else:
                                 hierarchy_plan = _hierarchy_joint_layout(
                                     scene,
@@ -6798,15 +7548,8 @@ class VisualCausalPolicy:
                         if child_isolation_plan is None and hierarchy_plan is None:
                             if deferred_hierarchy_reason is None:
                                 deferred_hierarchy_reason = (
-                                    "readable affine hierarchy child-only sufficiency was "
-                                    "already falsified and it has no fully joint "
-                                    "target-protected layout"
-                                    if child_relation_rejected
-                                    else (
-                                        "readable affine hierarchy has neither an exact "
-                                        "child-isolation layout nor a fully joint "
-                                        "target-protected layout"
-                                    )
+                                    "readable affine hierarchy has no bounded target-protected "
+                                    "layout for its next unfalsified composition hypothesis"
                                 )
                 except _HierarchySearchExhausted as exc:
                     deferred_hierarchy_reason = str(exc)
@@ -6880,6 +7623,16 @@ class VisualCausalPolicy:
                             mediator_color=planned.mediator_color,
                             arity=planned.arity,
                             completes_hierarchy=planned.completes_hierarchy,
+                            expected_active_center=planned.expected_active_center,
+                            expected_child_protected_raster_hash=(
+                                planned.expected_child_protected_raster_hash
+                            ),
+                            expected_visible_endpoint_count=(
+                                planned.expected_visible_endpoint_count
+                            ),
+                            expected_visible_mediator_count=(
+                                planned.expected_visible_mediator_count
+                            ),
                         )
                         return action
                 elif deferred_hierarchy_reason is None and not self._last_probe_failed:
@@ -7102,9 +7855,24 @@ class VisualCausalPolicy:
         mechanic: AffineMechanic | None = None
         before_scene = extract_visual_scene(before.frames[-1])
         after_scene = extract_visual_scene(observation.frames[-1])
+        weighted_hierarchy_action = (
+            self._pending_plan_signature is not None
+            and self._pending_plan_signature.startswith("affine-weighted-hierarchy:")
+        )
         joint_hierarchy_action = (
             self._pending_plan_signature is not None
-            and self._pending_plan_signature.startswith("affine-hierarchy:")
+            and self._pending_plan_signature.startswith(
+                ("affine-hierarchy:", "affine-weighted-hierarchy:")
+            )
+        )
+        hierarchy_recovery_action = (
+            self._pending_plan_signature is not None
+            and self._pending_plan_signature.startswith(
+                (
+                    "affine-hierarchy-recovery:",
+                    "affine-weighted-hierarchy-recovery:",
+                )
+            )
         )
         child_recovery_action = (
             self._pending_plan_signature is not None
@@ -7116,9 +7884,13 @@ class VisualCausalPolicy:
                 ("affine-child-isolation:", "affine-child-recovery:")
             )
         )
-        hierarchy_action = joint_hierarchy_action or child_isolation_action
+        hierarchy_action = (
+            joint_hierarchy_action or hierarchy_recovery_action or child_isolation_action
+        )
         hierarchy_relation_key = (
-            self._active_hierarchy_relation_key if joint_hierarchy_action else None
+            self._active_hierarchy_relation_key
+            if joint_hierarchy_action or hierarchy_recovery_action
+            else None
         )
         child_isolation_relation_key = (
             self._active_child_isolation_relation_key if child_isolation_action else None
@@ -7182,6 +7954,21 @@ class VisualCausalPolicy:
             and self._pending_expected_visible_mediator_count is not None
             and len(after_scene.endpoints) == self._pending_expected_visible_endpoint_count
             and len(after_scene.mediators) == self._pending_expected_visible_mediator_count
+        )
+        hierarchy_raster_certified = bool(
+            (joint_hierarchy_action or hierarchy_recovery_action)
+            and expected_child_protected_raster_hash is not None
+            and _child_isolation_protected_raster_hash(after_scene)
+            == expected_child_protected_raster_hash
+            and self._pending_expected_visible_endpoint_count is not None
+            and self._pending_expected_visible_mediator_count is not None
+            and len(after_scene.endpoints) == self._pending_expected_visible_endpoint_count
+            and len(after_scene.mediators) == self._pending_expected_visible_mediator_count
+            and observation.state is GameStateName.NOT_FINISHED
+            and observation.levels_completed == before.levels_completed
+            and changed > 0
+            and hierarchy_target_readable
+            and hierarchy_parent_target_preserved
         )
         hierarchy_visible_counts_certified = bool(
             child_isolation_visible_counts_certified
@@ -7327,19 +8114,18 @@ class VisualCausalPolicy:
             )
         )
         hierarchy_consequence_certified = bool(
-            hierarchy_structure_readable
-            or child_isolation_occlusion_certified
-            or child_recovery_restoration_certified
+            hierarchy_raster_certified
+            if joint_hierarchy_action or hierarchy_recovery_action
+            else (
+                hierarchy_structure_readable
+                or child_isolation_occlusion_certified
+                or child_recovery_restoration_certified
+            )
         )
         hierarchy_supports_observed = bool(
             joint_hierarchy_action
-            and hierarchy_structure_readable
-            and after_hierarchy is not None
-            and _hierarchy_supports_were_observed(
-                after_hierarchy,
-                expected_supports=self._active_hierarchy_supports,
-                expected_target=self._pending_target_center,
-            )
+            and self._pending_completes_hierarchy
+            and hierarchy_raster_certified
         )
         child_isolation_observed = bool(
             child_isolation_action
@@ -7691,14 +8477,7 @@ class VisualCausalPolicy:
                 )
             )
         )
-        if (
-            plan_prediction_failed
-            and hierarchy_action
-            and (
-                hierarchy_recognition_residual is None
-                or (child_isolation_action and not child_isolation_raster_certified)
-            )
-        ):
+        if plan_prediction_failed and hierarchy_action:
             relation_key = child_isolation_relation_key or hierarchy_relation_key
             if relation_key is not None and self._pending_plan_signature is not None:
                 self._latch_hierarchy_lineage_failure(
@@ -7726,6 +8505,8 @@ class VisualCausalPolicy:
             self._active_hierarchy_signature = None
             self._active_hierarchy_relation_key = None
             self._active_hierarchy_supports = ()
+            self._active_hierarchy_support_weights = ()
+            self._active_hierarchy_recovery_actions = ()
             self._clear_child_isolation_execution()
             self._last_probe_failed = True
         elif observation.state is GameStateName.WIN:
@@ -7736,6 +8517,8 @@ class VisualCausalPolicy:
             self._active_hierarchy_signature = None
             self._active_hierarchy_relation_key = None
             self._active_hierarchy_supports = ()
+            self._active_hierarchy_support_weights = ()
+            self._active_hierarchy_recovery_actions = ()
             self._clear_child_isolation_execution()
             self._last_probe_failed = False
         elif level_progress:
@@ -7749,6 +8532,8 @@ class VisualCausalPolicy:
             self._active_hierarchy_signature = None
             self._active_hierarchy_relation_key = None
             self._active_hierarchy_supports = ()
+            self._active_hierarchy_support_weights = ()
+            self._active_hierarchy_recovery_actions = ()
             self._clear_child_isolation_execution()
             self._last_probe_failed = True
             if residual is None:
@@ -7810,20 +8595,43 @@ class VisualCausalPolicy:
                 "exact pre-discriminator hierarchy restored after child-only sufficiency "
                 "was falsified"
             )
+        elif hierarchy_recovery_action and not self._plan and hierarchy_raster_certified:
+            self._active_hierarchy_signature = None
+            self._active_hierarchy_relation_key = None
+            self._active_hierarchy_supports = ()
+            self._active_hierarchy_support_weights = ()
+            self._active_hierarchy_recovery_actions = ()
+            self._last_probe_failed = False
+            residual = "exact pre-hypothesis hierarchy restored after joint sufficiency failed"
         elif self._pending_completes_hierarchy and observation.state is GameStateName.NOT_FINISHED:
             if self._pending_plan_signature is not None:
                 self._failed_plan_signatures.add(self._pending_plan_signature)
             if hierarchy_supports_observed and hierarchy_relation_key is not None:
-                self._failed_hierarchy_relation_keys.add(hierarchy_relation_key)
+                if weighted_hierarchy_action:
+                    self._failed_weighted_hierarchy_relation_keys.add(hierarchy_relation_key)
+                else:
+                    self._failed_hierarchy_relation_keys.add(hierarchy_relation_key)
+            recovery_actions = self._active_hierarchy_recovery_actions
             self._plan.clear()
-            self._active_hierarchy_signature = None
-            self._active_hierarchy_relation_key = None
-            self._active_hierarchy_supports = ()
-            self._last_probe_failed = True
+            if hierarchy_supports_observed and recovery_actions:
+                self._plan.extend(recovery_actions)
+                self._last_probe_failed = False
+            else:
+                self._active_hierarchy_signature = None
+                self._active_hierarchy_relation_key = None
+                self._active_hierarchy_supports = ()
+                self._active_hierarchy_support_weights = ()
+                self._active_hierarchy_recovery_actions = ()
+                self._last_probe_failed = True
             if hierarchy_supports_observed:
                 residual = (
-                    "distinct child mediators reached the predicted parent centroid but "
-                    "the official environment remained NOT_FINISHED"
+                    "the arity-weighted child-mediator centroid reached the parent "
+                    "target but the official environment remained NOT_FINISHED"
+                    if weighted_hierarchy_action
+                    else (
+                        "distinct child mediators reached the predicted parent centroid "
+                        "but the official environment remained NOT_FINISHED"
+                    )
                 )
             elif residual is None:
                 residual = "planned hierarchy consequence was not structurally readable"
@@ -7862,6 +8670,8 @@ class VisualCausalPolicy:
                 self._active_hierarchy_signature = None
                 self._active_hierarchy_relation_key = None
                 self._active_hierarchy_supports = ()
+                self._active_hierarchy_support_weights = ()
+                self._active_hierarchy_recovery_actions = ()
             if child_isolation_action:
                 self._clear_child_isolation_execution()
             self._last_probe_failed = True
@@ -7980,10 +8790,21 @@ class VisualCausalPolicy:
             ),
             "hierarchy_active": self._active_hierarchy_signature is not None,
             "hierarchy_rejected_count": sum(
-                item.startswith("affine-hierarchy:") for item in self._failed_plan_signatures
+                item.startswith(("affine-hierarchy:", "affine-weighted-hierarchy:"))
+                for item in self._failed_plan_signatures
             ),
             "hierarchy_relation_key": self._active_hierarchy_relation_key,
-            "hierarchy_relation_rejected_count": len(self._failed_hierarchy_relation_keys),
+            "hierarchy_relation_rejected_count": len(
+                self._failed_hierarchy_relation_keys | self._failed_weighted_hierarchy_relation_keys
+            ),
+            "hierarchy_hypothesis_rejected_count": (
+                len(self._failed_hierarchy_relation_keys)
+                + len(self._failed_weighted_hierarchy_relation_keys)
+            ),
+            "hierarchy_equal_relation_rejected_count": len(self._failed_hierarchy_relation_keys),
+            "hierarchy_weighted_relation_rejected_count": len(
+                self._failed_weighted_hierarchy_relation_keys
+            ),
             "hierarchy_lineage_failure": current_lineage_failure,
             "hierarchy_lineage_failures": lineage_failures,
             "hierarchy_lineage_lost": self._hierarchy_lineage_lost is not None,
@@ -7992,6 +8813,27 @@ class VisualCausalPolicy:
             "hierarchy_search_residual": self._last_hierarchy_search_residual,
             "hierarchy_signature": self._active_hierarchy_signature,
             "hierarchy_supports": [list(item) for item in self._active_hierarchy_supports],
+            "hierarchy_support_weights": list(self._active_hierarchy_support_weights),
+            "hierarchy_recovery_active": bool(
+                self._plan
+                and self._plan[0].plan_signature.startswith(
+                    (
+                        "affine-hierarchy-recovery:",
+                        "affine-weighted-hierarchy-recovery:",
+                    )
+                )
+            ),
+            "hierarchy_recovery_signature": (
+                self._plan[0].plan_signature
+                if self._plan
+                and self._plan[0].plan_signature.startswith(
+                    (
+                        "affine-hierarchy-recovery:",
+                        "affine-weighted-hierarchy-recovery:",
+                    )
+                )
+                else None
+            ),
             "mechanical_learner": learner.to_dict() if learner is not None else None,
             "mechanical_learner_compact_bytes": (
                 len(learner.compact_bytes()) if learner is not None else 0
@@ -8007,7 +8849,7 @@ class VisualCausalPolicy:
             "pending_plan_actions": len(self._plan),
             "receipt_count": len(self._receipts),
             "receipts": [item.to_dict() for item in self._receipts[-192:]],
-            "schema": "arc3.visual-causal-policy.v0.3",
+            "schema": "arc3.visual-causal-policy.v0.4",
             "transfer_confirmed_levels": transfer_levels,
         }
 
