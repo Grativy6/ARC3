@@ -7,7 +7,7 @@
   "build_status": "ACTIVE",
   "status": "IN_PROGRESS",
   "current_stage": "10",
-  "current_task": "bind Campaign 24 interrupted evidence, verify the official mediator-over-endpoint projection and exact occlusion-aware lineage repair, then freeze Campaign 25 for one-action-at-a-time official play",
+  "current_task": "bind and push the verified Campaign 24 official-z-order and exact occlusion-lineage repair, then freeze Campaign 25 for one-action-at-a-time official play",
   "implementation_branch": "build/003-bla-clef-mechanical-learner",
   "base": {
     "main_commit": "bea1eac99cb0f1b351526b1dc487d132ba1d40ef",
@@ -103,8 +103,8 @@
     "candidate_repair_search_budget": "106434/131072 units remain on the recorded Campaign 21 level-entry frame",
     "candidate_repair_verification": "100 exact committed-source visual-policy tests; 11 focused child-isolation regressions; 9 secret tests; Ruff lint and format; strict mypy; compilation; diff checks; exact clean-frame planner replay; two independent reviews with no P0/P1/P2 finding",
     "next_candidate_repair": "match the officially observed mediator-over-endpoint projection order and preserve the certified child relation through only a uniquely explained exact occlusion; protect the complete non-HUD board raster and fail closed before unrelated flat-affine or source-free fallback on any mismatch",
-    "next_candidate_repair_commit": null,
-    "next_candidate_repair_verification": "PASS BEFORE COMMIT: 119 exact visual-policy tests including all 29 child-isolation tests; independent 41-test targeted audit; Campaign 24 rows 61-65 exact replay with unchanged six-action plan, exact row-65 occlusion, and safe queued continuation; 36 integrity scanner regressions; immutable 542-file secret scan and 119-file production-policy scan with zero findings; Ruff, strict mypy, compilation, JSON, and diff checks"
+    "next_candidate_repair_commit": "f10abedad58366ad24719b90b235a36dc38943df",
+    "next_candidate_repair_verification": "PASS AT f10abedad58366ad24719b90b235a36dc38943df: 119 exact visual-policy tests including all 29 child-isolation tests; independent 41-test targeted audit; Campaign 24 rows 61-65 exact replay with unchanged six-action plan, exact row-65 occlusion, and safe queued continuation; 36 integrity scanner regressions; immutable 542-file secret scan and 119-file production-policy scan with zero findings; Ruff, strict mypy, compilation, JSON, and diff checks"
   },
   "stage_status": {
     "00": "PASS",
@@ -149,7 +149,7 @@
     "pull_request_merged": false,
     "external_message_sent_as_owner": false
   },
-  "next_action": "finish the official-z-order and exact occlusion-continuation verification at a clean committed and pushed head, freeze Campaign 25, and continue one officially reobserved action at a time until WIN or a new bounded residual",
+  "next_action": "commit and push the Campaign 24 evidence binding, freeze that clean head for Campaign 25, and continue one officially reobserved action at a time until WIN or a new bounded residual",
   "notes": [
     "Update atomically after each meaningful task and preserve failed attempts.",
     "No synthetic or local result is completion unless the official target environment returns GameState.WIN.",

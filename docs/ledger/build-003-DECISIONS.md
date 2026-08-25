@@ -218,10 +218,10 @@ This ledger is append-oriented. Supersede decisions with new entries; do not era
 
 ## D-003-0017 - Match official mediator-over-endpoint z-order and retain only exactly certified occluded lineage
 
-- **Status:** ADOPTED; FINAL COMMIT PENDING
+- **Status:** ADOPTED; COMMITTED AND VERIFIED
 - **Stage:** 10
 - **Date:** 2026-08-25
-- **Commit:** pending
+- **Commit:** `f10abedad58366ad24719b90b235a36dc38943df`
 - **Decision:** Render projected child endpoints before their recomputed mediator, matching the effective mediator-over-endpoint order observed officially. Carry a prior child identity across a temporarily unreadable consequence only when the selected mutable raster, every non-left-column board cell, endpoint center marker, visible endpoint residue, mediator, frozen sibling, connectors, and target surfaces match one predeclared projection exactly. Permit changes only in the observed left-edge lifecycle HUD column. Keep occlusion distinct from structural readability, require the terminal state to reparse fully, and latch the exact `(level, relation, plan, phase)` before any unrelated fallback when an assessed hierarchy consequence or queued precondition does not match.
 - **Alternatives:** Retain endpoint-over-mediator projection; reject every projected overlap; accept partial endpoint shapes approximately; ignore arbitrary nonselected board changes; discard the hierarchy and infer unrelated flat mechanics; encode the recorded action sequence.
 - **Evidence:** Campaign 24 rows 62-64 returned the first three child-isolation consequences with exact certificates. Row 65 returned `(46,24)` with target and frozen sibling exact, but official mediator cells `(51,36)` and `(52,37)` replaced the stationary endpoint's outer color. The endpoint centered at `(53,36)` lost two shell cells and the arity-3 hierarchy became unreadable. Campaign 24 then lost hierarchy lineage, damaged target surfaces, repeated a six-coordinate source-free cycle five times, and reached `GAME_OVER`. Read-only replay regenerates the unchanged six-action plan, exactly matches official rows 62-65 outside cumulative x=0 HUD changes, certifies only that two-cell occlusion, and keeps `(52,55)` queued. Mutation and search-exhaustion regressions reject extra selected, frozen, connector, target, or non-HUD board changes while preserving separately classified search-budget uncertainty.
