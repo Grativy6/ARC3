@@ -404,6 +404,33 @@ def test_predicted_mediator_rejects_cross_group_endpoint_near_overlap() -> None:
     )
 
 
+def test_unmatched_hollow_overlay_does_not_block_matched_marker_planning() -> None:
+    frame = _marker_frame(
+        (((10, 50), (30, 50)),),
+        ((20, 10),),
+        (12,),
+        active_group=0,
+        active_index=0,
+        background=5,
+        active_color=0,
+        fixed_color=3,
+    )
+    rows = [list(row) for row in frame.cells]
+    _paint(rows, (40, 30), _TARGET_RING, 9)
+    scene = extract_visual_scene(GridFrame.from_rows(rows))
+    group = _embedded_marker_groups(scene)[0]
+    endpoint = next(item for item in group.endpoints if item.color == 0)
+
+    assert _marker_mediator_remains_readable(
+        scene,
+        group,
+        endpoint,
+        coordinate=Coordinate(50, 10),
+        mediator_after=(40, 30),
+        final=False,
+    )
+
+
 def test_predicted_mediator_rejects_large_static_component_by_relative_area() -> None:
     frame = _marker_frame(
         (((10, 50), (30, 50)),),
