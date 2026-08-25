@@ -356,6 +356,7 @@ def _small_components_would_merge(
 
 
 def _marker_center_would_merge_with_target(
+    scene: VisualScene,
     group: _EmbeddedMarkerGroup,
     endpoint: VisualObject,
     *,
@@ -363,7 +364,11 @@ def _marker_center_would_merge_with_target(
 ) -> bool:
     """Apply the parser's bounded merge rule to a prospective marker center."""
 
-    residual_target = tuple(cell for cell in group.target.cells if cell != endpoint.rounded_center)
+    residual_target = tuple(
+        cell
+        for cell in group.target.cells
+        if cell != endpoint.rounded_center and scene.cells[cell[1]][cell[0]] == group.marker_color
+    )
     return bool(residual_target and _small_components_would_merge((center,), residual_target))
 
 
@@ -1052,6 +1057,48 @@ def _certified_marker_target_contaminant(
     return contaminant if offsets == _COMPOSITE_TARGET_OFFSETS else None
 
 
+def _certified_marker_target_overlay_contaminant(
+    scene: VisualScene,
+    group: _EmbeddedMarkerGroup,
+) -> VisualObject | None:
+    """Return one endpoint center joined to one color sector of a compound target.
+
+    A compound target remains readable as a complete multicolor ring even when
+    the parser also joins one nearby same-color endpoint center to a single
+    color sector of that ring.  That secondary component is not an independent
+    target: removing exactly the endpoint center must leave exactly every
+    target cell whose observed color is the group's marker color.  Requiring
+    this equality keeps the certificate local and prevents approximate target
+    rewriting.
+    """
+
+    marker_target_cells = frozenset(
+        (x, y) for x, y in group.target.cells if scene.cells[y][x] == group.marker_color
+    )
+    if not marker_target_cells:
+        return None
+    candidates = {
+        endpoint.object_ref: endpoint
+        for endpoint in group.endpoints
+        for target in scene.targets
+        if target.color == group.marker_color
+        and frozenset(target.cells) == marker_target_cells | {endpoint.rounded_center}
+        and endpoint.rounded_center not in marker_target_cells
+    }
+    return next(iter(candidates.values())) if len(candidates) == 1 else None
+
+
+def _certified_marker_target_contaminant_in_scene(
+    scene: VisualScene,
+    group: _EmbeddedMarkerGroup,
+) -> VisualObject | None:
+    """Recognize either exact center-in-ring or sector-overlay contamination."""
+
+    return _certified_marker_target_contaminant(
+        group
+    ) or _certified_marker_target_overlay_contaminant(scene, group)
+
+
 def _final_marker_target_overlap_cells(
     scene: VisualScene,
     group: _EmbeddedMarkerGroup,
@@ -1414,7 +1461,10 @@ def _marker_target_separation_observed(
         if group.marker_color == marker_color and group.arity == arity
     )
     for before_group in before_groups:
-        contaminant = _certified_marker_target_contaminant(before_group)
+        contaminant = _certified_marker_target_contaminant_in_scene(
+            before_scene,
+            before_group,
+        )
         if contaminant is None:
             continue
         expected_centers = {
@@ -1424,10 +1474,27 @@ def _marker_target_separation_observed(
             for endpoint in before_group.endpoints
         }
         clean_target_cells = frozenset(before_group.target.cells) - {contaminant.rounded_center}
+        target_colors = {cell: before_scene.cells[cell[1]][cell[0]] for cell in clean_target_cells}
+        target_colors_preserved = all(
+            after_scene.cells[y][x] == color for (x, y), color in target_colors.items()
+        )
+        raw_target_components_exact = all(
+            not (item_cells := frozenset(item.cells)) & clean_target_cells
+            or item_cells
+            <= frozenset(cell for cell, color in target_colors.items() if color == item.color)
+            for item in after_scene.objects
+        )
+        contaminant_center_cleared = (
+            after_scene.cells[contaminant.rounded_center[1]][contaminant.rounded_center[0]]
+            != marker_color
+        )
         if any(
             {endpoint.rounded_center for endpoint in after_group.endpoints} == expected_centers
             and frozenset(after_group.target.cells) == clean_target_cells
-            and _certified_marker_target_contaminant(after_group) is None
+            and target_colors_preserved
+            and raw_target_components_exact
+            and contaminant_center_cleared
+            and _certified_marker_target_contaminant_in_scene(after_scene, after_group) is None
             for after_group in after_groups
         ):
             return True
@@ -1443,9 +1510,9 @@ def _marker_bootstrap_active_color(
 
     matches = tuple(
         endpoint
-        for group in _embedded_marker_groups(scene)
-        for endpoint in group.endpoints
-        if endpoint.rounded_center == (coordinate.x, coordinate.y)
+        for endpoint in scene.endpoints
+        if endpoint.center_cell not in {scene.background, endpoint.color}
+        and endpoint.rounded_center == (coordinate.x, coordinate.y)
     )
     if len(matches) != 1:
         return None
@@ -1831,7 +1898,7 @@ def _best_marker_target_separation(
 ) -> Coordinate | None:
     """Find the smallest move that restores a contaminated sparse target."""
 
-    contaminant = _certified_marker_target_contaminant(group)
+    contaminant = _certified_marker_target_contaminant_in_scene(scene, group)
     if contaminant is None or contaminant.object_ref != endpoint.object_ref:
         return None
     clean_target_cells = frozenset(group.target.cells) - {endpoint.rounded_center}
@@ -1904,7 +1971,7 @@ def _best_marker_target_separation(
             and candidate.arity == group.arity
             and {item.rounded_center for item in candidate.endpoints} == expected_centers
             and frozenset(candidate.target.cells) == clean_target_cells
-            and _certified_marker_target_contaminant(candidate) is None
+            and _certified_marker_target_contaminant_in_scene(refreshed_scene, candidate) is None
         )
         if len(refreshed_groups) != 1:
             continue
@@ -2003,6 +2070,53 @@ def _best_marker_relocation_after_reacquisition(
     )
 
 
+def _best_marker_separation_after_reacquisition(
+    scene: VisualScene,
+    group: _EmbeddedMarkerGroup,
+    selected: VisualObject,
+    *,
+    active_color: int,
+    rejected_signatures: set[str],
+) -> tuple[int, Coordinate] | None:
+    """Certify a target-restoring continuation after selecting one fixed endpoint."""
+
+    projection = _scene_after_marker_reacquisition(
+        scene,
+        group,
+        selected,
+        active_color=active_color,
+    )
+    if projection is None:
+        return None
+    projected_scene, projected_group, projected_active = projection
+    separation = _best_marker_target_separation(
+        projected_scene,
+        projected_group,
+        projected_active,
+        rejected_signatures=rejected_signatures,
+    )
+    if separation is None:
+        return None
+    resulting_sum_x = (
+        sum(item.rounded_center[0] for item in projected_group.endpoints)
+        - projected_active.rounded_center[0]
+        + separation.x
+    )
+    resulting_sum_y = (
+        sum(item.rounded_center[1] for item in projected_group.endpoints)
+        - projected_active.rounded_center[1]
+        + separation.y
+    )
+    return (
+        _marker_group_potential(
+            projected_group,
+            sum_x=resulting_sum_x,
+            sum_y=resulting_sum_y,
+        ),
+        separation,
+    )
+
+
 def _best_marker_relocation_after_switch(
     scene: VisualScene,
     group: _EmbeddedMarkerGroup,
@@ -2022,6 +2136,48 @@ def _best_marker_relocation_after_switch(
         projected_active,
         rejected_signatures=rejected_signatures,
         allow_extended=allow_extended,
+    )
+
+
+def _best_marker_separation_after_switch(
+    scene: VisualScene,
+    group: _EmbeddedMarkerGroup,
+    active: VisualObject,
+    selected: VisualObject,
+    *,
+    rejected_signatures: set[str],
+) -> tuple[int, Coordinate] | None:
+    """Certify target separation after transferring a visible active role."""
+
+    projection = _scene_after_marker_role_switch(scene, group, active, selected)
+    if projection is None:
+        return None
+    projected_scene, projected_group, projected_active = projection
+    separation = _best_marker_target_separation(
+        projected_scene,
+        projected_group,
+        projected_active,
+        rejected_signatures=rejected_signatures,
+    )
+    if separation is None:
+        return None
+    resulting_sum_x = (
+        sum(item.rounded_center[0] for item in projected_group.endpoints)
+        - projected_active.rounded_center[0]
+        + separation.x
+    )
+    resulting_sum_y = (
+        sum(item.rounded_center[1] for item in projected_group.endpoints)
+        - projected_active.rounded_center[1]
+        + separation.y
+    )
+    return (
+        _marker_group_potential(
+            projected_group,
+            sum_x=resulting_sum_x,
+            sum_y=resulting_sum_y,
+        ),
+        separation,
     )
 
 
@@ -2084,6 +2240,7 @@ def _best_marker_staging_relocation(
             _marker_target_identity_constraint(group.marker_color) in rejected_signatures
             and stage_potential != 0
             and _marker_center_would_merge_with_target(
+                scene,
                 group,
                 endpoint,
                 center=(coordinate.x, coordinate.y),
@@ -2226,6 +2383,7 @@ def _best_marker_relocation(
                 _marker_target_identity_constraint(group.marker_color) in rejected_signatures
                 and potential != 0
                 and _marker_center_would_merge_with_target(
+                    scene,
                     group,
                     endpoint,
                     center=(coordinate.x, coordinate.y),
@@ -2340,7 +2498,15 @@ def _best_marker_group_transfer(
                 rejected_signatures=rejected_signatures,
             )
             if prospective is None:
-                continue
+                prospective = _best_marker_separation_after_switch(
+                    scene,
+                    group,
+                    active,
+                    endpoint,
+                    rejected_signatures=rejected_signatures,
+                )
+                if prospective is None:
+                    continue
             potential, _followup = prospective
             candidate = (
                 potential,
@@ -2379,7 +2545,15 @@ def _best_marker_group_reacquisition(
                 rejected_signatures=rejected_signatures,
             )
             if prospective is None:
-                continue
+                prospective = _best_marker_separation_after_reacquisition(
+                    scene,
+                    group,
+                    endpoint,
+                    active_color=active_color,
+                    rejected_signatures=rejected_signatures,
+                )
+                if prospective is None:
+                    continue
             potential, _followup = prospective
             candidate = (
                 potential,
@@ -2657,7 +2831,7 @@ def _embedded_marker_plan(
         )
         fallback_stage_switch_candidates.append((staged_potential, endpoint.object_ref, endpoint))
     if not switch_candidates:
-        target_contaminant = _certified_marker_target_contaminant(group)
+        target_contaminant = _certified_marker_target_contaminant_in_scene(scene, group)
         if target_contaminant is not None:
             if target_contaminant.object_ref == active.object_ref:
                 separation = _best_marker_target_separation(

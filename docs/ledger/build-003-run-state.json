@@ -7,7 +7,7 @@
   "build_status": "ACTIVE",
   "status": "IN_PROGRESS",
   "current_stage": "10",
-  "current_task": "freeze the locally verified Campaign 16 geometry repair and run Campaign 17",
+  "current_task": "commit the verified Campaign 17 compound-target overlay repair and freeze Campaign 18",
   "implementation_branch": "build/003-bla-clef-mechanical-learner",
   "base": {
     "main_commit": "bea1eac99cb0f1b351526b1dc487d132ba1d40ef",
@@ -35,17 +35,17 @@
     "completion_authority": "official returned GameState.WIN only",
     "completion_observed": false,
     "best_levels_completed": 3,
-    "latest_campaign": "build003-r11l-mechanical-seed7-0b87a923-campaign16",
+    "latest_campaign": "build003-r11l-mechanical-seed7-0ae94525-campaign17",
     "latest_campaign_status": "FAILED_INFRASTRUCTURE",
-    "latest_campaign_levels_completed": 2,
+    "latest_campaign_levels_completed": 3,
     "latest_campaign_final_state": "NOT_FINISHED",
     "latest_campaign_score_boundary_state": "NOT_FINISHED",
-    "latest_campaign_actions": 33,
-    "latest_campaign_submissions": 33,
+    "latest_campaign_actions": 43,
+    "latest_campaign_submissions": 43,
     "latest_campaign_resets": 0,
-    "latest_campaign_root": "C:\\a\\arc3-b003-play\\build003-r11l-mechanical-seed7-0b87a923-campaign16",
-    "latest_campaign_recording": "C:\\a\\arc3-b003-play\\build003-r11l-mechanical-seed7-0b87a923-campaign16\\official-recordings\\c2120ed7e4beb839e4d0\\3e7aa61a-60a6-4f13-919c-9cfbea353d9b\\r11l-495a7899-12ce06a5-763d-4190-aebd-d28bf8e702c2.jsonl",
-    "latest_campaign_recording_sha256": "sha256:9531e3137b8b08d7f178c6df0d33f248f6b87740bbb58471b131b992778891a0"
+    "latest_campaign_root": "C:\\a\\arc3-b003-play\\build003-r11l-mechanical-seed7-0ae94525-campaign17",
+    "latest_campaign_recording": "C:\\a\\arc3-b003-play\\build003-r11l-mechanical-seed7-0ae94525-campaign17\\official-recordings\\c2120ed7e4beb839e4d0\\8872dd93-7263-4c7c-8a2f-2d15e26f8f62\\r11l-495a7899-9169ebee-d745-4730-b5f6-cb97a69dd8ed.jsonl",
+    "latest_campaign_recording_sha256": "sha256:2685d5e81cb4b95c5784169a9e9a4a1675c4b3a94cb447fc5dd186c4ac864965"
   },
   "stage_status": {
     "00": "PASS",
@@ -90,7 +90,7 @@
     "pull_request_merged": false,
     "external_message_sent_as_owner": false
   },
-  "next_action": "commit the verified glyph-placement and sparse-target-separation repair, then start official Campaign 17 from the frozen commit",
+  "next_action": "commit the exact compound-target sector-overlay repair, bind its commit receipt, then start official Campaign 18 from the frozen commit",
   "notes": [
     "Update atomically after each meaningful task and preserve failed attempts.",
     "No synthetic or local result is completion unless the official target environment returns GameState.WIN.",

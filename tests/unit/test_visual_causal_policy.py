@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 import pytest
 
@@ -287,6 +287,31 @@ def _contaminated_marker_target_frame(*, active_index: int) -> GridFrame:
         sum(y for _x, y in endpoints) // len(endpoints),
     )
     _paint(rows, mediator, _HUB_OUTER, 12)
+    rows[mediator[1]][mediator[0]] = 6
+    return GridFrame.from_rows(rows)
+
+
+def _compound_target_overlay_contamination_frame(
+    *,
+    active_index: int | None,
+) -> GridFrame:
+    """Render one endpoint center joined only to its compound-target color sector."""
+
+    target = (40, 12)
+    endpoints = ((34, 12), (52, 32), (21, 52))
+    rows = [[5 for _ in range(64)] for _ in range(64)]
+    for dx, dy in _OFFSET_SPARSE_TARGET_RING:
+        rows[target[1] + dy][target[0] + dx] = 14 if dx < 0 else 11
+    for index, endpoint in enumerate(endpoints):
+        outer_color = 0 if index == active_index else 3
+        _paint(rows, endpoint, _ENDPOINT_SHAPE, outer_color)
+        rows[endpoint[1]][endpoint[0]] = 14
+    mediator = (
+        sum(x for x, _y in endpoints) // len(endpoints),
+        sum(y for _x, y in endpoints) // len(endpoints),
+    )
+    for dx, dy in _HUB_OUTER:
+        rows[mediator[1] + dy][mediator[0] + dx] = 14 if dx < 0 else 11
     rows[mediator[1]][mediator[0]] = 6
     return GridFrame.from_rows(rows)
 
@@ -1518,6 +1543,258 @@ def test_marker_target_contamination_transfers_then_restores_sparse_ring(
     assert policy.snapshot()["marker_target_identity_constraint_count"] == 1
 
 
+def test_compound_target_sector_overlay_is_separated_and_not_rejoined(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    scene = extract_visual_scene(_compound_target_overlay_contamination_frame(active_index=0))
+    group = _embedded_marker_groups(scene)[0]
+    active = visual_causal._embedded_marker_active_endpoint(scene, active_color=0)
+    assert active is not None
+    contaminant = visual_causal._certified_marker_target_contaminant_in_scene(
+        scene,
+        group,
+    )
+    assert contaminant is not None
+    assert contaminant.rounded_center == (34, 12)
+
+    monkeypatch.setattr(
+        visual_causal,
+        "_best_marker_relocation",
+        lambda *_args, **_kwargs: None,
+    )
+    separation = visual_causal._embedded_marker_plan(
+        scene,
+        level_index=0,
+        active_color=0,
+        staged_marker_color=None,
+        rejected_signatures=set(),
+    )
+    assert separation is not None
+    assert separation.plan_signature.startswith("marker:14:separate:")
+    assert separation.coordinate == Coordinate(31, 12)
+
+    projection = visual_causal._scene_after_marker_stage(
+        scene,
+        group,
+        active,
+        separation.coordinate,
+    )
+    assert projection is not None
+    projected_scene, _projected_group = projection
+    refreshed = extract_visual_scene(GridFrame(projected_scene.cells))
+    refreshed_group = _embedded_marker_groups(refreshed)[0]
+    refreshed_active = visual_causal._embedded_marker_active_endpoint(
+        refreshed,
+        active_color=0,
+    )
+    assert refreshed_active is not None
+    assert (
+        visual_causal._certified_marker_target_contaminant_in_scene(
+            refreshed,
+            refreshed_group,
+        )
+        is None
+    )
+    assert visual_causal._marker_target_separation_observed(
+        scene,
+        refreshed,
+        marker_color=14,
+        arity=3,
+        coordinate=separation.coordinate,
+    )
+
+    monkeypatch.setattr(
+        visual_causal,
+        "_marker_relocation_candidates",
+        lambda *_args, **_kwargs: (Coordinate(34, 12),),
+    )
+    monkeypatch.setattr(
+        visual_causal,
+        "_marker_mediator_remains_readable",
+        lambda *_args, **_kwargs: True,
+    )
+    assert (
+        visual_causal._best_marker_relocation(
+            refreshed,
+            refreshed_group,
+            refreshed_active,
+            rejected_signatures={visual_causal._marker_target_identity_constraint(14)},
+            allow_extended=False,
+        )
+        is None
+    )
+
+
+def test_marker_target_separation_requires_exact_raw_target_restoration() -> None:
+    before = extract_visual_scene(_compound_target_overlay_contamination_frame(active_index=0))
+    group = _embedded_marker_groups(before)[0]
+    active = visual_causal._embedded_marker_active_endpoint(before, active_color=0)
+    assert active is not None
+    coordinate = Coordinate(31, 12)
+    projection = visual_causal._scene_after_marker_stage(
+        before,
+        group,
+        active,
+        coordinate,
+    )
+    assert projection is not None
+    clean_rows = [list(row) for row in projection[0].cells]
+
+    bridged_rows = [row.copy() for row in clean_rows]
+    bridged_rows[12][34] = 14
+    bridged = extract_visual_scene(GridFrame.from_rows(bridged_rows))
+    assert not visual_causal._marker_target_separation_observed(
+        before,
+        bridged,
+        marker_color=14,
+        arity=3,
+        coordinate=coordinate,
+    )
+
+    swapped_rows = [row.copy() for row in clean_rows]
+    swapped_rows[9][39], swapped_rows[9][41] = swapped_rows[9][41], swapped_rows[9][39]
+    swapped = extract_visual_scene(GridFrame.from_rows(swapped_rows))
+    assert not visual_causal._marker_target_separation_observed(
+        before,
+        swapped,
+        marker_color=14,
+        arity=3,
+        coordinate=coordinate,
+    )
+
+
+def test_local_collapse_reacquires_endpoint_with_certified_separation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    scene = extract_visual_scene(_compound_target_overlay_contamination_frame(active_index=None))
+    group = _embedded_marker_groups(scene)[0]
+    assert visual_causal._embedded_marker_active_endpoint(scene, active_color=0) is None
+
+    monkeypatch.setattr(
+        visual_causal,
+        "_best_marker_relocation",
+        lambda *_args, **_kwargs: None,
+    )
+    reacquisition = visual_causal._embedded_marker_plan(
+        scene,
+        level_index=0,
+        active_color=0,
+        staged_marker_color=None,
+        rejected_signatures=set(),
+        allow_reacquisition=True,
+    )
+    assert reacquisition is not None
+    assert reacquisition.coordinate == Coordinate(34, 12)
+    assert reacquisition.plan_signature == "marker:14:activate:34,12"
+
+    projection = visual_causal._scene_after_marker_reacquisition(
+        scene,
+        group,
+        next(endpoint for endpoint in group.endpoints if endpoint.rounded_center == (34, 12)),
+        active_color=0,
+    )
+    assert projection is not None
+    projected_scene, _projected_group, _projected_active = projection
+    activated = extract_visual_scene(GridFrame(projected_scene.cells))
+    separation = visual_causal._embedded_marker_plan(
+        activated,
+        level_index=0,
+        active_color=0,
+        staged_marker_color=None,
+        rejected_signatures=set(),
+    )
+    assert separation is not None
+    assert separation.coordinate == Coordinate(31, 12)
+    assert separation.plan_signature == "marker:14:separate:31,12"
+
+
+def test_visible_active_outside_group_transfers_to_certified_separation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    base = _compound_target_overlay_contamination_frame(active_index=None)
+    rows = [list(row) for row in base.cells]
+    outside_active = (6, 43)
+    _paint(rows, outside_active, _ENDPOINT_SHAPE, 0)
+    rows[outside_active[1]][outside_active[0]] = 9
+    scene = extract_visual_scene(GridFrame.from_rows(rows))
+    groups = _embedded_marker_groups(scene)
+    assert len(groups) == 1
+    assert all(
+        endpoint.rounded_center != outside_active
+        for group in groups
+        for endpoint in group.endpoints
+    )
+    assert (
+        visual_causal._marker_bootstrap_active_color(
+            scene,
+            coordinate=Coordinate(*outside_active),
+        )
+        == 0
+    )
+
+    monkeypatch.setattr(
+        visual_causal,
+        "_best_marker_relocation_after_switch",
+        lambda *_args, **_kwargs: None,
+    )
+    transfer = visual_causal._embedded_marker_plan(
+        scene,
+        level_index=0,
+        active_color=0,
+        staged_marker_color=None,
+        rejected_signatures=set(),
+    )
+    assert transfer is not None
+    assert transfer.coordinate == Coordinate(34, 12)
+    assert transfer.plan_signature == "marker:14:activate:34,12"
+
+    outside = next(
+        endpoint for endpoint in scene.endpoints if endpoint.rounded_center == outside_active
+    )
+    contaminant = next(
+        endpoint for endpoint in groups[0].endpoints if endpoint.rounded_center == (34, 12)
+    )
+    projected = visual_causal._scene_after_marker_role_switch(
+        scene,
+        groups[0],
+        outside,
+        contaminant,
+    )
+    assert projected is not None
+    assert visual_causal._best_marker_target_separation(
+        projected[0],
+        projected[1],
+        projected[2],
+        rejected_signatures=set(),
+    ) == Coordinate(31, 12)
+
+
+def test_near_target_endpoint_without_exact_sector_equality_is_not_certified() -> None:
+    frame = _compound_target_overlay_contamination_frame(active_index=0)
+    scene = extract_visual_scene(frame)
+    group = _embedded_marker_groups(scene)[0]
+    overlay = next(
+        target
+        for target in scene.targets
+        if target.color == group.marker_color and set(target.cells) - set(group.target.cells)
+    )
+    near_overlay = replace(
+        overlay,
+        object_ref=f"{overlay.object_ref}:near",
+        cells=tuple((*overlay.cells, (36, 12))),
+        max_x=max(overlay.max_x, 36),
+    )
+    near_scene = replace(
+        scene,
+        objects=tuple(
+            near_overlay if item.object_ref == overlay.object_ref else item
+            for item in scene.objects
+        ),
+    )
+
+    assert visual_causal._certified_marker_target_overlay_contaminant(near_scene, group) is None
+
+
 def test_ordinary_marker_improvement_retains_restored_target_identity() -> None:
     before_frame = _contaminated_marker_target_frame(active_index=1)
     before_scene = extract_visual_scene(before_frame)
@@ -2340,3 +2617,26 @@ def test_game_over_consequence_is_receipted_before_mandatory_reset() -> None:
     assert policy.snapshot()["marker_structural_action_count"] == 0
     assert tuple(item.ref for item in learner.ledger.active()) == retained_refs
     assert next_action != selected
+
+
+def test_marker_bootstrap_accepts_unique_marked_endpoint_outside_complete_group() -> None:
+    rows = [[5 for _ in range(64)] for _ in range(64)]
+    _paint(rows, (6, 43), _ENDPOINT_SHAPE, 0)
+    rows[43][6] = 9
+    scene = extract_visual_scene(GridFrame.from_rows(rows))
+
+    assert not _embedded_marker_groups(scene)
+    assert (
+        visual_causal._marker_bootstrap_active_color(
+            scene,
+            coordinate=Coordinate(6, 43),
+        )
+        == 0
+    )
+    assert (
+        visual_causal._marker_bootstrap_active_color(
+            scene,
+            coordinate=Coordinate(7, 43),
+        )
+        is None
+    )
