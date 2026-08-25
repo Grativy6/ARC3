@@ -237,6 +237,16 @@
       "h2": "NOT_CONFIRMED: reported retention was not observation-grounded and the adapter did not meaningfully exercise reopening",
       "h3": "NOT_CONFIRMED: redundant-probe and active-pressure medians were not strictly lower",
       "protocol_status": "SUPERSEDED_DIAGNOSTIC_REQUIRED: v0.1 seed, budget, frozen-baseline, and learner-lifecycle bindings conflict with the Stage 01 receipt and Workflow 003",
+      "v02_preregistration_status": "FROZEN_BEFORE_V02_RESULTS",
+      "v02_preregistration_commit": "24c34dbd25a946446550de8f00529cabbf587026",
+      "v02_protocol": "docs/evaluation/build-003-curriculum-protocol.v0.2.json",
+      "v02_seed_manifest": "docs/evaluation/build-003-heldout-seeds.v0.2.json",
+      "v02_amendment": "docs/evaluation/build-003-preregistration-amendment.v0.2.json",
+      "v02_exact_build002_baseline_commit": "5448c53f3b7e08f606cf292e6068f3f9c9db16d4",
+      "v02_exact_build002_baseline_tree": "700718c09c2a1532cea16526b290f57be0120371",
+      "v02_heldout_seed_count": 30,
+      "v02_required_rows": 1200,
+      "v02_results_executed": false,
       "public_or_holdout_environment_opened": false
     }
   },
@@ -276,6 +286,7 @@
     "Campaign 28 is sealed FAILED_MECHANISM evidence rather than completion: all 115 official ACTION6 consequences remained NOT_FINISHED at 4/6, with zero submitted reset, GAME_OVER, or WIN. Both child strata, equal weighting, and arity weighting were tested and exactly recovered without target damage or lineage loss.",
     "The exposure ledger contains 53 development events through Campaign 28 and zero public-holdout events; last sequence 52, tail event hash sha256:3c3e851f18a81451079beebe7b2233690b4011495a9fb2b876f14909400c5695, file SHA-256 b3feda3d24756cb279ac7a9fbbeed1b301fd19c6953ea997a20535d20c20233a, and the sealed holdout remains unconsumed.",
     "The independent Campaign 28 audit preserved trace_manifest_object_hash_verified=false even though the authoritative public verifier and trace replay passed. That bounded verifier discrepancy remains explicit pending regeneration or diagnosis.",
-    "The first complete Stage 08 matrix is preserved as FAILED_MECHANISM diagnostic evidence: all 1,200 rows and 120 sequence receipts were present and deterministic, but only eight sequences reached synthetic WIN and the literal H1-H3 rules were not confirmed. The adapter under-exercised the learner lifecycle; its v0.1 seeds and budgets differed from the earlier preregistration; and its actual Build 002 comparator commit differed from the Stage 01 frozen baseline. No public, holdout, or official target environment was opened."
+    "The first complete Stage 08 matrix is preserved as FAILED_MECHANISM diagnostic evidence: all 1,200 rows and 120 sequence receipts were present and deterministic, but only eight sequences reached synthetic WIN and the literal H1-H3 rules were not confirmed. The adapter under-exercised the learner lifecycle; its v0.1 seeds and budgets differed from the earlier preregistration; and its actual Build 002 comparator commit differed from the Stage 01 frozen baseline. No public, holdout, or official target environment was opened.",
+    "Commit 24c34dbd25a946446550de8f00529cabbf587026 froze the v0.2 protocol, fresh 30-case heldout seed domain, and discrepancy amendment before any v0.2 result or smoke. Independent verification recomputed all seed and case identifiers and confirmed the exact Stage 01 Build 002 tree. Development smoke may begin only after implementation; the final 30-by-4 matrix remains unexecuted."
   ]
 }
