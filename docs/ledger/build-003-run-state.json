@@ -46,7 +46,8 @@
     "latest_campaign_resets": 0,
     "latest_campaign_root": "C:\\a\\arc3-b003-play\\build003-r11l-mechanical-seed7-98633c8f-campaign18",
     "latest_campaign_recording": "C:\\a\\arc3-b003-play\\build003-r11l-mechanical-seed7-98633c8f-campaign18\\official-recordings\\c2120ed7e4beb839e4d0\\f2649d8b-c748-40e7-8dc5-8053977efa7f\\r11l-495a7899-77287f8f-b6d0-4fba-8008-216a875c072d.jsonl",
-    "latest_campaign_recording_sha256": "sha256:2e478defe3b2af689e7266d45843fd72a6de93086b378cc5ea22bba6f22b315d"
+    "latest_campaign_recording_sha256": "sha256:2e478defe3b2af689e7266d45843fd72a6de93086b378cc5ea22bba6f22b315d",
+    "candidate_repair_commit": "ec8e27f45090a408e1ae942f12407680fbb0542f"
   },
   "stage_status": {
     "00": "PASS",
@@ -91,7 +92,7 @@
     "pull_request_merged": false,
     "external_message_sent_as_owner": false
   },
-  "next_action": "commit the verified same-group target-role repair, bind its evidence, push the frozen commit, then start official Campaign 19 and recompute after every returned frame",
+  "next_action": "commit and push this evidence binding, then start official Campaign 19 from the frozen head and recompute after every returned frame",
   "notes": [
     "Update atomically after each meaningful task and preserve failed attempts.",
     "No synthetic or local result is completion unless the official target environment returns GameState.WIN.",
