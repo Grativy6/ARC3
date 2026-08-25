@@ -76,6 +76,38 @@ _SPARSE_TARGET_RING = (
     (1, 3),
 )
 
+_OFFSET_SPARSE_TARGET_RING = (
+    (-1, -3),
+    (1, -3),
+    (-2, -2),
+    (2, -2),
+    (-3, -1),
+    (3, -1),
+    (-3, 1),
+    (3, 1),
+    (-2, 2),
+    (2, 2),
+    (-1, 3),
+    (1, 3),
+)
+
+_TARGET_LAYER_OVERLAY = (
+    (-2, -4),
+    (-3, -3),
+    (-2, -3),
+    (-3, -2),
+    (-1, -2),
+    (-3, -1),
+    (0, -1),
+    (1, 0),
+    (-2, 1),
+    (1, 1),
+    (-2, 2),
+    (-2, 3),
+    (3, 3),
+    (4, 4),
+)
+
 
 def _paint(
     rows: list[list[int]],
@@ -537,6 +569,62 @@ def test_virtual_marker_stage_cannot_overwrite_large_static_component() -> None:
     assert projection is None
 
 
+def test_role_switch_projects_outer_color_and_admits_exact_target_layer_solution() -> None:
+    target = (55, 53)
+    frame = _marker_frame(
+        (((55, 39), (35, 33), (53, 60), (59, 60)),),
+        (target,),
+        (14,),
+        active_group=0,
+        active_index=0,
+        background=5,
+        active_color=0,
+        fixed_color=3,
+    )
+    rows = [list(row) for row in frame.cells]
+    for dx, dy in _TARGET_RING:
+        rows[target[1] + dy][target[0] + dx] = 5
+    _paint(rows, target, _OFFSET_SPARSE_TARGET_RING, 14)
+    _paint(rows, (54, 54), _TARGET_LAYER_OVERLAY, 1)
+    scene = extract_visual_scene(GridFrame.from_rows(rows))
+    group = _embedded_marker_groups(scene)[0]
+    active = next(item for item in group.endpoints if item.color == 0)
+    low_anchor = next(item for item in group.endpoints if item.rounded_center == (35, 33))
+
+    assert visual_causal._best_marker_relocation(
+        scene,
+        group,
+        low_anchor,
+        rejected_signatures=set(),
+    ) != (0, Coordinate(54, 53))
+    projection = visual_causal._scene_after_marker_role_switch(
+        scene,
+        group,
+        active,
+        low_anchor,
+    )
+    assert projection is not None
+    projected_scene, projected_group, projected_active = projection
+    assert projected_active.rounded_center == (35, 33)
+    assert visual_causal._best_marker_relocation(
+        projected_scene,
+        projected_group,
+        projected_active,
+        rejected_signatures=set(),
+    ) == (0, Coordinate(54, 53))
+
+    plan = visual_causal._embedded_marker_plan(
+        scene,
+        level_index=2,
+        active_color=0,
+        staged_marker_color=None,
+        rejected_signatures=set(),
+    )
+    assert plan is not None
+    assert plan.coordinate == Coordinate(35, 33)
+    assert "transfer the active role" in plan.expectation
+
+
 def test_one_discriminating_transition_opens_provisional_affine_mechanic() -> None:
     target = (20, 10)
     before = extract_visual_scene(_frame((8, 32), (32, 32), target))
@@ -740,10 +828,17 @@ def test_marker_planner_does_not_emit_an_unreadable_direct_destination(
         *,
         x: int,
         y: int,
+        permitted_occupied_cells: frozenset[tuple[int, int]] = frozenset(),
     ) -> bool:
         if (x, y) == (blocked_direct.x, blocked_direct.y):
             return False
-        return original_is_open(scene, endpoint, x=x, y=y)
+        return original_is_open(
+            scene,
+            endpoint,
+            x=x,
+            y=y,
+            permitted_occupied_cells=permitted_occupied_cells,
+        )
 
     monkeypatch.setattr(visual_causal, "_endpoint_placement_is_open", block_direct)
     policy = VisualCausalPolicy()
@@ -751,7 +846,9 @@ def test_marker_planner_does_not_emit_an_unreadable_direct_destination(
     action = policy.select(environment.observation())
 
     assert action.coordinate != blocked_direct
-    assert "marker-group" in policy._pending_prediction
+    assert (
+        "marker-group" in policy._pending_prediction or "marker group" in policy._pending_prediction
+    )
     assert policy.snapshot()["pending_plan_actions"] == 0
 
 
@@ -824,7 +921,7 @@ def test_marker_planner_prefers_safe_same_group_transfer_before_deferral(
         endpoint: visual_causal.VisualObject,
         **kwargs: object,
     ) -> bool:
-        if group.marker_color == 12 and endpoint.color == environment.active_color:
+        if group.marker_color == 12 and endpoint.rounded_center == (10, 50):
             return False
         return original_readable(scene, group, endpoint, **kwargs)  # type: ignore[arg-type]
 
@@ -939,12 +1036,19 @@ def test_marker_staging_reobserves_then_switches_before_exact_solve(
         *,
         x: int,
         y: int,
+        permitted_occupied_cells: frozenset[tuple[int, int]] = frozenset(),
     ) -> bool:
         center = endpoint.rounded_center
         allowed = (center == (8, 48) and (x, y) == (stage.x, stage.y)) or (
             center == (48, 8) and (x, y) == (solve.x, solve.y)
         )
-        return allowed and original_open(scene, endpoint, x=x, y=y)
+        return allowed and original_open(
+            scene,
+            endpoint,
+            x=x,
+            y=y,
+            permitted_occupied_cells=permitted_occupied_cells,
+        )
 
     monkeypatch.setattr(visual_causal, "_endpoint_placement_is_open", constrained_open)
 
@@ -1008,6 +1112,47 @@ def test_marker_staging_reobserves_then_switches_before_exact_solve(
     assert policy.snapshot()["pending_plan_actions"] == 0
 
 
+def test_readable_marker_stage_survives_generic_effect_unreadability(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    environment = _MarkerAffineEnvironment(
+        groups=[[(10, 50), (30, 50)]],
+        targets=((20, 28),),
+        marker_colors=(12,),
+    )
+    policy = VisualCausalPolicy()
+    policy._last_active_color = environment.active_color
+    before = environment.observation()
+    action = ActionRequest(ActionName.ACTION6, Coordinate(10, 40))
+    policy._marker_stage_pending_switch = 12
+    policy._stage_pending(
+        before,
+        action,
+        purpose=visual_causal.VisualActionPurpose.PROBE,
+        prediction=(
+            "stage the active endpoint so a same-marker role transfer opens a bounded "
+            "improving relocation"
+        ),
+        mechanic_refs=("affine-marker:test",),
+        plan_signature="marker:12:stage:10,40",
+        target_center=(20, 28),
+        mediator_color=12,
+        arity=2,
+    )
+    after = environment.step(action)
+    monkeypatch.setattr(visual_causal, "infer_affine_mechanic", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(
+        visual_causal,
+        "_coordinate_transform_observed",
+        lambda *_args, **_kwargs: False,
+    )
+
+    policy.accept_consequence(after)
+
+    assert policy.snapshot()["marker_stage_pending_switch"] == 12
+    assert policy.receipts[-1].residual != "planned marker endpoint became structurally unreadable"
+
+
 def test_marker_planner_switches_to_endpoint_with_certified_staged_route(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -1059,17 +1204,16 @@ def test_structural_marker_cycle_is_rejected_despite_frame_animation(
     policy = VisualCausalPolicy()
     policy._last_active_color = environment.active_color
 
-    def switch_only(
-        _scene: VisualScene,
-        _group: visual_causal._EmbeddedMarkerGroup,
-        endpoint: visual_causal.VisualObject,
-        **_kwargs: object,
-    ) -> tuple[int, Coordinate] | None:
-        if endpoint.color == environment.fixed_color:
-            return (0, Coordinate(20, 20))
-        return None
-
-    monkeypatch.setattr(visual_causal, "_best_marker_relocation", switch_only)
+    monkeypatch.setattr(
+        visual_causal,
+        "_best_marker_relocation",
+        lambda *_args, **_kwargs: None,
+    )
+    monkeypatch.setattr(
+        visual_causal,
+        "_best_marker_relocation_after_switch",
+        lambda *_args, **_kwargs: (0, Coordinate(20, 20)),
+    )
     monkeypatch.setattr(
         visual_causal,
         "_best_marker_staging_relocation",

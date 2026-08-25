@@ -766,6 +766,37 @@ def _marker_group_potential(
     return dx * dx + dy * dy
 
 
+def _final_marker_target_overlap_cells(
+    scene: VisualScene,
+    group: _EmbeddedMarkerGroup,
+) -> frozenset[tuple[int, int]]:
+    """Return only the small observed target-layer cells a final move may consume.
+
+    Some rendered targets contain a second hollow overlay in the same bounding
+    region.  A locally exact solution can require the endpoint glyph to enter
+    that region before the official level transition consumes it.  Large or
+    unrelated components remain protected.
+    """
+
+    target = group.target
+    cells = set(target.cells)
+    for item in scene.targets:
+        boxes_overlap = not (
+            item.max_x < target.min_x
+            or item.min_x > target.max_x
+            or item.max_y < target.min_y
+            or item.min_y > target.max_y
+        )
+        if not boxes_overlap or item.area > _SMALL_COMPONENT_COMBINED_AREA:
+            continue
+        cells.update(
+            (x, y)
+            for x, y in item.cells
+            if target.min_x <= x <= target.max_x and target.min_y <= y <= target.max_y
+        )
+    return frozenset(cells)
+
+
 def _marker_relocation_candidates(
     scene: VisualScene,
     group: _EmbeddedMarkerGroup,
@@ -799,20 +830,36 @@ def _marker_relocation_candidates(
                     round(target_y + radius * math.sin(rotation)),
                 )
             )
-    return tuple(
-        Coordinate(x, y)
-        for x, y in sorted(raw, key=lambda item: (item[1], item[0]))
-        if _endpoint_placement_is_open(scene, endpoint, x=x, y=y)
-        and all(
-            item.object_ref == endpoint.object_ref
-            or max(
+    current_sum_x = sum(item.rounded_center[0] for item in group.endpoints)
+    current_sum_y = sum(item.rounded_center[1] for item in group.endpoints)
+    final_overlap_cells = _final_marker_target_overlap_cells(scene, group)
+    candidates: list[Coordinate] = []
+    for x, y in sorted(raw, key=lambda item: (item[1], item[0])):
+        potential = _marker_group_potential(
+            group,
+            sum_x=current_sum_x - endpoint.rounded_center[0] + x,
+            sum_y=current_sum_y - endpoint.rounded_center[1] + y,
+        )
+        if not _endpoint_placement_is_open(
+            scene,
+            endpoint,
+            x=x,
+            y=y,
+            permitted_occupied_cells=(final_overlap_cells if potential == 0 else frozenset()),
+        ):
+            continue
+        if any(
+            item.object_ref != endpoint.object_ref
+            and max(
                 abs(x - item.rounded_center[0]),
                 abs(y - item.rounded_center[1]),
             )
-            >= 6
+            < 6
             for item in scene.endpoints
-        )
-    )
+        ):
+            continue
+        candidates.append(Coordinate(x, y))
+    return tuple(candidates)
 
 
 def _endpoint_placement_is_open(
@@ -821,6 +868,7 @@ def _endpoint_placement_is_open(
     *,
     x: int,
     y: int,
+    permitted_occupied_cells: frozenset[tuple[int, int]] = frozenset(),
 ) -> bool:
     """Check the observed endpoint footprint, not its enclosing square.
 
@@ -840,7 +888,9 @@ def _endpoint_placement_is_open(
         0 < x + dx < scene.width - 1
         and 0 < y + dy < scene.height - 1
         and (
-            scene.cells[y + dy][x + dx] == scene.background or (x + dx, y + dy) in current_footprint
+            scene.cells[y + dy][x + dx] == scene.background
+            or (x + dx, y + dy) in current_footprint
+            or (x + dx, y + dy) in permitted_occupied_cells
         )
         for dx, dy in footprint
     )
@@ -1005,6 +1055,8 @@ def _marker_mediator_remains_readable(
         ):
             return False
     for candidate_endpoint in scene.endpoints:
+        if final and candidate_endpoint.object_ref == endpoint.object_ref:
+            continue
         endpoint_center = (
             (coordinate.x, coordinate.y)
             if candidate_endpoint.object_ref == endpoint.object_ref
@@ -1128,6 +1180,99 @@ def _scene_after_marker_stage(
     return projected_scene, projected_group
 
 
+def _scene_after_marker_role_switch(
+    scene: VisualScene,
+    group: _EmbeddedMarkerGroup,
+    active: VisualObject,
+    selected: VisualObject,
+) -> tuple[VisualScene, _EmbeddedMarkerGroup, VisualObject] | None:
+    """Project the visible outer-color swap caused by selecting a fixed endpoint.
+
+    A continuation for a fixed endpoint must be checked with the outer color it
+    will have *after* becoming active.  Checking its current fixed color can
+    falsely reject a legal placement because nearby fixed endpoints would be
+    same-color fragments before the role swap but not afterward.  Re-extracting
+    the projected frame also fails closed when the swap itself makes a marker
+    group structurally unreadable.
+    """
+
+    if active.object_ref == selected.object_ref or active.color == selected.color:
+        return None
+    endpoint_refs = {item.object_ref for item in scene.endpoints}
+    if active.object_ref not in endpoint_refs or selected.object_ref not in endpoint_refs:
+        return None
+
+    rows = [list(row) for row in scene.cells]
+    for endpoint, outer_color in ((active, selected.color), (selected, active.color)):
+        for cell_x, cell_y in endpoint.cells:
+            rows[cell_y][cell_x] = outer_color
+        center_x, center_y = endpoint.rounded_center
+        rows[center_y][center_x] = endpoint.center_cell
+
+    projected_scene = extract_visual_scene(GridFrame.from_rows(rows))
+    expected_centers = {item.rounded_center for item in group.endpoints}
+    projected_groups = tuple(
+        candidate
+        for candidate in _embedded_marker_groups(projected_scene)
+        if candidate.marker_color == group.marker_color
+        and candidate.arity == group.arity
+        and {item.rounded_center for item in candidate.endpoints} == expected_centers
+    )
+    if len(projected_groups) != 1:
+        return None
+    projected_group = projected_groups[0]
+    projected_active = tuple(
+        endpoint
+        for endpoint in projected_group.endpoints
+        if endpoint.rounded_center == selected.rounded_center and endpoint.color == active.color
+    )
+    if len(projected_active) != 1:
+        return None
+    return projected_scene, projected_group, projected_active[0]
+
+
+def _best_marker_relocation_after_switch(
+    scene: VisualScene,
+    group: _EmbeddedMarkerGroup,
+    active: VisualObject,
+    selected: VisualObject,
+    *,
+    rejected_signatures: set[str],
+    allow_extended: bool = True,
+) -> tuple[int, Coordinate] | None:
+    projection = _scene_after_marker_role_switch(scene, group, active, selected)
+    if projection is None:
+        return None
+    projected_scene, projected_group, projected_active = projection
+    return _best_marker_relocation(
+        projected_scene,
+        projected_group,
+        projected_active,
+        rejected_signatures=rejected_signatures,
+        allow_extended=allow_extended,
+    )
+
+
+def _best_marker_staging_after_switch(
+    scene: VisualScene,
+    group: _EmbeddedMarkerGroup,
+    active: VisualObject,
+    selected: VisualObject,
+    *,
+    rejected_signatures: set[str],
+) -> Coordinate | None:
+    projection = _scene_after_marker_role_switch(scene, group, active, selected)
+    if projection is None:
+        return None
+    projected_scene, projected_group, projected_active = projection
+    return _best_marker_staging_relocation(
+        projected_scene,
+        projected_group,
+        projected_active,
+        rejected_signatures=rejected_signatures,
+    )
+
+
 def _best_marker_staging_relocation(
     scene: VisualScene,
     group: _EmbeddedMarkerGroup,
@@ -1185,15 +1330,14 @@ def _best_marker_staging_relocation(
         if projection is None:
             continue
         projected_scene, projected_group = projection
-        projected_endpoint_ref = projected_group.endpoints[
-            group.endpoints.index(endpoint)
-        ].object_ref
+        projected_endpoint = projected_group.endpoints[group.endpoints.index(endpoint)]
         for switch_endpoint in projected_group.endpoints:
-            if switch_endpoint.object_ref == projected_endpoint_ref:
+            if switch_endpoint.object_ref == projected_endpoint.object_ref:
                 continue
-            followup = _best_marker_relocation(
+            followup = _best_marker_relocation_after_switch(
                 projected_scene,
                 projected_group,
+                projected_endpoint,
                 switch_endpoint,
                 rejected_signatures=rejected_signatures,
                 allow_extended=False,
@@ -1243,7 +1387,7 @@ def _best_marker_relocation(
                 maximum_radius=board_diagonal,
             )
         )
-    best: tuple[int, int, int, Coordinate] | None = None
+    best: tuple[int, int, int, int, Coordinate] | None = None
     for coordinates in candidate_batches:
         for coordinate in coordinates:
             resulting_sum_x = sum_x - endpoint.rounded_center[0] + coordinate.x
@@ -1273,12 +1417,25 @@ def _best_marker_relocation(
             )
             if potential >= current or signature in rejected_signatures:
                 continue
-            candidate = (potential, coordinate.y, coordinate.x, coordinate)
-            if best is None or candidate[:3] < best[:3]:
+            target_overlap = len(
+                _translated_object_footprint(
+                    endpoint,
+                    center=(coordinate.x, coordinate.y),
+                )
+                & frozenset(group.target.cells)
+            )
+            candidate = (
+                potential,
+                target_overlap,
+                coordinate.y,
+                coordinate.x,
+                coordinate,
+            )
+            if best is None or candidate[:4] < best[:4]:
                 best = candidate
         if best is not None:
             break
-    return None if best is None else (best[0], best[3])
+    return None if best is None else (best[0], best[4])
 
 
 def _marker_structural_action_key(
@@ -1326,9 +1483,10 @@ def _best_marker_group_transfer(
             }
             if role_transfer_signatures & rejected_signatures:
                 continue
-            prospective = _best_marker_relocation(
+            prospective = _best_marker_relocation_after_switch(
                 scene,
                 group,
+                active,
                 endpoint,
                 rejected_signatures=rejected_signatures,
             )
@@ -1410,9 +1568,10 @@ def _embedded_marker_plan(
             signature = f"marker:{group.marker_color}:rotate:{coordinate.x},{coordinate.y}"
             if signature in rejected_signatures:
                 continue
-            prospective = _best_marker_relocation(
+            prospective = _best_marker_relocation_after_switch(
                 scene,
                 group,
+                active,
                 candidate_endpoint,
                 rejected_signatures=rejected_signatures,
             )
@@ -1481,6 +1640,43 @@ def _embedded_marker_plan(
         active,
         rejected_signatures=rejected_signatures,
     )
+    exact_switch_candidates: list[tuple[str, VisualObject]] = []
+    if relocation is None or relocation[0] != 0:
+        for endpoint in group.endpoints:
+            if endpoint.object_ref == active.object_ref:
+                continue
+            coordinate = Coordinate(*endpoint.rounded_center)
+            signature = f"marker:{group.marker_color}:rotate:{coordinate.x},{coordinate.y}"
+            if signature in rejected_signatures:
+                continue
+            prospective = _best_marker_relocation_after_switch(
+                scene,
+                group,
+                active,
+                endpoint,
+                rejected_signatures=rejected_signatures,
+            )
+            if prospective is not None and prospective[0] == 0:
+                exact_switch_candidates.append((endpoint.object_ref, endpoint))
+    if exact_switch_candidates:
+        _object_ref_value, selected = min(exact_switch_candidates, key=lambda item: item[0])
+        coordinate = Coordinate(*selected.rounded_center)
+        signature = f"marker:{group.marker_color}:rotate:{coordinate.x},{coordinate.y}"
+        return PlannedClick(
+            coordinate=coordinate,
+            purpose=VisualActionPurpose.PROBE,
+            expectation=(
+                "transfer the active role within the same marker group to expose an exact "
+                "target-relative relocation"
+            ),
+            mechanic_ref=mechanic_ref,
+            plan_id=plan_id,
+            plan_signature=signature,
+            target_center=group.target.rounded_center,
+            mediator_color=group.marker_color,
+            arity=group.arity,
+        )
+
     if relocation is not None:
         potential, coordinate = relocation
         signature_kind = "solve" if potential == 0 else "improve"
@@ -1511,18 +1707,20 @@ def _embedded_marker_plan(
         signature = f"marker:{group.marker_color}:rotate:{coordinate.x},{coordinate.y}"
         if signature in rejected_signatures:
             continue
-        prospective = _best_marker_relocation(
+        prospective = _best_marker_relocation_after_switch(
             scene,
             group,
+            active,
             endpoint,
             rejected_signatures=rejected_signatures,
         )
         if prospective is not None:
             switch_candidates.append((prospective[0], endpoint.object_ref, endpoint))
             continue
-        staged_coordinate = _best_marker_staging_relocation(
+        staged_coordinate = _best_marker_staging_after_switch(
             scene,
             group,
+            active,
             endpoint,
             rejected_signatures=rejected_signatures,
         )
@@ -2378,7 +2576,7 @@ class VisualCausalPolicy:
                 arity=self._pending_arity,
             )
         )
-        marker_action_structure_failed = (
+        marker_action_planned = (
             self._pending_plan_signature is not None
             and self._pending_plan_signature.startswith("marker:")
             and self._pending_mediator_color is not None
@@ -2388,22 +2586,34 @@ class VisualCausalPolicy:
             and not level_progress
             and observation.state is GameStateName.NOT_FINISHED
             and not local_target_satisfied
-            and not _marker_action_structure_is_readable(
+        )
+        marker_action_structure_readable = False
+        if marker_action_planned:
+            assert self._pending_mediator_color is not None
+            assert self._pending_arity is not None
+            assert action.coordinate is not None
+            marker_action_structure_readable = _marker_action_structure_is_readable(
                 after_scene,
                 marker_color=self._pending_mediator_color,
                 arity=self._pending_arity,
                 coordinate=action.coordinate,
             )
+        marker_action_structure_failed = (
+            marker_action_planned and not marker_action_structure_readable
         )
         if marker_action_structure_failed:
             residual = "planned marker endpoint became structurally unreadable"
-        coordinate_transform = local_target_satisfied or _coordinate_transform_observed(
-            before_scene,
-            after_scene,
-            action=action,
-            changed_cells=changed,
-            level_progress=level_progress,
-            inferred_mechanic=mechanic,
+        coordinate_transform = (
+            local_target_satisfied
+            or marker_action_structure_readable
+            or _coordinate_transform_observed(
+                before_scene,
+                after_scene,
+                action=action,
+                changed_cells=changed,
+                level_progress=level_progress,
+                inferred_mechanic=mechanic,
+            )
         )
         recognized_effects: list[FactoredEffect] = []
         if coordinate_transform:
