@@ -176,6 +176,7 @@ class VisualScene:
 
 
 type _TargetRegions = tuple[tuple[tuple[int, int], frozenset[tuple[int, int]]], ...]
+type _ExplorationRootKey = tuple[str, str, int, int]
 
 
 @dataclass(frozen=True, slots=True)
@@ -505,6 +506,26 @@ def _changed_cells(before: GridFrame, after: GridFrame) -> int:
     )
 
 
+def _affine_target_candidates(
+    scene: VisualScene,
+    *,
+    mediator_color: int,
+) -> tuple[VisualObject, ...]:
+    """Return the narrowest readable target role for an affine mediator.
+
+    Same-color identity remains the primary relation.  When that relation is
+    absent, one and only one readable hollow target can carry the role without
+    inventing a palette mapping.  Multiple mismatched targets stay ambiguous.
+    """
+
+    same_color = tuple(item for item in scene.targets if item.color == mediator_color)
+    if same_color:
+        return same_color
+    if len(scene.targets) == 1:
+        return scene.targets
+    return ()
+
+
 def infer_affine_mechanic(
     before: VisualScene,
     after: VisualScene,
@@ -569,7 +590,7 @@ def infer_affine_mechanic(
     if best is None or best[0] > 3.0:
         return None
     error, arity, _before_hub, after_hub = best
-    targets = tuple(item for item in after.targets if item.color == after_hub.color)
+    targets = _affine_target_candidates(after, mediator_color=after_hub.color)
     if not targets:
         return None
     target = min(
@@ -629,7 +650,8 @@ def infer_transferred_affine_mechanic(
     identities never cross levels.
     """
 
-    if not supported_prior or any(item.support_error > 6.0 for item in supported_prior):
+    reliable_prior = tuple(item for item in supported_prior if item.support_error <= 6.0)
+    if not reliable_prior:
         return None
     active_candidates = tuple(item for item in scene.endpoints if item.color == active_color)
     if not active_candidates:
@@ -647,10 +669,11 @@ def infer_transferred_affine_mechanic(
         ]
         | None
     ) = None
+    best_is_ambiguous = False
     for active in active_candidates:
         pool = tuple(item for item in scene.endpoints if item.object_ref != active.object_ref)
         for hub in scene.mediators:
-            targets = tuple(item for item in scene.targets if item.color == hub.color)
+            targets = _affine_target_candidates(scene, mediator_color=hub.color)
             if not targets:
                 continue
             target = min(
@@ -673,10 +696,22 @@ def infer_transferred_affine_mechanic(
                     candidate = (error, arity, hub, anchors, target)
                     if best is None or candidate[:2] < best[:2]:
                         best = candidate
-    if best is None or best[0] > 1.5:
+                        best_is_ambiguous = False
+                    elif (
+                        best is not None
+                        and candidate[:2] == best[:2]
+                        and (
+                            candidate[2].object_ref != best[2].object_ref
+                            or tuple(item.object_ref for item in candidate[3])
+                            != tuple(item.object_ref for item in best[3])
+                            or candidate[4].object_ref != best[4].object_ref
+                        )
+                    ):
+                        best_is_ambiguous = True
+    if best is None or best[0] > 1.5 or best_is_ambiguous:
         return None
     error, arity, hub, anchors, target = best
-    source_refs = ",".join(sorted(item.mechanic_ref for item in supported_prior))
+    source_refs = ",".join(sorted(item.mechanic_ref for item in reliable_prior))
     identity = (
         f"transfer|{source_refs}|{level_index}|{active.color}|{hub.color}|{arity}|"
         f"{scene.frame_hash}"
@@ -3378,6 +3413,7 @@ class VisualCausalPolicy:
 
     manages_trace = False
     _MAX_MARKER_STRUCTURAL_ACTIONS = 512
+    _MAX_FAILED_EXPLORATION_ROOTS = 64
 
     def __init__(self, *, max_coordinate_candidates: int = 8) -> None:
         if not 1 <= max_coordinate_candidates <= 32:
@@ -3412,6 +3448,9 @@ class VisualCausalPolicy:
         self._marker_target_identity_constraints: set[int] = set()
         self._marker_structural_actions: set[str] = set()
         self._marker_structural_action_order: deque[str] = deque()
+        self._episode_exploration_root: _ExplorationRootKey | None = None
+        self._failed_exploration_roots: set[_ExplorationRootKey] = set()
+        self._exploration_root_capacity_exhausted = False
         self._last_probe_failed = False
         self._last_active_color: int | None = None
         self._probe_ordinal = 0
@@ -3481,6 +3520,9 @@ class VisualCausalPolicy:
         self._marker_target_identity_constraints.clear()
         self._marker_structural_actions.clear()
         self._marker_structural_action_order.clear()
+        self._episode_exploration_root = None
+        self._failed_exploration_roots.clear()
+        self._exploration_root_capacity_exhausted = False
         self._last_probe_failed = False
         self._probe_ordinal = 0
 
@@ -3494,13 +3536,36 @@ class VisualCausalPolicy:
         self._marker_reacquire_after_local_solve = False
         self._marker_structural_actions.clear()
         self._marker_structural_action_order.clear()
+        self._episode_exploration_root = None
         self._last_probe_failed = False
-        self._probe_ordinal = 0
+
+    @staticmethod
+    def _exploration_root_key(
+        scene: VisualScene,
+        *,
+        kind: str,
+        coordinate: Coordinate,
+    ) -> _ExplorationRootKey:
+        return (scene.frame_hash, kind, coordinate.x, coordinate.y)
+
+    def _remember_exploration_root(
+        self,
+        scene: VisualScene,
+        *,
+        kind: str,
+        coordinate: Coordinate,
+    ) -> None:
+        if self._episode_exploration_root is None:
+            self._episode_exploration_root = self._exploration_root_key(
+                scene,
+                kind=kind,
+                coordinate=coordinate,
+            )
 
     def _unsolved_pairs(self, scene: VisualScene) -> tuple[tuple[VisualObject, VisualObject], ...]:
         pairs: list[tuple[VisualObject, VisualObject]] = []
         for hub in scene.mediators:
-            targets = tuple(item for item in scene.targets if item.color == hub.color)
+            targets = _affine_target_candidates(scene, mediator_color=hub.color)
             if not targets:
                 continue
             target = min(
@@ -3513,7 +3578,14 @@ class VisualCausalPolicy:
                 pairs.append((hub, target))
         return tuple(sorted(pairs, key=lambda pair: (pair[0].color, pair[0].object_ref)))
 
-    def _probe_coordinate(self, scene: VisualScene) -> Coordinate:
+    def _probe_coordinate(
+        self,
+        scene: VisualScene,
+        *,
+        kind: str = "coordinate",
+    ) -> Coordinate:
+        if self._exploration_root_capacity_exhausted:
+            raise PolicyError("level-scoped exploration-root capacity exhausted")
         pairs = self._unsolved_pairs(scene)
         centers = tuple((item.center_x, item.center_y) for item in scene.endpoints)
         candidates: list[tuple[float, int, int]] = []
@@ -3544,11 +3616,27 @@ class VisualCausalPolicy:
         if not candidates:
             raise PolicyError("no causally bounded readable coordinate probe is available")
         unique = sorted(set(candidates), key=lambda item: (-item[0], item[2], item[1]))
-        selected = unique[self._probe_ordinal % min(len(unique), self._max_coordinate_candidates)]
-        self._probe_ordinal += 1
-        return Coordinate(selected[1], selected[2])
+        bounded = unique[: self._max_coordinate_candidates]
+        start = self._probe_ordinal % len(bounded)
+        for offset in range(len(bounded)):
+            selected = bounded[(start + offset) % len(bounded)]
+            coordinate = Coordinate(selected[1], selected[2])
+            if self._episode_exploration_root is None and (
+                self._exploration_root_key(
+                    scene,
+                    kind=kind,
+                    coordinate=coordinate,
+                )
+                in self._failed_exploration_roots
+            ):
+                continue
+            self._probe_ordinal += offset + 1
+            return coordinate
+        raise PolicyError("all bounded coordinate-probe episode roots already failed")
 
     def _activation_coordinate(self, scene: VisualScene) -> Coordinate | None:
+        if self._exploration_root_capacity_exhausted:
+            raise PolicyError("level-scoped exploration-root capacity exhausted")
         pairs = self._unsolved_pairs(scene)
         if not pairs:
             return None
@@ -3567,10 +3655,21 @@ class VisualCausalPolicy:
         )
         if not candidates:
             return None
-        selected = candidates[0]
-        self._attempted_activation_refs.add(selected.object_ref)
-        x, y = selected.rounded_center
-        return Coordinate(x, y)
+        for selected in candidates:
+            x, y = selected.rounded_center
+            coordinate = Coordinate(x, y)
+            if self._episode_exploration_root is None and (
+                self._exploration_root_key(
+                    scene,
+                    kind="activation",
+                    coordinate=coordinate,
+                )
+                in self._failed_exploration_roots
+            ):
+                continue
+            self._attempted_activation_refs.add(selected.object_ref)
+            return coordinate
+        return None
 
     def _install_plan(self, mechanic: AffineMechanic, scene: VisualScene) -> bool:
         points = _radial_plan_points(
@@ -3647,7 +3746,9 @@ class VisualCausalPolicy:
             raise PolicyError("the official environment already reports WIN")
         if observation.state is GameStateName.UNKNOWN:
             raise PolicyError("cannot act on an unknown environment state")
-        if observation.levels_completed != self._level_index:
+        if observation.levels_completed < self._level_index:
+            raise PolicyError("levels_completed regressed within one policy lifetime")
+        if observation.levels_completed > self._level_index:
             self._begin_level(observation)
 
         if self._plan and ActionName.ACTION6 not in observation.available_actions:
@@ -3738,7 +3839,10 @@ class VisualCausalPolicy:
                     is None
                 )
                 if active_is_ambiguous and not self._marker_bootstrap_attempted:
-                    coordinate = self._probe_coordinate(marker_scene)
+                    coordinate = self._probe_coordinate(
+                        marker_scene,
+                        kind="marker-bootstrap",
+                    )
                     if any(
                         _distance(endpoint.rounded_center, (coordinate.x, coordinate.y)) <= 2.25
                         for group in marker_groups
@@ -3762,6 +3866,11 @@ class VisualCausalPolicy:
                             "open-space intervention"
                         ),
                         plan_signature=signature,
+                    )
+                    self._remember_exploration_root(
+                        marker_scene,
+                        kind="marker-bootstrap",
+                        coordinate=coordinate,
                     )
                     self._marker_bootstrap_attempted = True
                     return action
@@ -3818,6 +3927,11 @@ class VisualCausalPolicy:
             activation = self._activation_coordinate(scene) if self._last_probe_failed else None
             if activation is not None:
                 action = ActionRequest(ActionName.ACTION6, activation)
+                self._remember_exploration_root(
+                    scene,
+                    kind="activation",
+                    coordinate=activation,
+                )
                 self._last_probe_failed = False
                 self._stage_pending(
                     observation,
@@ -3828,6 +3942,11 @@ class VisualCausalPolicy:
                 return action
             coordinate = self._probe_coordinate(scene)
             action = ActionRequest(ActionName.ACTION6, coordinate)
+            self._remember_exploration_root(
+                scene,
+                kind="coordinate",
+                coordinate=coordinate,
+            )
             self._stage_pending(
                 observation,
                 action,
@@ -4230,6 +4349,13 @@ class VisualCausalPolicy:
         if observation.state is GameStateName.GAME_OVER:
             if self._pending_plan_signature is not None:
                 self._failed_plan_signatures.add(self._pending_plan_signature)
+            if self._episode_exploration_root is not None:
+                if self._episode_exploration_root in self._failed_exploration_roots:
+                    pass
+                elif len(self._failed_exploration_roots) < self._MAX_FAILED_EXPLORATION_ROOTS:
+                    self._failed_exploration_roots.add(self._episode_exploration_root)
+                else:
+                    self._exploration_root_capacity_exhausted = True
             self._plan.clear()
             self._marker_stage_pending_switch = None
             self._marker_reacquire_after_local_solve = False
@@ -4328,6 +4454,9 @@ class VisualCausalPolicy:
             "affine_ledger_ref": (
                 self._affine_ledger_ref.to_dict() if self._affine_ledger_ref is not None else None
             ),
+            "episode_exploration_root_active": self._episode_exploration_root is not None,
+            "exploration_root_capacity_exhausted": (self._exploration_root_capacity_exhausted),
+            "failed_exploration_root_count": len(self._failed_exploration_roots),
             "failed_plan_count": len(self._failed_plan_signatures),
             "mechanical_learner": learner.to_dict() if learner is not None else None,
             "mechanical_learner_compact_bytes": (

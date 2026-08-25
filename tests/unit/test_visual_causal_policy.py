@@ -134,6 +134,34 @@ def _frame(
     return GridFrame.from_rows(rows)
 
 
+def _palette_mismatched_target_frame(
+    active: tuple[int, int],
+    anchor: tuple[int, int],
+    targets: tuple[tuple[tuple[int, int], int], ...],
+) -> GridFrame:
+    rows = [[5 for _ in range(64)] for _ in range(64)]
+    hub = (round((active[0] + anchor[0]) / 2), round((active[1] + anchor[1]) / 2))
+    for target, color in targets:
+        _paint(rows, target, _TARGET_RING, color)
+    _paint(rows, active, _ENDPOINT_SHAPE, 0)
+    _paint(rows, anchor, _ENDPOINT_SHAPE, 3)
+    _paint(rows, hub, _HUB_OUTER, 0)
+    rows[hub[1]][hub[0]] = 6
+    return GridFrame.from_rows(rows)
+
+
+def _ambiguous_mismatched_target_frame() -> GridFrame:
+    rows = [[5 for _ in range(64)] for _ in range(64)]
+    _paint(rows, (32, 12), _TARGET_RING, 14)
+    _paint(rows, (32, 48), _ENDPOINT_SHAPE, 0)
+    _paint(rows, (16, 48), _ENDPOINT_SHAPE, 3)
+    _paint(rows, (48, 48), _ENDPOINT_SHAPE, 3)
+    for hub in ((24, 48), (40, 48)):
+        _paint(rows, hub, _HUB_OUTER, 0)
+        rows[hub[1]][hub[0]] = 6
+    return GridFrame.from_rows(rows)
+
+
 def _observation(
     active: tuple[int, int],
     anchor: tuple[int, int],
@@ -941,12 +969,17 @@ def test_supported_affine_form_transfers_without_coordinates_or_object_identity(
         action=ActionRequest(ActionName.ACTION6, Coordinate(12, 24)),
     )
     assert prior is not None
+    noisy_prior = replace(
+        prior,
+        mechanic_ref="affine:noisy-prior",
+        support_error=7.0,
+    )
 
     mechanic = infer_transferred_affine_mechanic(
         scene,
         level_index=4,
         active_color=0,
-        supported_prior=(prior,),
+        supported_prior=(noisy_prior, prior),
     )
 
     assert mechanic is not None
@@ -954,6 +987,85 @@ def test_supported_affine_form_transfers_without_coordinates_or_object_identity(
     assert mechanic.arity == 3
     assert set(mechanic.anchor_centers) == {(28, 8), (18, 26)}
     assert mechanic.target_center == (25, 29)
+
+
+def test_unique_hollow_target_carries_role_when_palette_identity_changes() -> None:
+    target = (53, 28)
+    before = extract_visual_scene(
+        _palette_mismatched_target_frame(
+            (25, 35),
+            (43, 34),
+            ((target, 14),),
+        )
+    )
+    after = extract_visual_scene(
+        _palette_mismatched_target_frame(
+            (21, 21),
+            (43, 34),
+            ((target, 14),),
+        )
+    )
+
+    mechanic = infer_affine_mechanic(
+        before,
+        after,
+        level_index=4,
+        action=ActionRequest(ActionName.ACTION6, Coordinate(21, 21)),
+    )
+
+    assert mechanic is not None
+    assert mechanic.mediator_color == 0
+    assert mechanic.arity == 2
+    assert mechanic.anchor_centers == ((43, 34),)
+    assert mechanic.target_center == target
+
+
+def test_mismatched_hollow_targets_remain_ambiguous() -> None:
+    before = extract_visual_scene(
+        _palette_mismatched_target_frame(
+            (25, 35),
+            (43, 34),
+            (((53, 28), 14), ((13, 28), 8)),
+        )
+    )
+    after = extract_visual_scene(
+        _palette_mismatched_target_frame(
+            (21, 21),
+            (43, 34),
+            (((53, 28), 14), ((13, 28), 8)),
+        )
+    )
+
+    mechanic = infer_affine_mechanic(
+        before,
+        after,
+        level_index=4,
+        action=ActionRequest(ActionName.ACTION6, Coordinate(21, 21)),
+    )
+
+    assert mechanic is None
+
+
+def test_one_mismatched_target_does_not_resolve_a_tied_mediator_relation() -> None:
+    before = extract_visual_scene(_frame((8, 32), (32, 32), (20, 10)))
+    after = extract_visual_scene(_frame((12, 24), (32, 32), (20, 10)))
+    prior = infer_affine_mechanic(
+        before,
+        after,
+        level_index=0,
+        action=ActionRequest(ActionName.ACTION6, Coordinate(12, 24)),
+    )
+    assert prior is not None
+    ambiguous = extract_visual_scene(_ambiguous_mismatched_target_frame())
+
+    mechanic = infer_transferred_affine_mechanic(
+        ambiguous,
+        level_index=1,
+        active_color=0,
+        supported_prior=(prior,),
+    )
+
+    assert mechanic is None
 
 
 def test_failed_target_relative_plan_signature_is_not_repeated() -> None:
@@ -2803,6 +2915,190 @@ def test_game_over_consequence_is_receipted_before_mandatory_reset() -> None:
     assert policy.snapshot()["marker_structural_action_count"] == 0
     assert tuple(item.ref for item in learner.ledger.active()) == retained_refs
     assert next_action != selected
+
+
+def test_failed_exploration_root_is_not_replayed_after_same_level_reset() -> None:
+    frame = _palette_mismatched_target_frame(
+        (25, 35),
+        (43, 34),
+        (((53, 28), 14), ((13, 28), 8)),
+    )
+    base = Observation(
+        game_id=GameId("synthetic-exploration-root"),
+        frames=(frame,),
+        state=GameStateName.NOT_FINISHED,
+        levels_completed=4,
+        win_levels=6,
+        available_actions=(ActionName.ACTION6,),
+    )
+    policy = VisualCausalPolicy()
+    first = policy.select(base)
+    failed = replace(
+        base,
+        state=GameStateName.GAME_OVER,
+        returned_action=first,
+    )
+    policy.accept_consequence(failed)
+
+    reset = policy.select(failed)
+    recovered = replace(
+        base,
+        full_reset=True,
+        returned_action=reset,
+    )
+    policy.accept_consequence(recovered)
+    policy._probe_ordinal = 0
+    second = policy.select(recovered)
+
+    assert reset == ActionRequest(ActionName.RESET)
+    assert first.coordinate is not None
+    assert second.coordinate is not None
+    assert second != first
+    assert policy.snapshot()["failed_exploration_root_count"] == 1
+    assert policy.snapshot()["failed_plan_count"] == 0
+
+
+def test_single_failed_coordinate_root_exhausts_same_frame_explicitly() -> None:
+    frame = _palette_mismatched_target_frame(
+        (25, 35),
+        (43, 34),
+        (((53, 28), 14), ((13, 28), 8)),
+    )
+    base = Observation(
+        game_id=GameId("synthetic-coordinate-root-exhaustion"),
+        frames=(frame,),
+        state=GameStateName.NOT_FINISHED,
+        levels_completed=4,
+        win_levels=6,
+        available_actions=(ActionName.ACTION6,),
+    )
+    policy = VisualCausalPolicy(max_coordinate_candidates=1)
+    first = policy.select(base)
+    failed = replace(base, state=GameStateName.GAME_OVER, returned_action=first)
+    policy.accept_consequence(failed)
+    reset = policy.select(failed)
+    recovered = replace(base, full_reset=True, returned_action=reset)
+    policy.accept_consequence(recovered)
+
+    with pytest.raises(
+        PolicyError,
+        match="all bounded coordinate-probe episode roots already failed",
+    ):
+        policy.select(recovered)
+
+
+def test_failed_activation_root_is_not_replayed_after_same_level_reset() -> None:
+    base = _observation((8, 32), (32, 32), (20, 10))
+    policy = VisualCausalPolicy()
+    policy._begin_level(base)
+    policy._last_probe_failed = True
+    first = policy.select(base)
+    failed = replace(base, state=GameStateName.GAME_OVER, returned_action=first)
+    policy.accept_consequence(failed)
+    reset = policy.select(failed)
+    recovered = replace(base, full_reset=True, returned_action=reset)
+    policy.accept_consequence(recovered)
+    policy._last_probe_failed = True
+    second = policy.select(recovered)
+
+    assert first.coordinate in {Coordinate(8, 32), Coordinate(32, 32)}
+    assert second.coordinate in {Coordinate(8, 32), Coordinate(32, 32)}
+    assert second != first
+    assert policy.snapshot()["failed_exploration_root_count"] == 1
+
+
+def test_level_progress_clears_failed_exploration_roots() -> None:
+    frame = _palette_mismatched_target_frame(
+        (25, 35),
+        (43, 34),
+        (((53, 28), 14), ((13, 28), 8)),
+    )
+    base = Observation(
+        game_id=GameId("synthetic-level-root-scope"),
+        frames=(frame,),
+        state=GameStateName.NOT_FINISHED,
+        levels_completed=4,
+        win_levels=6,
+        available_actions=(ActionName.ACTION6,),
+    )
+    policy = VisualCausalPolicy(max_coordinate_candidates=1)
+    first = policy.select(base)
+    failed = replace(base, state=GameStateName.GAME_OVER, returned_action=first)
+    policy.accept_consequence(failed)
+    reset = policy.select(failed)
+    recovered = replace(base, full_reset=True, returned_action=reset)
+    policy.accept_consequence(recovered)
+
+    advanced = replace(base, levels_completed=5)
+    replayed_on_new_level = policy.select(advanced)
+
+    assert replayed_on_new_level == first
+    assert policy.snapshot()["failed_exploration_root_count"] == 0
+
+
+def test_marker_bootstrap_root_is_excluded_after_same_level_reset() -> None:
+    environment = _MarkerAffineEnvironment(
+        groups=[[(10, 50), (30, 50)]],
+        targets=((20, 28),),
+        marker_colors=(12,),
+    )
+    policy = VisualCausalPolicy(max_coordinate_candidates=1)
+    base = environment.observation()
+    bootstrap = policy.select(base)
+    failed = replace(base, state=GameStateName.GAME_OVER, returned_action=bootstrap)
+    policy.accept_consequence(failed)
+    reset = policy.select(failed)
+    recovered = replace(base, full_reset=True, returned_action=reset)
+    policy.accept_consequence(recovered)
+
+    with pytest.raises(
+        PolicyError,
+        match="all bounded coordinate-probe episode roots already failed",
+    ):
+        policy.select(recovered)
+
+
+def test_exploration_root_capacity_fails_closed() -> None:
+    frame = _palette_mismatched_target_frame(
+        (25, 35),
+        (43, 34),
+        (((53, 28), 14), ((13, 28), 8)),
+    )
+    base = Observation(
+        game_id=GameId("synthetic-root-capacity"),
+        frames=(frame,),
+        state=GameStateName.NOT_FINISHED,
+        levels_completed=4,
+        win_levels=6,
+        available_actions=(ActionName.ACTION6,),
+    )
+    policy = VisualCausalPolicy()
+    first = policy.select(base)
+    policy._failed_exploration_roots.update(
+        (f"frame-{index}", "coordinate", index, index)
+        for index in range(policy._MAX_FAILED_EXPLORATION_ROOTS)
+    )
+    failed = replace(base, state=GameStateName.GAME_OVER, returned_action=first)
+    policy.accept_consequence(failed)
+    reset = policy.select(failed)
+    recovered = replace(base, full_reset=True, returned_action=reset)
+    policy.accept_consequence(recovered)
+
+    assert policy.snapshot()["exploration_root_capacity_exhausted"] is True
+    with pytest.raises(
+        PolicyError,
+        match="level-scoped exploration-root capacity exhausted",
+    ):
+        policy.select(recovered)
+
+
+def test_level_counter_regression_fails_closed() -> None:
+    base = _observation((8, 32), (32, 32), (20, 10), levels_completed=1)
+    policy = VisualCausalPolicy()
+    policy._begin_level(base)
+
+    with pytest.raises(PolicyError, match="levels_completed regressed"):
+        policy.select(replace(base, levels_completed=0))
 
 
 def test_marker_bootstrap_accepts_unique_marked_endpoint_outside_complete_group() -> None:
