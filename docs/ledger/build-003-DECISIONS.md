@@ -20,7 +20,7 @@ This ledger is append-oriented. Supersede decisions with new entries; do not era
 - **Status:** ADOPTED
 - **Stage:** 00
 - **Date:** 2026-08-24
-- **Commit:** pending
+- **Commit:** `8c31b734401d6d5c6360facf95389ac18c13804e`
 - **Decision:** Map BLA v0.9.1 to structured residuals, provisional/versioned mechanic ledgers, earned support, local-first repair, and saturation. Map CLEF v1.0 to explicit layer declarations, independent evidence families, validity gates, residual promotion, readability walls, and scale-relevance stopping.
 - **Alternatives:** Terminology-only comments; physical/thermodynamic game laws; CORAL scoring; wholesale replacement of existing hypotheses/world models.
 - **Evidence:** Zenodo records 20807530 and 21193511 and their sole PDF artifacts; attached Build 003 workflow.

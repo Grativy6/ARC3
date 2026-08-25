@@ -49,7 +49,7 @@
     "latest_campaign_recording": "C:\\a\\arc3-b003-play\\build003-r11l-mechanical-seed7-87364202-campaign19\\official-recordings\\c2120ed7e4beb839e4d0\\a3fa6d43-6580-4bd0-857c-268be5930f37\\r11l-495a7899-f92e3919-c638-4e4e-a111-6f6929db4d8f.jsonl",
     "latest_campaign_recording_sha256": "sha256:4416bb7a4062da9a967e233529c89a21d3faca83178a4ea7267cd0a9c0c922f7",
     "latest_campaign_trace_manifest_sha256": "sha256:30d303c9125011be8923b80540d95745f1921cae81551491602482a884214ae9",
-    "candidate_repair_commit": "pending"
+    "candidate_repair_commit": "8c31b734401d6d5c6360facf95389ac18c13804e"
   },
   "stage_status": {
     "00": "PASS",
