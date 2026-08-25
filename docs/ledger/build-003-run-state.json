@@ -7,7 +7,7 @@
   "build_status": "ACTIVE",
   "status": "IN_PROGRESS",
   "current_stage": "10",
-  "current_task": "bind Campaign 27's sealed arity-weighted failed mechanism, repair the overbroad child-only rejection key, and certify one direct structurally distinct arity-2 child discriminator before Campaign 28",
+  "current_task": "freeze Campaign 28 from a clean pushed evidence-bound head, execute the certified direct arity-2 child discriminator, preserve its exact consequence, and continue toward official WIN",
   "implementation_branch": "build/003-bla-clef-mechanical-learner",
   "base": {
     "main_commit": "bea1eac99cb0f1b351526b1dc487d132ba1d40ef",
@@ -140,9 +140,22 @@
     "candidate_repair_replay": "matched Campaign 21 actions 1-61; on the clean level-entry frame the exact non-active-child isolation sequence is (34,55), (53,36), (41,47), (46,24), (52,55), (60,24), ending with only the selected child mediator at (53,28) while the sibling and target certificates remain exact",
     "candidate_repair_search_budget": "106434/131072 units remain on the recorded Campaign 21 level-entry frame",
     "candidate_repair_verification": "100 exact committed-source visual-policy tests; 11 focused child-isolation regressions; 9 secret tests; Ruff lint and format; strict mypy; compilation; diff checks; exact clean-frame planner replay; two independent reviews with no P0/P1/P2 finding",
-    "next_candidate_repair": "preserve the arity-three child-only, equal-weight, and arity-weighted rejections; key child-only evidence by parent relation plus selected-child structure so the currently active, still-untested arity-two sibling can use a direct exact isolation plan without an unnecessary role exchange",
-    "next_candidate_repair_commit": null,
-    "next_candidate_repair_verification": "PENDING: no new live action is authorized until the child-stratum repair has focused tests, full static verification, a commit-bound exact Campaign 27 replay certificate, and an independent no-target-leakage audit"
+    "next_candidate_repair": "COMMITTED AND REPLAY CERTIFIED: preserve the arity-three child-only, equal-weight, and arity-weighted rejections; test the currently active, still-unfalsified arity-two child under its own stable structural key and exact direct recovery; Campaign 28 official consequence remains pending",
+    "next_candidate_repair_commit": "a1f85dbb4607016f555358bb936343ee8ed99861",
+    "next_candidate_repair_mechanics_commit": "894adbbc2a16a5043237a468d232af5805ac77c5",
+    "next_candidate_repair_evaluator_commit": "a1f85dbb4607016f555358bb936343ee8ed99861",
+    "next_candidate_repair_policy_sha256": "sha256:cebe54cb2d665cbb428e0184c4ae6392e63bdd7944f9cae1b12b1f19e460020d",
+    "next_candidate_repair_replay_receipt": "C:\\a\\arc3-b003-play\\campaign27-a1f85dbb-2ce40400-child-stratum-divergence-replay-receipt.json",
+    "next_candidate_repair_replay_receipt_sha256": "sha256:1ba06cf96b3a4dde50de5bc75290f3ee9140bc5c7f48863cf66de1df8e0b5dc1",
+    "next_candidate_repair_replay_payload_sha256": "sha256:9a0694c84e7f413b2ba2de996df350509d23b8ef97d5967db674dbc02d9af80f",
+    "next_candidate_repair_replay": "clean detached commit a1f85db matched Campaign 27 submissions 1-73 and first diverged at submission 74 to direct arity-two (50,22) instead of recorded (58,37); forward (50,22), (43,34), (56,34) and inverse (43,34), (50,22), (25,35) restore the exact origin certificate; no environment action or game-source inspection",
+    "next_candidate_repair_verification": "PASS: 38 child-isolation tests, 104 full visual-policy tests, 37 evaluator completion/public-contract tests, Ruff lint and format, strict MyPy, compilation, diff checks, independent no-P0/P1 review, production no-target-leakage scan, and commit-bound Campaign 27 replay certificate",
+    "campaign28_pre_run_exposure_ledger": "C:\\a\\arc3-b003-play\\public-exposure.jsonl",
+    "campaign28_pre_run_exposure_events": 51,
+    "campaign28_pre_run_exposure_development_events": 51,
+    "campaign28_pre_run_exposure_holdout_events": 0,
+    "campaign28_pre_run_exposure_tail_event_hash": "sha256:5abf066a3f6ecfd00c637e812e71065e3fe3695a151c2b29e5ebd16812a85e4f",
+    "campaign28_pre_run_exposure_ledger_sha256": "sha256:9d9591e1688339bed930889c4a14d10585aa930d9dd1038eddf88d1b17ec0812"
   },
   "stage_status": {
     "00": "PASS",
@@ -187,13 +200,13 @@
     "pull_request_merged": false,
     "external_message_sent_as_owner": false
   },
-  "next_action": "commit and push the Campaign 27 evidence binding; implement child-stratum-scoped rejection and optional child activation; then match the sealed Campaign 27 history until the first certified divergence into the direct untested arity-two child-only discriminator before freezing Campaign 28",
+  "next_action": "commit and push the child-stratum repair and replay binding; freeze that clean pushed documentation-bound HEAD for Campaign 28; execute authorized development play with the existing 3000-action, 64-reset, 21600-second limits; preserve every official consequence and continue until GameState.WIN or a genuine external boundary",
   "notes": [
     "Update atomically after each meaningful task and preserve failed attempts.",
     "No synthetic or local result is completion unless the official target environment returns GameState.WIN.",
     "Production policy must not contain target or other public game identifiers.",
-    "Campaign 20 failure salvage reported game_over_events=0, while the verified official recording contains five raw GAME_OVER returns; preserve this discrepancy until the evaluator salvage path is repaired.",
-    "Campaign 21 failure salvage reported game_over_events=0, while the verified official recording contains two raw GAME_OVER returns; preserve this discrepancy until the evaluator salvage path is repaired.",
+    "Campaign 20's sealed failure receipt immutably reports game_over_events=0 while its verified recording contains five raw GAME_OVER returns. Evaluator commit a1f85db repairs recording-state salvage for future receipts without rewriting this historical artifact.",
+    "Campaign 21's sealed failure receipt immutably reports game_over_events=0 while its verified recording contains two raw GAME_OVER returns. Evaluator commit a1f85db repairs recording-state salvage for future receipts without rewriting this historical artifact.",
     "Campaign 22 is interrupted local-public evidence rather than a terminal evaluation: its active trace has no sealed manifest or scorecard, and standard replay verification remains unavailable even though all 3,029 active events, 530 referenced blobs, and the recording-to-trace consequence mapping verified read-only.",
     "Campaign 22 level-5 lives ended after exactly 60 non-reset submissions seven times, but their action sequences differed; preserve only the observed resource-exhaustion pattern and do not claim identical play.",
     "Campaign 23 is interrupted, unsealed local-public evidence: its manifest remains IN_PROGRESS and no terminal scorecard, run receipt, sealed trace manifest, or standard replay receipt exists, although the complete active event chain, blobs, and recording-to-trace mapping verify read-only.",
@@ -207,6 +220,6 @@
     "Campaign 26 is sealed failure evidence rather than completion: the official environment returned NOT_FINISHED through all 87 ACTION6 submissions at 4/6 with zero RESET, GAME_OVER, or WIN; the evaluator status FAILED_INFRASTRUCTURE records the later policy boundary and does not replace the official state.",
     "The current Campaign 26 replay is local recorded-frame verification only: it matched submissions 1-82, certified exact recovery plus an arity-weighted continuation, issued no environment action, inspected no game source, and does not claim official progress.",
     "The first post-Campaign 26 integrity-test attempt is preserved as FAILED_INFRASTRUCTURE: the shared Windows pytest temp root denied enumeration and a concurrent live OneDrive scan observed changing candidate bytes. A retry with an explicit fresh C:\\a basetemp passed all 37 policy, secret, and repository-integrity tests in 12.74 seconds.",
-    "The exposure ledger contains 49 development events through Campaign 26 and zero public-holdout events; SHA-256 is dea32dd8394a1504eca0d9db94b6719c270378f8e54b29c4a6d8134986f55397, and the sealed holdout remains unconsumed."
+    "The exposure ledger contains 51 development events through Campaign 27 and zero public-holdout events; last sequence 50, tail event hash sha256:5abf066a3f6ecfd00c637e812e71065e3fe3695a151c2b29e5ebd16812a85e4f, file SHA-256 9d9591e1688339bed930889c4a14d10585aa930d9dd1038eddf88d1b17ec0812, and the sealed holdout remains unconsumed."
   ]
 }
