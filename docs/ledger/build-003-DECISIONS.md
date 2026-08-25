@@ -7,7 +7,7 @@ This ledger is append-oriented. Supersede decisions with new entries; do not era
 - **Status:** ADOPTED
 - **Stage:** 00
 - **Date:** 2026-08-24
-- **Commit:** pending
+- **Commit:** `23b3b8b04eb00a8635e0c3efcfb9103c7dc1120a`
 - **Decision:** Predeclare the exact cached `r11l-495a7899` development identity for real offline play. Keep the ID only in evaluation configuration and evidence, never in production policy logic.
 - **Alternatives:** `ls20-9607627b`; an arbitrary development game; the sealed public holdout.
 - **Evidence:** The frozen partition classifies `r11l` as development; its asset matches `sha256:483e583c88e91c2ae58ad1fa7b274d97813993796ce798551a563e1a9a78a7ff`; it is the only prior development identity with a completed level; it has six declared levels.
