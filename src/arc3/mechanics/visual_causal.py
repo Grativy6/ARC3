@@ -1004,7 +1004,7 @@ def _marker_mediator_remains_readable(
             else candidate_endpoint.rounded_center
         )
         endpoint_clearance = mediator_radius + _glyph_radius(candidate_endpoint) + 1
-        if _chebyshev_distance(mediator_after, endpoint_center) <= endpoint_clearance:
+        if _chebyshev_distance(mediator_after, endpoint_center) < endpoint_clearance:
             return False
     return True
 

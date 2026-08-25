@@ -396,7 +396,7 @@ def test_nonfinal_mediator_preserves_target_ring_readability_at_radius_sum() -> 
     )
 
 
-def test_predicted_mediator_rejects_cross_group_endpoint_near_overlap() -> None:
+def test_predicted_mediator_permits_endpoint_tangent_but_rejects_overlap() -> None:
     scene = extract_visual_scene(
         _marker_frame(
             (
@@ -415,12 +415,20 @@ def test_predicted_mediator_rejects_cross_group_endpoint_near_overlap() -> None:
     group = next(item for item in _embedded_marker_groups(scene) if item.marker_color == 12)
     endpoint = next(item for item in group.endpoints if item.color == 0)
 
-    assert not _marker_mediator_remains_readable(
+    assert _marker_mediator_remains_readable(
         scene,
         group,
         endpoint,
         coordinate=Coordinate(25, 25),
         mediator_after=(35, 35),
+        final=False,
+    )
+    assert not _marker_mediator_remains_readable(
+        scene,
+        group,
+        endpoint,
+        coordinate=Coordinate(25, 25),
+        mediator_after=(36, 35),
         final=False,
     )
 
@@ -896,6 +904,7 @@ def test_marker_staging_reobserves_then_switches_before_exact_solve(
     policy = VisualCausalPolicy()
     policy._last_active_color = environment.active_color
     original_open = visual_causal._endpoint_placement_is_open
+    original_readable = visual_causal._marker_mediator_remains_readable
     stage = Coordinate(18, 22)
     solve = Coordinate(18, 54)
 
@@ -923,6 +932,37 @@ def test_marker_staging_reobserves_then_switches_before_exact_solve(
         return allowed and original_open(scene, endpoint, x=x, y=y)
 
     monkeypatch.setattr(visual_causal, "_endpoint_placement_is_open", constrained_open)
+
+    def constrained_readable(
+        scene: VisualScene,
+        group: visual_causal._EmbeddedMarkerGroup,
+        endpoint: visual_causal.VisualObject,
+        *,
+        coordinate: Coordinate,
+        mediator_after: tuple[int, int],
+        final: bool,
+        static_cells: frozenset[tuple[int, int]] | None = None,
+    ) -> bool:
+        initial_active_center_is_present = any(
+            candidate.rounded_center == (8, 48) for candidate in group.endpoints
+        )
+        if endpoint.rounded_center == (48, 8) and initial_active_center_is_present:
+            return False
+        return original_readable(
+            scene,
+            group,
+            endpoint,
+            coordinate=coordinate,
+            mediator_after=mediator_after,
+            final=final,
+            static_cells=static_cells,
+        )
+
+    monkeypatch.setattr(
+        visual_causal,
+        "_marker_mediator_remains_readable",
+        constrained_readable,
+    )
     observation = environment.observation()
     initial_potential = potential()
 
