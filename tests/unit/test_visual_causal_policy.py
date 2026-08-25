@@ -364,7 +364,8 @@ def test_marker_relocation_preserves_outer_component_separation() -> None:
         fixed_color=3,
     )
     rows = [list(row) for row in frame.cells]
-    rows[20][23] = 0
+    for x in range(23, 30):
+        rows[20][x] = 0
     scene = extract_visual_scene(GridFrame.from_rows(rows))
     endpoint = next(item for item in scene.endpoints if item.color == 0)
 

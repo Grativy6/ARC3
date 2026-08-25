@@ -316,6 +316,12 @@ def _role_for(
     return VisualObjectRole.OTHER
 
 
+_SMALL_COMPONENT_FRAGMENT_AREA = 12
+_SMALL_COMPONENT_COMBINED_AREA = 24
+_SMALL_COMPONENT_MAX_SPAN = 9
+_SMALL_COMPONENT_MERGE_DISTANCE = 3
+
+
 def _merge_small_same_color_groups(
     groups: list[tuple[int, tuple[tuple[int, int], ...]]],
 ) -> list[tuple[int, tuple[tuple[int, int], ...]]]:
@@ -331,27 +337,30 @@ def _merge_small_same_color_groups(
     while changed:
         changed = False
         for left_index, (left_color, left_cells) in enumerate(working):
-            if len(left_cells) > 12:
+            if len(left_cells) > _SMALL_COMPONENT_FRAGMENT_AREA:
                 continue
             for right_index in range(left_index + 1, len(working)):
                 right_color, right_cells = working[right_index]
-                if right_color != left_color or len(right_cells) > 12:
+                if right_color != left_color or len(right_cells) > _SMALL_COMPONENT_FRAGMENT_AREA:
                     continue
                 combined = tuple(
                     sorted((*left_cells, *right_cells), key=lambda item: (item[1], item[0]))
                 )
-                if len(combined) > 24:
+                if len(combined) > _SMALL_COMPONENT_COMBINED_AREA:
                     continue
                 xs = [item[0] for item in combined]
                 ys = [item[1] for item in combined]
-                if max(xs) - min(xs) + 1 > 9 or max(ys) - min(ys) + 1 > 9:
+                if (
+                    max(xs) - min(xs) + 1 > _SMALL_COMPONENT_MAX_SPAN
+                    or max(ys) - min(ys) + 1 > _SMALL_COMPONENT_MAX_SPAN
+                ):
                     continue
                 separation = min(
                     max(abs(lx - rx), abs(ly - ry))
                     for lx, ly in left_cells
                     for rx, ry in right_cells
                 )
-                if separation > 3:
+                if separation > _SMALL_COMPONENT_MERGE_DISTANCE:
                     continue
                 working[left_index] = (left_color, combined)
                 working.pop(right_index)
@@ -838,21 +847,31 @@ def _endpoint_placement_is_open(
     if not placement_is_open:
         return False
 
-    # Component identity must remain readable after the move.  An otherwise
-    # open placement can make the endpoint's outer-color glyph eight-connected
-    # to a same-color overlay just outside its footprint.  That absorbs the
-    # endpoint into another component and severs the visible marker relation.
-    # Ignore the current glyph because those cells are erased by the move.
+    # Component identity must remain readable under the same bounded merge rule
+    # used by perception.  An otherwise open placement can put the endpoint's
+    # outer glyph close enough to a small same-color overlay that the parser
+    # joins them and severs the visible marker relation.  The current glyph is
+    # erased by the move and therefore is not a prospective neighbor.
     prospective_outer = {(x + dx, y + dy) for dx, dy in outer_footprint}
-    current_outer = set(endpoint.cells)
-    for cell_x, cell_y in prospective_outer:
-        for neighbor_y in range(cell_y - 1, cell_y + 2):
-            for neighbor_x in range(cell_x - 1, cell_x + 2):
-                neighbor = (neighbor_x, neighbor_y)
-                if neighbor in prospective_outer or neighbor in current_outer:
-                    continue
-                if scene.cells[neighbor_y][neighbor_x] == endpoint.color:
-                    return False
+    if len(prospective_outer) <= _SMALL_COMPONENT_FRAGMENT_AREA:
+        for item in scene.objects:
+            if (
+                item.object_ref == endpoint.object_ref
+                or item.color != endpoint.color
+                or item.area > _SMALL_COMPONENT_FRAGMENT_AREA
+            ):
+                continue
+            separation = min(
+                max(abs(left_x - right_x), abs(left_y - right_y))
+                for left_x, left_y in prospective_outer
+                for right_x, right_y in item.cells
+            )
+            # A renderer overlay can split a sparse ring between frames.  Use
+            # the perception merge distance against every visible fragment,
+            # rather than trusting the current compound bounding box to remain
+            # intact after the action.
+            if separation <= _SMALL_COMPONENT_MERGE_DISTANCE:
+                return False
     return True
 
 
