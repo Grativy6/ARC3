@@ -523,6 +523,88 @@ def test_multicolor_marker_compounds_retain_affine_groups_and_blocker_gate() -> 
     )
 
 
+def test_same_group_centerline_alias_is_not_independent_target_evidence() -> None:
+    scene = extract_visual_scene(_composite_marker_frame())
+    group = next(item for item in _embedded_marker_groups(scene) if item.marker_color == 14)
+    footprint = visual_causal._marker_dynamic_footprint(group)
+    alias_cells = tuple(sorted(footprint, key=lambda cell: (cell[1], cell[0]))[:11])
+    xs = tuple(x for x, _y in alias_cells)
+    ys = tuple(y for _x, y in alias_cells)
+    template = next(item for item in scene.targets if item.color == 13)
+    alias = replace(
+        template,
+        object_ref="visual:test-same-group-target-alias",
+        color=1,
+        cells=alias_cells,
+        min_x=min(xs),
+        min_y=min(ys),
+        max_x=max(xs),
+        max_y=max(ys),
+        center_x=(min(xs) + max(xs)) / 2,
+        center_y=(min(ys) + max(ys)) / 2,
+    )
+    aliased_scene = replace(scene, objects=(*scene.objects, alias))
+    alias_region = (
+        alias.rounded_center,
+        frozenset(
+            (x, y)
+            for y in range(alias.min_y, alias.max_y + 1)
+            for x in range(alias.min_x, alias.max_x + 1)
+        ),
+    )
+
+    filtered = visual_causal._visible_target_regions(
+        aliased_scene,
+        same_group_raster_cells=footprint,
+    )
+    partially_explained = visual_causal._visible_target_regions(
+        aliased_scene,
+        same_group_raster_cells=footprint - {alias_cells[0]},
+    )
+
+    assert alias_region not in filtered
+    assert alias_region in partially_explained
+
+
+def test_same_group_alias_filter_never_removes_composite_target_proxy() -> None:
+    scene = extract_visual_scene(_composite_marker_frame())
+    group = next(item for item in _embedded_marker_groups(scene) if item.marker_color == 14)
+
+    protected = visual_causal._visible_target_regions(
+        scene,
+        same_group_raster_cells=frozenset(group.target.cells),
+    )
+
+    assert any(center == group.target.rounded_center for center, _region in protected)
+
+
+def test_same_group_alias_filter_preserves_other_complete_group_raw_target() -> None:
+    scene = extract_visual_scene(
+        _marker_frame(
+            (
+                ((10, 50), (30, 50)),
+                ((42, 42), (54, 42)),
+            ),
+            ((20, 28), (48, 20)),
+            (12, 14),
+            active_group=0,
+            active_index=0,
+            background=5,
+            active_color=0,
+            fixed_color=3,
+        )
+    )
+    groups = {group.marker_color: group for group in _embedded_marker_groups(scene)}
+    other_target = groups[14].target
+
+    protected = visual_causal._visible_target_regions(
+        scene,
+        same_group_raster_cells=frozenset(other_target.cells),
+    )
+
+    assert any(center == other_target.rounded_center for center, _region in protected)
+
+
 def test_compound_group_uses_exact_raw_signature_only_when_filtered_match_is_lost() -> None:
     frame = _composite_marker_frame()
     rows = [list(row) for row in frame.cells]
@@ -1086,6 +1168,7 @@ def test_marker_relocation_uses_board_derived_rings_after_local_exhaustion(
         *,
         minimum_radius: int = 6,
         maximum_radius: int = 27,
+        **_kwargs: object,
     ) -> tuple[Coordinate, ...]:
         calls.append((minimum_radius, maximum_radius))
         if maximum_radius == 27:
@@ -1318,6 +1401,109 @@ def test_marker_staging_reobserves_then_switches_before_exact_solve(
     assert final_potential < initial_potential
     assert policy.snapshot()["marker_stage_pending_switch"] is None
     assert policy.snapshot()["pending_plan_actions"] == 0
+
+
+def test_staging_projection_carries_only_the_starting_protected_target_surface(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    scene = extract_visual_scene(_composite_marker_frame())
+    group = next(item for item in _embedded_marker_groups(scene) if item.marker_color == 12)
+    endpoint = next(item for item in group.endpoints if item.color == 0)
+    stage = Coordinate(5, 5)
+    expected_regions = visual_causal._visible_target_regions(
+        scene,
+        same_group_raster_cells=visual_causal._marker_dynamic_footprint(group),
+    )
+    carried_regions: list[
+        tuple[tuple[tuple[int, int], frozenset[tuple[int, int]]], ...] | None
+    ] = []
+
+    monkeypatch.setattr(
+        visual_causal,
+        "_marker_relocation_candidates",
+        lambda *_args, **_kwargs: (stage,),
+    )
+    monkeypatch.setattr(
+        visual_causal,
+        "_marker_mediator_remains_readable",
+        lambda *_args, **_kwargs: True,
+    )
+    monkeypatch.setattr(
+        visual_causal,
+        "_scene_after_marker_stage",
+        lambda *_args, **_kwargs: (scene, group),
+    )
+
+    def shallow_followup(
+        *_args: object,
+        target_regions: tuple[tuple[tuple[int, int], frozenset[tuple[int, int]]], ...]
+        | None = None,
+        **_kwargs: object,
+    ) -> tuple[int, Coordinate]:
+        carried_regions.append(target_regions)
+        return (0, Coordinate(10, 10))
+
+    monkeypatch.setattr(
+        visual_causal,
+        "_best_marker_relocation_after_switch",
+        shallow_followup,
+    )
+
+    selected = visual_causal._best_marker_staging_relocation(
+        scene,
+        group,
+        endpoint,
+        rejected_signatures=set(),
+    )
+
+    assert selected == stage
+    assert carried_regions
+    assert all(regions == expected_regions for regions in carried_regions)
+
+
+def test_staging_projection_rejects_a_reparsed_target_identity(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    scene = extract_visual_scene(_composite_marker_frame())
+    groups = {item.marker_color: item for item in _embedded_marker_groups(scene)}
+    group = groups[12]
+    active = next(item for item in group.endpoints if item.color == 0)
+    selected = next(item for item in group.endpoints if item.object_ref != active.object_ref)
+    remapped_group = replace(group, target=groups[14].target)
+    target_regions = visual_causal._visible_target_regions(
+        scene,
+        same_group_raster_cells=visual_causal._marker_dynamic_footprint(group),
+    )
+    relocation_called = False
+
+    monkeypatch.setattr(
+        visual_causal,
+        "_scene_after_marker_role_switch",
+        lambda *_args, **_kwargs: (scene, remapped_group, selected),
+    )
+
+    def unexpected_relocation(*_args: object, **_kwargs: object) -> None:
+        nonlocal relocation_called
+        relocation_called = True
+        return None
+
+    monkeypatch.setattr(
+        visual_causal,
+        "_best_marker_relocation",
+        unexpected_relocation,
+    )
+
+    result = visual_causal._best_marker_relocation_after_switch(
+        scene,
+        group,
+        active,
+        selected,
+        rejected_signatures=set(),
+        target_regions=target_regions,
+    )
+
+    assert result is None
+    assert not relocation_called
 
 
 def test_marker_relocation_rejects_coordinate_inside_active_glyph(

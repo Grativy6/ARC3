@@ -7,7 +7,7 @@
   "build_status": "ACTIVE",
   "status": "IN_PROGRESS",
   "current_stage": "10",
-  "current_task": "diagnose the Campaign 18 two-stage continuation horizon and freeze Campaign 19",
+  "current_task": "freeze and run Campaign 19 from the verified same-group target-role repair",
   "implementation_branch": "build/003-bla-clef-mechanical-learner",
   "base": {
     "main_commit": "bea1eac99cb0f1b351526b1dc487d132ba1d40ef",
@@ -36,7 +36,8 @@
     "completion_observed": false,
     "best_levels_completed": 3,
     "latest_campaign": "build003-r11l-mechanical-seed7-98633c8f-campaign18",
-    "latest_campaign_status": "FAILED_INFRASTRUCTURE",
+    "latest_campaign_status": "FAILED_MECHANISM",
+    "latest_campaign_failure_classification": "POLICY_EXHAUSTION_TARGET_ROLE_ALIAS",
     "latest_campaign_levels_completed": 3,
     "latest_campaign_final_state": "NOT_FINISHED",
     "latest_campaign_score_boundary_state": "NOT_FINISHED",
@@ -90,7 +91,7 @@
     "pull_request_merged": false,
     "external_message_sent_as_owner": false
   },
-  "next_action": "verify and implement the smallest bounded two-stage bridge, replay Campaign 18 through the exact residual, commit it, then start official Campaign 19 from the frozen commit",
+  "next_action": "commit the verified same-group target-role repair, bind its evidence, push the frozen commit, then start official Campaign 19 and recompute after every returned frame",
   "notes": [
     "Update atomically after each meaningful task and preserve failed attempts.",
     "No synthetic or local result is completion unless the official target environment returns GameState.WIN.",

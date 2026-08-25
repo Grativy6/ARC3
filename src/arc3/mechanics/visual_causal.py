@@ -175,6 +175,9 @@ class VisualScene:
         }
 
 
+type _TargetRegions = tuple[tuple[tuple[int, int], frozenset[tuple[int, int]]], ...]
+
+
 @dataclass(frozen=True, slots=True)
 class AffineMechanic:
     """Observed placement-plus-mediator relation for one visual scope."""
@@ -1137,6 +1140,7 @@ def _marker_relocation_candidates(
     *,
     minimum_radius: int = 6,
     maximum_radius: int = 27,
+    target_regions: _TargetRegions | None = None,
 ) -> tuple[Coordinate, ...]:
     """Return a bounded target-relative candidate set for one group endpoint."""
 
@@ -1166,7 +1170,11 @@ def _marker_relocation_candidates(
     current_sum_x = sum(item.rounded_center[0] for item in group.endpoints)
     current_sum_y = sum(item.rounded_center[1] for item in group.endpoints)
     final_overlap_cells = _final_marker_target_overlap_cells(scene, group)
-    target_regions = _visible_target_regions(scene) if group.is_composite else ()
+    protected_target_regions = _marker_protected_target_regions(
+        scene,
+        group,
+        supplied=target_regions,
+    )
     candidates: list[Coordinate] = []
     for x, y in sorted(raw, key=lambda item: (item[1], item[0])):
         if endpoint.min_x <= x <= endpoint.max_x and endpoint.min_y <= y <= endpoint.max_y:
@@ -1197,7 +1205,7 @@ def _marker_relocation_candidates(
         prospective_endpoint = _translated_object_footprint(endpoint, center=(x, y))
         if any(
             prospective_endpoint & region
-            for center, region in target_regions
+            for center, region in protected_target_regions
             if potential != 0 or center != group.target.rounded_center
         ):
             continue
@@ -1294,13 +1302,41 @@ def _raster_line_cells(
 
 def _visible_target_regions(
     scene: VisualScene,
-) -> tuple[tuple[tuple[int, int], frozenset[tuple[int, int]]], ...]:
-    """Return target centers and their evidence-sensitive observed bounding boxes."""
+    *,
+    same_group_raster_cells: frozenset[tuple[int, int]] = frozenset(),
+) -> _TargetRegions:
+    """Return target centers and their evidence-sensitive observed bounding boxes.
 
+    A raw component wholly contained in the supplied group's observed mediator
+    plus inferred centerline raster is not counted as independent collision
+    evidence for that same group. Exact composite rings remain protected; this
+    local role filter never rewrites a partial target from history.
+    """
+
+    certified_raw_target_refs: set[str] = set()
+    if same_group_raster_cells:
+        endpoint_counts = Counter(
+            endpoint.center_cell
+            for endpoint in scene.endpoints
+            if endpoint.center_cell not in {scene.background, endpoint.color}
+        )
+        for marker_color, endpoint_count in endpoint_counts.items():
+            mediators = tuple(
+                mediator for mediator in scene.mediators if mediator.color == marker_color
+            )
+            targets = tuple(target for target in scene.targets if target.color == marker_color)
+            if 2 <= endpoint_count <= 6 and len(mediators) == 1 and len(targets) == 1:
+                certified_raw_target_refs.add(targets[0].object_ref)
     visible_targets = {
         (item.rounded_center, item.object_ref): item
         for item in (
-            *scene.targets,
+            *(
+                item
+                for item in scene.targets
+                if item.object_ref in certified_raw_target_refs
+                or not same_group_raster_cells
+                or not frozenset(item.cells) <= same_group_raster_cells
+            ),
             *(candidate for candidate, _signature in _composite_sparse_targets(scene)),
         )
     }
@@ -1334,6 +1370,42 @@ def _object_footprint(item: VisualObject) -> frozenset[tuple[int, int]]:
     """Return the observed glyph cells, including a differently colored center."""
 
     return frozenset((*item.cells, item.rounded_center))
+
+
+def _marker_dynamic_footprint(group: _EmbeddedMarkerGroup) -> frozenset[tuple[int, int]]:
+    """Return the observed mediator plus inferred centerline raster for one group."""
+
+    return frozenset(
+        (
+            *_object_footprint(group.mediator),
+            *(
+                cell
+                for endpoint in group.endpoints
+                for cell in _raster_line_cells(
+                    endpoint.rounded_center,
+                    group.mediator.rounded_center,
+                )
+            ),
+        )
+    )
+
+
+def _marker_protected_target_regions(
+    scene: VisualScene,
+    group: _EmbeddedMarkerGroup,
+    *,
+    supplied: _TargetRegions | None = None,
+) -> _TargetRegions:
+    """Resolve one composite group's protected target surface."""
+
+    if not group.is_composite:
+        return ()
+    if supplied is not None:
+        return supplied
+    return _visible_target_regions(
+        scene,
+        same_group_raster_cells=_marker_dynamic_footprint(group),
+    )
 
 
 def _marker_action_structure_is_readable(
@@ -1624,7 +1696,7 @@ def _marker_mediator_remains_readable(
     final: bool,
     static_cells: frozenset[tuple[int, int]] | None = None,
     other_mediators: tuple[VisualObject, ...] | None = None,
-    target_regions: tuple[tuple[tuple[int, int], frozenset[tuple[int, int]]], ...] | None = None,
+    target_regions: _TargetRegions | None = None,
 ) -> bool:
     """Preserve component separation for the predicted mediator glyph."""
 
@@ -1648,7 +1720,12 @@ def _marker_mediator_remains_readable(
         protected_target_regions = tuple(
             region
             for center, region in (
-                _visible_target_regions(scene) if target_regions is None else target_regions
+                _visible_target_regions(
+                    scene,
+                    same_group_raster_cells=_marker_dynamic_footprint(group),
+                )
+                if target_regions is None
+                else target_regions
             )
             if not (final and center == group.target.rounded_center)
         )
@@ -1917,9 +1994,22 @@ def _best_marker_target_separation(
         if group.is_composite
         else ()
     )
-    target_regions = _visible_target_regions(scene) if group.is_composite else ()
+    target_regions = (
+        _visible_target_regions(
+            scene,
+            same_group_raster_cells=_marker_dynamic_footprint(group),
+        )
+        if group.is_composite
+        else ()
+    )
     best: tuple[int, int, int, int, Coordinate] | None = None
-    for coordinate in _marker_relocation_candidates(scene, group, endpoint):
+    relocation_candidates = _marker_relocation_candidates(
+        scene,
+        group,
+        endpoint,
+        target_regions=target_regions,
+    )
+    for coordinate in relocation_candidates:
         signature = f"marker:{group.marker_color}:separate:{coordinate.x},{coordinate.y}"
         if signature in rejected_signatures:
             continue
@@ -2125,17 +2215,27 @@ def _best_marker_relocation_after_switch(
     *,
     rejected_signatures: set[str],
     allow_extended: bool = True,
+    target_regions: _TargetRegions | None = None,
 ) -> tuple[int, Coordinate] | None:
     projection = _scene_after_marker_role_switch(scene, group, active, selected)
     if projection is None:
         return None
     projected_scene, projected_group, projected_active = projection
+    if target_regions is not None and (
+        projected_group.target.rounded_center != group.target.rounded_center
+        or frozenset(projected_group.target.cells) != frozenset(group.target.cells)
+    ):
+        # A shallow target surface belongs only to the target identity observed
+        # before staging.  Never carry it through a role-switch projection that
+        # reparses the marker against a different target.
+        return None
     return _best_marker_relocation(
         projected_scene,
         projected_group,
         projected_active,
         rejected_signatures=rejected_signatures,
         allow_extended=allow_extended,
+        target_regions=target_regions,
     )
 
 
@@ -2226,9 +2326,22 @@ def _best_marker_staging_relocation(
         if group.is_composite
         else ()
     )
-    target_regions = _visible_target_regions(scene) if group.is_composite else ()
+    target_regions = (
+        _visible_target_regions(
+            scene,
+            same_group_raster_cells=_marker_dynamic_footprint(group),
+        )
+        if group.is_composite
+        else ()
+    )
     best: tuple[int, int, int, str, Coordinate] | None = None
-    for coordinate in _marker_relocation_candidates(scene, group, endpoint):
+    relocation_candidates = _marker_relocation_candidates(
+        scene,
+        group,
+        endpoint,
+        target_regions=target_regions,
+    )
+    for coordinate in relocation_candidates:
         resulting_sum_x = sum_x - endpoint.rounded_center[0] + coordinate.x
         resulting_sum_y = sum_y - endpoint.rounded_center[1] + coordinate.y
         stage_potential = _marker_group_potential(
@@ -2304,6 +2417,12 @@ def _best_marker_staging_relocation(
                 switch_endpoint,
                 rejected_signatures=rejected_signatures,
                 allow_extended=False,
+                # The stage projection deliberately translates only observed
+                # endpoint and mediator glyphs; it cannot rerender connectors.
+                # Carry the starting observation's protected regions through
+                # this one shallow certificate, then recompute after the real
+                # environment returns the staged consequence.
+                target_regions=target_regions,
             )
             if followup is None:
                 continue
@@ -2329,6 +2448,7 @@ def _best_marker_relocation(
     *,
     rejected_signatures: set[str],
     allow_extended: bool = True,
+    target_regions: _TargetRegions | None = None,
 ) -> tuple[int, Coordinate] | None:
     sum_x = sum(item.rounded_center[0] for item in group.endpoints)
     sum_y = sum(item.rounded_center[1] for item in group.endpoints)
@@ -2346,8 +2466,17 @@ def _best_marker_relocation(
         if group.is_composite
         else ()
     )
-    target_regions = _visible_target_regions(scene) if group.is_composite else ()
-    ordinary = _marker_relocation_candidates(scene, group, endpoint)
+    protected_target_regions = _marker_protected_target_regions(
+        scene,
+        group,
+        supplied=target_regions,
+    )
+    ordinary = _marker_relocation_candidates(
+        scene,
+        group,
+        endpoint,
+        target_regions=protected_target_regions,
+    )
     candidate_batches = [ordinary]
     if allow_extended:
         board_diagonal = math.ceil(math.hypot(scene.width - 1, scene.height - 1))
@@ -2358,6 +2487,7 @@ def _best_marker_relocation(
                 endpoint,
                 minimum_radius=28,
                 maximum_radius=board_diagonal,
+                target_regions=protected_target_regions,
             )
         )
     best: tuple[int, int, int, int, Coordinate] | None = None
@@ -2404,7 +2534,7 @@ def _best_marker_relocation(
                     final=potential == 0,
                     static_cells=static_cells,
                     other_mediators=other_mediators,
-                    target_regions=target_regions,
+                    target_regions=protected_target_regions,
                 )
             else:
                 remains_readable = _marker_mediator_remains_readable(
