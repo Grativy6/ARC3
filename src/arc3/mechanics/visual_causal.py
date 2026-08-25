@@ -847,6 +847,70 @@ def _glyph_radius(item: VisualObject) -> int:
     )
 
 
+_STATIC_COMPONENT_FOOTPRINT_MULTIPLIER = 4
+
+
+def _object_footprint(item: VisualObject) -> frozenset[tuple[int, int]]:
+    """Return the observed glyph cells, including a differently colored center."""
+
+    return frozenset((*item.cells, item.rounded_center))
+
+
+def _translated_object_footprint(
+    item: VisualObject,
+    *,
+    center: tuple[int, int],
+) -> frozenset[tuple[int, int]]:
+    old_x, old_y = item.rounded_center
+    dx = center[0] - old_x
+    dy = center[1] - old_y
+    return frozenset((x + dx, y + dy) for x, y in _object_footprint(item))
+
+
+def _large_static_component_cells(
+    scene: VisualScene,
+    *,
+    reference_footprint_size: int,
+) -> frozenset[tuple[int, int]]:
+    """Return a conservative observation-derived static-terrain candidate mask.
+
+    Recognized marker glyphs remain dynamic.  An unrecognized component is
+    protected only when it is at least four times the observed movable glyph,
+    which excludes small overlays and HUD-like fragments without assigning
+    meaning to a color or object identity.
+    """
+
+    minimum_area = _STATIC_COMPONENT_FOOTPRINT_MULTIPLIER * reference_footprint_size
+    return frozenset(
+        cell
+        for item in scene.objects
+        if item.role is VisualObjectRole.OTHER and item.area >= minimum_area
+        for cell in item.cells
+    )
+
+
+def _marker_mediator_avoids_static_components(
+    scene: VisualScene,
+    group: _EmbeddedMarkerGroup,
+    *,
+    mediator_after: tuple[int, int],
+    static_cells: frozenset[tuple[int, int]] | None = None,
+) -> bool:
+    """Reject prospective mediator footprints that overwrite large terrain."""
+
+    current_footprint = _object_footprint(group.mediator)
+    protected = (
+        _large_static_component_cells(
+            scene,
+            reference_footprint_size=len(current_footprint),
+        )
+        if static_cells is None
+        else static_cells
+    )
+    prospective = _translated_object_footprint(group.mediator, center=mediator_after)
+    return not (prospective & (protected - current_footprint))
+
+
 def _marker_mediator_remains_readable(
     scene: VisualScene,
     group: _EmbeddedMarkerGroup,
@@ -855,13 +919,29 @@ def _marker_mediator_remains_readable(
     coordinate: Coordinate,
     mediator_after: tuple[int, int],
     final: bool,
+    static_cells: frozenset[tuple[int, int]] | None = None,
 ) -> bool:
     """Preserve component separation for the predicted mediator glyph."""
 
+    if not _marker_mediator_avoids_static_components(
+        scene,
+        group,
+        mediator_after=mediator_after,
+        static_cells=static_cells,
+    ):
+        return False
     mediator_radius = _glyph_radius(group.mediator)
-    if not final:
-        target_clearance = mediator_radius + _glyph_radius(group.target) + 1
-        if _chebyshev_distance(mediator_after, group.target.rounded_center) <= target_clearance:
+    for candidate_target in scene.targets:
+        if final and candidate_target.object_ref == group.target.object_ref:
+            continue
+        target_clearance = mediator_radius + _glyph_radius(candidate_target) + 1
+        if (
+            _chebyshev_distance(
+                mediator_after,
+                candidate_target.rounded_center,
+            )
+            <= target_clearance
+        ):
             return False
     for candidate_endpoint in scene.endpoints:
         endpoint_center = (
@@ -918,7 +998,7 @@ def _scene_after_marker_stage(
     group: _EmbeddedMarkerGroup,
     endpoint: VisualObject,
     coordinate: Coordinate,
-) -> tuple[VisualScene, _EmbeddedMarkerGroup]:
+) -> tuple[VisualScene, _EmbeddedMarkerGroup] | None:
     """Project one observed-footprint relocation for bounded lookahead only."""
 
     resulting_sum_x = (
@@ -935,6 +1015,12 @@ def _scene_after_marker_stage(
         resulting_sum_x // group.arity,
         resulting_sum_y // group.arity,
     )
+    if not _marker_mediator_avoids_static_components(
+        scene,
+        group,
+        mediator_after=mediator_center,
+    ):
+        return None
     endpoint_after = _translated_visual_object(
         endpoint,
         center=(coordinate.x, coordinate.y),
@@ -993,6 +1079,10 @@ def _best_marker_staging_relocation(
     sum_x = sum(item.rounded_center[0] for item in group.endpoints)
     sum_y = sum(item.rounded_center[1] for item in group.endpoints)
     current = _marker_group_potential(group, sum_x=sum_x, sum_y=sum_y)
+    static_cells = _large_static_component_cells(
+        scene,
+        reference_footprint_size=len(_object_footprint(group.mediator)),
+    )
     best: tuple[int, int, int, str, Coordinate] | None = None
     for coordinate in _marker_relocation_candidates(scene, group, endpoint):
         resulting_sum_x = sum_x - endpoint.rounded_center[0] + coordinate.x
@@ -1022,14 +1112,18 @@ def _best_marker_staging_relocation(
             coordinate=coordinate,
             mediator_after=mediator_after,
             final=False,
+            static_cells=static_cells,
         ):
             continue
-        projected_scene, projected_group = _scene_after_marker_stage(
+        projection = _scene_after_marker_stage(
             scene,
             group,
             endpoint,
             coordinate,
         )
+        if projection is None:
+            continue
+        projected_scene, projected_group = projection
         projected_endpoint_ref = projected_group.endpoints[
             group.endpoints.index(endpoint)
         ].object_ref
@@ -1069,6 +1163,10 @@ def _best_marker_relocation(
     sum_x = sum(item.rounded_center[0] for item in group.endpoints)
     sum_y = sum(item.rounded_center[1] for item in group.endpoints)
     current = _marker_group_potential(group, sum_x=sum_x, sum_y=sum_y)
+    static_cells = _large_static_component_cells(
+        scene,
+        reference_footprint_size=len(_object_footprint(group.mediator)),
+    )
     best: tuple[int, int, int, Coordinate] | None = None
     for coordinate in _marker_relocation_candidates(scene, group, endpoint):
         resulting_sum_x = sum_x - endpoint.rounded_center[0] + coordinate.x
@@ -1089,6 +1187,7 @@ def _best_marker_relocation(
             coordinate=coordinate,
             mediator_after=mediator_after,
             final=potential == 0,
+            static_cells=static_cells,
         ):
             continue
         signature_kind = "solve" if potential == 0 else "improve"
@@ -1099,6 +1198,50 @@ def _best_marker_relocation(
         if best is None or candidate[:3] < best[:3]:
             best = candidate
     return None if best is None else (best[0], best[3])
+
+
+def _best_marker_group_transfer(
+    scene: VisualScene,
+    groups: tuple[_EmbeddedMarkerGroup, ...],
+    active: VisualObject,
+    *,
+    rejected_signatures: set[str],
+) -> tuple[_EmbeddedMarkerGroup, VisualObject] | None:
+    """Choose a group switch only when a safe strict continuation is visible."""
+
+    best: tuple[int, int, int, str, _EmbeddedMarkerGroup, VisualObject] | None = None
+    for group in groups:
+        for endpoint in group.endpoints:
+            if endpoint.object_ref == active.object_ref:
+                continue
+            coordinate = Coordinate(*endpoint.rounded_center)
+            role_transfer_signatures = {
+                f"marker:{group.marker_color}:activate:{coordinate.x},{coordinate.y}",
+                f"marker:{group.marker_color}:defer:{coordinate.x},{coordinate.y}",
+                f"marker:{group.marker_color}:rotate:{coordinate.x},{coordinate.y}",
+            }
+            if role_transfer_signatures & rejected_signatures:
+                continue
+            prospective = _best_marker_relocation(
+                scene,
+                group,
+                endpoint,
+                rejected_signatures=rejected_signatures,
+            )
+            if prospective is None:
+                continue
+            potential, _followup = prospective
+            candidate = (
+                potential,
+                coordinate.y,
+                coordinate.x,
+                endpoint.object_ref,
+                group,
+                endpoint,
+            )
+            if best is None or candidate[:4] < best[:4]:
+                best = candidate
+    return None if best is None else (best[4], best[5])
 
 
 def _embedded_marker_plan(
@@ -1196,24 +1339,30 @@ def _embedded_marker_plan(
         )
 
     if active_group is None:
-        candidates = tuple(
-            item
-            for item in group.endpoints
-            if (
-                f"marker:{group.marker_color}:activate:"
-                f"{item.rounded_center[0]},{item.rounded_center[1]}"
-            )
-            not in rejected_signatures
+        transfer = _best_marker_group_transfer(
+            scene,
+            unresolved,
+            active,
+            rejected_signatures=rejected_signatures,
         )
-        if not candidates:
+        if transfer is None:
             return None
-        selected = min(candidates, key=lambda item: item.object_ref)
+        group, selected = transfer
+        identity = f"marker|{level_index}|{group.marker_color}|{group.arity}|{scene.frame_hash}"
+        mechanic_ref = "affine-marker:" + hashlib.sha256(identity.encode("ascii")).hexdigest()[:20]
+        plan_id = (
+            "visual-plan:"
+            + hashlib.sha256(f"{mechanic_ref}|local".encode("ascii")).hexdigest()[:20]
+        )
         coordinate = Coordinate(*selected.rounded_center)
         signature = f"marker:{group.marker_color}:activate:{coordinate.x},{coordinate.y}"
         return PlannedClick(
             coordinate=coordinate,
             purpose=VisualActionPurpose.PROBE,
-            expectation="transfer the active role to a fixed endpoint with the matched marker",
+            expectation=(
+                "transfer the active role to a fixed endpoint with the matched marker and "
+                "a bounded collision-safe continuation"
+            ),
             mechanic_ref=mechanic_ref,
             plan_id=plan_id,
             plan_signature=signature,
@@ -1273,7 +1422,43 @@ def _embedded_marker_plan(
             rejected_signatures=rejected_signatures,
         )
         if stage is None:
-            return None
+            deferred_groups = tuple(item for item in unresolved if item != group)
+            transfer = _best_marker_group_transfer(
+                scene,
+                deferred_groups,
+                active,
+                rejected_signatures=rejected_signatures,
+            )
+            if transfer is None:
+                return None
+            deferred_group, selected = transfer
+            identity = (
+                f"marker|{level_index}|{deferred_group.marker_color}|"
+                f"{deferred_group.arity}|{scene.frame_hash}"
+            )
+            deferred_ref = (
+                "affine-marker:" + hashlib.sha256(identity.encode("ascii")).hexdigest()[:20]
+            )
+            deferred_plan_id = (
+                "visual-plan:"
+                + hashlib.sha256(f"{deferred_ref}|local".encode("ascii")).hexdigest()[:20]
+            )
+            coordinate = Coordinate(*selected.rounded_center)
+            signature = f"marker:{deferred_group.marker_color}:defer:{coordinate.x},{coordinate.y}"
+            return PlannedClick(
+                coordinate=coordinate,
+                purpose=VisualActionPurpose.PROBE,
+                expectation=(
+                    "defer a marker group with no bounded same-group continuation and "
+                    "transfer the active role to another collision-safe unresolved group"
+                ),
+                mechanic_ref=deferred_ref,
+                plan_id=deferred_plan_id,
+                plan_signature=signature,
+                target_center=deferred_group.target.rounded_center,
+                mediator_color=deferred_group.marker_color,
+                arity=deferred_group.arity,
+            )
         signature = f"marker:{group.marker_color}:stage:{stage.x},{stage.y}"
         return PlannedClick(
             coordinate=stage,

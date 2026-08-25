@@ -404,6 +404,68 @@ def test_predicted_mediator_rejects_cross_group_endpoint_near_overlap() -> None:
     )
 
 
+def test_predicted_mediator_rejects_large_static_component_by_relative_area() -> None:
+    frame = _marker_frame(
+        (((10, 50), (30, 50)),),
+        ((40, 10),),
+        (12,),
+        active_group=0,
+        active_index=0,
+        background=5,
+        active_color=0,
+        fixed_color=3,
+    )
+    rows = [list(row) for row in frame.cells]
+    for y in range(25, 36):
+        for x in range(21, 30):
+            rows[y][x] = 10
+    for y in range(37, 45):
+        for x in range(48, 56):
+            rows[y][x] = 10
+    scene = extract_visual_scene(GridFrame.from_rows(rows))
+    group = _embedded_marker_groups(scene)[0]
+
+    assert not visual_causal._marker_mediator_avoids_static_components(
+        scene,
+        group,
+        mediator_after=(25, 30),
+    )
+    assert visual_causal._marker_mediator_avoids_static_components(
+        scene,
+        group,
+        mediator_after=(52, 41),
+    )
+
+
+def test_virtual_marker_stage_cannot_overwrite_large_static_component() -> None:
+    frame = _marker_frame(
+        (((10, 50), (30, 50)),),
+        ((40, 10),),
+        (12,),
+        active_group=0,
+        active_index=0,
+        background=5,
+        active_color=0,
+        fixed_color=3,
+    )
+    rows = [list(row) for row in frame.cells]
+    for y in range(25, 36):
+        for x in range(21, 30):
+            rows[y][x] = 10
+    scene = extract_visual_scene(GridFrame.from_rows(rows))
+    group = _embedded_marker_groups(scene)[0]
+    active = next(item for item in group.endpoints if item.color == 0)
+
+    projection = visual_causal._scene_after_marker_stage(
+        scene,
+        group,
+        active,
+        Coordinate(20, 10),
+    )
+
+    assert projection is None
+
+
 def test_one_discriminating_transition_opens_provisional_affine_mechanic() -> None:
     target = (20, 10)
     before = extract_visual_scene(_frame((8, 32), (32, 32), target))
@@ -620,6 +682,85 @@ def test_marker_planner_does_not_emit_an_unreadable_direct_destination(
     assert action.coordinate != blocked_direct
     assert "marker-group" in policy._pending_prediction
     assert policy.snapshot()["pending_plan_actions"] == 0
+
+
+def test_marker_planner_prefers_safe_same_group_transfer_before_deferral(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    environment = _MarkerAffineEnvironment(
+        groups=[[(10, 50), (30, 50)], [(38, 52), (58, 52)]],
+        targets=((20, 28), (48, 32)),
+        marker_colors=(12, 14),
+    )
+    policy = VisualCausalPolicy()
+    policy._last_active_color = environment.active_color
+    original_readable = visual_causal._marker_mediator_remains_readable
+
+    def block_active_endpoint(
+        scene: VisualScene,
+        group: visual_causal._EmbeddedMarkerGroup,
+        endpoint: visual_causal.VisualObject,
+        **kwargs: object,
+    ) -> bool:
+        if group.marker_color == 12 and endpoint.color == environment.active_color:
+            return False
+        return original_readable(scene, group, endpoint, **kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(
+        visual_causal,
+        "_marker_mediator_remains_readable",
+        block_active_endpoint,
+    )
+
+    action = policy.select(environment.observation())
+
+    assert action.coordinate == Coordinate(*environment.groups[0][1])
+    assert "same marker group" in policy._pending_prediction
+
+
+def test_terrain_blocked_active_group_defers_to_safe_unresolved_group(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    environment = _MarkerAffineEnvironment(
+        groups=[[(10, 50), (30, 50)], [(38, 52), (58, 52)]],
+        targets=((20, 28), (48, 32)),
+        marker_colors=(12, 14),
+    )
+    policy = VisualCausalPolicy()
+    policy._last_active_color = environment.active_color
+    original_readable = visual_causal._marker_mediator_remains_readable
+
+    def block_first_group(
+        scene: VisualScene,
+        group: visual_causal._EmbeddedMarkerGroup,
+        endpoint: visual_causal.VisualObject,
+        **kwargs: object,
+    ) -> bool:
+        if group.marker_color == 12:
+            return False
+        return original_readable(scene, group, endpoint, **kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(
+        visual_causal,
+        "_marker_mediator_remains_readable",
+        block_first_group,
+    )
+    observation = environment.observation()
+
+    deferred = policy.select(observation)
+
+    assert deferred.coordinate is not None
+    assert (deferred.coordinate.x, deferred.coordinate.y) in environment.groups[1]
+    assert "defer a marker group" in policy._pending_prediction
+    observation = environment.step(deferred)
+    policy.accept_consequence(observation)
+    assert environment.active_group == 1
+
+    next_action = policy.select(observation)
+    assert next_action.coordinate not in {
+        Coordinate(*endpoint) for endpoint in environment.groups[1]
+    }
+    assert "marker-group" in policy._pending_prediction
 
 
 def test_active_known_without_a_safe_marker_plan_does_not_bootstrap(
@@ -1038,6 +1179,10 @@ def test_game_over_consequence_is_receipted_before_mandatory_reset() -> None:
     probe = policy.select(observation)
     observation = environment.step(probe)
     policy.accept_consequence(observation)
+    learner = policy.mechanical_learner
+    assert learner is not None
+    retained_refs = tuple(item.ref for item in learner.ledger.active())
+    assert retained_refs
     selected = policy.select(observation)
     failed = _observation(
         environment.active,
@@ -1066,4 +1211,5 @@ def test_game_over_consequence_is_receipted_before_mandatory_reset() -> None:
     )
     assert reset == ActionRequest(ActionName.RESET)
     assert policy.snapshot()["failed_plan_count"] == 1
+    assert tuple(item.ref for item in learner.ledger.active()) == retained_refs
     assert next_action != selected
