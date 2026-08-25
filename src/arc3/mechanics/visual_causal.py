@@ -1039,6 +1039,24 @@ def _marker_relocation_candidates(
     current_sum_x = sum(item.rounded_center[0] for item in group.endpoints)
     current_sum_y = sum(item.rounded_center[1] for item in group.endpoints)
     final_overlap_cells = _final_marker_target_overlap_cells(scene, group)
+    visible_targets = tuple(
+        {
+            item.object_ref: item
+            for item in (
+                *scene.targets,
+                *(candidate for candidate, _signature in _composite_sparse_targets(scene)),
+            )
+        }.values()
+    )
+    other_target_regions = tuple(
+        frozenset(
+            (target_x, target_y)
+            for target_y in range(item.min_y, item.max_y + 1)
+            for target_x in range(item.min_x, item.max_x + 1)
+        )
+        for item in visible_targets
+        if item.rounded_center != group.target.rounded_center
+    )
     candidates: list[Coordinate] = []
     for x, y in sorted(raw, key=lambda item: (item[1], item[0])):
         potential = _marker_group_potential(
@@ -1063,6 +1081,9 @@ def _marker_relocation_candidates(
             < 6
             for item in scene.endpoints
         ):
+            continue
+        prospective_endpoint = _translated_object_footprint(endpoint, center=(x, y))
+        if any(prospective_endpoint & region for region in other_target_regions):
             continue
         candidates.append(Coordinate(x, y))
     return tuple(candidates)
@@ -1238,6 +1259,7 @@ def _marker_mediator_remains_readable(
     mediator_after: tuple[int, int],
     final: bool,
     static_cells: frozenset[tuple[int, int]] | None = None,
+    other_mediators: tuple[VisualObject, ...] | None = None,
 ) -> bool:
     """Preserve component separation for the predicted mediator glyph."""
 
@@ -1249,6 +1271,20 @@ def _marker_mediator_remains_readable(
     ):
         return False
     mediator_radius = _glyph_radius(group.mediator)
+    if any(
+        _chebyshev_distance(mediator_after, other.rounded_center)
+        < mediator_radius + _glyph_radius(other) + 1
+        for other in (
+            tuple(
+                candidate.mediator
+                for candidate in _embedded_marker_groups(scene)
+                if candidate.marker_color != group.marker_color
+            )
+            if other_mediators is None
+            else other_mediators
+        )
+    ):
+        return False
     if not final:
         prospective_mediator = _translated_object_footprint(
             group.mediator,
@@ -1507,6 +1543,11 @@ def _best_marker_staging_relocation(
         scene,
         reference_footprint_size=len(_object_footprint(group.mediator)),
     )
+    other_mediators = tuple(
+        candidate.mediator
+        for candidate in _embedded_marker_groups(scene)
+        if candidate.marker_color != group.marker_color
+    )
     best: tuple[int, int, int, str, Coordinate] | None = None
     for coordinate in _marker_relocation_candidates(scene, group, endpoint):
         resulting_sum_x = sum_x - endpoint.rounded_center[0] + coordinate.x
@@ -1537,6 +1578,7 @@ def _best_marker_staging_relocation(
             mediator_after=mediator_after,
             final=False,
             static_cells=static_cells,
+            other_mediators=other_mediators,
         ):
             continue
         projection = _scene_after_marker_stage(
@@ -1592,6 +1634,11 @@ def _best_marker_relocation(
         scene,
         reference_footprint_size=len(_object_footprint(group.mediator)),
     )
+    other_mediators = tuple(
+        candidate.mediator
+        for candidate in _embedded_marker_groups(scene)
+        if candidate.marker_color != group.marker_color
+    )
     ordinary = _marker_relocation_candidates(scene, group, endpoint)
     candidate_batches = [ordinary]
     if allow_extended:
@@ -1627,6 +1674,7 @@ def _best_marker_relocation(
                 mediator_after=mediator_after,
                 final=potential == 0,
                 static_cells=static_cells,
+                other_mediators=other_mediators,
             ):
                 continue
             signature_kind = "solve" if potential == 0 else "improve"

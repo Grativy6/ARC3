@@ -429,6 +429,14 @@ def test_multicolor_marker_compounds_retain_affine_groups_and_blocker_gate() -> 
     )
     active = visual_causal._embedded_marker_active_endpoint(scene, active_color=0)
     assert active is not None
+    assert not visual_causal._marker_mediator_remains_readable(
+        scene,
+        groups[12],
+        active,
+        coordinate=Coordinate(40, 20),
+        mediator_after=groups[9].mediator.rounded_center,
+        final=False,
+    )
     projection = visual_causal._scene_after_marker_stage(
         scene,
         groups[12],
@@ -448,6 +456,25 @@ def test_multicolor_marker_compounds_retain_affine_groups_and_blocker_gate() -> 
             center=reparsed[12].mediator.rounded_center,
         )
         == frozenset({7, 12})
+    )
+    candidates = visual_causal._marker_relocation_candidates(
+        scene,
+        groups[12],
+        active,
+    )
+    other_target_box = frozenset(
+        (x, y) for y in range(55, 62) for x in range(35, 42)
+    )
+    assert Coordinate(41, 54) not in candidates
+    assert all(
+        not (
+            visual_causal._translated_object_footprint(
+                active,
+                center=(candidate.x, candidate.y),
+            )
+            & other_target_box
+        )
+        for candidate in candidates
     )
 
 
