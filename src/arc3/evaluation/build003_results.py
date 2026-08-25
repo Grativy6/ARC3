@@ -12,7 +12,7 @@ from arc3.mechanics import CHANNEL_ORDER, CompositionMode
 from arc3.types import GameStateName
 
 BUILD003_RESULT_SCHEMA = "arc3.build003.curriculum-result.v0.3"
-BUILD003_SUMMARY_SCHEMA = "arc3.build003.paired-summary.v0.2"
+BUILD003_SUMMARY_SCHEMA = "arc3.build003.paired-summary.v0.3"
 FROZEN_SEED_COUNT = 30
 
 VARIANTS = (

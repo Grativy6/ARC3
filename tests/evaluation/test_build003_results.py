@@ -151,6 +151,7 @@ def test_preregistered_paired_metrics_use_identical_seed_family_pairs() -> None:
     assert h1.reference_failures == h1.treatment_failures == 0
     summary = ledger.preregistered_summary()
     json.dumps(summary, sort_keys=True)
+    assert summary["schema"] == "arc3.build003.paired-summary.v0.3"
     assert summary["row_count"] == 1200
     assert summary["h2_conservative_repair"] == {
         "modifier_rows": 150,
