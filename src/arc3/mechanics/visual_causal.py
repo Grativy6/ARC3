@@ -10,6 +10,7 @@ walkthrough action sequences.
 from __future__ import annotations
 
 import hashlib
+import heapq
 import itertools
 import math
 from collections import Counter, deque
@@ -223,7 +224,52 @@ class PlannedClick:
     mediator_color: int
     arity: int
     completes_local_target: bool = False
+    completes_hierarchy: bool = False
     stages_for_switch: bool = False
+
+
+@dataclass(frozen=True, slots=True)
+class _AffineChildGroup:
+    """One uniquely assigned lower-layer affine relation."""
+
+    mediator: VisualObject
+    endpoints: tuple[VisualObject, ...]
+
+    @property
+    def arity(self) -> int:
+        return len(self.endpoints)
+
+
+@dataclass(frozen=True, slots=True)
+class _AffineHierarchy:
+    """A bounded candidate relation from child mediators to one parent target."""
+
+    target: VisualObject
+    children: tuple[_AffineChildGroup, ...]
+    active_color: int
+    mechanic_ref: str
+
+
+@dataclass(frozen=True, slots=True)
+class _HierarchyChildLayout:
+    """One child group's final endpoint geometry around a distinct support."""
+
+    group: _AffineChildGroup
+    support: tuple[int, int]
+    movers: tuple[VisualObject, ...]
+    points: tuple[tuple[int, int], ...]
+    dynamic_footprint: frozenset[tuple[int, int]]
+    radius: int
+    movement_cost: float
+
+
+@dataclass(frozen=True, slots=True)
+class _HierarchyPlan:
+    """One fully preflighted, finite two-layer affine intervention."""
+
+    actions: tuple[PlannedClick, ...]
+    signature: str
+    supports: tuple[tuple[int, int], ...]
 
 
 @dataclass(frozen=True, slots=True)
@@ -330,6 +376,31 @@ _SMALL_COMPONENT_FRAGMENT_AREA = 12
 _SMALL_COMPONENT_COMBINED_AREA = 24
 _SMALL_COMPONENT_MAX_SPAN = 9
 _SMALL_COMPONENT_MERGE_DISTANCE = 3
+_MAX_HIERARCHY_CHILD_LAYOUTS = 8
+_MAX_HIERARCHY_LAYOUT_COMBINATIONS = 512
+_MAX_HIERARCHY_SEARCH_BUDGET = 131_072
+_HIERARCHY_SEQUENCE_EVALUATION_COST = 1_024
+
+
+class _HierarchySearchExhausted(PolicyError):
+    """The deterministic hierarchy ceiling was reached without an action."""
+
+
+@dataclass(slots=True)
+class _HierarchySearchBudget:
+    """One global deterministic ceiling for a hierarchy search."""
+
+    remaining: int
+
+    def consume(self, cost: int = 1) -> None:
+        if cost < 1:
+            raise ValueError("hierarchy search cost must be positive")
+        if cost > self.remaining:
+            self.remaining = 0
+            raise _HierarchySearchExhausted(
+                "affine hierarchy deterministic search budget exhausted"
+            )
+        self.remaining -= cost
 
 
 def _small_components_would_merge(
@@ -743,6 +814,9 @@ def _radial_plan_points(
     if not 2 <= arity <= 6:
         return None
     active_color = movers[0].color
+    unrelated_target_regions = tuple(
+        region for center, region in _visible_target_regions(scene) if center != target
+    )
     for radius in (7, 9, 11, 13, 16, 19, 23, 27):
         for rotation_index in range(16):
             rotation = (2 * math.pi * rotation_index) / 16
@@ -793,6 +867,9 @@ def _radial_plan_points(
                     plan_is_readable = False
                     break
                 prospective = _translated_object_footprint(mover, center=(x, y))
+                if any(prospective & region for region in unrelated_target_regions):
+                    plan_is_readable = False
+                    break
                 if any(
                     min(
                         max(abs(lx - rx), abs(ly - ry))
@@ -3354,6 +3431,989 @@ def _unique_affine_endpoint_group(
     return best[1]
 
 
+def _unique_affine_hierarchy(
+    scene: VisualScene,
+    *,
+    active_color: int,
+    search_budget: _HierarchySearchBudget | None = None,
+) -> _AffineHierarchy | None:
+    """Return one exact-cover child-mediator hierarchy, or fail closed.
+
+    The relation is intentionally narrower than ordinary affine transfer.  It
+    requires multiple same-palette child mediators, one differently paletted
+    raw target, one active endpoint, and a unique global partition of every
+    endpoint into centroid-supported child groups.  Local best matches are not
+    enough: accepting them independently is the flat-target reuse failure this
+    layer exists to prevent.
+    """
+
+    if search_budget is None:
+        search_budget = _HierarchySearchBudget(_MAX_HIERARCHY_SEARCH_BUDGET)
+    endpoints = scene.endpoints
+    mediators = scene.mediators
+    targets = scene.targets
+    if (
+        not 4 <= len(endpoints) <= 12
+        or not 2 <= len(mediators) <= 6
+        or len(targets) != 1
+        or len({item.color for item in mediators}) != 1
+        or targets[0].color == mediators[0].color
+    ):
+        return None
+    active = tuple(item for item in endpoints if item.color == active_color)
+    if len(active) != 1:
+        return None
+
+    candidates_by_mediator: list[tuple[tuple[float, tuple[VisualObject, ...]], ...]] = []
+    for mediator in mediators:
+        candidates: list[tuple[float, tuple[VisualObject, ...]]] = []
+        for arity in range(2, min(6, len(endpoints)) + 1):
+            for group in itertools.combinations(endpoints, arity):
+                search_budget.consume()
+                centroid_x = sum(item.center_x for item in group) / arity
+                centroid_y = sum(item.center_y for item in group) / arity
+                error = abs(centroid_x - mediator.center_x) + abs(centroid_y - mediator.center_y)
+                if error <= 1.5:
+                    candidates.append((error, group))
+        if not candidates:
+            return None
+        candidates_by_mediator.append(
+            tuple(
+                sorted(
+                    candidates,
+                    key=lambda item: (
+                        item[0],
+                        len(item[1]),
+                        tuple(endpoint.object_ref for endpoint in item[1]),
+                    ),
+                )
+            )
+        )
+
+    all_refs = frozenset(item.object_ref for item in endpoints)
+    solutions: list[tuple[_AffineChildGroup, ...]] = []
+
+    def search_exact_cover(
+        mediator_index: int,
+        used_refs: frozenset[str],
+        chosen: tuple[_AffineChildGroup, ...],
+    ) -> None:
+        search_budget.consume()
+        if len(solutions) > 1:
+            return
+        if mediator_index == len(mediators):
+            if used_refs == all_refs:
+                solutions.append(chosen)
+            return
+        mediator = mediators[mediator_index]
+        for _error, group in candidates_by_mediator[mediator_index]:
+            refs = frozenset(item.object_ref for item in group)
+            if refs & used_refs:
+                continue
+            search_exact_cover(
+                mediator_index + 1,
+                used_refs | refs,
+                (*chosen, _AffineChildGroup(mediator=mediator, endpoints=group)),
+            )
+
+    search_exact_cover(0, frozenset(), ())
+    if len(solutions) != 1:
+        return None
+    children = solutions[0]
+    active_children = tuple(
+        child
+        for child in children
+        if any(item.object_ref == active[0].object_ref for item in child.endpoints)
+    )
+    if len(active_children) != 1:
+        return None
+    first = active_children[0]
+    ordered = (
+        first,
+        *sorted(
+            (child for child in children if child is not first),
+            key=lambda child: (
+                child.arity,
+                child.mediator.rounded_center[1],
+                child.mediator.rounded_center[0],
+                child.mediator.object_ref,
+            ),
+        ),
+    )
+    identity = f"{scene.frame_hash}|{targets[0].color}|{mediators[0].color}|" + "|".join(
+        f"{child.mediator.rounded_center}:"
+        + ",".join(sorted(item.object_ref for item in child.endpoints))
+        for child in ordered
+    )
+    return _AffineHierarchy(
+        target=targets[0],
+        children=ordered,
+        active_color=active_color,
+        mechanic_ref=(
+            "affine-hierarchy-mechanic:" + hashlib.sha256(identity.encode("utf-8")).hexdigest()[:24]
+        ),
+    )
+
+
+def _hierarchy_dynamic_footprint(
+    scene: VisualScene,
+    group: _AffineChildGroup,
+) -> frozenset[tuple[int, int]]:
+    """Return one observed child relation's movable glyph and connector surface."""
+
+    glyph_cells = frozenset(
+        (
+            *_object_footprint(group.mediator),
+            *(cell for endpoint in group.endpoints for cell in _object_footprint(endpoint)),
+        )
+    )
+    connector_evidence = _hierarchy_connector_evidence(scene, group)
+    if connector_evidence is None:
+        return glyph_cells
+    _connector_color, observed_connector_cells = connector_evidence
+    return glyph_cells | observed_connector_cells
+
+
+def _hierarchy_projected_group_footprint(
+    group: _AffineChildGroup,
+    *,
+    endpoint_centers: tuple[tuple[int, int], ...],
+    mediator_center: tuple[int, int],
+    endpoints: tuple[VisualObject, ...] | None = None,
+) -> frozenset[tuple[int, int]]:
+    projected_endpoints = group.endpoints if endpoints is None else endpoints
+    return frozenset(
+        (
+            *_translated_object_footprint(group.mediator, center=mediator_center),
+            *(
+                cell
+                for endpoint, center in zip(projected_endpoints, endpoint_centers, strict=True)
+                for cell in _translated_object_footprint(endpoint, center=center)
+            ),
+            *(
+                cell
+                for center in endpoint_centers
+                for cell in _raster_line_cells(center, mediator_center)
+            ),
+        )
+    )
+
+
+def _hierarchy_connector_evidence(
+    scene: VisualScene,
+    group: _AffineChildGroup,
+) -> tuple[int, frozenset[tuple[int, int]]] | None:
+    glyph_cells = frozenset(
+        (
+            *_object_footprint(group.mediator),
+            *(cell for endpoint in group.endpoints for cell in _object_footprint(endpoint)),
+        )
+    )
+    mediator_cells = _object_footprint(group.mediator)
+    colors = {
+        scene.cells[y][x]
+        for endpoint in group.endpoints
+        for x, y in _raster_line_cells(
+            endpoint.rounded_center,
+            group.mediator.rounded_center,
+        )
+        if (x, y) not in glyph_cells and scene.cells[y][x] != scene.background
+    }
+    supported: list[tuple[int, frozenset[tuple[int, int]]]] = []
+    for color in sorted(colors):
+        evidence_cells: set[tuple[int, int]] = set()
+        supporting_legs = 0
+        for endpoint in group.endpoints:
+            endpoint_cells = _object_footprint(endpoint)
+            candidates = {
+                (x, y)
+                for x, y in _raster_line_cells(
+                    endpoint.rounded_center,
+                    group.mediator.rounded_center,
+                )
+                if (x, y) not in glyph_cells and scene.cells[y][x] == color
+            }
+            bridging_component: frozenset[tuple[int, int]] | None = None
+            while candidates:
+                frontier = [candidates.pop()]
+                component: set[tuple[int, int]] = set(frontier)
+                while frontier:
+                    current = frontier.pop()
+                    adjacent = {
+                        cell for cell in candidates if _chebyshev_distance(current, cell) <= 1
+                    }
+                    candidates.difference_update(adjacent)
+                    component.update(adjacent)
+                    frontier.extend(adjacent)
+                if any(
+                    _chebyshev_distance(cell, mediator_cell) <= 1
+                    for cell in component
+                    for mediator_cell in mediator_cells
+                ) and any(
+                    _chebyshev_distance(cell, endpoint_cell) <= 1
+                    for cell in component
+                    for endpoint_cell in endpoint_cells
+                ):
+                    bridging_component = frozenset(component)
+                    break
+            if bridging_component is not None:
+                supporting_legs += 1
+                evidence_cells.update(bridging_component)
+        if supporting_legs >= min(2, group.arity):
+            supported.append((color, frozenset(evidence_cells)))
+    if len(supported) != 1:
+        return None
+    return supported[0]
+
+
+def _hierarchy_connector_color(
+    scene: VisualScene,
+    group: _AffineChildGroup,
+) -> int | None:
+    evidence = _hierarchy_connector_evidence(scene, group)
+    return evidence[0] if evidence is not None else None
+
+
+def _hierarchy_projected_scene(
+    scene: VisualScene,
+    hierarchy: _AffineHierarchy,
+    *,
+    positions: dict[str, tuple[int, int]],
+    colors: dict[str, int],
+) -> VisualScene:
+    """Render one observation-derived consequence for exact parser preflight."""
+
+    rows = [list(row) for row in scene.cells]
+    initial_dynamic = frozenset(
+        cell for child in hierarchy.children for cell in _hierarchy_dynamic_footprint(scene, child)
+    )
+    for x, y in initial_dynamic:
+        rows[y][x] = scene.background
+
+    mediator_centers: dict[str, tuple[int, int]] = {}
+    for group in hierarchy.children:
+        centers = tuple(positions[endpoint.object_ref] for endpoint in group.endpoints)
+        mediator_centers[group.mediator.object_ref] = (
+            sum(center[0] for center in centers) // group.arity,
+            sum(center[1] for center in centers) // group.arity,
+        )
+        connector_color = _hierarchy_connector_color(scene, group)
+        if connector_color is not None:
+            for center in centers:
+                for x, y in _raster_line_cells(
+                    center,
+                    mediator_centers[group.mediator.object_ref],
+                ):
+                    rows[y][x] = connector_color
+
+    def paint_object(
+        item: VisualObject,
+        *,
+        center: tuple[int, int],
+        color: int,
+    ) -> None:
+        old_x, old_y = item.rounded_center
+        for x, y in item.cells:
+            rows[center[1] + y - old_y][center[0] + x - old_x] = color
+        rows[center[1]][center[0]] = item.center_cell
+
+    for group in hierarchy.children:
+        paint_object(
+            group.mediator,
+            center=mediator_centers[group.mediator.object_ref],
+            color=group.mediator.color,
+        )
+        for endpoint in group.endpoints:
+            paint_object(
+                endpoint,
+                center=positions[endpoint.object_ref],
+                color=colors[endpoint.object_ref],
+            )
+    return extract_visual_scene(GridFrame.from_rows(rows))
+
+
+def _hierarchy_cells_in_bounds(scene: VisualScene, cells: frozenset[tuple[int, int]]) -> bool:
+    return all(0 < x < scene.width - 1 and 0 < y < scene.height - 1 for x, y in cells)
+
+
+def _hierarchy_avoids_target_regions(
+    cells: frozenset[tuple[int, int]],
+    target_regions: _TargetRegions,
+) -> bool:
+    return all(not (cells & region) for _center, region in target_regions)
+
+
+def _footprints_have_gap(
+    left: frozenset[tuple[int, int]],
+    right: frozenset[tuple[int, int]],
+    *,
+    gap: int,
+) -> bool:
+    return all(
+        max(abs(left_x - right_x), abs(left_y - right_y)) > gap
+        for left_x, left_y in left
+        for right_x, right_y in right
+    )
+
+
+def _hierarchy_endpoint_orders(
+    group: _AffineChildGroup,
+    *,
+    active_ref: str | None,
+) -> tuple[tuple[VisualObject, ...], ...]:
+    ordered = tuple(sorted(group.endpoints, key=lambda item: item.object_ref))
+    if active_ref is not None:
+        active = tuple(item for item in ordered if item.object_ref == active_ref)
+        if len(active) != 1:
+            return ()
+        remainder = tuple(item for item in ordered if item.object_ref != active_ref)
+        return tuple((active[0], *tail) for tail in itertools.permutations(remainder))
+    # Six endpoints admit 720 orders.  The finite cap retains several choices
+    # for every possible activation endpoint without turning planning into an
+    # exhaustive interaction search.
+    by_first: list[tuple[VisualObject, ...]] = []
+    for first in ordered:
+        remainder = tuple(item for item in ordered if item.object_ref != first.object_ref)
+        by_first.extend(
+            (first, *tail) for tail in itertools.islice(itertools.permutations(remainder), 20)
+        )
+    return tuple(by_first[:120])
+
+
+def _regular_exact_centroid_points(
+    center: tuple[int, int],
+    *,
+    arity: int,
+    radius: int,
+    rotation_index: int,
+) -> tuple[tuple[int, int], ...] | None:
+    direction = -1 if rotation_index >= 32 else 1
+    rotation = (2 * math.pi * (rotation_index % 32)) / 32
+    points = tuple(
+        (
+            round(
+                center[0] + radius * math.cos(rotation + direction * 2 * math.pi * index / arity)
+            ),
+            round(
+                center[1] + radius * math.sin(rotation + direction * 2 * math.pi * index / arity)
+            ),
+        )
+        for index in range(arity)
+    )
+    if (
+        len(set(points)) != arity
+        or sum(point[0] for point in points) != arity * center[0]
+        or sum(point[1] for point in points) != arity * center[1]
+    ):
+        return None
+    return points
+
+
+def _hierarchy_child_layouts(
+    scene: VisualScene,
+    hierarchy: _AffineHierarchy,
+    group: _AffineChildGroup,
+    *,
+    support: tuple[int, int],
+    active_ref: str | None,
+    static_cells: frozenset[tuple[int, int]],
+    target_regions: _TargetRegions,
+    ignored_refs: frozenset[str],
+    search_budget: _HierarchySearchBudget,
+) -> tuple[_HierarchyChildLayout, ...]:
+    del ignored_refs
+    layouts: list[_HierarchyChildLayout] = []
+    mover_orders = _hierarchy_endpoint_orders(group, active_ref=active_ref)
+    for radius in range(6, 28):
+        for rotation_index in range(64):
+            for movers in mover_orders:
+                search_budget.consume()
+                points = _regular_exact_centroid_points(
+                    support,
+                    arity=group.arity,
+                    radius=radius,
+                    rotation_index=rotation_index,
+                )
+                if points is None:
+                    continue
+                endpoint_footprints = tuple(
+                    _translated_object_footprint(mover, center=point)
+                    for mover, point in zip(movers, points, strict=True)
+                )
+                if any(
+                    not _hierarchy_cells_in_bounds(scene, footprint)
+                    or footprint & static_cells
+                    or not _hierarchy_avoids_target_regions(footprint, target_regions)
+                    for footprint in endpoint_footprints
+                ):
+                    continue
+                if any(
+                    not _footprints_have_gap(left, right, gap=1)
+                    for left, right in itertools.combinations(endpoint_footprints, 2)
+                ):
+                    continue
+                dynamic = _hierarchy_projected_group_footprint(
+                    group,
+                    endpoint_centers=points,
+                    mediator_center=support,
+                    endpoints=movers,
+                )
+                if (
+                    not _hierarchy_cells_in_bounds(scene, dynamic)
+                    or dynamic & static_cells
+                    or not _hierarchy_avoids_target_regions(dynamic, target_regions)
+                ):
+                    continue
+                movement_cost = sum(
+                    _distance(mover.rounded_center, point)
+                    for mover, point in zip(movers, points, strict=True)
+                )
+                layouts.append(
+                    _HierarchyChildLayout(
+                        group=group,
+                        support=support,
+                        movers=movers,
+                        points=points,
+                        dynamic_footprint=dynamic,
+                        radius=radius,
+                        movement_cost=movement_cost,
+                    )
+                )
+        # Finish a whole shell before applying the cap so every rotation and
+        # activation order at the smallest feasible radius is represented.
+        if len(layouts) >= 256:
+            break
+    layouts.sort(
+        key=lambda item: (
+            -_distance(
+                item.movers[0].rounded_center,
+                item.group.mediator.rounded_center,
+            ),
+            tuple(
+                _distance(mover.rounded_center, item.group.mediator.rounded_center)
+                for mover in item.movers[1:]
+            ),
+            item.radius,
+            item.movement_cost,
+            item.points,
+            tuple(mover.object_ref for mover in item.movers),
+        )
+    )
+    # The joint parser check is deliberately expensive.  Preserve a fair
+    # radius shell above, then keep only the best bounded discriminators for
+    # each child instead of exhaustively enumerating equivalent placements.
+    return tuple(layouts[:_MAX_HIERARCHY_CHILD_LAYOUTS])
+
+
+def _fair_index_products(
+    lengths: tuple[int, ...],
+    *,
+    limit: int,
+) -> tuple[tuple[int, ...], ...]:
+    """Return a bounded diagonal traversal instead of a lexicographic prefix."""
+
+    if limit < 1 or not lengths or any(length < 1 for length in lengths):
+        return ()
+    start = tuple(0 for _length in lengths)
+    frontier: list[tuple[int, tuple[int, ...]]] = [(0, start)]
+    seen = {start}
+    result: list[tuple[int, ...]] = []
+    while frontier and len(result) < limit:
+        _rank, indices = heapq.heappop(frontier)
+        result.append(indices)
+        for axis, length in enumerate(lengths):
+            if indices[axis] + 1 >= length:
+                continue
+            advanced = list(indices)
+            advanced[axis] += 1
+            candidate = tuple(advanced)
+            if candidate in seen:
+                continue
+            seen.add(candidate)
+            heapq.heappush(frontier, (sum(candidate), candidate))
+    return tuple(result)
+
+
+def _fair_support_orders(
+    hierarchy: _AffineHierarchy,
+    raw_supports: tuple[tuple[int, int], ...],
+    *,
+    limit: int,
+) -> tuple[tuple[tuple[int, int], ...], ...]:
+    """Round-robin the active child's support before applying the global cap."""
+
+    if limit < 1 or len(raw_supports) != len(hierarchy.children):
+        return ()
+
+    def assignment_cost(supports: tuple[tuple[int, int], ...]) -> float:
+        return sum(
+            _distance(group.mediator.rounded_center, support)
+            for group, support in zip(hierarchy.children, supports, strict=True)
+        )
+
+    buckets: list[tuple[tuple[tuple[int, int], ...], ...]] = []
+    for first_support in raw_supports:
+        remainder = tuple(item for item in raw_supports if item != first_support)
+        assignments = tuple(
+            sorted(
+                ((first_support, *tail) for tail in itertools.permutations(remainder)),
+                key=lambda supports: (assignment_cost(supports), supports),
+            )
+        )
+        buckets.append(assignments)
+    buckets.sort(
+        key=lambda items: (
+            assignment_cost(items[0]),
+            items[0],
+        )
+    )
+    result: list[tuple[tuple[int, int], ...]] = []
+    for rank in range(max(len(items) for items in buckets)):
+        for items in buckets:
+            if rank >= len(items):
+                continue
+            result.append(items[rank])
+            if len(result) == limit:
+                return tuple(result)
+    return tuple(result)
+
+
+def _hierarchy_projected_state_is_safe(
+    scene: VisualScene,
+    hierarchy: _AffineHierarchy,
+    *,
+    positions: dict[str, tuple[int, int]],
+    colors: dict[str, int],
+    static_cells: frozenset[tuple[int, int]],
+    target_regions: _TargetRegions,
+    search_budget: _HierarchySearchBudget,
+) -> bool:
+    group_dynamic: list[frozenset[tuple[int, int]]] = []
+    mediator_footprints: list[frozenset[tuple[int, int]]] = []
+    endpoint_footprints: list[tuple[str, frozenset[tuple[int, int]]]] = []
+    for group in hierarchy.children:
+        centers = tuple(positions[item.object_ref] for item in group.endpoints)
+        mediator_center = (
+            sum(center[0] for center in centers) // group.arity,
+            sum(center[1] for center in centers) // group.arity,
+        )
+        dynamic = _hierarchy_projected_group_footprint(
+            group,
+            endpoint_centers=centers,
+            mediator_center=mediator_center,
+        )
+        if (
+            not _hierarchy_cells_in_bounds(scene, dynamic)
+            or dynamic & static_cells
+            or not _hierarchy_avoids_target_regions(dynamic, target_regions)
+        ):
+            return False
+        group_dynamic.append(dynamic)
+        mediator_footprints.append(
+            _translated_object_footprint(group.mediator, center=mediator_center)
+        )
+        endpoint_footprints.extend(
+            (endpoint.object_ref, _translated_object_footprint(endpoint, center=center))
+            for endpoint, center in zip(group.endpoints, centers, strict=True)
+        )
+    if any(left & right for left, right in itertools.combinations(group_dynamic, 2)):
+        return False
+    if any(
+        not _footprints_have_gap(left, right, gap=1)
+        for left, right in itertools.combinations(mediator_footprints, 2)
+    ):
+        return False
+    for (left_ref, left), (right_ref, right) in itertools.combinations(endpoint_footprints, 2):
+        if colors[left_ref] == colors[right_ref] and not _footprints_have_gap(
+            left,
+            right,
+            gap=1,
+        ):
+            return False
+    projected = _hierarchy_projected_scene(
+        scene,
+        hierarchy,
+        positions=positions,
+        colors=colors,
+    )
+    return bool(
+        len(projected.endpoints) == len(scene.endpoints)
+        and len(projected.mediators) == len(scene.mediators)
+        and set(_visible_target_regions(projected)) == set(_visible_target_regions(scene))
+        and _unique_affine_hierarchy(
+            projected,
+            active_color=hierarchy.active_color,
+            search_budget=search_budget,
+        )
+        is not None
+    )
+
+
+def _hierarchy_sequence_is_safe(
+    scene: VisualScene,
+    hierarchy: _AffineHierarchy,
+    layouts: tuple[_HierarchyChildLayout, ...],
+    *,
+    static_cells: frozenset[tuple[int, int]],
+    target_regions: _TargetRegions,
+    search_budget: _HierarchySearchBudget,
+) -> bool:
+    """Validate every projected move and role exchange, not only the endpoint."""
+
+    if tuple(layout.group for layout in layouts) != hierarchy.children:
+        return False
+    positions = {
+        endpoint.object_ref: endpoint.rounded_center
+        for child in hierarchy.children
+        for endpoint in child.endpoints
+    }
+    colors = {
+        endpoint.object_ref: endpoint.color
+        for child in hierarchy.children
+        for endpoint in child.endpoints
+    }
+    active = tuple(ref for ref, color in colors.items() if color == hierarchy.active_color)
+    if len(active) != 1:
+        return False
+    active_ref = active[0]
+    if not _hierarchy_projected_state_is_safe(
+        scene,
+        hierarchy,
+        positions=positions,
+        colors=colors,
+        static_cells=static_cells,
+        target_regions=target_regions,
+        search_budget=search_budget,
+    ):
+        return False
+
+    for child_index, layout in enumerate(layouts):
+        if child_index:
+            selected_ref = layout.movers[0].object_ref
+            if selected_ref == active_ref or colors[selected_ref] == hierarchy.active_color:
+                return False
+            colors[active_ref], colors[selected_ref] = colors[selected_ref], colors[active_ref]
+            active_ref = selected_ref
+        if layout.movers[0].object_ref != active_ref:
+            return False
+        for mover_index, (mover, point) in enumerate(
+            zip(layout.movers, layout.points, strict=True)
+        ):
+            if mover.object_ref != active_ref:
+                return False
+            positions[active_ref] = point
+            if not _hierarchy_projected_state_is_safe(
+                scene,
+                hierarchy,
+                positions=positions,
+                colors=colors,
+                static_cells=static_cells,
+                target_regions=target_regions,
+                search_budget=search_budget,
+            ):
+                return False
+            if mover_index + 1 < len(layout.movers):
+                selected_ref = layout.movers[mover_index + 1].object_ref
+                if selected_ref == active_ref or colors[selected_ref] == hierarchy.active_color:
+                    return False
+                colors[active_ref], colors[selected_ref] = colors[selected_ref], colors[active_ref]
+                active_ref = selected_ref
+        final_centers = tuple(positions[item.object_ref] for item in layout.group.endpoints)
+        final_mediator = (
+            sum(center[0] for center in final_centers) // layout.group.arity,
+            sum(center[1] for center in final_centers) // layout.group.arity,
+        )
+        if final_mediator != layout.support:
+            return False
+
+    supports = tuple(layout.support for layout in layouts)
+    target = hierarchy.target.rounded_center
+    return (
+        len(set(supports)) == len(supports)
+        and sum(item[0] for item in supports) == len(supports) * target[0]
+        and sum(item[1] for item in supports) == len(supports) * target[1]
+    )
+
+
+def _hierarchy_supports_were_observed(
+    hierarchy: _AffineHierarchy,
+    *,
+    expected_supports: tuple[tuple[int, int], ...],
+    expected_target: tuple[int, int] | None,
+) -> bool:
+    """Require the returned child mediators to occupy the planned parent relation."""
+
+    observed_supports = tuple(child.mediator.rounded_center for child in hierarchy.children)
+    return bool(
+        expected_target is not None
+        and hierarchy.target.rounded_center == expected_target
+        and len(observed_supports) == len(expected_supports) >= 2
+        and len(set(observed_supports)) == len(observed_supports)
+        and sorted(observed_supports) == sorted(expected_supports)
+        and sum(item[0] for item in observed_supports)
+        == len(observed_supports) * expected_target[0]
+        and sum(item[1] for item in observed_supports)
+        == len(observed_supports) * expected_target[1]
+    )
+
+
+def _build_hierarchy_plan(
+    hierarchy: _AffineHierarchy,
+    layouts: tuple[_HierarchyChildLayout, ...],
+) -> _HierarchyPlan:
+    geometry = "|".join(
+        f"{layout.support[0]},{layout.support[1]}:"
+        + ";".join(
+            f"{mover.rounded_center[0]},{mover.rounded_center[1]}>{point[0]},{point[1]}"
+            for mover, point in zip(layout.movers, layout.points, strict=True)
+        )
+        for layout in layouts
+    )
+    signature = (
+        "affine-hierarchy:"
+        + hashlib.sha256(f"{hierarchy.mechanic_ref}|{geometry}".encode()).hexdigest()[:24]
+    )
+    plan_id = "visual-hierarchy-plan:" + signature.rsplit(":", 1)[-1]
+    actions: list[PlannedClick] = []
+    for child_index, layout in enumerate(layouts):
+        if child_index:
+            selected = layout.movers[0]
+            actions.append(
+                PlannedClick(
+                    coordinate=Coordinate(*selected.rounded_center),
+                    purpose=VisualActionPurpose.PROBE,
+                    expectation=(
+                        "exchange the active role into the next affine child group "
+                        "without moving a completed child mediator"
+                    ),
+                    mechanic_ref=hierarchy.mechanic_ref,
+                    plan_id=plan_id,
+                    plan_signature=signature,
+                    target_center=hierarchy.target.rounded_center,
+                    mediator_color=layout.group.mediator.color,
+                    arity=layout.group.arity,
+                )
+            )
+        for mover_index, (_mover, point) in enumerate(
+            zip(layout.movers, layout.points, strict=True)
+        ):
+            final_action = child_index + 1 == len(layouts) and mover_index + 1 == len(layout.movers)
+            actions.append(
+                PlannedClick(
+                    coordinate=Coordinate(*point),
+                    purpose=VisualActionPurpose.PROGRESS,
+                    expectation=(
+                        "complete the distinct child-mediator centroid relation"
+                        if final_action
+                        else "place the active endpoint on a protected child-support layout"
+                    ),
+                    mechanic_ref=hierarchy.mechanic_ref,
+                    plan_id=plan_id,
+                    plan_signature=signature,
+                    target_center=hierarchy.target.rounded_center,
+                    mediator_color=layout.group.mediator.color,
+                    arity=layout.group.arity,
+                    completes_hierarchy=final_action,
+                )
+            )
+            if mover_index + 1 < len(layout.movers):
+                selected = layout.movers[mover_index + 1]
+                actions.append(
+                    PlannedClick(
+                        coordinate=Coordinate(*selected.rounded_center),
+                        purpose=VisualActionPurpose.PROBE,
+                        expectation=(
+                            "exchange active and fixed endpoint roles within one affine child"
+                        ),
+                        mechanic_ref=hierarchy.mechanic_ref,
+                        plan_id=plan_id,
+                        plan_signature=signature,
+                        target_center=hierarchy.target.rounded_center,
+                        mediator_color=layout.group.mediator.color,
+                        arity=layout.group.arity,
+                    )
+                )
+    return _HierarchyPlan(
+        actions=tuple(actions),
+        signature=signature,
+        supports=tuple(layout.support for layout in layouts),
+    )
+
+
+def _hierarchy_joint_layout(
+    scene: VisualScene,
+    hierarchy: _AffineHierarchy,
+    *,
+    rejected_signatures: set[str],
+    search_budget: _HierarchySearchBudget | None = None,
+) -> _HierarchyPlan | None:
+    """Find one finite, fully joint and sequentially safe hierarchy layout."""
+
+    if search_budget is None:
+        search_budget = _HierarchySearchBudget(_MAX_HIERARCHY_SEARCH_BUDGET)
+    target_regions = _visible_target_regions(scene)
+    initial_dynamic = frozenset(
+        cell for child in hierarchy.children for cell in _hierarchy_dynamic_footprint(scene, child)
+    )
+    occupied = frozenset(
+        (x, y)
+        for y, row in enumerate(scene.cells)
+        for x, value in enumerate(row)
+        if value != scene.background
+    )
+    static_cells = occupied - initial_dynamic
+    if not _hierarchy_cells_in_bounds(
+        scene, initial_dynamic
+    ) or not _hierarchy_avoids_target_regions(initial_dynamic, target_regions):
+        return None
+    ignored_refs = frozenset(
+        item.object_ref
+        for child in hierarchy.children
+        for item in (*child.endpoints, child.mediator)
+    )
+    active = tuple(
+        item for item in hierarchy.children[0].endpoints if item.color == hierarchy.active_color
+    )
+    if len(active) != 1:
+        return None
+
+    layout_cache: dict[
+        tuple[str, tuple[int, int], str | None], tuple[_HierarchyChildLayout, ...]
+    ] = {}
+    target = hierarchy.target.rounded_center
+    child_count = len(hierarchy.children)
+    parent_radii = (7, 9, 11, 13, 16, 19, 23, 27)
+    parent_candidates = sorted(
+        itertools.product(range(len(parent_radii)), range(32)),
+        key=lambda item: (item[0] + item[1], item[0], item[1]),
+    )
+    for radius_index, parent_rotation in parent_candidates:
+        search_budget.consume()
+        for parent_radius in parent_radii[radius_index : radius_index + 1]:
+            raw_supports = _regular_exact_centroid_points(
+                target,
+                arity=child_count,
+                radius=parent_radius,
+                rotation_index=parent_rotation,
+            )
+            if raw_supports is None:
+                continue
+            support_orders = _fair_support_orders(
+                hierarchy,
+                raw_supports,
+                limit=120,
+            )
+            for supports in support_orders:
+                search_budget.consume()
+                choices: list[tuple[_HierarchyChildLayout, ...]] = []
+                for index, (group, support) in enumerate(
+                    zip(hierarchy.children, supports, strict=True)
+                ):
+                    mediator_footprint = _translated_object_footprint(
+                        group.mediator,
+                        center=support,
+                    )
+                    if (
+                        not _hierarchy_cells_in_bounds(scene, mediator_footprint)
+                        or mediator_footprint & static_cells
+                        or not _hierarchy_avoids_target_regions(
+                            mediator_footprint,
+                            target_regions,
+                        )
+                    ):
+                        choices = []
+                        break
+                    active_ref = active[0].object_ref if index == 0 else None
+                    cache_key = (group.mediator.object_ref, support, active_ref)
+                    candidates = layout_cache.get(cache_key)
+                    if candidates is None:
+                        candidates = _hierarchy_child_layouts(
+                            scene,
+                            hierarchy,
+                            group,
+                            support=support,
+                            active_ref=active_ref,
+                            static_cells=static_cells,
+                            target_regions=target_regions,
+                            ignored_refs=ignored_refs,
+                            search_budget=search_budget,
+                        )
+                        layout_cache[cache_key] = candidates
+                    if not candidates:
+                        choices = []
+                        break
+                    choices.append(candidates)
+                if not choices:
+                    continue
+                for indices in _fair_index_products(
+                    tuple(len(items) for items in choices),
+                    limit=_MAX_HIERARCHY_LAYOUT_COMBINATIONS,
+                ):
+                    search_budget.consume()
+                    typed_layouts = tuple(
+                        items[index] for items, index in zip(choices, indices, strict=True)
+                    )
+                    if any(
+                        left.dynamic_footprint & right.dynamic_footprint
+                        for left, right in itertools.combinations(typed_layouts, 2)
+                    ):
+                        continue
+                    plan = _build_hierarchy_plan(hierarchy, typed_layouts)
+                    if plan.signature in rejected_signatures:
+                        continue
+                    search_budget.consume(_HIERARCHY_SEQUENCE_EVALUATION_COST)
+                    if _hierarchy_sequence_is_safe(
+                        scene,
+                        hierarchy,
+                        typed_layouts,
+                        static_cells=static_cells,
+                        target_regions=target_regions,
+                        search_budget=search_budget,
+                    ):
+                        return plan
+    return None
+
+
+def _hierarchy_planned_click_is_safe(
+    scene: VisualScene,
+    planned: PlannedClick,
+    *,
+    active_color: int,
+) -> bool:
+    """Revalidate one queued hierarchy action against the returned frame."""
+
+    if not planned.plan_signature.startswith("affine-hierarchy:"):
+        return True
+    if not any(target.rounded_center == planned.target_center for target in scene.targets):
+        return False
+    if planned.purpose is VisualActionPurpose.PROBE:
+        selected = tuple(
+            endpoint
+            for endpoint in scene.endpoints
+            if endpoint.rounded_center == (planned.coordinate.x, planned.coordinate.y)
+        )
+        return len(selected) == 1 and _role_swap_remains_readable(
+            scene,
+            selected[0],
+            active_color=active_color,
+        )
+    active = tuple(endpoint for endpoint in scene.endpoints if endpoint.color == active_color)
+    if len(active) != 1:
+        return False
+    target_regions = _visible_target_regions(scene)
+    prospective = _translated_object_footprint(
+        active[0],
+        center=(planned.coordinate.x, planned.coordinate.y),
+    )
+    return _hierarchy_cells_in_bounds(
+        scene,
+        prospective,
+    ) and _hierarchy_avoids_target_regions(
+        prospective,
+        target_regions,
+    )
+
+
 def _remaining_unsatisfied_affine_hubs(
     scene: VisualScene,
     *,
@@ -3620,6 +4680,7 @@ class VisualCausalPolicy:
         self._pending_mediator_color: int | None = None
         self._pending_arity: int | None = None
         self._pending_completes_local_target = False
+        self._pending_completes_hierarchy = False
         self._pending_clef_prediction = EffectVector.unknown()
         self._pending_mechanic_prediction: MechanicPredictionReceipt | None = None
         self._plan: deque[PlannedClick] = deque()
@@ -3636,6 +4697,10 @@ class VisualCausalPolicy:
         self._marker_reacquire_after_local_solve = False
         self._affine_reacquire_target_center: tuple[int, int] | None = None
         self._pending_affine_reacquisition = False
+        self._active_hierarchy_signature: str | None = None
+        self._active_hierarchy_supports: tuple[tuple[int, int], ...] = ()
+        self._hierarchy_search_deferred_count = 0
+        self._last_hierarchy_search_residual: str | None = None
         self._marker_target_identity_constraints: set[int] = set()
         self._marker_structural_actions: set[str] = set()
         self._marker_structural_action_order: deque[str] = deque()
@@ -3710,6 +4775,8 @@ class VisualCausalPolicy:
         self._marker_reacquire_after_local_solve = False
         self._affine_reacquire_target_center = None
         self._pending_affine_reacquisition = False
+        self._active_hierarchy_signature = None
+        self._active_hierarchy_supports = ()
         self._marker_target_identity_constraints.clear()
         self._marker_structural_actions.clear()
         self._marker_structural_action_order.clear()
@@ -3729,6 +4796,8 @@ class VisualCausalPolicy:
         self._marker_reacquire_after_local_solve = False
         self._affine_reacquire_target_center = None
         self._pending_affine_reacquisition = False
+        self._active_hierarchy_signature = None
+        self._active_hierarchy_supports = ()
         self._marker_structural_actions.clear()
         self._marker_structural_action_order.clear()
         self._episode_exploration_root = None
@@ -3894,6 +4963,49 @@ class VisualCausalPolicy:
         self._attempted_activation_refs.add(selected.object_ref)
         return coordinate
 
+    def _hierarchy_activation_coordinate(
+        self,
+        scene: VisualScene,
+        hierarchy: _AffineHierarchy,
+    ) -> Coordinate | None:
+        """Choose one parser-safe role exchange after bounded layout deferral."""
+
+        active_children = tuple(
+            child
+            for child in hierarchy.children
+            if any(endpoint.color == hierarchy.active_color for endpoint in child.endpoints)
+        )
+        if len(active_children) != 1:
+            return None
+        active_child = active_children[0]
+        candidates: list[tuple[int, float, str, VisualObject]] = []
+        for child in hierarchy.children:
+            for endpoint in child.endpoints:
+                if (
+                    endpoint.color == hierarchy.active_color
+                    or endpoint.object_ref in self._attempted_activation_refs
+                    or not _role_swap_remains_readable(
+                        scene,
+                        endpoint,
+                        active_color=hierarchy.active_color,
+                    )
+                ):
+                    continue
+                candidates.append(
+                    (
+                        0 if child is not active_child else 1,
+                        _distance(endpoint.rounded_center, child.mediator.rounded_center),
+                        endpoint.object_ref,
+                        endpoint,
+                    )
+                )
+        if not candidates:
+            return None
+        candidates.sort(key=lambda item: item[:3])
+        selected = candidates[0][3]
+        self._attempted_activation_refs.add(selected.object_ref)
+        return Coordinate(*selected.rounded_center)
+
     def _install_plan(self, mechanic: AffineMechanic, scene: VisualScene) -> bool:
         active = tuple(item for item in scene.endpoints if item.color == mechanic.active_color)
         if len(active) != 1:
@@ -3972,6 +5084,12 @@ class VisualCausalPolicy:
         self._plan.extend(actions)
         return True
 
+    def _install_hierarchy_plan(self, plan: _HierarchyPlan) -> None:
+        self._plan.clear()
+        self._plan.extend(plan.actions)
+        self._active_hierarchy_signature = plan.signature
+        self._active_hierarchy_supports = plan.supports
+
     def select(self, observation: Observation) -> ActionRequest:
         if observation.state in {GameStateName.GAME_OVER, GameStateName.NOT_PLAYED}:
             action = ActionRequest(ActionName.RESET)
@@ -3994,8 +5112,12 @@ class VisualCausalPolicy:
         if self._plan and ActionName.ACTION6 not in observation.available_actions:
             self._failed_plan_signatures.add(self._plan[0].plan_signature)
             self._plan.clear()
+            self._active_hierarchy_signature = None
+            self._active_hierarchy_supports = ()
             self._last_probe_failed = True
-        if ActionName.ACTION6 in observation.available_actions:
+        if ActionName.ACTION6 in observation.available_actions and not (
+            self._plan and self._plan[0].plan_signature.startswith("affine-hierarchy:")
+        ):
             marker_scene = extract_visual_scene(observation.frames[-1])
             marker_groups = _embedded_marker_groups(marker_scene)
             marker_plan: PlannedClick | None = None
@@ -4118,6 +5240,22 @@ class VisualCausalPolicy:
                 raise PolicyError(
                     "embedded marker group is unresolved but has no bounded same-group action"
                 )
+        if (
+            self._plan
+            and self._plan[0].plan_signature.startswith("affine-hierarchy:")
+            and (
+                self._last_active_color is None
+                or not _hierarchy_planned_click_is_safe(
+                    extract_visual_scene(observation.frames[-1]),
+                    self._plan[0],
+                    active_color=self._last_active_color,
+                )
+            )
+        ):
+            self._failed_plan_signatures.add(self._plan[0].plan_signature)
+            self._plan.clear()
+            self._active_hierarchy_signature = None
+            self._active_hierarchy_supports = ()
         if self._plan:
             planned = self._plan.popleft()
             action = ActionRequest(ActionName.ACTION6, planned.coordinate)
@@ -4132,47 +5270,103 @@ class VisualCausalPolicy:
                 mediator_color=planned.mediator_color,
                 arity=planned.arity,
                 completes_local_target=planned.completes_local_target,
+                completes_hierarchy=planned.completes_hierarchy,
             )
             return action
 
         if ActionName.ACTION6 in observation.available_actions:
             scene = extract_visual_scene(observation.frames[-1])
             learner = self._ensure_learner(observation)
+            deferred_hierarchy: _AffineHierarchy | None = None
+            deferred_hierarchy_ref: str | None = None
+            deferred_hierarchy_reason: str | None = None
             transferable = self._affine_ledger_ref is not None and learner.ledger.get(
                 self._affine_ledger_ref
             ).status in {MechanicStatus.SUPPORTED, MechanicStatus.STABLE_WITHIN_SCOPE}
             if self._last_active_color is not None and not self._last_probe_failed and transferable:
-                transferred = infer_transferred_affine_mechanic(
-                    scene,
-                    level_index=observation.levels_completed,
-                    active_color=self._last_active_color,
-                    supported_prior=tuple(self._mechanics[-16:]),
-                )
-                if transferred is not None and self._install_plan(transferred, scene):
-                    self._mechanics.append(transferred)
-                    planned = self._plan.popleft()
-                    action = ActionRequest(ActionName.ACTION6, planned.coordinate)
-                    self._stage_pending(
-                        observation,
-                        action,
-                        purpose=planned.purpose,
-                        prediction=planned.expectation,
-                        mechanic_refs=(planned.mechanic_ref,),
-                        plan_signature=planned.plan_signature,
-                        target_center=planned.target_center,
-                        mediator_color=planned.mediator_color,
-                        arity=planned.arity,
-                        completes_local_target=planned.completes_local_target,
+                hierarchy: _AffineHierarchy | None = None
+                hierarchy_plan: _HierarchyPlan | None = None
+                search_budget = _HierarchySearchBudget(_MAX_HIERARCHY_SEARCH_BUDGET)
+                try:
+                    hierarchy = _unique_affine_hierarchy(
+                        scene,
+                        active_color=self._last_active_color,
+                        search_budget=search_budget,
                     )
-                    return action
+                    if hierarchy is not None:
+                        deferred_hierarchy = hierarchy
+                        deferred_hierarchy_ref = hierarchy.mechanic_ref
+                        hierarchy_plan = _hierarchy_joint_layout(
+                            scene,
+                            hierarchy,
+                            rejected_signatures=self._failed_plan_signatures,
+                            search_budget=search_budget,
+                        )
+                        if hierarchy_plan is None:
+                            deferred_hierarchy_reason = (
+                                "readable affine hierarchy has no fully joint "
+                                "target-protected layout"
+                            )
+                except _HierarchySearchExhausted as exc:
+                    deferred_hierarchy_reason = str(exc)
+                if hierarchy is not None:
+                    if hierarchy_plan is not None:
+                        self._install_hierarchy_plan(hierarchy_plan)
+                        planned = self._plan.popleft()
+                        action = ActionRequest(ActionName.ACTION6, planned.coordinate)
+                        self._stage_pending(
+                            observation,
+                            action,
+                            purpose=planned.purpose,
+                            prediction=planned.expectation,
+                            mechanic_refs=(planned.mechanic_ref,),
+                            plan_signature=planned.plan_signature,
+                            target_center=planned.target_center,
+                            mediator_color=planned.mediator_color,
+                            arity=planned.arity,
+                            completes_hierarchy=planned.completes_hierarchy,
+                        )
+                        return action
+                elif deferred_hierarchy_reason is None:
+                    transferred = infer_transferred_affine_mechanic(
+                        scene,
+                        level_index=observation.levels_completed,
+                        active_color=self._last_active_color,
+                        supported_prior=tuple(self._mechanics[-16:]),
+                    )
+                    if transferred is not None and self._install_plan(transferred, scene):
+                        self._mechanics.append(transferred)
+                        planned = self._plan.popleft()
+                        action = ActionRequest(ActionName.ACTION6, planned.coordinate)
+                        self._stage_pending(
+                            observation,
+                            action,
+                            purpose=planned.purpose,
+                            prediction=planned.expectation,
+                            mechanic_refs=(planned.mechanic_ref,),
+                            plan_signature=planned.plan_signature,
+                            target_center=planned.target_center,
+                            mediator_color=planned.mediator_color,
+                            arity=planned.arity,
+                            completes_local_target=planned.completes_local_target,
+                        )
+                        return action
+                if deferred_hierarchy_reason is not None:
+                    self._hierarchy_search_deferred_count += 1
+                    self._last_hierarchy_search_residual = deferred_hierarchy_reason
+                    self._last_probe_failed = True
             reacquire_target = self._affine_reacquire_target_center
             activation = (
-                self._activation_coordinate(
-                    scene,
-                    completed_target_center=reacquire_target,
+                self._hierarchy_activation_coordinate(scene, deferred_hierarchy)
+                if deferred_hierarchy_reason is not None and deferred_hierarchy is not None
+                else (
+                    self._activation_coordinate(
+                        scene,
+                        completed_target_center=reacquire_target,
+                    )
+                    if self._last_probe_failed or reacquire_target is not None
+                    else None
                 )
-                if self._last_probe_failed or reacquire_target is not None
-                else None
             )
             if activation is not None:
                 action = ActionRequest(ActionName.ACTION6, activation)
@@ -4189,9 +5383,17 @@ class VisualCausalPolicy:
                     action,
                     purpose=VisualActionPurpose.PROBE,
                     prediction=(
-                        "reacquire the active role within the remaining readable affine group"
-                        if dedicated_reacquisition
-                        else "test whether a nearby endpoint transfers the active intervention role"
+                        f"{deferred_hierarchy_reason}; test one structurally safe "
+                        "alternate active-role binding"
+                        if deferred_hierarchy_reason is not None
+                        else (
+                            "reacquire the active role within the remaining readable affine group"
+                            if dedicated_reacquisition
+                            else "test whether a nearby endpoint transfers the active intervention role"
+                        )
+                    ),
+                    mechanic_refs=(
+                        (deferred_hierarchy_ref,) if deferred_hierarchy_ref is not None else ()
                     ),
                     affine_reacquisition=dedicated_reacquisition,
                 )
@@ -4212,7 +5414,14 @@ class VisualCausalPolicy:
                 observation,
                 action,
                 purpose=VisualActionPurpose.PROBE,
-                prediction="test coordinate placement and localized affine mediator response",
+                prediction=(
+                    f"{deferred_hierarchy_reason}; test one bounded coordinate alternative"
+                    if deferred_hierarchy_reason is not None
+                    else "test coordinate placement and localized affine mediator response"
+                ),
+                mechanic_refs=(
+                    (deferred_hierarchy_ref,) if deferred_hierarchy_ref is not None else ()
+                ),
             )
             return action
 
@@ -4252,6 +5461,7 @@ class VisualCausalPolicy:
         mediator_color: int | None = None,
         arity: int | None = None,
         completes_local_target: bool = False,
+        completes_hierarchy: bool = False,
         affine_reacquisition: bool = False,
     ) -> None:
         if self._pending_action is not None:
@@ -4269,6 +5479,7 @@ class VisualCausalPolicy:
         self._pending_mediator_color = mediator_color
         self._pending_arity = arity
         self._pending_completes_local_target = completes_local_target
+        self._pending_completes_hierarchy = completes_hierarchy
         self._pending_affine_reacquisition = affine_reacquisition
         self._pending_clef_prediction = _predicted_clef_effects(
             purpose=purpose,
@@ -4300,12 +5511,79 @@ class VisualCausalPolicy:
         mechanic: AffineMechanic | None = None
         before_scene = extract_visual_scene(before.frames[-1])
         after_scene = extract_visual_scene(observation.frames[-1])
+        hierarchy_action = (
+            self._pending_plan_signature is not None
+            and self._pending_plan_signature.startswith("affine-hierarchy:")
+        )
+        hierarchy_target_readable = bool(
+            self._pending_target_center is not None
+            and any(
+                target.rounded_center == self._pending_target_center
+                for target in after_scene.targets
+            )
+        )
         endpoint_role_switch = _endpoint_role_switch_observed(
             before_scene,
             after_scene,
             action=action,
             active_color=self._last_active_color,
         )
+        after_hierarchy: _AffineHierarchy | None = None
+        hierarchy_recognition_residual: str | None = None
+        if hierarchy_action and self._last_active_color is not None:
+            try:
+                after_hierarchy = _unique_affine_hierarchy(
+                    after_scene,
+                    active_color=self._last_active_color,
+                )
+            except _HierarchySearchExhausted as exc:
+                hierarchy_recognition_residual = (
+                    f"returned hierarchy recognition failed closed: {exc}"
+                )
+        before_parent_targets = tuple(
+            target
+            for target in before_scene.targets
+            if target.rounded_center == self._pending_target_center
+        )
+        after_parent_targets = tuple(
+            target
+            for target in after_scene.targets
+            if target.rounded_center == self._pending_target_center
+        )
+        hierarchy_parent_target_preserved = (
+            len(before_parent_targets) == len(after_parent_targets) == 1
+            and before_parent_targets[0].object_ref == after_parent_targets[0].object_ref
+        )
+        hierarchy_structure_readable = bool(
+            hierarchy_action
+            and changed > 0
+            and hierarchy_target_readable
+            and hierarchy_parent_target_preserved
+            and after_hierarchy is not None
+            and len(before_scene.endpoints) == len(after_scene.endpoints)
+            and len(before_scene.mediators) == len(after_scene.mediators)
+            and (
+                endpoint_role_switch
+                if self._pending_purpose is VisualActionPurpose.PROBE
+                else action.coordinate is not None
+                and any(
+                    endpoint.color == self._last_active_color
+                    and endpoint.rounded_center == (action.coordinate.x, action.coordinate.y)
+                    for endpoint in after_scene.endpoints
+                )
+            )
+        )
+        hierarchy_supports_observed = bool(
+            hierarchy_structure_readable
+            and after_hierarchy is not None
+            and _hierarchy_supports_were_observed(
+                after_hierarchy,
+                expected_supports=self._active_hierarchy_supports,
+                expected_target=self._pending_target_center,
+            )
+        )
+        if hierarchy_recognition_residual is not None:
+            residual = hierarchy_recognition_residual
         marker_bootstrap = (
             self._pending_plan_signature is not None
             and self._pending_plan_signature.startswith("marker-bootstrap:")
@@ -4443,8 +5721,16 @@ class VisualCausalPolicy:
                 and not marker_target_separated
                 else "planned marker endpoint became structurally unreadable"
             )
+        if (
+            hierarchy_action
+            and observation.state is GameStateName.NOT_FINISHED
+            and not hierarchy_structure_readable
+            and residual is None
+        ):
+            residual = "planned hierarchy consequence was not structurally readable"
         coordinate_transform = (
             local_target_satisfied
+            or hierarchy_structure_readable
             or marker_action_structure_readable
             or marker_bootstrap_succeeded
             or _coordinate_transform_observed(
@@ -4601,21 +5887,27 @@ class VisualCausalPolicy:
             and not level_progress
             and observation.state is GameStateName.NOT_FINISHED
             and (
-                marker_action_structure_failed
-                or any(
-                    item.channel
-                    in {
-                        EffectChannel.CONTROLLABLE_OBJECT_DISPLACEMENT,
-                        EffectChannel.OTHER_OBJECT_CHANGE,
-                    }
-                    and item.predicted.knowledge is EffectKnowledge.KNOWN
-                    and item.kind
-                    in {
-                        CausalResidualKind.MISMATCH,
-                        CausalResidualKind.MISSING_EFFECT,
-                        CausalResidualKind.UNREADABLE,
-                    }
-                    for item in effect_comparison.residual_effects
+                (hierarchy_action and not hierarchy_structure_readable)
+                or (
+                    not hierarchy_action
+                    and (
+                        marker_action_structure_failed
+                        or any(
+                            item.channel
+                            in {
+                                EffectChannel.CONTROLLABLE_OBJECT_DISPLACEMENT,
+                                EffectChannel.OTHER_OBJECT_CHANGE,
+                            }
+                            and item.predicted.knowledge is EffectKnowledge.KNOWN
+                            and item.kind
+                            in {
+                                CausalResidualKind.MISMATCH,
+                                CausalResidualKind.MISSING_EFFECT,
+                                CausalResidualKind.UNREADABLE,
+                            }
+                            for item in effect_comparison.residual_effects
+                        )
+                    )
                 )
             )
         )
@@ -4636,12 +5928,16 @@ class VisualCausalPolicy:
             self._marker_stage_pending_switch = None
             self._marker_reacquire_after_local_solve = False
             self._affine_reacquire_target_center = None
+            self._active_hierarchy_signature = None
+            self._active_hierarchy_supports = ()
             self._last_probe_failed = True
         elif observation.state is GameStateName.WIN:
             self._plan.clear()
             self._marker_stage_pending_switch = None
             self._marker_reacquire_after_local_solve = False
             self._affine_reacquire_target_center = None
+            self._active_hierarchy_signature = None
+            self._active_hierarchy_supports = ()
             self._last_probe_failed = False
         elif level_progress:
             self._begin_level(observation)
@@ -4656,6 +5952,20 @@ class VisualCausalPolicy:
             else:
                 self._marker_reacquire_after_local_solve = False
                 self._last_probe_failed = False
+        elif self._pending_completes_hierarchy:
+            if self._pending_plan_signature is not None:
+                self._failed_plan_signatures.add(self._pending_plan_signature)
+            self._plan.clear()
+            self._active_hierarchy_signature = None
+            self._active_hierarchy_supports = ()
+            self._last_probe_failed = not hierarchy_supports_observed
+            if hierarchy_supports_observed:
+                residual = (
+                    "distinct child mediators reached the predicted parent centroid but "
+                    "the official environment remained NOT_FINISHED"
+                )
+            elif residual is None:
+                residual = "planned hierarchy consequence was not structurally readable"
         elif mechanic is not None and not self._pending_mechanic_refs:
             self._plan.clear()
             if not self._install_plan(mechanic, after_scene):
@@ -4687,6 +5997,9 @@ class VisualCausalPolicy:
                 self._failed_plan_signatures.add(self._pending_plan_signature)
             self._plan.clear()
             self._marker_stage_pending_switch = None
+            if hierarchy_action:
+                self._active_hierarchy_signature = None
+                self._active_hierarchy_supports = ()
             self._last_probe_failed = True
 
         receipt = VisualActionReceipt(
@@ -4722,6 +6035,7 @@ class VisualCausalPolicy:
         self._pending_mediator_color = None
         self._pending_arity = None
         self._pending_completes_local_target = False
+        self._pending_completes_hierarchy = False
         self._pending_affine_reacquisition = False
         self._pending_clef_prediction = EffectVector.unknown()
         self._pending_mechanic_prediction = None
@@ -4757,6 +6071,14 @@ class VisualCausalPolicy:
             "exploration_root_capacity_exhausted": (self._exploration_root_capacity_exhausted),
             "failed_exploration_root_count": len(self._failed_exploration_roots),
             "failed_plan_count": len(self._failed_plan_signatures),
+            "hierarchy_active": self._active_hierarchy_signature is not None,
+            "hierarchy_rejected_count": sum(
+                item.startswith("affine-hierarchy:") for item in self._failed_plan_signatures
+            ),
+            "hierarchy_search_deferred_count": self._hierarchy_search_deferred_count,
+            "hierarchy_search_residual": self._last_hierarchy_search_residual,
+            "hierarchy_signature": self._active_hierarchy_signature,
+            "hierarchy_supports": [list(item) for item in self._active_hierarchy_supports],
             "mechanical_learner": learner.to_dict() if learner is not None else None,
             "mechanical_learner_compact_bytes": (
                 len(learner.compact_bytes()) if learner is not None else 0
@@ -4772,7 +6094,7 @@ class VisualCausalPolicy:
             "pending_plan_actions": len(self._plan),
             "receipt_count": len(self._receipts),
             "receipts": [item.to_dict() for item in self._receipts[-192:]],
-            "schema": "arc3.visual-causal-policy.v0.2",
+            "schema": "arc3.visual-causal-policy.v0.3",
             "transfer_confirmed_levels": transfer_levels,
         }
 

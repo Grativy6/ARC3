@@ -3347,3 +3347,665 @@ def test_marker_bootstrap_accepts_unique_marked_endpoint_outside_complete_group(
         )
         is None
     )
+
+
+_HIERARCHY_PARENT_TARGET = (32, 16)
+_HIERARCHY_COMPOSITE_TARGETS = ((25, 18), (39, 18))
+
+
+def _two_layer_affine_frame(
+    groups: tuple[tuple[tuple[int, int], ...], ...] = (
+        ((12, 46), (28, 46)),
+        ((44, 48), (56, 48), (50, 36)),
+    ),
+    *,
+    active_group: int = 0,
+    active_index: int = 0,
+) -> GridFrame:
+    """Render a generic two-child affine hierarchy plus unrelated target surfaces."""
+
+    rows = [[5 for _ in range(64)] for _ in range(64)]
+    _paint(rows, _HIERARCHY_PARENT_TARGET, _OFFSET_SPARSE_TARGET_RING, 14)
+    for target in _HIERARCHY_COMPOSITE_TARGETS:
+        for dx, dy in _OFFSET_SPARSE_TARGET_RING:
+            rows[target[1] + dy][target[0] + dx] = 11 if dx < 0 else 13
+    for group_index, endpoints in enumerate(groups):
+        for endpoint_index, endpoint in enumerate(endpoints):
+            color = 0 if (group_index, endpoint_index) == (active_group, active_index) else 3
+            _paint(rows, endpoint, _ENDPOINT_SHAPE, color)
+            rows[endpoint[1]][endpoint[0]] = 4
+        hub = (
+            sum(x for x, _y in endpoints) // len(endpoints),
+            sum(y for _x, y in endpoints) // len(endpoints),
+        )
+        _paint(rows, hub, _HUB_OUTER, 0)
+        rows[hub[1]][hub[0]] = 0
+    return GridFrame.from_rows(rows)
+
+
+@dataclass
+class _TwoLayerAffineEnvironment:
+    """Synthetic game that wins only on a nondegenerate second-order centroid."""
+
+    training_active: tuple[int, int] = (8, 32)
+    training_anchor: tuple[int, int] = (32, 32)
+    training_target: tuple[int, int] = (20, 10)
+    groups: list[list[tuple[int, int]]] = field(
+        default_factory=lambda: [
+            [(12, 46), (28, 46)],
+            [(44, 48), (56, 48), (50, 36)],
+        ]
+    )
+    active_group: int = 0
+    active_index: int = 0
+    levels_completed: int = 0
+    state: GameStateName = GameStateName.NOT_FINISHED
+    hierarchy_actions: list[Coordinate] = field(default_factory=list)
+    unsafe_hierarchy_actions: list[Coordinate] = field(default_factory=list)
+    unreadable_hierarchy_actions: list[Coordinate] = field(default_factory=list)
+    protected_regions: tuple[frozenset[tuple[int, int]], ...] = ()
+    target_surface_signature: tuple[tuple[tuple[int, int], frozenset[tuple[int, int]]], ...] = ()
+
+    def observation(self, returned_action: ActionRequest | None = None) -> Observation:
+        if self.levels_completed == 0:
+            frame = _frame(self.training_active, self.training_anchor, self.training_target)
+        else:
+            frame = _two_layer_affine_frame(
+                tuple(tuple(group) for group in self.groups),
+                active_group=self.active_group,
+                active_index=self.active_index,
+            )
+        return Observation(
+            game_id=GameId("synthetic-two-layer-affine"),
+            frames=(frame,),
+            state=self.state,
+            levels_completed=self.levels_completed,
+            win_levels=2,
+            available_actions=(ActionName.ACTION6,),
+            returned_action=returned_action,
+        )
+
+    def _hierarchy_centers(self) -> tuple[tuple[int, int], ...]:
+        return tuple(
+            (
+                sum(x for x, _y in endpoints) // len(endpoints),
+                sum(y for _x, y in endpoints) // len(endpoints),
+            )
+            for endpoints in self.groups
+        )
+
+    def _hierarchy_dynamic_footprint(self) -> frozenset[tuple[int, int]]:
+        cells: set[tuple[int, int]] = set()
+        for endpoints, hub in zip(self.groups, self._hierarchy_centers(), strict=True):
+            cells.update((x + dx, y + dy) for x, y in endpoints for dx, dy in _ENDPOINT_SHAPE)
+            cells.update(endpoints)
+            cells.update((hub[0] + dx, hub[1] + dy) for dx, dy in _HUB_OUTER)
+            cells.add(hub)
+            for endpoint in endpoints:
+                cells.update(visual_causal._raster_line_cells(endpoint, hub))
+        return frozenset(cells)
+
+    def _step_training(self, clicked: tuple[int, int], action: ActionRequest) -> Observation:
+        if math.dist(clicked, self.training_anchor) <= 2.5:
+            self.training_active, self.training_anchor = (
+                self.training_anchor,
+                self.training_active,
+            )
+        else:
+            self.training_active = clicked
+        hub = (
+            (self.training_active[0] + self.training_anchor[0]) / 2,
+            (self.training_active[1] + self.training_anchor[1]) / 2,
+        )
+        if math.dist(hub, self.training_target) <= 1.0:
+            self.levels_completed = 1
+            scene = extract_visual_scene(_two_layer_affine_frame())
+            visible_targets = visual_causal._visible_target_regions(scene)
+            self.protected_regions = tuple(region for _center, region in visible_targets)
+            self.target_surface_signature = tuple(sorted(visible_targets, key=lambda item: item[0]))
+        return self.observation(returned_action=action)
+
+    def step(self, action: ActionRequest) -> Observation:
+        assert action.coordinate is not None
+        clicked = (action.coordinate.x, action.coordinate.y)
+        if self.levels_completed == 0:
+            return self._step_training(clicked, action)
+
+        selected: tuple[int, int] | None = None
+        for group_index, endpoints in enumerate(self.groups):
+            for endpoint_index, endpoint in enumerate(endpoints):
+                if math.dist(clicked, endpoint) <= 2.25:
+                    selected = (group_index, endpoint_index)
+                    break
+            if selected is not None:
+                break
+        if selected is not None and selected != (self.active_group, self.active_index):
+            self.active_group, self.active_index = selected
+        else:
+            self.groups[self.active_group][self.active_index] = clicked
+
+        self.hierarchy_actions.append(action.coordinate)
+        dynamic = self._hierarchy_dynamic_footprint()
+        if any(dynamic & region for region in self.protected_regions):
+            self.unsafe_hierarchy_actions.append(action.coordinate)
+
+        returned_scene = extract_visual_scene(
+            _two_layer_affine_frame(
+                tuple(tuple(group) for group in self.groups),
+                active_group=self.active_group,
+                active_index=self.active_index,
+            )
+        )
+        returned_targets = tuple(
+            sorted(
+                visual_causal._visible_target_regions(returned_scene),
+                key=lambda item: item[0],
+            )
+        )
+        returned_hierarchy = visual_causal._unique_affine_hierarchy(
+            returned_scene,
+            active_color=0,
+        )
+        if (
+            returned_targets != self.target_surface_signature
+            or returned_hierarchy is None
+            or sorted(len(child.endpoints) for child in returned_hierarchy.children) != [2, 3]
+        ):
+            self.unreadable_hierarchy_actions.append(action.coordinate)
+
+        hubs = self._hierarchy_centers()
+        exact_child_centers = all(
+            sum(x for x, _y in endpoints) == len(endpoints) * hub[0]
+            and sum(y for _x, y in endpoints) == len(endpoints) * hub[1]
+            for endpoints, hub in zip(self.groups, hubs, strict=True)
+        )
+        if (
+            exact_child_centers
+            and len(set(hubs)) == len(hubs)
+            and sum(x for x, _y in hubs) == len(hubs) * _HIERARCHY_PARENT_TARGET[0]
+            and sum(y for _x, y in hubs) == len(hubs) * _HIERARCHY_PARENT_TARGET[1]
+            and not self.unsafe_hierarchy_actions
+            and not self.unreadable_hierarchy_actions
+        ):
+            self.levels_completed = 2
+            self.state = GameStateName.WIN
+        return self.observation(returned_action=action)
+
+
+def test_two_layer_affine_hierarchy_is_an_exact_disjoint_cover() -> None:
+    scene = extract_visual_scene(_two_layer_affine_frame())
+
+    hierarchy = visual_causal._unique_affine_hierarchy(scene, active_color=0)
+
+    assert hierarchy is not None
+    assert hierarchy.target.rounded_center == _HIERARCHY_PARENT_TARGET
+    assert sorted(len(child.endpoints) for child in hierarchy.children) == [2, 3]
+    endpoint_refs = [
+        endpoint.object_ref for child in hierarchy.children for endpoint in child.endpoints
+    ]
+    assert len(endpoint_refs) == len(set(endpoint_refs)) == len(scene.endpoints)
+    assert {child.mediator.object_ref for child in hierarchy.children} == {
+        mediator.object_ref for mediator in scene.mediators
+    }
+
+
+def test_hierarchy_joint_layout_is_distinct_and_protects_every_visible_target() -> None:
+    scene = extract_visual_scene(_two_layer_affine_frame())
+    hierarchy = visual_causal._unique_affine_hierarchy(scene, active_color=0)
+    assert hierarchy is not None
+    protected = visual_causal._visible_target_regions(scene)
+    protected_centers = {center for center, _region in protected}
+    assert {
+        _HIERARCHY_PARENT_TARGET,
+        *_HIERARCHY_COMPOSITE_TARGETS,
+    } <= protected_centers
+
+    plan = visual_causal._hierarchy_joint_layout(
+        scene,
+        hierarchy,
+        rejected_signatures=set(),
+    )
+
+    assert plan is not None
+    assert len(set(plan.supports)) == len(hierarchy.children)
+    assert (
+        sum(x for x, _y in plan.supports) == len(plan.supports) * hierarchy.target.rounded_center[0]
+    )
+    assert (
+        sum(y for _x, y in plan.supports) == len(plan.supports) * hierarchy.target.rounded_center[1]
+    )
+    assert plan.signature
+    for support in plan.supports:
+        assert all(support not in region for _center, region in protected)
+    for planned in plan.actions:
+        assert all(
+            (planned.coordinate.x, planned.coordinate.y) not in region
+            for _center, region in protected
+        )
+
+
+def test_policy_completes_two_layer_affine_hierarchy_without_flat_target_collapse() -> None:
+    environment = _TwoLayerAffineEnvironment()
+    policy = VisualCausalPolicy(max_coordinate_candidates=8)
+    observation = environment.observation()
+
+    for _ in range(12):
+        action = policy.select(observation)
+        observation = environment.step(action)
+        policy.accept_consequence(observation)
+        if observation.levels_completed == 1:
+            break
+    assert observation.levels_completed == 1
+
+    hierarchy_scene = extract_visual_scene(observation.frames[-1])
+    hierarchy = visual_causal._unique_affine_hierarchy(hierarchy_scene, active_color=0)
+    assert hierarchy is not None
+    active_child = next(
+        child
+        for child in hierarchy.children
+        if any(endpoint.color == 0 for endpoint in child.endpoints)
+    )
+    ordered_movers = tuple(sorted(active_child.endpoints, key=lambda item: item.color != 0))
+    harmful_flat = _radial_plan_points(
+        hierarchy_scene,
+        target=hierarchy.target.rounded_center,
+        movers=ordered_movers,
+        rejected_signatures=set(),
+    )
+    assert harmful_flat is not None
+
+    first_hierarchy_action = policy.select(observation)
+    assert first_hierarchy_action.coordinate not in {
+        harmful_flat[0],
+        Coordinate(60, 28),
+        Coordinate(57, 18),
+    }
+    assert "child-support" in policy._pending_prediction or any(
+        mechanic_ref.startswith("affine-hierarchy-mechanic:")
+        for mechanic_ref in policy._pending_mechanic_refs
+    )
+
+    for _ in range(20):
+        observation = environment.step(first_hierarchy_action)
+        policy.accept_consequence(observation)
+        if observation.state is GameStateName.WIN:
+            break
+        first_hierarchy_action = policy.select(observation)
+
+    assert observation.state is GameStateName.WIN
+    assert observation.levels_completed == observation.win_levels == 2
+    assert not environment.unsafe_hierarchy_actions
+    assert not environment.unreadable_hierarchy_actions
+    hubs = environment._hierarchy_centers()
+    assert len(set(hubs)) == 2
+    assert (
+        sum(x for x, _y in hubs),
+        sum(y for _x, y in hubs),
+    ) == (2 * _HIERARCHY_PARENT_TARGET[0], 2 * _HIERARCHY_PARENT_TARGET[1])
+    assert policy.snapshot()["hierarchy_active"] is False
+
+
+def test_ignored_final_hierarchy_action_preserves_structural_failure() -> None:
+    environment = _TwoLayerAffineEnvironment()
+    policy = VisualCausalPolicy(max_coordinate_candidates=8)
+    observation = environment.observation()
+
+    for _ in range(12):
+        action = policy.select(observation)
+        observation = environment.step(action)
+        policy.accept_consequence(observation)
+        if observation.levels_completed == 1:
+            break
+    assert observation.levels_completed == 1
+
+    ignored_final_action = False
+    for _ in range(20):
+        action = policy.select(observation)
+        if policy._pending_completes_hierarchy:
+            ignored_final_action = True
+            observation = environment.observation(returned_action=action)
+            policy.accept_consequence(observation)
+            break
+        observation = environment.step(action)
+        policy.accept_consequence(observation)
+
+    assert ignored_final_action
+    assert observation.state is GameStateName.NOT_FINISHED
+    assert observation.levels_completed == 1
+    assert policy.receipts[-1].changed_cells == 0
+    assert (
+        policy.receipts[-1].residual
+        == "planned hierarchy consequence was not structurally readable"
+    )
+    snapshot = policy.snapshot()
+    assert snapshot["hierarchy_active"] is False
+    assert snapshot["hierarchy_supports"] == []
+    assert snapshot["pending_plan_actions"] == 0
+    assert snapshot["hierarchy_rejected_count"] == 1
+    assert policy._last_probe_failed is True
+
+
+def test_hierarchy_no_solution_has_one_deterministic_global_evaluation_budget(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    scene = extract_visual_scene(_two_layer_affine_frame())
+    hierarchy = visual_causal._unique_affine_hierarchy(scene, active_color=0)
+    assert hierarchy is not None
+
+    def two_parent_candidates(
+        center: tuple[int, int],
+        *,
+        arity: int,
+        radius: int,
+        rotation_index: int,
+    ) -> tuple[tuple[int, int], ...] | None:
+        if (
+            center == hierarchy.target.rounded_center
+            and arity == len(hierarchy.children)
+            and radius == 16
+            and rotation_index in {0, 1}
+        ):
+            return ((48, 16), (16, 16))
+        return None
+
+    def many_child_layouts(
+        _scene: VisualScene,
+        _hierarchy: object,
+        group: object,
+        *,
+        support: tuple[int, int],
+        active_ref: str | None,
+        static_cells: frozenset[tuple[int, int]],
+        target_regions: object,
+        ignored_refs: frozenset[str],
+        search_budget: object,
+    ) -> tuple[object, ...]:
+        del active_ref, static_cells, target_regions, ignored_refs, search_budget
+        child = next(item for item in hierarchy.children if item == group)
+        child_index = hierarchy.children.index(child)
+        expected_support = (16, 16) if child_index == 0 else (48, 16)
+        if support != expected_support:
+            return ()
+        return tuple(
+            visual_causal._HierarchyChildLayout(
+                group=child,
+                support=support,
+                movers=child.endpoints,
+                points=tuple(endpoint.rounded_center for endpoint in child.endpoints),
+                dynamic_footprint=frozenset({(child_index + 1, 1)}),
+                radius=6,
+                movement_cost=float(index),
+            )
+            for index in range(32)
+        )
+
+    monkeypatch.setattr(
+        visual_causal,
+        "_regular_exact_centroid_points",
+        two_parent_candidates,
+    )
+    monkeypatch.setattr(visual_causal, "_hierarchy_child_layouts", many_child_layouts)
+
+    evaluation_counts: list[int] = []
+    for _ in range(2):
+        evaluated = 0
+
+        def reject_candidate(*_args: object, **_kwargs: object) -> bool:
+            nonlocal evaluated
+            evaluated += 1
+            return False
+
+        monkeypatch.setattr(
+            visual_causal,
+            "_hierarchy_sequence_is_safe",
+            reject_candidate,
+        )
+        with pytest.raises(
+            visual_causal._HierarchySearchExhausted,
+            match="affine hierarchy deterministic search budget exhausted",
+        ):
+            visual_causal._hierarchy_joint_layout(
+                scene,
+                hierarchy,
+                rejected_signatures=set(),
+            )
+        evaluation_counts.append(evaluated)
+
+    assert evaluation_counts[0] == evaluation_counts[1]
+    assert (
+        0
+        < evaluation_counts[0]
+        <= visual_causal._MAX_HIERARCHY_SEARCH_BUDGET
+        // visual_causal._HIERARCHY_SEQUENCE_EVALUATION_COST
+    )
+
+
+def test_six_child_support_orders_are_fair_before_the_120_assignment_cap() -> None:
+    scene = extract_visual_scene(_two_layer_affine_frame())
+    hierarchy = visual_causal._unique_affine_hierarchy(scene, active_color=0)
+    assert hierarchy is not None
+    raw_supports = ((8, 8), (16, 8), (24, 8), (32, 8), (40, 8), (48, 8))
+    six_child_hierarchy = replace(
+        hierarchy,
+        children=tuple(hierarchy.children[0] for _ in raw_supports),
+    )
+
+    orders = visual_causal._fair_support_orders(
+        six_child_hierarchy,
+        raw_supports,
+        limit=120,
+    )
+
+    assert len(orders) == 120
+    first_occurrence = {
+        support: next(index for index, order in enumerate(orders) if order[0] == support)
+        for support in raw_supports
+    }
+    assert set(first_occurrence) == set(raw_supports)
+    assert max(first_occurrence.values()) < 120
+    assert orders == visual_causal._fair_support_orders(
+        six_child_hierarchy,
+        raw_supports,
+        limit=120,
+    )
+
+
+@pytest.mark.parametrize(
+    ("deferred_mode", "expected_residual"),
+    (
+        (
+            "no-layout",
+            "readable affine hierarchy has no fully joint target-protected layout",
+        ),
+        (
+            "budget-exhausted",
+            "affine hierarchy deterministic search budget exhausted",
+        ),
+    ),
+)
+def test_policy_defers_unavailable_hierarchy_layout_without_flat_reuse(
+    monkeypatch: pytest.MonkeyPatch,
+    deferred_mode: str,
+    expected_residual: str,
+) -> None:
+    environment = _TwoLayerAffineEnvironment()
+    policy = VisualCausalPolicy(max_coordinate_candidates=8)
+    observation = environment.observation()
+
+    for _ in range(12):
+        action = policy.select(observation)
+        observation = environment.step(action)
+        policy.accept_consequence(observation)
+        if observation.levels_completed == 1:
+            break
+    assert observation.levels_completed == 1
+
+    def unavailable_layout(*_args: object, **_kwargs: object) -> None:
+        if deferred_mode == "budget-exhausted":
+            raise visual_causal._HierarchySearchExhausted(expected_residual)
+        return None
+
+    monkeypatch.setattr(
+        visual_causal,
+        "_hierarchy_joint_layout",
+        unavailable_layout,
+    )
+    scene = extract_visual_scene(observation.frames[-1])
+    hierarchy = visual_causal._unique_affine_hierarchy(scene, active_color=0)
+    assert hierarchy is not None
+
+    action = policy.select(observation)
+
+    assert action.name is ActionName.ACTION6
+    assert action.coordinate is not None
+    clicked = (action.coordinate.x, action.coordinate.y)
+    selected = tuple(endpoint for endpoint in scene.endpoints if endpoint.rounded_center == clicked)
+    if selected:
+        assert len(selected) == 1
+        assert selected[0].color != hierarchy.active_color
+        assert visual_causal._role_swap_remains_readable(
+            scene,
+            selected[0],
+            active_color=hierarchy.active_color,
+        )
+        expected_continuation = "test one structurally safe alternate active-role binding"
+    else:
+        assert scene.is_open(action.coordinate.x, action.coordinate.y)
+        assert all(
+            (action.coordinate.x, action.coordinate.y) not in region
+            for _center, region in visual_causal._visible_target_regions(scene)
+        )
+        expected_continuation = "test one bounded coordinate alternative"
+    assert policy._pending_purpose is VisualActionPurpose.PROBE
+    assert policy._pending_prediction == f"{expected_residual}; {expected_continuation}"
+    assert policy._pending_mechanic_refs == (hierarchy.mechanic_ref,)
+    assert policy._pending_plan_signature is None
+    assert policy._pending_target_center is None
+    assert policy._pending_completes_local_target is False
+    snapshot = policy.snapshot()
+    assert snapshot["hierarchy_search_deferred_count"] == 1
+    assert snapshot["hierarchy_search_residual"] == expected_residual
+    assert snapshot["hierarchy_active"] is False
+    assert snapshot["hierarchy_supports"] == []
+    assert snapshot["pending_plan_actions"] == 0
+
+
+def test_unrelated_centerline_occupant_rejects_hierarchy_plan() -> None:
+    rows = [list(row) for row in _two_layer_affine_frame().cells]
+    blocker = (16, 46)
+    rows[blocker[1]][blocker[0]] = 9
+    scene = extract_visual_scene(GridFrame.from_rows(rows))
+    blocker_objects = tuple(item for item in scene.objects if blocker in item.cells)
+    assert len(blocker_objects) == 1
+    assert blocker_objects[0].role is VisualObjectRole.OTHER
+
+    hierarchy = visual_causal._unique_affine_hierarchy(scene, active_color=0)
+    assert hierarchy is not None
+    observed_dynamic = frozenset(
+        cell
+        for child in hierarchy.children
+        for cell in visual_causal._hierarchy_dynamic_footprint(scene, child)
+    )
+    assert blocker not in observed_dynamic
+    assert scene.cells[blocker[1]][blocker[0]] != scene.background
+
+    for _ in range(2):
+        with pytest.raises(
+            visual_causal._HierarchySearchExhausted,
+            match="affine hierarchy deterministic search budget exhausted",
+        ):
+            visual_causal._hierarchy_joint_layout(
+                scene,
+                hierarchy,
+                rejected_signatures=set(),
+            )
+
+
+def test_consequence_hierarchy_search_exhaustion_is_receipted_and_recoverable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    environment = _TwoLayerAffineEnvironment()
+    policy = VisualCausalPolicy(max_coordinate_candidates=8)
+    observation = environment.observation()
+
+    for _ in range(12):
+        action = policy.select(observation)
+        observation = environment.step(action)
+        policy.accept_consequence(observation)
+        if observation.levels_completed == 1:
+            break
+    assert observation.levels_completed == 1
+
+    hierarchy_action = policy.select(observation)
+    hierarchy_signature = policy._pending_plan_signature
+    assert hierarchy_signature is not None
+    assert hierarchy_signature.startswith("affine-hierarchy:")
+    failed_before = set(policy._failed_plan_signatures)
+    returned = environment.step(hierarchy_action)
+    assert returned.state is GameStateName.NOT_FINISHED
+    exhaustion_calls = 0
+
+    def exhaust_consequence_search(*_args: object, **_kwargs: object) -> None:
+        nonlocal exhaustion_calls
+        exhaustion_calls += 1
+        raise visual_causal._HierarchySearchExhausted(
+            "affine hierarchy deterministic search budget exhausted"
+        )
+
+    monkeypatch.setattr(
+        visual_causal,
+        "_unique_affine_hierarchy",
+        exhaust_consequence_search,
+    )
+
+    policy.accept_consequence(returned)
+
+    assert exhaustion_calls == 1
+    assert policy.receipts[-1].after_state is GameStateName.NOT_FINISHED
+    assert policy.receipts[-1].residual is not None
+    assert "hierarchy" in policy.receipts[-1].residual
+    assert (
+        "search budget exhausted" in policy.receipts[-1].residual
+        or "not structurally readable" in policy.receipts[-1].residual
+    )
+    assert policy._failed_plan_signatures == failed_before | {hierarchy_signature}
+    snapshot = policy.snapshot()
+    assert snapshot["hierarchy_active"] is False
+    assert snapshot["hierarchy_supports"] == []
+    assert snapshot["pending_plan_actions"] == 0
+    assert snapshot["hierarchy_rejected_count"] == sum(
+        item.startswith("affine-hierarchy:") for item in failed_before | {hierarchy_signature}
+    )
+    assert policy._last_probe_failed is True
+    assert policy._pending_action is None
+
+    recovery_action = policy.select(returned)
+    assert recovery_action.name is ActionName.ACTION6
+    assert recovery_action.coordinate is not None
+    assert policy._pending_plan_signature is None
+    assert policy._pending_completes_local_target is False
+
+
+def test_isolated_same_color_cells_on_distinct_legs_remain_static() -> None:
+    rows = [list(row) for row in _two_layer_affine_frame().cells]
+    blockers = frozenset({(16, 46), (24, 46)})
+    for x, y in blockers:
+        rows[y][x] = 9
+    scene = extract_visual_scene(GridFrame.from_rows(rows))
+    blocker_objects = tuple(
+        item for item in scene.objects if any(blocker in item.cells for blocker in blockers)
+    )
+    assert len(blocker_objects) == 2
+    assert all(item.color == 9 for item in blocker_objects)
+    assert all(item.area == 1 for item in blocker_objects)
+    assert all(item.role is VisualObjectRole.OTHER for item in blocker_objects)
+
+    hierarchy = visual_causal._unique_affine_hierarchy(scene, active_color=0)
+    assert hierarchy is not None
+    observed_dynamic = frozenset(
+        cell
+        for child in hierarchy.children
+        for cell in visual_causal._hierarchy_dynamic_footprint(scene, child)
+    )
+    assert blockers.isdisjoint(observed_dynamic)
+    assert all(scene.cells[y][x] == 9 for x, y in blockers)
