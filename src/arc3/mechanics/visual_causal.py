@@ -684,6 +684,175 @@ def _radial_plan_points(
     return None
 
 
+_COMPOSITE_MEDIATOR_OFFSETS = frozenset(
+    (dx, dy)
+    for dy in range(-2, 3)
+    for dx in range(-2, 3)
+    if (abs(dx), abs(dy)) != (2, 2)
+)
+_COMPOSITE_TARGET_OFFSETS = frozenset(
+    {
+        (-1, -3),
+        (1, -3),
+        (-2, -2),
+        (2, -2),
+        (-3, -1),
+        (3, -1),
+        (-3, 1),
+        (3, 1),
+        (-2, 2),
+        (2, 2),
+        (-1, 3),
+        (1, 3),
+    }
+)
+
+
+def _proxy_visual_object(
+    scene: VisualScene,
+    *,
+    marker_color: int,
+    cells: tuple[tuple[int, int], ...],
+    center: tuple[int, int],
+    center_cell: int,
+    role: VisualObjectRole,
+    identity_kind: str,
+) -> VisualObject:
+    """Build one bounded compound-object projection without changing base components."""
+
+    ordered = tuple(sorted(cells, key=lambda cell: (cell[1], cell[0])))
+    identity = identity_kind + "|" + ";".join(
+        f"{x},{y},{scene.cells[y][x]}" for x, y in ordered
+    )
+    object_ref = (
+        f"visual-{identity_kind}:"
+        + hashlib.sha256(f"{marker_color}|{identity}".encode("ascii")).hexdigest()[:20]
+    )
+    min_x = min(x for x, _y in ordered)
+    min_y = min(y for _x, y in ordered)
+    max_x = max(x for x, _y in ordered)
+    max_y = max(y for _x, y in ordered)
+    return VisualObject(
+        object_ref=object_ref,
+        color=marker_color,
+        cells=ordered,
+        min_x=min_x,
+        min_y=min_y,
+        max_x=max_x,
+        max_y=max_y,
+        center_x=float(center[0]),
+        center_y=float(center[1]),
+        center_cell=center_cell,
+        touches_edge=(min_x == 0 or min_y == 0 or max_x == scene.width - 1 or max_y == scene.height - 1),
+        role=role,
+    )
+
+
+def _compound_outer_signature(
+    scene: VisualScene,
+    *,
+    cells: tuple[tuple[int, int], ...],
+    center: tuple[int, int],
+) -> frozenset[int]:
+    """Return compound sector colors while excluding connector strokes and the core."""
+
+    footprint = frozenset(cells)
+    cell_to_object = {
+        cell: item
+        for item in scene.objects
+        for cell in item.cells
+        if cell in footprint
+    }
+    return frozenset(
+        scene.cells[y][x]
+        for x, y in cells
+        if (x, y) != center
+        and (
+            (item := cell_to_object.get((x, y))) is None
+            or frozenset(item.cells) <= footprint
+        )
+    )
+
+
+def _composite_marker_mediator(
+    scene: VisualScene,
+    *,
+    marker_color: int,
+    endpoints: tuple[VisualObject, ...],
+) -> VisualObject | None:
+    """Assemble the exact 21-cell compound disk at an endpoint-group centroid."""
+
+    center = (
+        sum(item.rounded_center[0] for item in endpoints) // len(endpoints),
+        sum(item.rounded_center[1] for item in endpoints) // len(endpoints),
+    )
+    cells = tuple(
+        sorted(
+            ((center[0] + dx, center[1] + dy) for dx, dy in _COMPOSITE_MEDIATOR_OFFSETS),
+            key=lambda cell: (cell[1], cell[0]),
+        )
+    )
+    if any(
+        not (0 <= x < scene.width and 0 <= y < scene.height)
+        or scene.cells[y][x] == scene.background
+        for x, y in cells
+    ):
+        return None
+    signature = _compound_outer_signature(scene, cells=cells, center=center)
+    if marker_color not in signature or scene.cells[center[1]][center[0]] == scene.background:
+        return None
+    return _proxy_visual_object(
+        scene,
+        marker_color=marker_color,
+        cells=cells,
+        center=center,
+        center_cell=scene.cells[center[1]][center[0]],
+        role=VisualObjectRole.MEDIATOR_CANDIDATE,
+        identity_kind="composite-mediator",
+    )
+
+
+def _composite_sparse_targets(
+    scene: VisualScene,
+) -> tuple[tuple[VisualObject, frozenset[int]], ...]:
+    """Find exact multicolor 12-cell rings without loosening component roles globally."""
+
+    targets: list[tuple[VisualObject, frozenset[int]]] = []
+    complete_box = frozenset(
+        (dx, dy) for dy in range(-3, 4) for dx in range(-3, 4)
+    )
+    for center_y in range(3, scene.height - 3):
+        for center_x in range(3, scene.width - 3):
+            observed = frozenset(
+                (dx, dy)
+                for dx, dy in complete_box
+                if scene.cells[center_y + dy][center_x + dx] != scene.background
+            )
+            if observed != _COMPOSITE_TARGET_OFFSETS:
+                continue
+            cells = tuple(
+                sorted(
+                    (
+                        (center_x + dx, center_y + dy)
+                        for dx, dy in _COMPOSITE_TARGET_OFFSETS
+                    ),
+                    key=lambda cell: (cell[1], cell[0]),
+                )
+            )
+            signature = frozenset(scene.cells[y][x] for x, y in cells)
+            proxy = _proxy_visual_object(
+                scene,
+                marker_color=min(signature),
+                cells=cells,
+                center=(center_x, center_y),
+                center_cell=scene.background,
+                role=VisualObjectRole.HOLLOW_TARGET_CANDIDATE,
+                identity_kind="composite-target-candidate",
+            )
+            targets.append((proxy, signature))
+    return tuple(targets)
+
+
 def _embedded_marker_groups(scene: VisualScene) -> tuple[_EmbeddedMarkerGroup, ...]:
     """Read unambiguous endpoint groups from embedded center-cell colors.
 
@@ -699,18 +868,55 @@ def _embedded_marker_groups(scene: VisualScene) -> tuple[_EmbeddedMarkerGroup, .
             continue
         endpoints_by_marker.setdefault(endpoint.center_cell, []).append(endpoint)
 
+    composite_targets = _composite_sparse_targets(scene)
     groups: list[_EmbeddedMarkerGroup] = []
     for marker_color, endpoints in endpoints_by_marker.items():
         mediators = tuple(item for item in scene.mediators if item.color == marker_color)
         targets = tuple(item for item in scene.targets if item.color == marker_color)
-        if not 2 <= len(endpoints) <= 6 or len(mediators) != 1 or len(targets) != 1:
+        if not 2 <= len(endpoints) <= 6:
+            continue
+        mediator: VisualObject | None = None
+        target: VisualObject | None = None
+        if len(mediators) == 1 and len(targets) == 1:
+            mediator = mediators[0]
+            target = targets[0]
+        else:
+            mediator = _composite_marker_mediator(
+                scene,
+                marker_color=marker_color,
+                endpoints=tuple(endpoints),
+            )
+            if mediator is not None:
+                outer_colors = _compound_outer_signature(
+                    scene,
+                    cells=mediator.cells,
+                    center=mediator.rounded_center,
+                )
+                matched_targets = tuple(
+                    candidate
+                    for candidate, signature in composite_targets
+                    if len(signature) >= 2
+                    and marker_color in signature
+                    and signature == outer_colors
+                )
+                if len(matched_targets) == 1:
+                    target = _proxy_visual_object(
+                        scene,
+                        marker_color=marker_color,
+                        cells=matched_targets[0].cells,
+                        center=matched_targets[0].rounded_center,
+                        center_cell=scene.background,
+                        role=VisualObjectRole.HOLLOW_TARGET_CANDIDATE,
+                        identity_kind="composite-target",
+                    )
+        if mediator is None or target is None:
             continue
         groups.append(
             _EmbeddedMarkerGroup(
                 marker_color=marker_color,
                 endpoints=tuple(sorted(endpoints, key=lambda item: item.object_ref)),
-                mediator=mediators[0],
-                target=targets[0],
+                mediator=mediator,
+                target=target,
             )
         )
     return tuple(sorted(groups, key=lambda item: item.marker_color))
@@ -1146,15 +1352,27 @@ def _scene_after_marker_stage(
         width=scene.width,
         height=scene.height,
     )
+    mediator_before_center = group.mediator.rounded_center
+    mediator_cell_colors = {
+        (cell_x - mediator_before_center[0], cell_y - mediator_before_center[1]): scene.cells[
+            cell_y
+        ][cell_x]
+        for cell_x, cell_y in group.mediator.cells
+    }
     rows = [list(row) for row in scene.cells]
     for item in (endpoint, group.mediator):
         for cell_x, cell_y in (*item.cells, item.rounded_center):
             rows[cell_y][cell_x] = scene.background
-    for item in (endpoint_after, mediator_after):
-        for cell_x, cell_y in item.cells:
-            rows[cell_y][cell_x] = item.color
-        center_x, center_y = item.rounded_center
-        rows[center_y][center_x] = item.center_cell
+    for cell_x, cell_y in endpoint_after.cells:
+        rows[cell_y][cell_x] = endpoint_after.color
+    endpoint_center_x, endpoint_center_y = endpoint_after.rounded_center
+    rows[endpoint_center_y][endpoint_center_x] = endpoint_after.center_cell
+    mediator_after_center = mediator_after.rounded_center
+    for cell_x, cell_y in mediator_after.cells:
+        offset = (cell_x - mediator_after_center[0], cell_y - mediator_after_center[1])
+        rows[cell_y][cell_x] = mediator_cell_colors[offset]
+    mediator_center_x, mediator_center_y = mediator_after_center
+    rows[mediator_center_y][mediator_center_x] = mediator_after.center_cell
     projected_frame = GridFrame.from_rows(rows)
     replacements = {
         endpoint.object_ref: endpoint_after,
@@ -1915,6 +2133,23 @@ def _local_target_satisfied(
 ) -> bool:
     if target_center is None or mediator_color is None or arity is None:
         return False
+    marker_endpoints = tuple(
+        item for item in scene.endpoints if item.center_cell == mediator_color
+    )
+    if len(marker_endpoints) == arity:
+        marker_centroid = (
+            sum(item.center_x for item in marker_endpoints) / arity,
+            sum(item.center_y for item in marker_endpoints) / arity,
+        )
+        if _distance(marker_centroid, target_center) <= 2.0:
+            return True
+    if any(
+        group.marker_color == mediator_color
+        and group.arity == arity
+        and _distance(group.mediator.rounded_center, target_center) <= 2.0
+        for group in _embedded_marker_groups(scene)
+    ):
+        return True
     targets = tuple(
         item
         for item in scene.targets

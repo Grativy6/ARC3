@@ -212,6 +212,42 @@ def _marker_frame(
     return GridFrame.from_rows(rows)
 
 
+def _composite_marker_frame() -> GridFrame:
+    rows = [[5 for _ in range(64)] for _ in range(64)]
+    groups = {
+        12: (((8, 8), (28, 8), (18, 24)), (45, 58)),
+        14: (((6, 38), (10, 56), (32, 56)), (50, 10)),
+        9: (((50, 34), (50, 50)), (38, 58)),
+    }
+
+    def sector_color(marker: int, dx: int, dy: int) -> int:
+        if marker == 12:
+            return 12 if dx < 0 else 7
+        if marker == 14:
+            return 14 if dx < 0 else 11
+        return 9 if dx < 0 else 8
+
+    for marker, (endpoints, target) in groups.items():
+        for endpoint_index, endpoint in enumerate(endpoints):
+            _paint(rows, endpoint, _ENDPOINT_SHAPE, 0 if marker == 12 and endpoint_index == 0 else 3)
+            rows[endpoint[1]][endpoint[0]] = marker
+        mediator = (
+            sum(x for x, _y in endpoints) // len(endpoints),
+            sum(y for _x, y in endpoints) // len(endpoints),
+        )
+        for dx, dy in _HUB_OUTER:
+            rows[mediator[1] + dy][mediator[0] + dx] = sector_color(marker, dx, dy)
+        rows[mediator[1]][mediator[0]] = 6
+        for dx, dy in _OFFSET_SPARSE_TARGET_RING:
+            rows[target[1] + dy][target[0] + dx] = sector_color(marker, dx, dy)
+
+    for y in range(22, 39):
+        for x in range(25, 43):
+            rows[y][x] = 10
+    _paint(rows, (54, 46), _OFFSET_SPARSE_TARGET_RING, 13)
+    return GridFrame.from_rows(rows)
+
+
 def _sparse_target_overlay_frame(
     *,
     target_center: tuple[int, int] = (30, 30),
@@ -352,6 +388,67 @@ def test_sparse_target_ring_survives_nonbackground_center_overlay() -> None:
 
     assert action.coordinate == Coordinate(10, 10)
     assert "marker-group affine solution" in policy._pending_prediction
+
+
+def test_multicolor_marker_compounds_retain_affine_groups_and_blocker_gate() -> None:
+    scene = extract_visual_scene(_composite_marker_frame())
+
+    groups = {group.marker_color: group for group in _embedded_marker_groups(scene)}
+
+    assert set(groups) == {9, 12, 14}
+    assert groups[12].mediator.rounded_center == (18, 13)
+    assert groups[12].target.rounded_center == (45, 58)
+    assert groups[14].mediator.rounded_center == (16, 50)
+    assert groups[14].target.rounded_center == (50, 10)
+    assert groups[9].mediator.rounded_center == (50, 42)
+    assert groups[9].target.rounded_center == (38, 58)
+
+    plan = visual_causal._embedded_marker_plan(
+        scene,
+        level_index=3,
+        active_color=0,
+        staged_marker_color=None,
+        rejected_signatures=set(),
+    )
+
+    assert plan is not None
+    assert plan.plan_signature.startswith("marker:12:")
+    resulting_mediator = (
+        (28 + 18 + plan.coordinate.x) // 3,
+        (8 + 24 + plan.coordinate.y) // 3,
+    )
+    assert visual_causal._marker_mediator_avoids_static_components(
+        scene,
+        groups[12],
+        mediator_after=resulting_mediator,
+    )
+    assert not visual_causal._marker_mediator_avoids_static_components(
+        scene,
+        groups[12],
+        mediator_after=(32, 28),
+    )
+    active = visual_causal._embedded_marker_active_endpoint(scene, active_color=0)
+    assert active is not None
+    projection = visual_causal._scene_after_marker_stage(
+        scene,
+        groups[12],
+        active,
+        plan.coordinate,
+    )
+    assert projection is not None
+    projected_scene, _projected_group = projection
+    reparsed = {
+        group.marker_color: group for group in _embedded_marker_groups(projected_scene)
+    }
+    assert reparsed[12].target.rounded_center == (45, 58)
+    assert (
+        visual_causal._compound_outer_signature(
+            projected_scene,
+            cells=reparsed[12].mediator.cells,
+            center=reparsed[12].mediator.rounded_center,
+        )
+        == frozenset({7, 12})
+    )
 
 
 def test_marker_relocation_checks_the_observed_endpoint_footprint() -> None:
