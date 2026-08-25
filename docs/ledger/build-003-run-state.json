@@ -74,12 +74,12 @@
     "campaign21_reacquisition_repair_commit": "858650c4b6494faaeee5e8ef24cd1bf27257e82d",
     "campaign22_hierarchy_repair_commit": "cfc1d245750574b6545b964c31142d77c24e14a2",
     "campaign22_hierarchy_result": "the nine returned hierarchy actions produced distinct child supports (59,31) and (47,25) with parent centroid (53,28), but the official environment remained NOT_FINISHED; joint parent-centroid sufficiency is falsified",
-    "candidate_repair_commit": "20078a1940c625821fe464ead9aa7da7bf0be727",
+    "candidate_repair_commit": "20078a1a0c6e549017fa02e4ac3b50da7e781a0f",
     "candidate_repair_replay": "matched Campaign 21 actions 1-61; on the clean level-entry frame the exact non-active-child isolation sequence is (34,55), (53,36), (41,47), (46,24), (52,55), (60,24), ending with only the selected child mediator at (53,28) while the sibling and target certificates remain exact",
     "candidate_repair_search_budget": "106434/131072 units remain on the recorded Campaign 21 level-entry frame",
     "candidate_repair_verification": "100 exact committed-source visual-policy tests; 11 focused child-isolation regressions; 9 secret tests; Ruff lint and format; strict mypy; compilation; diff checks; exact clean-frame planner replay; two independent reviews with no P0/P1/P2 finding",
     "next_candidate_repair": "generic exact-projected isolation of one non-active child at the target while preserving the other child and the raw parent-target surface",
-    "next_candidate_repair_commit": "20078a1940c625821fe464ead9aa7da7bf0be727",
+    "next_candidate_repair_commit": "20078a1a0c6e549017fa02e4ac3b50da7e781a0f",
     "next_candidate_repair_verification": "PASS_LOCAL_RECORDED_FRAME_ONLY"
   },
   "stage_status": {
