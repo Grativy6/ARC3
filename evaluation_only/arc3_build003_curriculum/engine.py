@@ -23,6 +23,7 @@ from arc3.types import (
 
 from .generator import BOARD_MAX, BOARD_MIN
 from .models import (
+    DEFAULT_ACTION_VECTORS,
     CurriculumFamily,
     CurriculumSpec,
     CurriculumState,
@@ -31,13 +32,9 @@ from .models import (
     Point,
     TransitionTruth,
 )
+from .protocol import protocol_definition
 
-MOVES: dict[ActionName, Point] = {
-    ActionName.ACTION1: (0, -1),
-    ActionName.ACTION2: (0, 1),
-    ActionName.ACTION3: (-1, 0),
-    ActionName.ACTION4: (1, 0),
-}
+MOVES: dict[ActionName, Point] = dict(DEFAULT_ACTION_VECTORS)
 AVAILABLE_ACTIONS = (*MOVES, ActionName.ACTION5)
 
 # Semantic roles are stable; the per-level color assigned to each role is not.
@@ -120,10 +117,12 @@ def advance_level(
             gate_open = True
             effects.append("gate-open-delayed")
 
-    if action.name in MOVES:
-        target = _add(player, MOVES[action.name])
+    moves = dict(spec.action_vectors)
+    if action.name in moves:
+        vector = moves[action.name]
+        target = _add(player, vector)
         if target == pushable:
-            pushed_target = _add(target, MOVES[action.name])
+            pushed_target = _add(target, vector)
             push_state = replace(state, gate_open=gate_open)
             if (
                 _blocked(spec, push_state, pushed_target)
@@ -333,7 +332,7 @@ class CurriculumSession:
         return ScoreSummary(
             surface=EvaluationSurface.SYNTHETIC,
             verified=True,
-            scorer="arc3-build003-curriculum-v0.1",
+            scorer=protocol_definition(self._spec.protocol_id).scorecard_scorer,
             score=run.score,
             runs=(run,),
         )

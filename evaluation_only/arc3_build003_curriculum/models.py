@@ -5,9 +5,20 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import StrEnum
 
-from arc3.types import ActionRequest, GameStateName
+from arc3.types import ActionName, ActionRequest, GameStateName
+
+from .protocol import PROTOCOL_V0_1, PROTOCOL_V0_2, protocol_definition
 
 type Point = tuple[int, int]
+
+MOVEMENT_ACTIONS = (
+    ActionName.ACTION1,
+    ActionName.ACTION2,
+    ActionName.ACTION3,
+    ActionName.ACTION4,
+)
+CARDINAL_VECTORS: tuple[Point, ...] = ((0, -1), (0, 1), (-1, 0), (1, 0))
+DEFAULT_ACTION_VECTORS = tuple(zip(MOVEMENT_ACTIONS, CARDINAL_VECTORS, strict=True))
 
 
 class CurriculumFamily(StrEnum):
@@ -64,6 +75,7 @@ class LevelSpec:
     base_cost: int
     resource_start: int
     resource_cap: int
+    action_vectors: tuple[tuple[ActionName, Point], ...] = DEFAULT_ACTION_VECTORS
     reusable_restorers: frozenset[Point] = frozenset()
     one_shot_restorers: frozenset[Point] = frozenset()
     restoration_amount: int = 0
@@ -88,6 +100,14 @@ class LevelSpec:
             raise ValueError("initial resource must be positive and within its cap")
         if self.base_cost <= 0 or self.max_steps <= 0:
             raise ValueError("cost and step bounds must be positive")
+        if (
+            len(self.action_vectors) != len(MOVEMENT_ACTIONS)
+            or {action for action, _ in self.action_vectors} != set(MOVEMENT_ACTIONS)
+            or {vector for _, vector in self.action_vectors} != set(CARDINAL_VECTORS)
+        ):
+            raise ValueError(
+                "action vectors must biject ACTION1 through ACTION4 onto the cardinal vectors"
+            )
         if (self.pushable_start is None) != (self.pushable_goal is None):
             raise ValueError("pushable start and goal must be declared together")
         if (self.delayed_trigger is None) != (self.delayed_actions == 0):
@@ -131,10 +151,17 @@ class CurriculumSpec:
 
     case: CurriculumCase
     levels: tuple[LevelSpec, ...]
+    protocol_id: str = PROTOCOL_V0_1.protocol_id
 
     def __post_init__(self) -> None:
+        definition = protocol_definition(self.protocol_id)
         if tuple(level.family for level in self.levels) != tuple(CurriculumFamily):
             raise ValueError("curriculum must contain every family exactly once in frozen order")
+        if definition is PROTOCOL_V0_2:
+            if len({level.base_cost for level in self.levels}) != 1:
+                raise ValueError("protocol v0.2 requires one base cost reused across levels")
+            if len({level.action_vectors for level in self.levels}) != 1:
+                raise ValueError("protocol v0.2 requires one action mapping reused across levels")
 
 
 @dataclass(frozen=True, slots=True)
@@ -200,6 +227,9 @@ class SequenceOracleReceipt:
 
 
 __all__ = [
+    "CARDINAL_VECTORS",
+    "DEFAULT_ACTION_VECTORS",
+    "MOVEMENT_ACTIONS",
     "CurriculumCase",
     "CurriculumFamily",
     "CurriculumSpec",

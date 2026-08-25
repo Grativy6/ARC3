@@ -12,34 +12,45 @@ from pathlib import Path
 
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--protocol", choices=("v0.1", "v0.2"), required=True)
+    parser.add_argument("--seed-set", choices=("development", "heldout"), required=True)
     parser.add_argument(
         "--limit",
         type=int,
-        default=30,
-        help="diagnostic prefix of the frozen 30 seeds to validate (default: all)",
+        help="diagnostic prefix of the explicitly selected seed set (default: all)",
     )
     return parser
 
 
 def main(argv: list[str] | None = None) -> int:
     args = _parser().parse_args(argv)
-    if not 1 <= args.limit <= 30:
-        raise SystemExit("--limit must be between 1 and 30")
     repository = Path(__file__).resolve().parents[1]
     if str(repository) not in sys.path:
         sys.path.insert(0, str(repository))
 
     from evaluation_only.arc3_build003_curriculum.generator import (
+        development_seeds,
         frozen_seeds,
         generate_curriculum,
     )
     from evaluation_only.arc3_build003_curriculum.oracle import validate_curriculum
+    from evaluation_only.arc3_build003_curriculum.protocol import protocol_definition
+
+    definition = protocol_definition(args.protocol)
+    available_seeds = (
+        frozen_seeds(definition) if args.seed_set == "heldout" else development_seeds(definition)
+    )
+    limit = len(available_seeds) if args.limit is None else args.limit
+    if not 1 <= limit <= len(available_seeds):
+        raise SystemExit(
+            f"--limit must be between 1 and {len(available_seeds)} for {args.seed_set}"
+        )
 
     started = time.perf_counter()
     receipts: list[dict[str, object]] = []
     total_environment_actions = 0
-    for seed in frozen_seeds()[: args.limit]:
-        receipt = validate_curriculum(generate_curriculum(seed))
+    for seed in available_seeds[:limit]:
+        receipt = validate_curriculum(generate_curriculum(seed, definition))
         total_environment_actions += receipt.environment_actions
         value = asdict(receipt)
         value["final_state"] = receipt.final_state.value
@@ -54,9 +65,12 @@ def main(argv: list[str] | None = None) -> int:
         receipts.append(value)
     elapsed = time.perf_counter() - started
     output = {
-        "schema": "arc3.build003.curriculum-oracle-batch.v0.1",
+        "schema": f"arc3.build003.curriculum-oracle-batch.{definition.version.value}",
         "surface": "synthetic",
         "status": "PASS",
+        "protocol_version": definition.version.value,
+        "protocol_id": definition.protocol_id,
+        "seed_set": args.seed_set,
         "seed_count": len(receipts),
         "all_authoritative_win": all(row["final_state"] == "WIN" for row in receipts),
         "all_ten_levels_completed": all(row["levels_completed"] == 10 for row in receipts),

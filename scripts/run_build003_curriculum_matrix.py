@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import subprocess
 import sys
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -14,9 +15,12 @@ from pathlib import Path
 
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--limit", type=int, default=30)
+    parser.add_argument("--protocol", choices=("v0.1", "v0.2"), required=True)
+    parser.add_argument("--seed-set", choices=("development", "heldout"), required=True)
+    parser.add_argument("--limit", type=int)
     parser.add_argument("--jobs", type=int, default=4)
     parser.add_argument("--output-root", type=Path, required=True)
+    parser.add_argument("--worker-storage-root", type=Path)
     parser.add_argument("--build002-source-root", type=Path)
     parser.add_argument(
         "--variants",
@@ -45,10 +49,17 @@ def _sha256(path: Path) -> str:
     return "sha256:" + hashlib.sha256(path.read_bytes()).hexdigest()
 
 
+def _git(source_root: Path, *arguments: str) -> str:
+    return subprocess.check_output(
+        ["git", "-C", str(source_root), *arguments],
+        text=True,
+        encoding="utf-8",
+        stderr=subprocess.STDOUT,
+    ).strip()
+
+
 def main(argv: list[str] | None = None) -> int:
     args = _parser().parse_args(argv)
-    if not 1 <= args.limit <= 30:
-        raise SystemExit("--limit must be between 1 and 30")
     if not 1 <= args.jobs <= 8:
         raise SystemExit("--jobs must be between 1 and 8")
     repository = Path(__file__).resolve().parents[1]
@@ -58,11 +69,14 @@ def main(argv: list[str] | None = None) -> int:
 
     from evaluation_only.arc3_build003_curriculum.generator import (
         case_for_seed,
+        development_seeds,
         frozen_seeds,
         generate_curriculum,
     )
+    from evaluation_only.arc3_build003_curriculum.protocol import protocol_definition
     from evaluation_only.arc3_build003_curriculum.runner import (
         SequenceExecution,
+        budgets_for_protocol,
         run_sequence,
     )
 
@@ -73,27 +87,64 @@ def main(argv: list[str] | None = None) -> int:
         FrozenCase,
     )
 
+    definition = protocol_definition(args.protocol)
+    if "BUILD002_FROZEN" in args.variants:
+        if args.build002_source_root is None:
+            raise SystemExit("BUILD002_FROZEN requires --build002-source-root")
+        baseline_root = args.build002_source_root.resolve()
+        try:
+            baseline_commit = _git(baseline_root, "rev-parse", "HEAD")
+            baseline_tree = _git(baseline_root, "show", "-s", "--format=%T", "HEAD")
+            baseline_status = _git(baseline_root, "status", "--porcelain=v1")
+        except (OSError, subprocess.CalledProcessError) as error:
+            raise SystemExit(f"Build 002 source preflight failed: {error}") from error
+        if (
+            baseline_commit != definition.baseline.commit
+            or baseline_tree != definition.baseline.tree
+        ):
+            raise SystemExit(
+                "Build 002 source identity mismatch: expected "
+                f"{definition.baseline.commit}/{definition.baseline.tree}, observed "
+                f"{baseline_commit}/{baseline_tree}"
+            )
+        if baseline_status:
+            raise SystemExit("Build 002 source root must be clean")
+        args.build002_source_root = baseline_root
+    available_seeds = (
+        frozen_seeds(definition) if args.seed_set == "heldout" else development_seeds(definition)
+    )
+    limit = len(available_seeds) if args.limit is None else args.limit
+    if not 1 <= limit <= len(available_seeds):
+        raise SystemExit(
+            f"--limit must be between 1 and {len(available_seeds)} for {args.seed_set}"
+        )
+
     output_root = args.output_root.resolve()
-    rows_path = output_root / "rows.jsonl"
-    if rows_path.exists():
-        raise SystemExit(f"replacement is forbidden; output already exists: {rows_path}")
+    if output_root.exists() and any(output_root.iterdir()):
+        raise SystemExit(f"replacement is forbidden; output root is not empty: {output_root}")
     output_root.mkdir(parents=True, exist_ok=True)
-    storage_key = hashlib.sha256(str(output_root).encode("utf-8")).hexdigest()[:8]
-    storage_root = repository / "artifacts" / "b003w" / storage_key
+    rows_path = output_root / "rows.jsonl"
+    storage_root = (
+        args.worker_storage_root.resolve()
+        if args.worker_storage_root is not None
+        else output_root / "worker-storage"
+    )
+    if storage_root.exists() and any(storage_root.iterdir()):
+        raise SystemExit(f"replacement is forbidden; worker storage is not empty: {storage_root}")
     variant_storage_names = {
         "BUILD002_FROZEN": "b2",
         "BLA_CLEF_LEVEL_RESET": "lr",
         "BLA_ONLY_PERSISTENT": "bo",
         "BLA_CLEF_FULL": "bf",
     }
-    selected_seeds = frozen_seeds()[: args.limit]
+    selected_seeds = available_seeds[:limit]
     started = time.perf_counter()
     executions: list[SequenceExecution] = []
     futures = {}
     with ThreadPoolExecutor(max_workers=args.jobs, thread_name_prefix="build003") as pool:
         for variant in args.variants:
             for seed in selected_seeds:
-                spec = generate_curriculum(seed)
+                spec = generate_curriculum(seed, definition)
                 future = pool.submit(
                     run_sequence,
                     spec,
@@ -136,11 +187,14 @@ def main(argv: list[str] | None = None) -> int:
         newline="\n",
     )
 
-    complete_matrix = args.limit == 30 and tuple(args.variants) == VARIANTS
+    complete_matrix = (
+        args.seed_set == "heldout" and limit == 30 and tuple(args.variants) == VARIANTS
+    )
     paired_summary: dict[str, object] | None = None
     if complete_matrix:
         ledger = Build003ResultLedger(
-            FrozenCase(case_for_seed(seed).case_id, seed) for seed in frozen_seeds()
+            FrozenCase(case_for_seed(seed, definition).case_id, seed)
+            for seed in frozen_seeds(definition)
         )
         ledger.append_many(typed_rows)
         ledger.require_complete()
@@ -153,16 +207,28 @@ def main(argv: list[str] | None = None) -> int:
         status = str(receipt["run_status"])
         status_counts[status] = status_counts.get(status, 0) + 1
         wins += receipt["final_state"] == "WIN"
+    protocol_path = repository / definition.protocol_path
+    manifest_path = repository / definition.manifest_path
+    preregistration_path = repository / definition.preregistration_path
     batch = {
-        "schema": "arc3.build003.curriculum-matrix-receipt.v0.1",
+        "schema": definition.matrix_receipt_schema,
         "surface": "synthetic",
         "status": "PASS" if complete_matrix else "PARTIAL",
         "complete_preregistered_matrix": complete_matrix,
-        "case_count": args.limit,
+        "protocol_version": definition.version.value,
+        "protocol_id": definition.protocol_id,
+        "protocol_path": str(protocol_path),
+        "protocol_sha256": _sha256(protocol_path),
+        "manifest_path": str(manifest_path),
+        "manifest_sha256": _sha256(manifest_path),
+        "preregistration_path": str(preregistration_path),
+        "preregistration_sha256": _sha256(preregistration_path),
+        "seed_set": args.seed_set,
+        "case_count": limit,
         "variant_count": len(args.variants),
         "sequence_count": len(receipts),
         "row_count": len(rows),
-        "expected_selected_row_count": args.limit * len(args.variants) * len(FAMILIES),
+        "expected_selected_row_count": limit * len(args.variants) * len(FAMILIES),
         "expected_full_row_count": 1200,
         "authoritative_win_sequences": wins,
         "run_status_counts": dict(sorted(status_counts.items())),
@@ -172,6 +238,8 @@ def main(argv: list[str] | None = None) -> int:
         "sequence_receipts_path": str(receipts_path),
         "sequence_receipts_sha256": _sha256(receipts_path),
         "worker_storage_root": str(storage_root),
+        "budgets": asdict(budgets_for_protocol(definition)),
+        "build002_baseline_identity": asdict(definition.baseline),
         "paired_summary": paired_summary,
         "build002_source_root": (
             str(args.build002_source_root.resolve())
@@ -192,6 +260,8 @@ def main(argv: list[str] | None = None) -> int:
                 "# Build 003 synthetic curriculum matrix",
                 "",
                 f"- Status: `{batch['status']}`",
+                f"- Protocol: `{definition.protocol_id}`",
+                f"- Seed set: `{args.seed_set}`",
                 f"- Rows: `{len(rows)}` / `1200` preregistered",
                 f"- Sequences: `{len(receipts)}`",
                 f"- Authoritative synthetic WIN sequences: `{wins}`",
@@ -199,6 +269,8 @@ def main(argv: list[str] | None = None) -> int:
                 f"- Wall time: `{elapsed:.6f}` seconds",
                 f"- Rows SHA-256: `{batch['rows_sha256']}`",
                 f"- Receipts SHA-256: `{batch['sequence_receipts_sha256']}`",
+                f"- Frozen Build 002 commit: `{definition.baseline.commit}`",
+                f"- Frozen Build 002 tree: `{definition.baseline.tree}`",
                 "",
                 "This is synthetic evidence only. No public, holdout, or official target game "
                 "was opened, and these results do not establish target-game completion.",

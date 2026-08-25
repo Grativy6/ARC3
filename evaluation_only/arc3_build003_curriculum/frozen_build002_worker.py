@@ -15,9 +15,6 @@ from collections import Counter
 from pathlib import Path
 from typing import Any, cast
 
-EXPECTED_COMMIT = "753b0e007222a973a2c8a6d7ce14a395135d3c5f"
-EXPECTED_TREE = "d07e72716a1f918ed04a6892adb1e3f46259e345"
-
 
 def _git(source_root: Path, *arguments: str) -> str:
     return subprocess.check_output(
@@ -32,6 +29,8 @@ def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--source-root", type=Path, required=True)
     parser.add_argument("--storage-root", type=Path, required=True)
+    parser.add_argument("--expected-commit", required=True)
+    parser.add_argument("--expected-tree", required=True)
     return parser
 
 
@@ -44,8 +43,10 @@ def main(argv: list[str] | None = None) -> int:
     source_root = args.source_root.resolve()
     commit = _git(source_root, "rev-parse", "HEAD")
     tree = _git(source_root, "show", "-s", "--format=%T", "HEAD")
-    if commit != EXPECTED_COMMIT or tree != EXPECTED_TREE:
+    if commit != args.expected_commit or tree != args.expected_tree:
         raise SystemExit("Build 002 source identity mismatch")
+    if _git(source_root, "status", "--porcelain=v1"):
+        raise SystemExit("Build 002 source root is not clean")
     sys.path.insert(0, str(source_root / "src"))
 
     from arc3.adapters import GridFrame, Observation
@@ -88,14 +89,10 @@ def main(argv: list[str] | None = None) -> int:
             state=GameStateName(str(raw["state"])),
             levels_completed=int(raw["levels_completed"]),
             win_levels=int(raw["win_levels"]),
-            available_actions=tuple(
-                ActionName(str(item)) for item in raw["available_actions"]
-            ),
+            available_actions=tuple(ActionName(str(item)) for item in raw["available_actions"]),
             full_reset=bool(raw["full_reset"]),
             returned_action=action_from(raw.get("returned_action")),
-            upstream_metadata=tuple(
-                (str(item[0]), item[1]) for item in raw["metadata"]
-            ),
+            upstream_metadata=tuple((str(item[0]), item[1]) for item in raw["metadata"]),
         )
 
     storage_root = args.storage_root.resolve()
@@ -164,7 +161,7 @@ def main(argv: list[str] | None = None) -> int:
                 config=config,
                 git_commit=commit,
                 source_kind="build003-synthetic-observation",
-                source_version="build002-frozen-753b0e0",
+                source_version=f"build002-frozen-{commit[:7]}",
             )
         )
         controller.observe(observation)
@@ -214,6 +211,7 @@ def main(argv: list[str] | None = None) -> int:
             "win_levels": observation.win_levels,
             "source_commit": commit,
             "source_tree": tree,
+            "source_clean": True,
             "arc3_file": str(sys.modules["arc3"].__file__),
         }
 
@@ -222,6 +220,7 @@ def main(argv: list[str] | None = None) -> int:
             "schema": "arc3.build003.frozen-build002-ready.v0.1",
             "source_commit": commit,
             "source_tree": tree,
+            "source_clean": True,
             "arc3_file": str(sys.modules["arc3"].__file__),
         }
     )

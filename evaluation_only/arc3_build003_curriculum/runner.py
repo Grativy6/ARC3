@@ -20,21 +20,64 @@ from arc3.types import ActionName, ActionRequest, Coordinate, GameStateName
 from .broker import PolicyProcess, observation_to_bytes
 from .engine import CurriculumSession
 from .models import CurriculumSpec, CurriculumVariant
+from .protocol import (
+    PROTOCOL_V0_1,
+    ProtocolBudgets,
+    ProtocolDefinition,
+    SourceIdentity,
+    protocol_definition,
+)
 
-BUILD002_COMMIT = "753b0e007222a973a2c8a6d7ce14a395135d3c5f"
-BUILD002_TREE = "d07e72716a1f918ed04a6892adb1e3f46259e345"
+# Legacy aliases remain explicit for v0.1 evidence readers. Protocol v0.2 resolves
+# its own Stage 01 identity from ``ProtocolDefinition`` and never uses these defaults.
+BUILD002_COMMIT = PROTOCOL_V0_1.baseline.commit
+BUILD002_TREE = PROTOCOL_V0_1.baseline.tree
 
 
 @dataclass(frozen=True, slots=True)
 class SequenceBudgets:
     max_environment_actions: int = 1500
+    max_environment_actions_per_level: int | None = None
     max_resets: int = 10
     max_wall_clock_seconds: float = 120.0
     max_peak_memory_bytes: int = 1_073_741_824
     policy_cycle_seconds: float = 10.0
 
+    def __post_init__(self) -> None:
+        integer_bounds = (
+            self.max_environment_actions,
+            self.max_resets,
+            self.max_peak_memory_bytes,
+        )
+        if any(isinstance(value, bool) or value <= 0 for value in integer_bounds):
+            raise ValueError("sequence integer budgets must be positive")
+        if self.max_environment_actions_per_level is not None and (
+            isinstance(self.max_environment_actions_per_level, bool)
+            or self.max_environment_actions_per_level <= 0
+        ):
+            raise ValueError("per-level action budget must be positive when present")
+        if self.max_wall_clock_seconds <= 0 or self.policy_cycle_seconds <= 0:
+            raise ValueError("sequence time budgets must be positive")
 
-DEFAULT_SEQUENCE_BUDGETS = SequenceBudgets()
+
+def _sequence_budgets(values: ProtocolBudgets) -> SequenceBudgets:
+    return SequenceBudgets(
+        max_environment_actions=values.max_environment_actions,
+        max_environment_actions_per_level=values.max_environment_actions_per_level,
+        max_resets=values.max_resets,
+        max_wall_clock_seconds=values.max_wall_clock_seconds,
+        max_peak_memory_bytes=values.max_peak_memory_bytes,
+        policy_cycle_seconds=values.policy_cycle_seconds,
+    )
+
+
+def budgets_for_protocol(protocol: ProtocolDefinition | str) -> SequenceBudgets:
+    """Return the immutable executable bounds for an explicit protocol."""
+
+    return _sequence_budgets(protocol_definition(protocol).budgets)
+
+
+DEFAULT_SEQUENCE_BUDGETS = budgets_for_protocol(PROTOCOL_V0_1)
 
 
 @dataclass(frozen=True, slots=True)
@@ -75,6 +118,7 @@ class FrozenBuild002Process:
         *,
         source_root: Path,
         storage_root: Path,
+        source_identity: SourceIdentity,
         python_executable: Path | None = None,
     ) -> None:
         worker = Path(__file__).with_name("frozen_build002_worker.py")
@@ -86,6 +130,10 @@ class FrozenBuild002Process:
                 str(source_root),
                 "--storage-root",
                 str(storage_root),
+                "--expected-commit",
+                source_identity.commit,
+                "--expected-tree",
+                source_identity.tree,
             ],
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
@@ -97,8 +145,9 @@ class FrozenBuild002Process:
         ready = self._receive()
         if (
             ready.get("schema") != "arc3.build003.frozen-build002-ready.v0.1"
-            or ready.get("source_commit") != BUILD002_COMMIT
-            or ready.get("source_tree") != BUILD002_TREE
+            or ready.get("source_commit") != source_identity.commit
+            or ready.get("source_tree") != source_identity.tree
+            or ready.get("source_clean") is not True
         ):
             self.close()
             raise FrozenBuild002Error("frozen worker source identity receipt mismatch")
@@ -354,8 +403,7 @@ def _rows(
                 replay_digest=replay_digest,
                 replay_deterministic=replay_deterministic,
                 receipt_complete=(
-                    run_status != "FAILED_INFRASTRUCTURE"
-                    and receipt_count == complete_receipts
+                    run_status != "FAILED_INFRASTRUCTURE" and receipt_count == complete_receipts
                 ),
                 run_status=run_status,
                 failure_reason=failure_reason,
@@ -368,17 +416,21 @@ def run_sequence(
     spec: CurriculumSpec,
     variant: CurriculumVariant | str,
     *,
-    budgets: SequenceBudgets = DEFAULT_SEQUENCE_BUDGETS,
+    budgets: SequenceBudgets | None = None,
     build002_source_root: Path | None = None,
     storage_root: Path | None = None,
 ) -> SequenceExecution:
     """Run one opaque seed/variant sequence until WIN or an explicit bound."""
 
+    definition = protocol_definition(spec.protocol_id)
+    effective_budgets = budgets or budgets_for_protocol(definition)
     variant_name = variant.value if isinstance(variant, CurriculumVariant) else variant
     started = time.perf_counter()
     session = CurriculumSession(spec)
     transcript: list[tuple[ActionRequest, bytes]] = []
     environment_actions = 0
+    level_attempt_actions = 0
+    active_level = 0
     resets = 0
     peak_memory = 0
     status = "SUCCESS"
@@ -396,45 +448,65 @@ def run_sequence(
             process = FrozenBuild002Process(
                 source_root=build002_source_root,
                 storage_root=root / spec.case.case_id,
+                source_identity=definition.baseline,
             )
         else:
             process = PolicyProcess(
                 variant=variant_name,
-                timeout_seconds=budgets.policy_cycle_seconds,
+                timeout_seconds=effective_budgets.policy_cycle_seconds,
             )
         while session.observation.state is not GameStateName.WIN:
             elapsed = time.perf_counter() - started
-            if elapsed >= budgets.max_wall_clock_seconds:
+            if elapsed >= effective_budgets.max_wall_clock_seconds:
                 status = "WALL_CLOCK_BUDGET"
                 failure_reason = (
-                    f"sequence exceeded {budgets.max_wall_clock_seconds:.3f}s wall-clock budget"
+                    "sequence exceeded "
+                    f"{effective_budgets.max_wall_clock_seconds:.3f}s wall-clock budget"
                 )
                 break
-            if peak_memory > budgets.max_peak_memory_bytes:
+            if peak_memory > effective_budgets.max_peak_memory_bytes:
                 status = "MEMORY_BUDGET"
                 failure_reason = (
                     f"worker peak memory {peak_memory} exceeded "
-                    f"{budgets.max_peak_memory_bytes} bytes"
+                    f"{effective_budgets.max_peak_memory_bytes} bytes"
                 )
                 break
             if session.observation.state is GameStateName.GAME_OVER:
-                if resets >= budgets.max_resets:
+                if resets >= effective_budgets.max_resets:
                     status = "RESET_BUDGET"
-                    failure_reason = f"sequence exhausted {budgets.max_resets} resets without WIN"
+                    failure_reason = (
+                        f"sequence exhausted {effective_budgets.max_resets} resets without WIN"
+                    )
                     break
-            elif environment_actions >= budgets.max_environment_actions:
-                status = "ACTION_BUDGET"
-                failure_reason = (
-                    f"sequence exhausted {budgets.max_environment_actions} actions without WIN"
-                )
-                break
+            else:
+                if environment_actions >= effective_budgets.max_environment_actions:
+                    status = "ACTION_BUDGET"
+                    failure_reason = (
+                        "sequence exhausted "
+                        f"{effective_budgets.max_environment_actions} actions without WIN"
+                    )
+                    break
+                per_level = effective_budgets.max_environment_actions_per_level
+                if per_level is not None and level_attempt_actions >= per_level:
+                    status = "ACTION_BUDGET"
+                    failure_reason = (
+                        f"level {active_level + 1} attempt exhausted {per_level} actions without "
+                        "completion or GAME_OVER"
+                    )
+                    break
             action = process.request_action(session.observation)
             returned = session.step(action)
             transcript.append((action, observation_to_bytes(returned)))
             if action.name is ActionName.RESET:
                 resets += 1
+                active_level = 0
+                level_attempt_actions = 0
             else:
                 environment_actions += 1
+                level_attempt_actions += 1
+                if returned.levels_completed > active_level:
+                    active_level = returned.levels_completed
+                    level_attempt_actions = 0
             peak_memory = max(peak_memory, _rss_bytes(process.process_id))
         summary = process.finalize(session.observation)
         if session.observation.state is not GameStateName.WIN and status == "SUCCESS":
@@ -477,9 +549,15 @@ def run_sequence(
         replay_digest=digest,
         replay_deterministic=deterministic,
     )
-    receipt = {
-        "schema": "arc3.build003.sequence-run.v0.1",
+    receipt: dict[str, object] = {
+        "schema": definition.sequence_receipt_schema,
         "surface": "synthetic",
+        "protocol_version": definition.version.value,
+        "protocol_id": definition.protocol_id,
+        "protocol_path": definition.protocol_path,
+        "manifest_path": definition.manifest_path,
+        "budgets": asdict(effective_budgets),
+        "build002_baseline_identity": asdict(definition.baseline),
         "case_id": spec.case.case_id,
         "seed": spec.case.seed,
         "variant": variant_name,
@@ -518,6 +596,7 @@ __all__ = [
     "FrozenBuild002Process",
     "SequenceBudgets",
     "SequenceExecution",
+    "budgets_for_protocol",
     "execution_to_dict",
     "run_sequence",
 ]
