@@ -70,7 +70,7 @@ def _initialized(
     before = observation or _observation(7, {(2, 3): 2})
     policy = ObservationOnlyVariantPolicy(variant)
     policy._game_scope = str(before.game_id)
-    policy._enter_level(0)
+    policy._enter_level(0, observation=before)
     policy._previous = before
     return policy, before
 
@@ -208,8 +208,8 @@ def test_cross_level_retention_is_counted_only_after_confirm_transfer() -> None:
     supported = _observation(9, {(2, 3): 2}, returned_action=action)
     _submit(policy, before, action, supported)
 
-    policy._enter_level(1)
     next_before = _observation(9, {(2, 3): 2}, levels_completed=1)
+    policy._enter_level(1, observation=next_before)
     next_after = _observation(
         8,
         {(2, 3): 2},
