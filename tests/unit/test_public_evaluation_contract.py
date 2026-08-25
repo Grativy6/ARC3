@@ -49,6 +49,7 @@ from arc3.evaluation.public_runner import (
     _aggregate,
     _asset_identity_check,
     _failure_result,
+    _fold_trace_metrics,
     _hot_path_profile_valid,
     _legacy_aggregate,
     _OfflineSocketGuard,
@@ -856,6 +857,48 @@ def test_failure_receipt_preserves_a_recovered_official_score() -> None:
     assert receipt["status"] == "failure"
     assert receipt["score"] == recovered_score
     assert receipt["failure"]["kind"] == "PolicyError"
+    assert "disposition" not in receipt["failure"]
+
+    mechanical_specification = {
+        **specification,
+        "run_id": "fixture-B5-mechanical-seed-7",
+        "baseline_id": "B5",
+        "agent": "mechanical",
+    }
+    mechanical = _failure_result(
+        mechanical_specification,
+        identity,
+        started_at="2026-08-22T00:00:00Z",
+        status="failure",
+        kind="PolicyError",
+        message="bounded candidates exhausted",
+        recovered_score=recovered_score,
+    )
+    assert mechanical["failure"]["disposition"] == "FAILED_MECHANISM"
+
+
+def test_trace_metric_fold_restores_final_mechanical_observation() -> None:
+    metrics: dict[str, object] = {"fault_count": 0}
+    trace: dict[str, object] = {
+        "environment_action_count": 4,
+        "reset_count": 2,
+        "consequence_count": 6,
+        "byte_length": 60,
+        "event_type_counts": {},
+        "final_state": "NOT_FINISHED",
+        "final_levels_completed": 4,
+        "final_win_levels": 6,
+    }
+
+    _fold_trace_metrics(metrics, trace, minimum_fault_count=1)
+
+    assert metrics["environment_actions"] == 4
+    assert metrics["resets"] == 2
+    assert metrics["fault_count"] == 1
+    assert metrics["trace_bytes_per_action"] == 10.0
+    assert metrics["final_state"] == "NOT_FINISHED"
+    assert metrics["final_levels_completed"] == 4
+    assert metrics["final_win_levels"] == 6
 
 
 def test_aggregate_separates_recovered_failure_scores_from_success_metrics() -> None:

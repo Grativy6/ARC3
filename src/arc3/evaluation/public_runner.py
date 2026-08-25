@@ -61,11 +61,16 @@ from .public import (
     validate_public_gate,
 )
 
-_TERMINAL_STATUSES = frozenset({"PASS", "NOT_FINISHED", "PARTIAL", "FAILED_INFRASTRUCTURE"})
+_TERMINAL_STATUSES = frozenset(
+    {"PASS", "NOT_FINISHED", "PARTIAL", "FAILED_MECHANISM", "FAILED_INFRASTRUCTURE"}
+)
 _PUBLIC_SUMMARY_SCHEMA = "arc3.public-evaluation.summary.v0.2"
 _LEGACY_PUBLIC_SUMMARY_SCHEMA = "arc3.public-evaluation.summary.v0.1"
 _MECHANICAL_PUBLIC_SUMMARY_SCHEMA = "arc3.public-evaluation.summary.v0.3"
 _MECHANICAL_COMPLETION_SCHEMA = "arc3.build003.mechanical-completion.v0.2"
+_RECORDING_STATE_COUNT_SOURCE = (
+    "strict-pinned-sdk-recording-consequences-excluding-initial-observation"
+)
 
 # Kept as an injectable test seam without importing the environment adapter at
 # module import time.  Earned holdout workers resolve it only after their first
@@ -209,6 +214,7 @@ def _empty_metrics() -> dict[str, object]:
         "environment_actions": 0,
         "resets": 0,
         "game_over_events": 0,
+        "win_events": 0,
         "time_to_first_progress_seconds": None,
         "actions_to_first_completed_level": None,
         "repeated_no_op_rate": 0.0,
@@ -262,19 +268,19 @@ def _asset_identity_check(
     }
 
 
-def _recording_artifacts(
+def _recording_evidence(
     directory: Path,
     *,
     relative_root: str,
     expected_game_id: str,
-) -> list[dict[str, object]]:
-    """Strictly identify one pinned-SDK local-public recording."""
+) -> tuple[list[dict[str, object]], dict[str, int] | None]:
+    """Strictly identify one recording and count its returned consequence states."""
 
     if not directory.is_dir():
-        return []
+        return [], None
     files = sorted(item for item in directory.rglob("*") if item.is_file())
     if len(files) != 1:
-        return []
+        return [], None
     path = files[0]
     relative = path.relative_to(directory)
     expected_prefix = f"{expected_game_id}-"
@@ -285,25 +291,26 @@ def _recording_artifacts(
         or not path.name.endswith(".jsonl")
         or path.stat().st_size <= 0
     ):
-        return []
+        return [], None
     guid = path.name[len(expected_prefix) : -len(".jsonl")]
     if not guid:
-        return []
+        return [], None
     try:
         lines = [line for line in path.read_text(encoding="utf-8").splitlines() if line]
         records = [json.loads(line) for line in lines]
     except (OSError, UnicodeDecodeError, json.JSONDecodeError):
-        return []
+        return [], None
     if not records or any(not isinstance(record, dict) for record in records):
-        return []
+        return [], None
     actions: list[dict[str, object]] = []
     summaries: list[dict[str, object]] = []
+    consequence_state_counts: dict[str, int] = {}
     for index, record_value in enumerate(records):
         record = cast(dict[str, object], record_value)
         data_value = record.get("data")
         timestamp = record.get("timestamp")
         if not isinstance(timestamp, str) or not timestamp or not isinstance(data_value, dict):
-            return []
+            return [], None
         data = cast(dict[str, object], data_value)
         levels = data.get("levels_completed")
         wins = data.get("win_levels")
@@ -323,21 +330,21 @@ def _recording_artifacts(
             or not isinstance(data.get("available_actions"), list)
             or not isinstance(data.get("frame"), list)
         ):
-            return []
+            return [], None
         action_input_value = data.get("action_input")
         if not isinstance(action_input_value, dict):
-            return []
+            return [], None
         action_input = cast(dict[str, object], action_input_value)
         action_id = action_input.get("id")
         if not isinstance(action_id, str) or action_id not in {
             action.value for action in ActionName
         }:
-            return []
+            return [], None
         coordinate: dict[str, object] | None = None
         if action_id == ActionName.ACTION6.value:
             coordinate_value = action_input.get("data")
             if not isinstance(coordinate_value, dict):
-                return []
+                return [], None
             x = coordinate_value.get("x")
             y = coordinate_value.get("y")
             if (
@@ -348,16 +355,17 @@ def _recording_artifacts(
                 or not 0 <= x < 64
                 or not 0 <= y < 64
             ):
-                return []
+                return [], None
             coordinate = {"x": x, "y": y}
         elif action_input.get("data") != {}:
-            return []
+            return [], None
         action: dict[str, object] = {"name": action_id, "coordinate": coordinate}
         if index == 0:
             if action_id != ActionName.RESET.value:
-                return []
+                return [], None
         else:
             actions.append(action)
+            consequence_state_counts[state] = consequence_state_counts.get(state, 0) + 1
         summaries.append(
             {
                 "state": state,
@@ -365,19 +373,38 @@ def _recording_artifacts(
                 "win_levels": wins,
             }
         )
-    return [
-        {
-            "actions": actions,
-            "byte_length": path.stat().st_size,
-            "event_count": len(records),
-            "final_observation": summaries[-1],
-            "first_observation": summaries[0],
-            "guid": guid,
-            "path": f"{relative_root.rstrip('/')}/{relative.as_posix()}",
-            "scorecard_id": relative.parts[0],
-            "sha256": sha256_file(path),
-        }
-    ]
+    return (
+        [
+            {
+                "actions": actions,
+                "byte_length": path.stat().st_size,
+                "event_count": len(records),
+                "final_observation": summaries[-1],
+                "first_observation": summaries[0],
+                "guid": guid,
+                "path": f"{relative_root.rstrip('/')}/{relative.as_posix()}",
+                "scorecard_id": relative.parts[0],
+                "sha256": sha256_file(path),
+            }
+        ],
+        {state: consequence_state_counts[state] for state in sorted(consequence_state_counts)},
+    )
+
+
+def _recording_artifacts(
+    directory: Path,
+    *,
+    relative_root: str,
+    expected_game_id: str,
+) -> list[dict[str, object]]:
+    """Strictly identify one pinned-SDK local-public recording."""
+
+    artifacts, _state_counts = _recording_evidence(
+        directory,
+        relative_root=relative_root,
+        expected_game_id=expected_game_id,
+    )
+    return artifacts
 
 
 def _mechanical_completion_receipt(
@@ -524,18 +551,41 @@ def _finalize_mechanical_result(
     specification: dict[str, object],
     *,
     recording_artifacts: list[dict[str, object]],
+    recording_state_counts: dict[str, int] | None = None,
 ) -> dict[str, Any]:
     if specification.get("agent") != "mechanical":
         return result
+    projected = dict(result)
+    if recording_state_counts is not None and len(recording_artifacts) == 1:
+        metrics_value = projected.get("metrics")
+        if isinstance(metrics_value, dict):
+            metrics = dict(metrics_value)
+            normalized_counts = {
+                state: recording_state_counts[state] for state in sorted(recording_state_counts)
+            }
+            metrics["recording_consequence_state_counts"] = normalized_counts
+            metrics["recording_consequence_state_count_source"] = _RECORDING_STATE_COUNT_SOURCE
+            metrics["game_over_events"] = normalized_counts.get("GAME_OVER", 0)
+            metrics["win_events"] = normalized_counts.get("WIN", 0)
+            final_value = recording_artifacts[0].get("final_observation")
+            if isinstance(final_value, dict):
+                for recording_field, metric_field in (
+                    ("state", "final_state"),
+                    ("levels_completed", "final_levels_completed"),
+                    ("win_levels", "final_win_levels"),
+                ):
+                    if metric_field not in metrics:
+                        metrics[metric_field] = final_value.get(recording_field)
+            projected["metrics"] = metrics
     completion = _mechanical_completion_receipt(
-        result,
+        projected,
         specification,
         recording_artifacts=recording_artifacts,
     )
-    updated = dict(result)
+    updated = dict(projected)
     updated.pop("receipt_hash", None)
     updated["build003_completion"] = completion
-    if result.get("status") == "success":
+    if projected.get("status") == "success":
         if completion["score_boundary_consistent"] is not True:
             updated["status"] = "failure"
             updated["failure"] = {
@@ -609,12 +659,23 @@ def _mechanical_evidence_files_valid(
     trace_value = receipt.get("trace")
     if not isinstance(completion, dict):
         return False
-    expected_artifacts = _recording_artifacts(
+    expected_artifacts, expected_state_counts = _recording_evidence(
         recording_directory,
         relative_root=recordings_relative,
         expected_game_id=str(specification["game_id"]),
     )
     if completion.get("recording_artifacts") != expected_artifacts:
+        return False
+    metrics_value = receipt.get("metrics")
+    metrics = metrics_value if isinstance(metrics_value, dict) else {}
+    claimed_state_counts = metrics.get("recording_consequence_state_counts")
+    if claimed_state_counts is not None and (
+        expected_state_counts is None
+        or claimed_state_counts != expected_state_counts
+        or metrics.get("recording_consequence_state_count_source") != _RECORDING_STATE_COUNT_SOURCE
+        or metrics.get("game_over_events") != expected_state_counts.get("GAME_OVER", 0)
+        or metrics.get("win_events") != expected_state_counts.get("WIN", 0)
+    ):
         return False
     if not isinstance(trace_value, dict):
         return receipt.get("status") not in {"success", "not_finished"} and not expected_artifacts
@@ -669,6 +730,9 @@ def _failure_result(
             "reason": kind,
             "schema": "arc3.hot-path-profile-unavailable.v0.1",
         }
+    failure: dict[str, object] = {"kind": kind, "message": message[:500]}
+    if specification.get("agent") == "mechanical" and kind == "PolicyError":
+        failure["disposition"] = "FAILED_MECHANISM"
     return seal_object(
         {
             "schema": PUBLIC_RUN_SCHEMA,
@@ -711,9 +775,40 @@ def _failure_result(
                 )
             ),
             "environment_transport": specification.get("network_mode"),
-            "failure": {"kind": kind, "message": message[:500]},
+            "failure": failure,
         },
         hash_field="receipt_hash",
+    )
+
+
+def _fold_trace_metrics(
+    metrics: dict[str, object],
+    trace: dict[str, object],
+    *,
+    minimum_fault_count: int,
+) -> None:
+    """Recover exact action and final-observation metrics from a verified trace receipt."""
+
+    metrics["environment_actions"] = _as_int(
+        trace["environment_action_count"], field="environment_action_count"
+    )
+    metrics["resets"] = _as_int(trace["reset_count"], field="reset_count")
+    for trace_field, metric_field in (
+        ("final_state", "final_state"),
+        ("final_levels_completed", "final_levels_completed"),
+        ("final_win_levels", "final_win_levels"),
+    ):
+        if trace_field in trace:
+            metrics[metric_field] = trace.get(trace_field)
+    counts_value = trace.get("event_type_counts")
+    counts = counts_value if isinstance(counts_value, dict) else {}
+    metrics["fault_count"] = max(
+        minimum_fault_count,
+        int(counts.get("run.environment_fault", 0)),
+    )
+    consequences = _as_int(trace["consequence_count"], field="consequence_count")
+    metrics["trace_bytes_per_action"] = (
+        _as_int(trace["byte_length"], field="byte_length") / consequences if consequences else None
     )
 
 
@@ -734,21 +829,7 @@ def _salvage_trace(
         trace = _trace_receipt(trace_path, run_id=run_id, relative_path=relative_path)
     except (OSError, TraceError, ValueError):
         return None, metrics
-    metrics["environment_actions"] = _as_int(
-        trace["environment_action_count"], field="environment_action_count"
-    )
-    metrics["resets"] = _as_int(trace["reset_count"], field="reset_count")
-    if "final_state" in trace:
-        metrics["final_state"] = trace.get("final_state")
-        metrics["final_levels_completed"] = trace.get("final_levels_completed")
-        metrics["final_win_levels"] = trace.get("final_win_levels")
-    counts_value = trace.get("event_type_counts")
-    counts = counts_value if isinstance(counts_value, dict) else {}
-    metrics["fault_count"] = max(1, int(counts.get("run.environment_fault", 0)))
-    consequences = _as_int(trace["consequence_count"], field="consequence_count")
-    metrics["trace_bytes_per_action"] = (
-        _as_int(trace["byte_length"], field="byte_length") / consequences if consequences else None
-    )
+    _fold_trace_metrics(metrics, trace, minimum_fault_count=1)
     return trace, metrics
 
 
@@ -1139,18 +1220,10 @@ def _worker_body(
         if hot_path_profiler is not None:
             metrics["hot_path_profile"] = hot_path_profiler.summary()
         if trace is not None:
-            counts_value = trace.get("event_type_counts")
-            counts = counts_value if isinstance(counts_value, dict) else {}
-            metrics["environment_actions"] = _as_int(
-                trace["environment_action_count"], field="environment_action_count"
-            )
-            metrics["resets"] = _as_int(trace["reset_count"], field="reset_count")
-            metrics["fault_count"] = max(
-                int(counts.get("run.environment_fault", 0)), int(caught is not None)
-            )
-            consequences = int(cast(int, trace["consequence_count"]))
-            metrics["trace_bytes_per_action"] = (
-                int(cast(int, trace["byte_length"])) / consequences if consequences else None
+            _fold_trace_metrics(
+                metrics,
+                trace,
+                minimum_fault_count=int(caught is not None),
             )
         if scorecard is not None:
             try:
@@ -1361,6 +1434,15 @@ def _receipt_valid(
         status=status,
     ):
         return False
+    failure_value = receipt.get("failure")
+    if isinstance(failure_value, dict) and "disposition" in failure_value:
+        if not (
+            status == "failure"
+            and specification.get("agent") == "mechanical"
+            and failure_value.get("kind") == "PolicyError"
+            and failure_value.get("disposition") == "FAILED_MECHANISM"
+        ):
+            return False
     if status in {"success", "not_finished"}:
         trace = receipt.get("trace")
         if (
@@ -1746,11 +1828,19 @@ def _mechanical_aggregate(results: list[dict[str, Any]], *, partition: str) -> d
         raise EvaluationError("Build 003 mechanical aggregate received another policy")
     summary = _aggregate(results, partition=partition)
     not_finished = sum(result.get("status") == "not_finished" for result in results)
+    failed_mechanisms = sum(
+        isinstance((failure := result.get("failure")), dict)
+        and failure.get("disposition") == "FAILED_MECHANISM"
+        for result in results
+    )
     failures = _as_int(summary["failure_count"], field="failure_count")
     summary["schema"] = _MECHANICAL_PUBLIC_SUMMARY_SCHEMA
     summary["not_finished_count"] = not_finished
-    if not_finished and failures == not_finished:
-        summary["status"] = "NOT_FINISHED"
+    if failures == len(results):
+        if not_finished and failures == not_finished:
+            summary["status"] = "NOT_FINISHED"
+        elif failed_mechanisms and failures == not_finished + failed_mechanisms:
+            summary["status"] = "FAILED_MECHANISM"
     return summary
 
 
@@ -2619,14 +2709,16 @@ def run_public_evaluation(config: PublicEvaluationConfig) -> EvaluationOutcome:
                 ),
             )
             atomic_write_json(receipt_path, result)
+        recording_artifacts, recording_state_counts = _recording_evidence(
+            run_recordings,
+            relative_root=recordings_relative,
+            expected_game_id=str(specification["game_id"]),
+        )
         result = _finalize_mechanical_result(
             result,
             specification,
-            recording_artifacts=_recording_artifacts(
-                run_recordings,
-                relative_root=recordings_relative,
-                expected_game_id=str(specification["game_id"]),
-            ),
+            recording_artifacts=recording_artifacts,
+            recording_state_counts=recording_state_counts,
         )
         atomic_write_json(receipt_path, result)
         if not _receipt_valid(result, specification, identity["identity_hash"]):
@@ -2650,14 +2742,16 @@ def run_public_evaluation(config: PublicEvaluationConfig) -> EvaluationOutcome:
                     manifest, config, str(specification["game_id"])
                 ),
             )
+            recording_artifacts, recording_state_counts = _recording_evidence(
+                run_recordings,
+                relative_root=recordings_relative,
+                expected_game_id=str(specification["game_id"]),
+            )
             result = _finalize_mechanical_result(
                 result,
                 specification,
-                recording_artifacts=_recording_artifacts(
-                    run_recordings,
-                    relative_root=recordings_relative,
-                    expected_game_id=str(specification["game_id"]),
-                ),
+                recording_artifacts=recording_artifacts,
+                recording_state_counts=recording_state_counts,
             )
             atomic_write_json(receipt_path, result)
         if result["status"] != "success":

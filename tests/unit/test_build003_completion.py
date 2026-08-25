@@ -10,9 +10,11 @@ import pytest
 
 from arc3.evaluation.public import PublicEvaluationConfig
 from arc3.evaluation.public_runner import (
+    _TERMINAL_STATUSES,
     _finalize_mechanical_result,
     _mechanical_aggregate,
     _recording_artifacts,
+    _recording_evidence,
 )
 
 FROZEN = "a" * 40
@@ -100,14 +102,17 @@ def test_completion_requires_authoritative_win_and_strict_official_recording(
 ) -> None:
     recordings = tmp_path / "recordings"
     _write_recording(recordings)
-    artifacts = _recording_artifacts(
+    artifacts, state_counts = _recording_evidence(
         recordings,
         relative_root="official-recordings/fixture",
         expected_game_id="opaque-build003-fixture",
     )
 
     completed = _finalize_mechanical_result(
-        _result(), _specification(), recording_artifacts=artifacts
+        _result(),
+        _specification(),
+        recording_artifacts=artifacts,
+        recording_state_counts=state_counts,
     )
     completion = completed["build003_completion"]
     assert completed["status"] == "success"
@@ -118,6 +123,12 @@ def test_completion_requires_authoritative_win_and_strict_official_recording(
     assert completion["submission_count"] == 2
     assert completion["non_reset_environment_action_count"] == 1
     assert completion["reset_count"] == 1
+    assert completed["metrics"]["recording_consequence_state_counts"] == {
+        "NOT_FINISHED": 1,
+        "WIN": 1,
+    }
+    assert completed["metrics"]["game_over_events"] == 0
+    assert completed["metrics"]["win_events"] == 1
 
     stale_non_reset_binding = _result()
     stale_non_reset_binding["score"]["official_run_actions"] = 1
@@ -131,7 +142,7 @@ def test_completion_requires_authoritative_win_and_strict_official_recording(
 
     unfinished_recordings = tmp_path / "unfinished-recordings"
     _write_recording(unfinished_recordings, final_state="NOT_FINISHED")
-    unfinished_artifacts = _recording_artifacts(
+    unfinished_artifacts, unfinished_state_counts = _recording_evidence(
         unfinished_recordings,
         relative_root="official-recordings/unfinished-fixture",
         expected_game_id="opaque-build003-fixture",
@@ -140,6 +151,7 @@ def test_completion_requires_authoritative_win_and_strict_official_recording(
         _result(raw_state="NOT_FINISHED", official_state="NOT_FINISHED"),
         _specification(),
         recording_artifacts=unfinished_artifacts,
+        recording_state_counts=unfinished_state_counts,
     )
     assert not_finished["status"] == "not_finished"
     assert not_finished["build003_completion"]["completion_observed"] is False
@@ -188,6 +200,89 @@ def test_mechanical_not_finished_has_a_distinct_nonpass_summary() -> None:
     assert summary["schema"] == "arc3.public-evaluation.summary.v0.3"
     assert summary["status"] == "NOT_FINISHED"
     assert summary["not_finished_count"] == 1
+
+
+@pytest.mark.parametrize(
+    ("failure", "expected_status"),
+    (
+        (
+            {
+                "kind": "PolicyError",
+                "message": "bounded candidates exhausted",
+                "disposition": "FAILED_MECHANISM",
+            },
+            "FAILED_MECHANISM",
+        ),
+        (
+            {"kind": "PolicyError", "message": "legacy sealed receipt"},
+            "FAILED_INFRASTRUCTURE",
+        ),
+        (
+            {"kind": "RuntimeError", "message": "worker failed"},
+            "FAILED_INFRASTRUCTURE",
+        ),
+    ),
+)
+def test_mechanical_failure_disposition_controls_terminal_summary(
+    failure: dict[str, str], expected_status: str
+) -> None:
+    result = _result(raw_state="NOT_FINISHED", official_state="NOT_FINISHED")
+    result.update(
+        {
+            "agent": "mechanical",
+            "baseline_id": "B5",
+            "status": "failure",
+            "failure": failure,
+            "score": {**result["score"], "score": 0.0},
+            "metrics": {
+                **result["metrics"],
+                "environment_actions": 1,
+                "resets": 0,
+                "fault_count": 1,
+            },
+        }
+    )
+
+    summary = _mechanical_aggregate([result], partition="development")
+
+    assert summary["status"] == expected_status
+
+
+def test_failed_mechanism_is_a_terminal_public_status() -> None:
+    assert "FAILED_MECHANISM" in _TERMINAL_STATUSES
+
+
+def test_recording_salvage_restores_missing_final_metadata(tmp_path: Path) -> None:
+    recordings = tmp_path / "recordings"
+    _write_recording(recordings, final_state="NOT_FINISHED")
+    artifacts, state_counts = _recording_evidence(
+        recordings,
+        relative_root="official-recordings/fixture",
+        expected_game_id="opaque-build003-fixture",
+    )
+    result = _result(raw_state="NOT_FINISHED", official_state="NOT_FINISHED")
+    result["status"] = "failure"
+    result["failure"] = {
+        "kind": "PolicyError",
+        "message": "bounded candidates exhausted",
+        "disposition": "FAILED_MECHANISM",
+    }
+    for field in ("final_state", "final_levels_completed", "final_win_levels"):
+        result["metrics"].pop(field)
+
+    finalized = _finalize_mechanical_result(
+        result,
+        _specification(),
+        recording_artifacts=artifacts,
+        recording_state_counts=state_counts,
+    )
+
+    assert finalized["status"] == "failure"
+    assert finalized["metrics"]["final_state"] == "NOT_FINISHED"
+    assert finalized["metrics"]["final_levels_completed"] == 1
+    assert finalized["metrics"]["final_win_levels"] == 1
+    assert finalized["metrics"]["recording_consequence_state_counts"] == {"NOT_FINISHED": 2}
+    assert finalized["build003_completion"]["completion_observed"] is False
 
 
 def test_allocator_trace_opt_out_is_mechanical_development_only() -> None:
