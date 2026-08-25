@@ -6,8 +6,8 @@
   "owner": "Christopher D. Pang",
   "build_status": "ACTIVE",
   "status": "IN_PROGRESS",
-  "current_stage": "07",
-  "current_task": "repair or honestly classify the frozen-budget synthetic authoritative-WIN failure, close the required Stage 09 adversarial gaps, then freeze and execute the final v0.2 evidence gates before Campaign 29",
+  "current_stage": "08",
+  "current_task": "finish the Build 003 production-source assurance and matched MyAgent profile, freeze the exact clean implementation, then execute and independently audit the final v0.2 30-by-4 matrix once before Campaign 29",
   "implementation_branch": "build/003-bla-clef-mechanical-learner",
   "base": {
     "main_commit": "bea1eac99cb0f1b351526b1dc487d132ba1d40ef",
@@ -197,14 +197,14 @@
   "stage_status": {
     "00": "PASS",
     "01": "PASS",
-    "02": "PARTIAL",
-    "03": "PARTIAL",
-    "04": "PARTIAL",
-    "05": "PARTIAL",
-    "06": "PARTIAL",
-    "07": "PENDING",
-    "08": "FAILED_MECHANISM",
-    "09": "PARTIAL",
+    "02": "PASS",
+    "03": "PASS",
+    "04": "PASS",
+    "05": "PASS",
+    "06": "PASS",
+    "07": "PASS",
+    "08": "IN_PROGRESS",
+    "09": "PASS",
     "10": "PENDING",
     "11": "PENDING"
   },
@@ -226,54 +226,65 @@
       "environment_opened": false
     },
     "02": {
-      "status": "PARTIAL",
+      "status": "PASS",
       "learner_lifecycle_commit": "ca86e33a047e5e6b6689e509cea899f6c5bd07a6",
       "production_reachability_commit": "6080f9937017c03db9995f912669a72746a524ba",
       "delivered": "all ten consequence channels, observation-derived transition facts, prediction and causal action links, replay-link audit, and MyAgent-to-VisualCausalPolicy-to-MechanicalLearner reachability",
       "focused_verification": "36 passed with the legacy synthetic authoritative-WIN acceptance excluded; affected Ruff and strict MyPy passed",
-      "remaining": "end-to-end public observation tests for initial movement/resource promotion and distinct-context strengthening remain incomplete",
+      "remaining": "no Stage 02 acceptance item remains open; later final-matrix and official-game authority boundaries are tracked separately",
       "environment_opened": false
     },
     "03": {
-      "status": "PARTIAL",
+      "status": "PASS",
       "implementation_commit": "ca86e33a047e5e6b6689e509cea899f6c5bd07a6",
       "delivered": "observation-grounded residual lifecycle, passive confirmation, scoped repairs, two-failure implicated reopening, factorized metrics, and replay-linked receipts",
-      "remaining": "resource exhaustion/reset failure-link and restoration-localization adversarial cases remain under focused repair",
+      "resource_lifecycle_commits": [
+        "493a3e610cbcc4fe2d63cf5144b77ecea5c62f44",
+        "614d0550ffaadbb79511a5e54221807c27188301"
+      ],
+      "remaining": "override support is occurrence-only and exact-resource-context localized; this is an explicit evidence limit rather than an open Stage 03 implementation item",
       "environment_opened": false
     },
     "04": {
-      "status": "PARTIAL",
+      "status": "PASS",
       "implementation_commit": "ca86e33a047e5e6b6689e509cea899f6c5bd07a6",
       "delivered": "measured CLEF promote, park, stop, and active-pressure fields with a behaviorally distinct BLA-only path",
-      "remaining": "harmless-animation parking and high-impact-versus-stable-base end-to-end adversarial evidence remain incomplete",
+      "relevance_boundary_commit": "8c87244169c7b97468308dc9868d70c3643921af",
+      "remaining": "no named Stage 04 acceptance item remains open; final comparative evidence remains Stage 08",
       "environment_opened": false
     },
     "05": {
-      "status": "PARTIAL",
+      "status": "PASS",
       "implementation_commits": [
         "ca86e33a047e5e6b6689e509cea899f6c5bd07a6",
         "6080f9937017c03db9995f912669a72746a524ba"
       ],
       "delivered": "bounded observation-only selection, production mechanical route ownership, and action/receipt lifecycle hardening",
-      "remaining": "the complete progressive curriculum is not yet solved within frozen v0.2 limits and the additive-versus-competing-restoration discriminator remains open",
+      "development_gate_commit": "ec7b7d964930bc1dadfe7561200e98593a74ef57",
+      "remaining": "all five declared development curricula reach synthetic WIN under frozen v0.2 limits and the additive-versus-override discriminator is observation-grounded; final heldout comparison remains Stage 08",
       "environment_opened": false
     },
     "06": {
-      "status": "PARTIAL",
+      "status": "PASS",
       "implementation_commit": "ca86e33a047e5e6b6689e509cea899f6c5bd07a6",
       "delivered": "cross-level retention is credited only after returned-observation transfer confirmation; additive, conditional, gating, override, and delayed event counts are explicit",
-      "remaining": "paired transfer savings, visually remapped probe-count evidence, and sequential cross-game quarantine are not yet fully established",
+      "development_comparison_root": "C:\\a\\arc3-b003-dev5x4-493a3e6",
+      "development_comparison_matrix_sha256": "sha256:fb35cfa947e52c00f50b70b02f97b4106678987ef0e51abfe8af0598a82e23c0",
+      "remaining": "development evidence shows a directional persistence/CLEF loss and hand-built tests cover remap and cross-game quarantine; exact final paired distributions remain Stage 08",
       "environment_opened": false
     },
     "07": {
-      "status": "IN_PROGRESS",
-      "legacy_acceptance_boundary": "the already-exposed v0.1 synthetic frozen-case authoritative-WIN integration test currently ends WALL_CLOCK_BUDGET after three of ten levels under its 20-second diagnostic bound",
-      "v02_development_profile": "IN_PROGRESS on the first declared v0.2 development seed under the frozen 192-action, 48-action-per-attempt, 10-reset, 10-second, 1-GiB limits",
+      "status": "PASS",
+      "legacy_acceptance_boundary": "the already-exposed v0.1 synthetic frozen-case acceptance remains a preserved compatibility risk and is not used for v0.2 acceptance",
+      "v02_development_profile": "PASS: all five declared development seeds reached authoritative synthetic WIN across all ten levels under the frozen 192-action, 48-action-per-attempt, 10-reset, 10-second, and 1-GiB limits",
+      "development_gate_commit": "ec7b7d964930bc1dadfe7561200e98593a74ef57",
+      "post_resource_repair_commit": "614d0550ffaadbb79511a5e54221807c27188301",
+      "post_resource_repair_verification": "17 focused lifecycle checks and all five development-seed WIN checks passed; independent integrated rerun passed the same ten test functions in 34.31 seconds; Ruff and strict MyPy passed",
       "v02_heldout_or_final_executed": false,
       "environment_opened": false
     },
     "08": {
-      "status": "FAILED_MECHANISM",
+      "status": "IN_PROGRESS",
       "diagnostic_receipt": "C:\\a\\arc3-b003-stage08-dd17a8b8-20260825-01\\stage08-dd17a8b8-synthetic-matrix-audit-receipt.json",
       "diagnostic_receipt_sha256": "sha256:d77d4b3cf4046ca1e4acd2bb1e465194bf04b10dbfaa75a7e4a009bc059f040a",
       "diagnostic_payload_sha256": "sha256:f528472ce295d578522063292710fa13f1202266a03251d2dd6b7adafce728bc",
@@ -295,6 +306,16 @@
       "v02_lifecycle_commit": "ca86e33a047e5e6b6689e509cea899f6c5bd07a6",
       "v02_literal_gate_commit": "d68815fc421758b90ef805d2bdea706deceec2ed",
       "v02_literal_gate_status": "PASS: exact v0.2 identity, H1-H3 decisions, replay links, receipts, worker counters, environment actions, and resets are independently gated; a structurally complete anti-result cannot be labeled PASS",
+      "v02_development_selection_root": "C:\\a\\arc3-b003-dev5x4-493a3e6",
+      "v02_development_selection_status": "PARTIAL development selection evidence: full BLA+CLEF 5/5 WIN and 50 levels in 721 actions; BLA-only 3/5 WIN and 35 levels in 797 actions; per-level reset 0/5 WIN and seven levels in 960 actions; exact Build 002 0/5 WIN and one level before five wall-clock bounds",
+      "v02_development_selection_matrix_sha256": "sha256:fb35cfa947e52c00f50b70b02f97b4106678987ef0e51abfe8af0598a82e23c0",
+      "v02_development_selection_rows_sha256": "sha256:1cbf8866848f75be156fc1813332df637c5b896215f7b279d69a78a7d0cdbbc8",
+      "v02_development_selection_receipts_sha256": "sha256:43cfb9a724c6d2bdb6b223c76e4705546b28316d4233104c43a18f0bacda9e5f",
+      "v02_development_selection_report_sha256": "sha256:c621d7a53e51a6e6c691e1f18cb29e0182c0a368fa80dfa7a54d00a90054a607",
+      "v02_independent_auditor_commit": "0bb6ddeb2c0febebff992a3d69ac1b0e93b05eda",
+      "v02_independent_auditor_status": "PASS on fabricated valid/adversarial evidence; exact final matrix remains unexecuted",
+      "v02_independent_auditor_limit": "stored matrix evidence lacks full environment transcripts, so the auditor validates every stored identity, digest, link, row, counter, and decision but cannot independently re-simulate transitions",
+      "v02_procedural_manifest_scan_finding": "an early broad development search may have read manifest bytes but returned no manifest lines, seed values, cases, outputs, or results; no final case was derived or executed and no seed replacement or amendment occurred",
       "v02_focused_verification": "36 passed excluding only the preserved legacy authoritative-WIN acceptance; seven decision-gate regressions passed; affected Ruff, strict MyPy, and compilation passed",
       "v02_heldout_seed_count": 30,
       "v02_required_rows": 1200,
@@ -302,22 +323,28 @@
       "public_or_holdout_environment_opened": false
     },
     "09": {
-      "status": "PARTIAL",
+      "status": "PASS",
       "immutable_audit_commits": [
         "6080f9937017c03db9995f912669a72746a524ba",
         "ca86e33a047e5e6b6689e509cea899f6c5bd07a6"
       ],
-      "audit_result": "four bullets directly covered, ten partial, and two uncovered before the focused repair tasks; lifecycle integration strengthens residual repair and transfer accounting without converting synthetic fixtures into measured comparative evidence",
+      "audit_result": "all sixteen named adversarial obligations have bounded observation-grounded tests or development comparison evidence; this does not convert synthetic fixtures into official gameplay or final paired evidence",
       "directly_covered": [
         "deeper reopening after repeated local failures",
         "bounded coordinate behavior without whole-grid brute force",
         "failure/reset retains mechanics without blindly replaying the identical plan",
         "fixture privileged state is unreachable"
       ],
-      "highest_priority_open": [
-        "paired ledger or persistence loss",
-        "resource exhaustion to GAME_OVER to RESET failure-link learning",
-        "minimal additive-versus-competing-restoration discriminator"
+      "completion_commits": [
+        "8c87244169c7b97468308dc9868d70c3643921af",
+        "493a3e610cbcc4fe2d63cf5144b77ecea5c62f44",
+        "614d0550ffaadbb79511a5e54221807c27188301"
+      ],
+      "bounded_limits": [
+        "override confirmation is occurrence-only and exact-resource-context localized",
+        "failed plan roots are bounded to eight and level-boundary disposition receipts to twelve",
+        "when only coordinate alternatives remain the policy fails closed rather than inventing a coordinate probe",
+        "cross-game evidence covers the ledger admission boundary rather than a production controller driving two live environments"
       ],
       "environment_opened": false
     }
@@ -333,7 +360,7 @@
     "pull_request_merged": false,
     "external_message_sent_as_owner": false
   },
-  "next_action": "finish the v0.2 development-only performance repair and Stage 09 focused adversarial tests; if the frozen synthetic gate passes, freeze code and execute the final matrix once, otherwise preserve FAILED_MECHANISM; then complete integrity, package, and clean replay gates before Campaign 29",
+  "next_action": "integrate and verify the production-source action-semantics scan and matched MyAgent profile; commit the ledger checkpoint; freeze a clean implementation; run the exact final v0.2 matrix once and seal it with the independent auditor; then complete package, integrity, clean replay, and Campaign 29 gates",
   "notes": [
     "Update atomically after each meaningful task and preserve failed attempts.",
     "No synthetic or local result is completion unless the official target environment returns GameState.WIN.",
