@@ -14,12 +14,20 @@ from arc3.mechanics import (
     ConsequenceChannel,
     MechanicRef,
     MechanicStatus,
+    QuantityEffect,
+    ScopeCeiling,
     TerminalEffect,
 )
 from arc3.types import ActionName, ActionRequest, GameId, GameStateName
 
 Point = tuple[int, int]
 MOVES = (ActionName.ACTION1, ActionName.ACTION2)
+ALL_MOVES = (
+    ActionName.ACTION1,
+    ActionName.ACTION2,
+    ActionName.ACTION3,
+    ActionName.ACTION4,
+)
 
 
 def _frame(resource: int, cells: dict[Point, int]) -> GridFrame:
@@ -39,12 +47,13 @@ def _observation(
     available: tuple[ActionName, ...] = MOVES,
     returned_action: ActionRequest | None = None,
     full_reset: bool = False,
+    levels_completed: int = 0,
 ) -> Observation:
     return Observation(
         game_id=GameId("opaque-resource-lifecycle"),
         frames=(_frame(resource, cells),),
         state=state,
-        levels_completed=0,
+        levels_completed=levels_completed,
         win_levels=3,
         available_actions=available,
         full_reset=full_reset,
@@ -244,3 +253,204 @@ def test_restoration_residual_preserves_movement_and_minimal_probe_resolves_addi
         MechanicStatus.REOPENED,
         MechanicStatus.REJECTED_OR_SUPERSEDED,
     }
+
+
+def test_override_discriminator_installs_local_override_without_rewriting_base() -> None:
+    policy, _recovered, selected = _failure_then_reset(reset_resource=10)
+    left = _observation(
+        9,
+        {(1, 3): 2},
+        available=(ActionName.ACTION1,),
+        returned_action=selected,
+    )
+    return_to_center = policy.choose_action(left)
+    center = _observation(
+        8,
+        {(2, 3): 2, (3, 3): 4},
+        available=(ActionName.ACTION1,),
+        returned_action=return_to_center,
+    )
+    enter_restoration = policy.choose_action(center)
+    restored = _observation(12, {(3, 3): 2}, returned_action=enter_restoration)
+    leave_probe = policy.choose_action(restored)
+
+    assert policy._learner is not None
+    base_ref = policy._baseline_refs[(ActionName.ACTION1, ConsequenceChannel.RESOURCE_CHANGES)]
+    base_version_before = policy._learner.ledger.get(base_ref).version.to_dict()
+    ambiguity = next(iter(policy._resource_ambiguities.values()))
+
+    left_restoration = _observation(
+        11,
+        {(2, 3): 2, (3, 3): 4},
+        available=(ActionName.ACTION1,),
+        returned_action=leave_probe,
+    )
+    reenter_probe = policy.choose_action(left_restoration)
+    override_result = _observation(12, {(3, 3): 2}, returned_action=reenter_probe)
+    summary = policy.finalize(override_result)
+
+    receipt = policy._resource_discrimination_receipts[-1]
+    assert receipt.resolved_mode is CompositionMode.OVERRIDE
+    assert receipt.complete is True
+    assert summary["resource_lifecycle"]["open_restoration_ambiguities"] == 0
+    assert (
+        policy._learner.ledger.get(ambiguity.additive_ref).status
+        is MechanicStatus.REJECTED_OR_SUPERSEDED
+    )
+    assert ambiguity.additive_ref not in policy._repairs
+    assert ambiguity.additive_ref not in policy._repair_keys.values()
+    assert ambiguity.additive_ref not in policy._origin_residuals
+
+    overrides = tuple(
+        view
+        for view in policy._learner.ledger.active()
+        if view.version.composition_mode is CompositionMode.OVERRIDE
+        and not view.version.consequence.resource_changes.is_unknown
+    )
+    assert len(overrides) == 1
+    override = overrides[0]
+    assert override.version.scope.ceiling is ScopeCeiling.LEVEL
+    assert override.version.scope.object_roles
+    assert override.version.scope.state_tags == ("visible-resource-value-11",)
+    effect = override.version.consequence.resource_changes.effects[0]
+    assert isinstance(effect, QuantityEffect)
+    assert effect.delta == 1
+    support = override.summary_for(ConsequenceChannel.RESOURCE_CHANGES)
+    assert support.occurrence_support_count == 1
+    assert support.magnitude_support_count == 0
+    assert policy._learner.ledger.get(base_ref).version.to_dict() == base_version_before
+    assert policy._learner.ledger.get(base_ref).status not in {
+        MechanicStatus.STRESSED,
+        MechanicStatus.REOPENED,
+        MechanicStatus.REJECTED_OR_SUPERSEDED,
+    }
+    assert all(
+        {item.channel for item in record.residual.consequential}
+        != {ConsequenceChannel.RESOURCE_CHANGES}
+        for record in policy._learner.open_residuals
+    )
+
+
+def test_normal_progress_never_replays_an_exact_failed_root_after_reset() -> None:
+    policy = ObservationOnlyVariantPolicy("BLA_CLEF_FULL")
+    initial = _observation(1, {(2, 3): 2, (3, 3): 4}, available=ALL_MOVES)
+    policy._game_scope = str(initial.game_id)
+    policy._enter_level(0, observation=initial)
+    policy._previous = initial
+    policy._movement = {
+        ActionName.ACTION1: (1, 0),
+        ActionName.ACTION2: (-1, 0),
+        ActionName.ACTION3: (0, 1),
+        ActionName.ACTION4: (0, -1),
+    }
+    policy._resource_delta_by_action = {
+        ActionName.ACTION1: -1,
+        ActionName.ACTION2: 0,
+        ActionName.ACTION3: 0,
+        ActionName.ACTION4: 0,
+    }
+    policy._player_position = (2, 3)
+    policy._player_color = 2
+
+    failed_action = ActionRequest(ActionName.ACTION1)
+    policy._begin_action(
+        failed_action,
+        "progress-nearest-visible-candidate",
+        target=(3, 3),
+    )
+    failed = _observation(
+        0,
+        {(3, 3): 2},
+        state=GameStateName.GAME_OVER,
+        available=(ActionName.RESET,),
+        returned_action=failed_action,
+    )
+    reset = policy.choose_action(failed)
+    recovered = _observation(
+        1,
+        {(2, 3): 2, (3, 3): 4},
+        available=ALL_MOVES,
+        returned_action=reset,
+        full_reset=True,
+    )
+    recovery_probe = policy.choose_action(recovered)
+    assert recovery_probe == ActionRequest(ActionName.ACTION3)
+
+    after_probe = _observation(
+        1,
+        {(2, 4): 2, (3, 3): 4},
+        available=ALL_MOVES,
+        returned_action=recovery_probe,
+    )
+    return_to_root = policy.choose_action(after_probe)
+    assert return_to_root == ActionRequest(ActionName.ACTION4)
+    same_root = _observation(
+        1,
+        {(2, 3): 2, (3, 3): 4},
+        available=ALL_MOVES,
+        returned_action=return_to_root,
+    )
+    alternative = policy.choose_action(same_root)
+
+    assert policy._plan_root_signature(same_root, failed_action) in policy._failed_plan_roots
+    assert alternative != failed_action
+    assert alternative.name in same_root.available_actions
+    assert policy._plan_root_signature(same_root, alternative) not in policy._failed_plan_roots
+    assert policy._last_reason == "avoid-exact-failed-plan-root"
+
+
+def test_true_level_boundary_quarantines_local_work_and_clears_pending_state() -> None:
+    policy, _recovered, selected = _failure_then_reset(reset_resource=10)
+    left = _observation(
+        9,
+        {(1, 3): 2},
+        available=(ActionName.ACTION1,),
+        returned_action=selected,
+    )
+    return_to_center = policy.choose_action(left)
+    center = _observation(
+        8,
+        {(2, 3): 2, (3, 3): 4},
+        available=(ActionName.ACTION1,),
+        returned_action=return_to_center,
+    )
+    enter_restoration = policy.choose_action(center)
+    restored = _observation(12, {(3, 3): 2}, returned_action=enter_restoration)
+    leave_probe = policy.choose_action(restored)
+
+    assert policy._learner is not None
+    base_ref = policy._baseline_refs[(ActionName.ACTION1, ConsequenceChannel.RESOURCE_CHANGES)]
+    ambiguity = next(iter(policy._resource_ambiguities.values()))
+    old_ambiguity_id = ambiguity.ambiguity_id
+    old_repair_refs = set(policy._repairs)
+
+    advanced = _observation(
+        11,
+        {(2, 3): 2, (3, 3): 4},
+        available=(ActionName.ACTION1,),
+        returned_action=leave_probe,
+        levels_completed=1,
+    )
+    policy.choose_action(advanced)
+
+    assert policy._resource_ambiguities == {}
+    assert policy._active_resource_probe is None
+    assert policy._repairs == {}
+    assert policy._repair_keys == {}
+    assert policy._origin_residuals == {}
+    assert policy._pending_residual_refs == {}
+    assert policy._learner.open_residuals == ()
+    assert policy._learner.ledger.get(base_ref).is_live
+    assert policy._learner.ledger.get(base_ref).version.scope.ceiling is ScopeCeiling.GAME
+    quarantined = {view.ref for view in policy._learner.ledger.quarantined_for(policy._context)}
+    assert old_repair_refs <= quarantined
+    assert ambiguity.additive_ref in quarantined
+    assert base_ref not in quarantined
+
+    disposition = policy._level_boundary_dispositions[-1]
+    assert disposition.previous_level_scope == "level-1-attempt-1"
+    assert disposition.current_level_scope == "level-2-attempt-1"
+    assert old_repair_refs <= set(disposition.quarantined_repair_refs)
+    assert disposition.archived_residual_ids
+    assert ambiguity.residual_id in disposition.archived_residual_ids
+    assert old_ambiguity_id in disposition.archived_ambiguity_ids

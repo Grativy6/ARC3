@@ -88,6 +88,7 @@ SUPPORTED_VARIANTS = frozenset({"BLA_CLEF_LEVEL_RESET", "BLA_ONLY_PERSISTENT", "
 _MAX_FAILED_PLAN_ROOTS = 8
 _MAX_RESOURCE_AMBIGUITIES = 4
 _MAX_RESOURCE_DISCRIMINATION_RECEIPTS = 8
+_MAX_LEVEL_BOUNDARY_DISPOSITIONS = 12
 
 
 def _channel_counter() -> dict[str, int]:
@@ -191,6 +192,24 @@ class _ResourceDiscriminationReceipt:
             "observed_after": self.observed_after,
             "resolved_mode": (None if self.resolved_mode is None else self.resolved_mode.value),
             "complete": self.complete,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class _LevelBoundaryDisposition:
+    previous_level_scope: str
+    current_level_scope: str
+    quarantined_repair_refs: tuple[MechanicRef, ...]
+    archived_residual_ids: tuple[str, ...]
+    archived_ambiguity_ids: tuple[str, ...]
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "previous_level_scope": self.previous_level_scope,
+            "current_level_scope": self.current_level_scope,
+            "quarantined_repair_refs": [item.to_dict() for item in self.quarantined_repair_refs],
+            "archived_residual_ids": list(self.archived_residual_ids),
+            "archived_ambiguity_ids": list(self.archived_ambiguity_ids),
         }
 
 
@@ -459,6 +478,9 @@ class ObservationOnlyVariantPolicy:
         self._resource_discrimination_receipts: deque[_ResourceDiscriminationReceipt] = deque(
             maxlen=_MAX_RESOURCE_DISCRIMINATION_RECEIPTS
         )
+        self._level_boundary_dispositions: deque[_LevelBoundaryDisposition] = deque(
+            maxlen=_MAX_LEVEL_BOUNDARY_DISPOSITIONS
+        )
 
     @property
     def _context(self) -> MechanicContext:
@@ -483,6 +505,8 @@ class ObservationOnlyVariantPolicy:
     ) -> None:
         self._remember_level_navigation()
         hard_level_boundary = self._learner is not None and not reset
+        if hard_level_boundary:
+            self._archive_level_local_work(index)
         self._level_index = index
         self._player_position = None
         self._player_color = None
@@ -555,6 +579,12 @@ class ObservationOnlyVariantPolicy:
             self._begin_action(action, "mandatory-reset", target=None)
             return action
         action, reason, target = self._select_nonterminal_action(observation)
+        action, reason, target = self._avoid_exact_failed_plan_root(
+            observation,
+            action,
+            reason,
+            target,
+        )
         self._begin_action(action, reason, target=target)
         return action
 
@@ -586,10 +616,44 @@ class ObservationOnlyVariantPolicy:
                     item.to_dict() for item in self._resource_discrimination_receipts
                 ],
             },
+            "level_boundary_dispositions": [
+                item.to_dict() for item in self._level_boundary_dispositions
+            ],
             "final_state": observation.state.value,
             "levels_completed": observation.levels_completed,
             "win_levels": observation.win_levels,
         }
+
+    def _archive_level_local_work(self, next_level_index: int) -> None:
+        """Remove prior-level work from the active set without rewriting its ledger history."""
+
+        if self._learner is None:
+            return
+        previous_scope = self._learner.level_scope
+        current_scope = f"level-{next_level_index + 1}-attempt-{self._attempt}"
+        repair_refs = tuple(sorted(self._repairs))
+        residual_ids = tuple(
+            sorted(record.residual.residual_id for record in self._learner.open_residuals)
+        )
+        ambiguity_ids = tuple(sorted(self._resource_ambiguities))
+        if repair_refs or residual_ids or ambiguity_ids:
+            self._level_boundary_dispositions.append(
+                _LevelBoundaryDisposition(
+                    previous_level_scope=previous_scope,
+                    current_level_scope=current_scope,
+                    quarantined_repair_refs=repair_refs,
+                    archived_residual_ids=residual_ids,
+                    archived_ambiguity_ids=ambiguity_ids,
+                )
+            )
+        for residual_id in residual_ids:
+            self._learner.resolve_residual(residual_id)
+        self._repairs.clear()
+        self._repair_keys.clear()
+        self._origin_residuals.clear()
+        self._pending_residual_refs.clear()
+        self._resource_ambiguities.clear()
+        self._active_resource_probe = None
 
     def _consume_observation(self, observation: Observation) -> None:
         if self._previous is None or self._last_action is None:
@@ -689,7 +753,8 @@ class ObservationOnlyVariantPolicy:
         role = _role_signature(_board(observation), target)
         visible_resource = _resource(observation)
         state_tags = [
-            "visible-resource-zero" if visible_resource == 0 else "visible-resource-positive"
+            "visible-resource-zero" if visible_resource == 0 else "visible-resource-positive",
+            f"visible-resource-value-{visible_resource}",
         ]
         if action is not None:
             predicted_delta = self._resource_delta_by_action.get(action)
@@ -715,6 +780,28 @@ class ObservationOnlyVariantPolicy:
                 ),
             }
         )
+
+    def _avoid_exact_failed_plan_root(
+        self,
+        observation: Observation,
+        action: ActionRequest,
+        reason: str,
+        target: Point | None,
+    ) -> tuple[ActionRequest, str, Point | None]:
+        if self._plan_root_signature(observation, action) not in self._failed_plan_roots:
+            return action, reason, target
+        alternatives = tuple(
+            ActionRequest(candidate)
+            for candidate in sorted(observation.available_actions, key=lambda item: item.value)
+            if candidate is not action.name
+            and candidate is not ActionName.RESET
+            and not candidate.requires_coordinates
+            and self._plan_root_signature(observation, ActionRequest(candidate))
+            not in self._failed_plan_roots
+        )
+        if not alternatives:
+            raise MechanicsError("no legal action avoids the exact failed state-action root")
+        return alternatives[0], "avoid-exact-failed-plan-root", None
 
     def _record_resource_failure(
         self,
@@ -949,7 +1036,65 @@ class ObservationOnlyVariantPolicy:
             )
         return None
 
-    def _advance_resource_probe(self, action: ActionRequest, facts: _TransitionFacts) -> None:
+    def _install_resource_override(
+        self,
+        ambiguity: _ResourceAmbiguity,
+        facts: _TransitionFacts,
+    ) -> MechanicRef | None:
+        if self._learner is None:
+            return None
+        ref = self._open_channel_mechanic(
+            ambiguity.action,
+            ConsequenceChannel.RESOURCE_CHANGES,
+            _quantity_value("visible-hud", facts.resource_after - facts.resource_before),
+            CompositionMode.OVERRIDE,
+            facts,
+            level_local=True,
+            scope_state_tags=(f"visible-resource-value-{facts.resource_before}",),
+            note=(
+                "minimal restoration probe observed a localized set-value override "
+                f"to {ambiguity.set_value}"
+            ),
+        )
+        if ref is None:
+            return None
+        try:
+            self._learner.ledger.confirm_passively(
+                ref,
+                channels=(ConsequenceChannel.RESOURCE_CHANGES,),
+                source_event_ids=(ambiguity.initial_event_id, facts.source_event_id),
+                context_key=facts.context.context_key,
+                observed_step=self._step,
+                receipt_id=_digest(
+                    {
+                        "kind": "minimal-resource-probe-confirms-override",
+                        "ref": ref.to_dict(),
+                        "initial_event": ambiguity.initial_event_id,
+                        "discriminating_event": facts.source_event_id,
+                    }
+                ),
+                dimensions=(SupportDimension.OCCURRENCE,),
+            )
+        except MechanicsError:
+            self._metrics[self._level_index].hazard_prediction_errors += 1
+            try:
+                self._learner.ledger.reject(
+                    ref,
+                    occurred_step=self._step,
+                    caused_by_event_ids=(facts.source_event_id,),
+                    note="override evidence confirmation failed",
+                )
+            except MechanicsError:
+                pass
+            return None
+        return ref
+
+    def _advance_resource_probe(
+        self,
+        action: ActionRequest,
+        facts: _TransitionFacts,
+        learning: LearningReceipt | None,
+    ) -> None:
         active = self._active_resource_probe
         if active is None:
             return
@@ -988,6 +1133,38 @@ class ObservationOnlyVariantPolicy:
                 resolved_mode = CompositionMode.ADDITIVE
             elif override_match and not additive_match:
                 resolved_mode = CompositionMode.OVERRIDE
+        resolution_applied = resolved_mode is not None
+        if resolved_mode is CompositionMode.OVERRIDE:
+            override_ref = self._install_resource_override(ambiguity, facts)
+            resolution_applied = override_ref is not None
+            if resolution_applied and self._learner is not None:
+                try:
+                    self._learner.ledger.reject(
+                        ambiguity.additive_ref,
+                        occurred_step=self._step,
+                        caused_by_event_ids=(facts.source_event_id,),
+                        note="minimal restoration probe favored override over additive",
+                    )
+                except MechanicsError:
+                    self._metrics[self._level_index].hazard_prediction_errors += 1
+                    resolution_applied = False
+                if resolution_applied:
+                    self._repairs.pop(ambiguity.additive_ref, None)
+                    for key, ref in tuple(self._repair_keys.items()):
+                        if ref == ambiguity.additive_ref:
+                            self._repair_keys.pop(key, None)
+                    orphaned = self._detach_origin_without_resolution(ambiguity.additive_ref)
+                    if orphaned is not None:
+                        residual_id, origin_level = orphaned
+                        self._learner.resolve_residual(residual_id)
+                        self._metrics[origin_level].residuals_resolved += 1
+                    if learning is not None and {
+                        item.channel for item in learning.residual.consequential
+                    } <= {ConsequenceChannel.RESOURCE_CHANGES}:
+                        self._learner.resolve_residual(learning.residual.residual_id)
+                        self._metrics[self._level_index].residuals_resolved += 1
+                    self._metrics[self._level_index].local_repairs_confirmed += 1
+
         receipt = _ResourceDiscriminationReceipt(
             ambiguity_id=ambiguity.ambiguity_id,
             residual_id=ambiguity.residual_id,
@@ -998,22 +1175,10 @@ class ObservationOnlyVariantPolicy:
             override_expected_after=override_expected,
             observed_after=facts.resource_after,
             resolved_mode=resolved_mode,
-            complete=valid_reentry and resolved_mode is not None,
+            complete=valid_reentry and resolved_mode is not None and resolution_applied,
         )
         self._resource_discrimination_receipts.append(receipt)
-        if resolved_mode is CompositionMode.OVERRIDE and self._learner is not None:
-            try:
-                self._learner.ledger.reject(
-                    ambiguity.additive_ref,
-                    occurred_step=self._step,
-                    caused_by_event_ids=(facts.source_event_id,),
-                    note="minimal restoration probe favored override over additive",
-                )
-            except MechanicsError:
-                self._metrics[self._level_index].hazard_prediction_errors += 1
-            self._repairs.pop(ambiguity.additive_ref, None)
-            self._detach_origin_without_resolution(ambiguity.additive_ref)
-        if resolved_mode is not None:
+        if resolved_mode is not None and resolution_applied:
             self._resource_ambiguities.pop(ambiguity.ambiguity_id, None)
             self._metrics[self._level_index].restoration_ambiguities_resolved += 1
         self._active_resource_probe = None
@@ -1385,7 +1550,7 @@ class ObservationOnlyVariantPolicy:
 
         if after.state is GameStateName.GAME_OVER:
             self._record_resource_failure(before, action, facts, learning)
-        self._advance_resource_probe(action, facts)
+        self._advance_resource_probe(action, facts, learning)
 
         causal_digest, causal_complete = self._record_causal_receipt(
             before, after, action, displacement, resource_delta
@@ -1851,17 +2016,19 @@ class ObservationOnlyVariantPolicy:
         self._learner.resolve_residual(residual_id)
         self._metrics[origin_level].residuals_resolved += 1
 
-    def _detach_origin_without_resolution(self, ref: MechanicRef) -> None:
+    def _detach_origin_without_resolution(self, ref: MechanicRef) -> tuple[str, int] | None:
         origin = self._origin_residuals.pop(ref, None)
         if origin is None:
-            return
-        residual_id, _origin_level = origin
+            return None
+        residual_id, origin_level = origin
         pending = self._pending_residual_refs.get(residual_id)
         if pending is None:
-            return
+            return None
         pending.discard(ref)
         if not pending:
             self._pending_residual_refs.pop(residual_id, None)
+            return residual_id, origin_level
+        return None
 
     def _initial_ref_for(
         self,
@@ -2014,6 +2181,7 @@ class ObservationOnlyVariantPolicy:
         facts: _TransitionFacts,
         *,
         level_local: bool,
+        scope_state_tags: tuple[str, ...] = (),
         note: str,
     ) -> MechanicRef | None:
         if self._learner is None or value.is_unknown:
@@ -2024,6 +2192,7 @@ class ObservationOnlyVariantPolicy:
                 game_scope=self._game_scope,
                 level_scope=facts.context.level_scope,
                 object_roles=facts.context.object_roles,
+                state_tags=scope_state_tags,
             )
             if level_local
             else MechanicScope(ScopeCeiling.GAME, game_scope=self._game_scope)
