@@ -177,6 +177,23 @@ class VisualScene:
 
 
 type _TargetRegions = tuple[tuple[tuple[int, int], frozenset[tuple[int, int]]], ...]
+type _TargetSurfaceSignature = tuple[
+    tuple[
+        str,
+        tuple[int, int],
+        tuple[tuple[int, int], ...],
+        tuple[tuple[int, int, int], ...],
+    ],
+    ...,
+]
+type _VisualObjectStateSignature = tuple[
+    tuple[int, int],
+    int,
+    int,
+    tuple[tuple[int, int], ...],
+]
+type _EndpointStateSignature = tuple[_VisualObjectStateSignature, ...]
+type _ConnectorStateSignature = tuple[int, tuple[tuple[int, int], ...]] | None
 type _ExplorationRootKey = tuple[str, str, int, int]
 
 
@@ -225,7 +242,14 @@ class PlannedClick:
     arity: int
     completes_local_target: bool = False
     completes_hierarchy: bool = False
+    completes_child_isolation: bool = False
     stages_for_switch: bool = False
+    expected_child_mediator_center: tuple[int, int] | None = None
+    expected_child_mediator_signature: _VisualObjectStateSignature | None = None
+    expected_child_endpoint_centers: tuple[tuple[int, int], ...] = ()
+    expected_child_endpoint_signature: _EndpointStateSignature = ()
+    expected_child_connector_signature: _ConnectorStateSignature = None
+    expected_active_center: tuple[int, int] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -270,6 +294,33 @@ class _HierarchyPlan:
     actions: tuple[PlannedClick, ...]
     signature: str
     supports: tuple[tuple[int, int], ...]
+
+
+@dataclass(frozen=True, slots=True)
+class _ChildIsolationPlan:
+    """One exact test of a previously untouched child against the parent target."""
+
+    actions: tuple[PlannedClick, ...]
+    signature: str
+    relation_key: str
+    frozen_mediator_center: tuple[int, int]
+    frozen_mediator_signature: _VisualObjectStateSignature
+    frozen_endpoint_centers: tuple[tuple[int, int], ...]
+    frozen_endpoint_signature: _EndpointStateSignature
+    frozen_connector_signature: _ConnectorStateSignature
+    frozen_mediator_color: int
+    target_signature: _TargetSurfaceSignature
+
+
+@dataclass(frozen=True, slots=True)
+class _ChildIsolationStateCertificate:
+    """Exact projected state expected after one child-isolation action."""
+
+    selected_mediator_signature: _VisualObjectStateSignature
+    selected_endpoint_signature: _EndpointStateSignature
+    selected_connector_signature: _ConnectorStateSignature
+    frozen_connector_signature: _ConnectorStateSignature
+    active_center: tuple[int, int]
 
 
 @dataclass(frozen=True, slots=True)
@@ -1521,6 +1572,48 @@ def _visible_target_regions(
             ),
         )
         for item in visible_targets.values()
+    )
+
+
+def _target_surface_signature(scene: VisualScene) -> _TargetSurfaceSignature:
+    """Return exact raw and composite target evidence for projection checks."""
+
+    raw = tuple(
+        (
+            "raw",
+            item.rounded_center,
+            tuple(sorted(item.cells)),
+            tuple(sorted((x, y, scene.cells[y][x]) for x, y in item.cells)),
+        )
+        for item in scene.targets
+    )
+    composite = tuple(
+        (
+            "composite",
+            item.rounded_center,
+            tuple(sorted(item.cells)),
+            tuple(sorted((x, y, scene.cells[y][x]) for x, y in item.cells)),
+        )
+        for item, _signature in _composite_sparse_targets(scene)
+    )
+    return tuple(sorted((*raw, *composite)))
+
+
+def _child_isolation_target_surface_signature(
+    scene: VisualScene,
+    *,
+    sink_center: tuple[int, int],
+) -> _TargetSurfaceSignature:
+    """Preserve exact surfaces while allowing a filled sink to stop looking hollow."""
+
+    raw_sink_surfaces = tuple(
+        tuple(sorted(item.cells)) for item in scene.targets if item.rounded_center == sink_center
+    )
+    exempt_surface = raw_sink_surfaces[0] if len(raw_sink_surfaces) == 1 else ()
+    return tuple(
+        item
+        for item in _target_surface_signature(scene)
+        if not (item[0] == "composite" and item[1] == sink_center and item[2] == exempt_surface)
     )
 
 
@@ -3555,6 +3648,55 @@ def _unique_affine_hierarchy(
     )
 
 
+def _hierarchy_relation_key(
+    hierarchy: _AffineHierarchy,
+    *,
+    level_index: int,
+) -> str:
+    """Return a level-scoped semantic key that ignores movable layout identity.
+
+    Endpoint coordinates, endpoint object references, active-role placement, and
+    the full frame hash all change while one hierarchy hypothesis is being
+    tested.  None of those changes create a new parent relation.  The key keeps
+    only the stable target geometry and the child relation signatures so an
+    officially falsified completion hypothesis cannot reopen under a new frame
+    identity after a same-level intervention or RESET.
+    """
+
+    def normalized_shape(item: VisualObject) -> tuple[tuple[int, int], ...]:
+        return tuple(sorted((x - item.min_x, y - item.min_y) for x, y in item.cells))
+
+    target = hierarchy.target
+    children = tuple(
+        sorted(
+            (
+                child.arity,
+                child.mediator.color,
+                child.mediator.center_cell,
+                normalized_shape(child.mediator),
+                tuple(
+                    sorted(
+                        (endpoint.center_cell, normalized_shape(endpoint))
+                        for endpoint in child.endpoints
+                    )
+                ),
+            )
+            for child in hierarchy.children
+        )
+    )
+    identity = (
+        level_index,
+        target.color,
+        target.rounded_center,
+        normalized_shape(target),
+        children,
+    )
+    return (
+        "affine-hierarchy-relation:"
+        + hashlib.sha256(repr(identity).encode("ascii")).hexdigest()[:24]
+    )
+
+
 def _hierarchy_dynamic_footprint(
     scene: VisualScene,
     group: _AffineChildGroup,
@@ -3672,6 +3814,17 @@ def _hierarchy_connector_color(
 ) -> int | None:
     evidence = _hierarchy_connector_evidence(scene, group)
     return evidence[0] if evidence is not None else None
+
+
+def _hierarchy_connector_state_signature(
+    scene: VisualScene,
+    group: _AffineChildGroup,
+) -> _ConnectorStateSignature:
+    evidence = _hierarchy_connector_evidence(scene, group)
+    if evidence is None:
+        return None
+    color, cells = evidence
+    return (color, tuple(sorted(cells)))
 
 
 def _hierarchy_projected_scene(
@@ -3818,10 +3971,16 @@ def _hierarchy_child_layouts(
     active_ref: str | None,
     static_cells: frozenset[tuple[int, int]],
     target_regions: _TargetRegions,
+    endpoint_target_regions: _TargetRegions | None = None,
     ignored_refs: frozenset[str],
     search_budget: _HierarchySearchBudget,
+    result_limit: int = _MAX_HIERARCHY_CHILD_LAYOUTS,
 ) -> tuple[_HierarchyChildLayout, ...]:
     del ignored_refs
+    if endpoint_target_regions is None:
+        endpoint_target_regions = target_regions
+    if result_limit < 1:
+        return ()
     layouts: list[_HierarchyChildLayout] = []
     mover_orders = _hierarchy_endpoint_orders(group, active_ref=active_ref)
     for radius in range(6, 28):
@@ -3843,7 +4002,10 @@ def _hierarchy_child_layouts(
                 if any(
                     not _hierarchy_cells_in_bounds(scene, footprint)
                     or footprint & static_cells
-                    or not _hierarchy_avoids_target_regions(footprint, target_regions)
+                    or not _hierarchy_avoids_target_regions(
+                        footprint,
+                        endpoint_target_regions,
+                    )
                     for footprint in endpoint_footprints
                 ):
                     continue
@@ -3868,6 +4030,14 @@ def _hierarchy_child_layouts(
                     _distance(mover.rounded_center, point)
                     for mover, point in zip(movers, points, strict=True)
                 )
+                if any(
+                    mover.rounded_center == point
+                    for mover, point in zip(movers, points, strict=True)
+                ):
+                    # A PROGRESS click is a claimed placement intervention.  Do
+                    # not emit role-animation-only clicks for endpoints already
+                    # at their projected locations.
+                    continue
                 layouts.append(
                     _HierarchyChildLayout(
                         group=group,
@@ -3902,7 +4072,7 @@ def _hierarchy_child_layouts(
     # The joint parser check is deliberately expensive.  Preserve a fair
     # radius shell above, then keep only the best bounded discriminators for
     # each child instead of exhaustively enumerating equivalent placements.
-    return tuple(layouts[:_MAX_HIERARCHY_CHILD_LAYOUTS])
+    return tuple(layouts[:result_limit])
 
 
 def _fair_index_products(
@@ -4061,6 +4231,12 @@ def _hierarchy_sequence_is_safe(
     """Validate every projected move and role exchange, not only the endpoint."""
 
     if tuple(layout.group for layout in layouts) != hierarchy.children:
+        return False
+    if any(
+        mover.rounded_center == point
+        for layout in layouts
+        for mover, point in zip(layout.movers, layout.points, strict=True)
+    ):
         return False
     positions = {
         endpoint.object_ref: endpoint.rounded_center
@@ -4374,6 +4550,668 @@ def _hierarchy_joint_layout(
     return None
 
 
+def _visual_object_state_signature(
+    item: VisualObject,
+    *,
+    position: tuple[int, int] | None = None,
+    color: int | None = None,
+) -> _VisualObjectStateSignature:
+    return (
+        item.rounded_center if position is None else position,
+        item.color if color is None else color,
+        item.center_cell,
+        tuple(sorted((x - item.min_x, y - item.min_y) for x, y in item.cells)),
+    )
+
+
+def _endpoint_state_signature(
+    endpoints: tuple[VisualObject, ...],
+    *,
+    positions: dict[str, tuple[int, int]] | None = None,
+    colors: dict[str, int] | None = None,
+) -> _EndpointStateSignature:
+    """Describe endpoint center, role color, and translation-invariant shape exactly."""
+
+    return tuple(
+        sorted(
+            _visual_object_state_signature(
+                endpoint,
+                position=(
+                    positions.get(endpoint.object_ref, endpoint.rounded_center)
+                    if positions is not None
+                    else None
+                ),
+                color=(
+                    colors.get(endpoint.object_ref, endpoint.color) if colors is not None else None
+                ),
+            )
+            for endpoint in endpoints
+        )
+    )
+
+
+def _child_group_matches_geometry(
+    group: _AffineChildGroup,
+    *,
+    mediator_center: tuple[int, int],
+    endpoint_centers: tuple[tuple[int, int], ...],
+    mediator_color: int,
+) -> bool:
+    return bool(
+        group.mediator.rounded_center == mediator_center
+        and group.mediator.color == mediator_color
+        and sorted(item.rounded_center for item in group.endpoints) == sorted(endpoint_centers)
+    )
+
+
+def _child_group_matches_state(
+    group: _AffineChildGroup,
+    *,
+    mediator_signature: _VisualObjectStateSignature,
+    endpoint_signature: _EndpointStateSignature,
+) -> bool:
+    return bool(
+        _visual_object_state_signature(group.mediator) == mediator_signature
+        and _endpoint_state_signature(group.endpoints) == endpoint_signature
+    )
+
+
+def _child_isolation_target_regions(
+    scene: VisualScene,
+    hierarchy: _AffineHierarchy,
+) -> tuple[_TargetRegions, _TargetRegions]:
+    """Protect target boxes from endpoints while allowing a hollow sink interior."""
+
+    endpoint_regions = _visible_target_regions(scene)
+    sink_center = hierarchy.target.rounded_center
+    sink_surface = frozenset(
+        cell
+        for target in (
+            *(item for item in scene.targets if item.rounded_center == sink_center),
+            *(
+                item
+                for item, _signature in _composite_sparse_targets(scene)
+                if item.rounded_center == sink_center
+            ),
+        )
+        for cell in target.cells
+    )
+    dynamic_regions = tuple(
+        (center, sink_surface if center == sink_center else region)
+        for center, region in endpoint_regions
+    )
+    return dynamic_regions, endpoint_regions
+
+
+def _child_isolation_projected_state_is_safe(
+    scene: VisualScene,
+    hierarchy: _AffineHierarchy,
+    selected_group: _AffineChildGroup,
+    frozen_group: _AffineChildGroup,
+    *,
+    positions: dict[str, tuple[int, int]],
+    colors: dict[str, int],
+    static_cells: frozenset[tuple[int, int]],
+    dynamic_target_regions: _TargetRegions,
+    endpoint_target_regions: _TargetRegions,
+    target_signature: _TargetSurfaceSignature,
+    search_budget: _HierarchySearchBudget,
+) -> _ChildIsolationStateCertificate | None:
+    """Preflight and certify one exact selected-child projected state."""
+
+    selected_centers = tuple(positions[item.object_ref] for item in selected_group.endpoints)
+    selected_mediator = (
+        sum(center[0] for center in selected_centers) // selected_group.arity,
+        sum(center[1] for center in selected_centers) // selected_group.arity,
+    )
+    endpoint_footprints = tuple(
+        _translated_object_footprint(endpoint, center=center)
+        for endpoint, center in zip(selected_group.endpoints, selected_centers, strict=True)
+    )
+    if any(
+        not _hierarchy_cells_in_bounds(scene, footprint)
+        or footprint & static_cells
+        or not _hierarchy_avoids_target_regions(footprint, endpoint_target_regions)
+        for footprint in endpoint_footprints
+    ):
+        return None
+    if any(
+        not _footprints_have_gap(left, right, gap=1)
+        for left, right in itertools.combinations(endpoint_footprints, 2)
+    ):
+        return None
+    selected_dynamic = _hierarchy_projected_group_footprint(
+        selected_group,
+        endpoint_centers=selected_centers,
+        mediator_center=selected_mediator,
+    )
+    if (
+        not _hierarchy_cells_in_bounds(scene, selected_dynamic)
+        or selected_dynamic & static_cells
+        or not _hierarchy_avoids_target_regions(selected_dynamic, dynamic_target_regions)
+    ):
+        return None
+
+    projected = _hierarchy_projected_scene(
+        scene,
+        hierarchy,
+        positions=positions,
+        colors=colors,
+    )
+    if (
+        len(projected.endpoints) != len(scene.endpoints)
+        or len(projected.mediators) != len(scene.mediators)
+        or _child_isolation_target_surface_signature(
+            projected,
+            sink_center=hierarchy.target.rounded_center,
+        )
+        != target_signature
+        or set(_visible_target_regions(projected)) != set(_visible_target_regions(scene))
+    ):
+        return None
+    parsed = _unique_affine_hierarchy(
+        projected,
+        active_color=hierarchy.active_color,
+        search_budget=search_budget,
+    )
+    if parsed is None or len(parsed.children) != 2:
+        return None
+    active = tuple(item for item in projected.endpoints if item.color == hierarchy.active_color)
+    if len(active) != 1:
+        return None
+    frozen_endpoint_signature = _endpoint_state_signature(frozen_group.endpoints)
+    frozen_matches = tuple(
+        child
+        for child in parsed.children
+        if _child_group_matches_state(
+            child,
+            mediator_signature=_visual_object_state_signature(frozen_group.mediator),
+            endpoint_signature=frozen_endpoint_signature,
+        )
+    )
+    selected_endpoint_signature = _endpoint_state_signature(
+        selected_group.endpoints,
+        positions=positions,
+        colors=colors,
+    )
+    selected_matches = tuple(
+        child
+        for child in parsed.children
+        if child.mediator.rounded_center == selected_mediator
+        and child.mediator.color == selected_group.mediator.color
+        and _endpoint_state_signature(child.endpoints) == selected_endpoint_signature
+        and any(item.color == hierarchy.active_color for item in child.endpoints)
+    )
+    if not (
+        len(frozen_matches) == 1
+        and len(selected_matches) == 1
+        and frozen_matches[0] is not selected_matches[0]
+        and parsed.target.rounded_center == hierarchy.target.rounded_center
+        and parsed.target.color == hierarchy.target.color
+    ):
+        return None
+    return _ChildIsolationStateCertificate(
+        selected_mediator_signature=_visual_object_state_signature(selected_matches[0].mediator),
+        selected_endpoint_signature=selected_endpoint_signature,
+        selected_connector_signature=_hierarchy_connector_state_signature(
+            projected,
+            selected_matches[0],
+        ),
+        frozen_connector_signature=_hierarchy_connector_state_signature(
+            projected,
+            frozen_matches[0],
+        ),
+        active_center=active[0].rounded_center,
+    )
+
+
+def _child_isolation_sequence_is_safe(
+    scene: VisualScene,
+    hierarchy: _AffineHierarchy,
+    selected_group: _AffineChildGroup,
+    frozen_group: _AffineChildGroup,
+    layout: _HierarchyChildLayout,
+    *,
+    static_cells: frozenset[tuple[int, int]],
+    dynamic_target_regions: _TargetRegions,
+    endpoint_target_regions: _TargetRegions,
+    target_signature: _TargetSurfaceSignature,
+    search_budget: _HierarchySearchBudget,
+) -> tuple[_ChildIsolationStateCertificate, ...] | None:
+    """Validate and certify every state in one child-only discriminator."""
+
+    if layout.group != selected_group or any(
+        mover.rounded_center == point
+        for mover, point in zip(layout.movers, layout.points, strict=True)
+    ):
+        return None
+    positions = {
+        endpoint.object_ref: endpoint.rounded_center
+        for child in hierarchy.children
+        for endpoint in child.endpoints
+    }
+    colors = {
+        endpoint.object_ref: endpoint.color
+        for child in hierarchy.children
+        for endpoint in child.endpoints
+    }
+    active = tuple(ref for ref, color in colors.items() if color == hierarchy.active_color)
+    if len(active) != 1 or layout.movers[0].object_ref != active[0]:
+        return None
+    active_ref = active[0]
+    certificates: list[_ChildIsolationStateCertificate] = []
+    initial_certificate = _child_isolation_projected_state_is_safe(
+        scene,
+        hierarchy,
+        selected_group,
+        frozen_group,
+        positions=positions,
+        colors=colors,
+        static_cells=static_cells,
+        dynamic_target_regions=dynamic_target_regions,
+        endpoint_target_regions=endpoint_target_regions,
+        target_signature=target_signature,
+        search_budget=search_budget,
+    )
+    if initial_certificate is None:
+        return None
+    certificates.append(initial_certificate)
+    for mover_index, (mover, point) in enumerate(zip(layout.movers, layout.points, strict=True)):
+        if mover.object_ref != active_ref:
+            return None
+        positions[active_ref] = point
+        movement_certificate = _child_isolation_projected_state_is_safe(
+            scene,
+            hierarchy,
+            selected_group,
+            frozen_group,
+            positions=positions,
+            colors=colors,
+            static_cells=static_cells,
+            dynamic_target_regions=dynamic_target_regions,
+            endpoint_target_regions=endpoint_target_regions,
+            target_signature=target_signature,
+            search_budget=search_budget,
+        )
+        if movement_certificate is None:
+            return None
+        if (
+            movement_certificate.frozen_connector_signature
+            != initial_certificate.frozen_connector_signature
+        ):
+            return None
+        certificates.append(movement_certificate)
+        if mover_index + 1 >= len(layout.movers):
+            continue
+        selected_ref = layout.movers[mover_index + 1].object_ref
+        if selected_ref == active_ref or colors[selected_ref] == hierarchy.active_color:
+            return None
+        colors[active_ref], colors[selected_ref] = colors[selected_ref], colors[active_ref]
+        active_ref = selected_ref
+        switch_certificate = _child_isolation_projected_state_is_safe(
+            scene,
+            hierarchy,
+            selected_group,
+            frozen_group,
+            positions=positions,
+            colors=colors,
+            static_cells=static_cells,
+            dynamic_target_regions=dynamic_target_regions,
+            endpoint_target_regions=endpoint_target_regions,
+            target_signature=target_signature,
+            search_budget=search_budget,
+        )
+        if switch_certificate is None:
+            return None
+        if (
+            switch_certificate.frozen_connector_signature
+            != initial_certificate.frozen_connector_signature
+        ):
+            return None
+        certificates.append(switch_certificate)
+    centers = tuple(positions[item.object_ref] for item in selected_group.endpoints)
+    target = hierarchy.target.rounded_center
+    if not (
+        sum(center[0] for center in centers) == selected_group.arity * target[0]
+        and sum(center[1] for center in centers) == selected_group.arity * target[1]
+        and layout.support == target
+    ):
+        return None
+    return tuple(certificates)
+
+
+def _build_child_isolation_plan(
+    hierarchy: _AffineHierarchy,
+    *,
+    activation: VisualObject,
+    layout: _HierarchyChildLayout,
+    state_certificates: tuple[_ChildIsolationStateCertificate, ...],
+    frozen_group: _AffineChildGroup,
+    target_signature: _TargetSurfaceSignature,
+    relation_key: str,
+) -> _ChildIsolationPlan:
+    geometry = f"{activation.rounded_center[0]},{activation.rounded_center[1]}|" + ";".join(
+        f"{mover.rounded_center[0]},{mover.rounded_center[1]}>{point[0]},{point[1]}"
+        for mover, point in zip(layout.movers, layout.points, strict=True)
+    )
+    signature = (
+        "affine-child-isolation:"
+        + hashlib.sha256(f"{relation_key}|{geometry}".encode("ascii")).hexdigest()[:24]
+    )
+    plan_id = "visual-child-isolation-plan:" + signature.rsplit(":", 1)[-1]
+    expected_certificate_count = 2 * len(layout.movers)
+    if len(state_certificates) != expected_certificate_count:
+        raise ValueError("child-isolation action/state certificate count mismatch")
+    certificate_index = 0
+    initial_certificate = state_certificates[certificate_index]
+    certificate_index += 1
+    actions = [
+        PlannedClick(
+            coordinate=Coordinate(*activation.rounded_center),
+            purpose=VisualActionPurpose.PROBE,
+            expectation=(
+                "exchange the active role into the untested affine child while "
+                "preserving the previously tested child"
+            ),
+            mechanic_ref=hierarchy.mechanic_ref,
+            plan_id=plan_id,
+            plan_signature=signature,
+            target_center=hierarchy.target.rounded_center,
+            mediator_color=layout.group.mediator.color,
+            arity=layout.group.arity,
+            expected_child_mediator_center=initial_certificate.selected_mediator_signature[0],
+            expected_child_mediator_signature=(initial_certificate.selected_mediator_signature),
+            expected_child_endpoint_centers=tuple(
+                item[0] for item in initial_certificate.selected_endpoint_signature
+            ),
+            expected_child_endpoint_signature=(initial_certificate.selected_endpoint_signature),
+            expected_child_connector_signature=(initial_certificate.selected_connector_signature),
+            expected_active_center=initial_certificate.active_center,
+        )
+    ]
+    for mover_index, (_mover, point) in enumerate(zip(layout.movers, layout.points, strict=True)):
+        final_action = mover_index + 1 == len(layout.movers)
+        movement_certificate = state_certificates[certificate_index]
+        certificate_index += 1
+        actions.append(
+            PlannedClick(
+                coordinate=Coordinate(*point),
+                purpose=VisualActionPurpose.PROGRESS,
+                expectation=(
+                    "place only the selected child mediator at the parent target"
+                    if final_action
+                    else "place the active endpoint on an exact child-isolation layout"
+                ),
+                mechanic_ref=hierarchy.mechanic_ref,
+                plan_id=plan_id,
+                plan_signature=signature,
+                target_center=hierarchy.target.rounded_center,
+                mediator_color=layout.group.mediator.color,
+                arity=layout.group.arity,
+                completes_child_isolation=final_action,
+                expected_child_mediator_center=(
+                    movement_certificate.selected_mediator_signature[0]
+                ),
+                expected_child_mediator_signature=(
+                    movement_certificate.selected_mediator_signature
+                ),
+                expected_child_endpoint_centers=tuple(
+                    item[0] for item in movement_certificate.selected_endpoint_signature
+                ),
+                expected_child_endpoint_signature=(
+                    movement_certificate.selected_endpoint_signature
+                ),
+                expected_child_connector_signature=(
+                    movement_certificate.selected_connector_signature
+                ),
+                expected_active_center=movement_certificate.active_center,
+            )
+        )
+        if not final_action:
+            selected = layout.movers[mover_index + 1]
+            switch_certificate = state_certificates[certificate_index]
+            certificate_index += 1
+            actions.append(
+                PlannedClick(
+                    coordinate=Coordinate(*selected.rounded_center),
+                    purpose=VisualActionPurpose.PROBE,
+                    expectation=(
+                        "exchange active and fixed endpoint roles within the isolated child"
+                    ),
+                    mechanic_ref=hierarchy.mechanic_ref,
+                    plan_id=plan_id,
+                    plan_signature=signature,
+                    target_center=hierarchy.target.rounded_center,
+                    mediator_color=layout.group.mediator.color,
+                    arity=layout.group.arity,
+                    expected_child_mediator_center=(
+                        switch_certificate.selected_mediator_signature[0]
+                    ),
+                    expected_child_mediator_signature=(
+                        switch_certificate.selected_mediator_signature
+                    ),
+                    expected_child_endpoint_centers=tuple(
+                        item[0] for item in switch_certificate.selected_endpoint_signature
+                    ),
+                    expected_child_endpoint_signature=(
+                        switch_certificate.selected_endpoint_signature
+                    ),
+                    expected_child_connector_signature=(
+                        switch_certificate.selected_connector_signature
+                    ),
+                    expected_active_center=switch_certificate.active_center,
+                )
+            )
+    if certificate_index != len(state_certificates):
+        raise ValueError("unused child-isolation state certificate")
+    return _ChildIsolationPlan(
+        actions=tuple(actions),
+        signature=signature,
+        relation_key=relation_key,
+        frozen_mediator_center=frozen_group.mediator.rounded_center,
+        frozen_mediator_signature=_visual_object_state_signature(frozen_group.mediator),
+        frozen_endpoint_centers=tuple(
+            sorted(item.rounded_center for item in frozen_group.endpoints)
+        ),
+        frozen_endpoint_signature=_endpoint_state_signature(frozen_group.endpoints),
+        frozen_connector_signature=initial_certificate.frozen_connector_signature,
+        frozen_mediator_color=frozen_group.mediator.color,
+        target_signature=target_signature,
+    )
+
+
+def _child_isolation_plan(
+    scene: VisualScene,
+    hierarchy: _AffineHierarchy,
+    *,
+    level_index: int,
+    rejected_signatures: set[str],
+    search_budget: _HierarchySearchBudget | None = None,
+) -> _ChildIsolationPlan | None:
+    """Find one bounded exact test of the initially nonactive child alone."""
+
+    if len(hierarchy.children) != 2:
+        return None
+    if search_budget is None:
+        search_budget = _HierarchySearchBudget(_MAX_HIERARCHY_SEARCH_BUDGET)
+    active = tuple(item for item in scene.endpoints if item.color == hierarchy.active_color)
+    if len(active) != 1:
+        return None
+    active_group = hierarchy.children[0]
+    inactive_group = hierarchy.children[1]
+    if active[0] not in active_group.endpoints:
+        return None
+    relation_key = _hierarchy_relation_key(hierarchy, level_index=level_index)
+    baseline_target_signature = _target_surface_signature(scene)
+    baseline_target_regions = set(_visible_target_regions(scene))
+    initial_positions = {
+        endpoint.object_ref: endpoint.rounded_center
+        for child in hierarchy.children
+        for endpoint in child.endpoints
+    }
+    initial_colors = {
+        endpoint.object_ref: endpoint.color
+        for child in hierarchy.children
+        for endpoint in child.endpoints
+    }
+    activation_candidates = tuple(
+        sorted(
+            inactive_group.endpoints,
+            key=lambda item: (
+                _distance(item.rounded_center, hierarchy.target.rounded_center),
+                item.rounded_center[1],
+                item.rounded_center[0],
+                item.object_ref,
+            ),
+        )
+    )
+    for activation in activation_candidates:
+        search_budget.consume()
+        if not _role_swap_remains_readable(
+            scene,
+            activation,
+            active_color=hierarchy.active_color,
+        ):
+            continue
+        positions = dict(initial_positions)
+        colors = dict(initial_colors)
+        colors[active[0].object_ref], colors[activation.object_ref] = (
+            colors[activation.object_ref],
+            colors[active[0].object_ref],
+        )
+        role_scene = _hierarchy_projected_scene(
+            scene,
+            hierarchy,
+            positions=positions,
+            colors=colors,
+        )
+        if (
+            len(role_scene.endpoints) != len(scene.endpoints)
+            or len(role_scene.mediators) != len(scene.mediators)
+            or _target_surface_signature(role_scene) != baseline_target_signature
+            or set(_visible_target_regions(role_scene)) != baseline_target_regions
+        ):
+            continue
+        role_hierarchy = _unique_affine_hierarchy(
+            role_scene,
+            active_color=hierarchy.active_color,
+            search_budget=search_budget,
+        )
+        if role_hierarchy is None or len(role_hierarchy.children) != 2:
+            continue
+        selected_group = role_hierarchy.children[0]
+        frozen_group = role_hierarchy.children[1]
+        if not _child_group_matches_geometry(
+            selected_group,
+            mediator_center=inactive_group.mediator.rounded_center,
+            endpoint_centers=tuple(item.rounded_center for item in inactive_group.endpoints),
+            mediator_color=inactive_group.mediator.color,
+        ) or not _child_group_matches_geometry(
+            frozen_group,
+            mediator_center=active_group.mediator.rounded_center,
+            endpoint_centers=tuple(item.rounded_center for item in active_group.endpoints),
+            mediator_color=active_group.mediator.color,
+        ):
+            continue
+        role_active = tuple(
+            item for item in selected_group.endpoints if item.color == hierarchy.active_color
+        )
+        if len(role_active) != 1:
+            continue
+        selected_dynamic = _hierarchy_dynamic_footprint(role_scene, selected_group)
+        occupied = frozenset(
+            (x, y)
+            for y, row in enumerate(role_scene.cells)
+            for x, value in enumerate(row)
+            if value != role_scene.background
+        )
+        static_cells = occupied - selected_dynamic
+        dynamic_target_regions, endpoint_target_regions = _child_isolation_target_regions(
+            role_scene,
+            role_hierarchy,
+        )
+        ignored_refs = frozenset(
+            item.object_ref for item in (*selected_group.endpoints, selected_group.mediator)
+        )
+        layouts = _hierarchy_child_layouts(
+            role_scene,
+            role_hierarchy,
+            selected_group,
+            support=role_hierarchy.target.rounded_center,
+            active_ref=role_active[0].object_ref,
+            static_cells=static_cells,
+            target_regions=dynamic_target_regions,
+            endpoint_target_regions=endpoint_target_regions,
+            ignored_refs=ignored_refs,
+            search_budget=search_budget,
+            result_limit=64,
+        )
+        for layout in layouts:
+            search_budget.consume(_HIERARCHY_SEQUENCE_EVALUATION_COST)
+            state_certificates = _child_isolation_sequence_is_safe(
+                role_scene,
+                role_hierarchy,
+                selected_group,
+                frozen_group,
+                layout,
+                static_cells=static_cells,
+                dynamic_target_regions=dynamic_target_regions,
+                endpoint_target_regions=endpoint_target_regions,
+                target_signature=_child_isolation_target_surface_signature(
+                    role_scene,
+                    sink_center=role_hierarchy.target.rounded_center,
+                ),
+                search_budget=search_budget,
+            )
+            if state_certificates is None:
+                continue
+            plan = _build_child_isolation_plan(
+                hierarchy,
+                activation=activation,
+                layout=layout,
+                state_certificates=state_certificates,
+                frozen_group=frozen_group,
+                target_signature=_child_isolation_target_surface_signature(
+                    role_scene,
+                    sink_center=role_hierarchy.target.rounded_center,
+                ),
+                relation_key=relation_key,
+            )
+            if plan.signature not in rejected_signatures:
+                return plan
+    return None
+
+
+def _child_isolation_was_observed(
+    hierarchy: _AffineHierarchy,
+    *,
+    target_center: tuple[int, int] | None,
+    mediator_color: int | None,
+    arity: int | None,
+) -> bool:
+    """Require exactly one child at the sink and a distinct frozen sibling."""
+
+    if target_center is None or mediator_color is None or arity is None:
+        return False
+    isolated = tuple(
+        child
+        for child in hierarchy.children
+        if child.arity == arity
+        and child.mediator.color == mediator_color
+        and child.mediator.rounded_center == target_center
+        and sum(item.rounded_center[0] for item in child.endpoints) == arity * target_center[0]
+        and sum(item.rounded_center[1] for item in child.endpoints) == arity * target_center[1]
+    )
+    return bool(
+        len(hierarchy.children) == 2
+        and len(isolated) == 1
+        and all(
+            child is isolated[0] or child.mediator.rounded_center != target_center
+            for child in hierarchy.children
+        )
+    )
+
+
 def _hierarchy_planned_click_is_safe(
     scene: VisualScene,
     planned: PlannedClick,
@@ -4382,7 +5220,7 @@ def _hierarchy_planned_click_is_safe(
 ) -> bool:
     """Revalidate one queued hierarchy action against the returned frame."""
 
-    if not planned.plan_signature.startswith("affine-hierarchy:"):
+    if not planned.plan_signature.startswith(("affine-hierarchy:", "affine-child-isolation:")):
         return True
     if not any(target.rounded_center == planned.target_center for target in scene.targets):
         return False
@@ -4681,6 +5519,13 @@ class VisualCausalPolicy:
         self._pending_arity: int | None = None
         self._pending_completes_local_target = False
         self._pending_completes_hierarchy = False
+        self._pending_completes_child_isolation = False
+        self._pending_expected_child_mediator_center: tuple[int, int] | None = None
+        self._pending_expected_child_mediator_signature: _VisualObjectStateSignature | None = None
+        self._pending_expected_child_endpoint_centers: tuple[tuple[int, int], ...] = ()
+        self._pending_expected_child_endpoint_signature: _EndpointStateSignature = ()
+        self._pending_expected_child_connector_signature: _ConnectorStateSignature = None
+        self._pending_expected_active_center: tuple[int, int] | None = None
         self._pending_clef_prediction = EffectVector.unknown()
         self._pending_mechanic_prediction: MechanicPredictionReceipt | None = None
         self._plan: deque[PlannedClick] = deque()
@@ -4698,7 +5543,21 @@ class VisualCausalPolicy:
         self._affine_reacquire_target_center: tuple[int, int] | None = None
         self._pending_affine_reacquisition = False
         self._active_hierarchy_signature: str | None = None
+        self._active_hierarchy_relation_key: str | None = None
         self._active_hierarchy_supports: tuple[tuple[int, int], ...] = ()
+        self._failed_hierarchy_relation_keys: set[str] = set()
+        self._active_child_isolation_relation_key: str | None = None
+        self._active_child_isolation_frozen_mediator_center: tuple[int, int] | None = None
+        self._active_child_isolation_frozen_mediator_signature: (
+            _VisualObjectStateSignature | None
+        ) = None
+        self._active_child_isolation_frozen_endpoint_centers: tuple[tuple[int, int], ...] = ()
+        self._active_child_isolation_frozen_endpoint_signature: _EndpointStateSignature = ()
+        self._active_child_isolation_frozen_connector_signature: _ConnectorStateSignature = None
+        self._active_child_isolation_frozen_mediator_color: int | None = None
+        self._active_child_isolation_target_signature: _TargetSurfaceSignature | None = None
+        self._failed_child_isolation_relation_keys: set[str] = set()
+        self._failed_child_isolation_relation_reasons: dict[str, str] = {}
         self._hierarchy_search_deferred_count = 0
         self._last_hierarchy_search_residual: str | None = None
         self._marker_target_identity_constraints: set[int] = set()
@@ -4776,7 +5635,12 @@ class VisualCausalPolicy:
         self._affine_reacquire_target_center = None
         self._pending_affine_reacquisition = False
         self._active_hierarchy_signature = None
+        self._active_hierarchy_relation_key = None
         self._active_hierarchy_supports = ()
+        self._failed_hierarchy_relation_keys.clear()
+        self._clear_child_isolation_execution()
+        self._failed_child_isolation_relation_keys.clear()
+        self._failed_child_isolation_relation_reasons.clear()
         self._marker_target_identity_constraints.clear()
         self._marker_structural_actions.clear()
         self._marker_structural_action_order.clear()
@@ -4797,11 +5661,23 @@ class VisualCausalPolicy:
         self._affine_reacquire_target_center = None
         self._pending_affine_reacquisition = False
         self._active_hierarchy_signature = None
+        self._active_hierarchy_relation_key = None
         self._active_hierarchy_supports = ()
+        self._clear_child_isolation_execution()
         self._marker_structural_actions.clear()
         self._marker_structural_action_order.clear()
         self._episode_exploration_root = None
         self._last_probe_failed = False
+
+    def _clear_child_isolation_execution(self) -> None:
+        self._active_child_isolation_relation_key = None
+        self._active_child_isolation_frozen_mediator_center = None
+        self._active_child_isolation_frozen_mediator_signature = None
+        self._active_child_isolation_frozen_endpoint_centers = ()
+        self._active_child_isolation_frozen_endpoint_signature = ()
+        self._active_child_isolation_frozen_connector_signature = None
+        self._active_child_isolation_frozen_mediator_color = None
+        self._active_child_isolation_target_signature = None
 
     @staticmethod
     def _exploration_root_key(
@@ -5084,11 +5960,29 @@ class VisualCausalPolicy:
         self._plan.extend(actions)
         return True
 
-    def _install_hierarchy_plan(self, plan: _HierarchyPlan) -> None:
+    def _install_hierarchy_plan(
+        self,
+        plan: _HierarchyPlan,
+        *,
+        relation_key: str,
+    ) -> None:
         self._plan.clear()
         self._plan.extend(plan.actions)
         self._active_hierarchy_signature = plan.signature
+        self._active_hierarchy_relation_key = relation_key
         self._active_hierarchy_supports = plan.supports
+
+    def _install_child_isolation_plan(self, plan: _ChildIsolationPlan) -> None:
+        self._plan.clear()
+        self._plan.extend(plan.actions)
+        self._active_child_isolation_relation_key = plan.relation_key
+        self._active_child_isolation_frozen_mediator_center = plan.frozen_mediator_center
+        self._active_child_isolation_frozen_mediator_signature = plan.frozen_mediator_signature
+        self._active_child_isolation_frozen_endpoint_centers = plan.frozen_endpoint_centers
+        self._active_child_isolation_frozen_endpoint_signature = plan.frozen_endpoint_signature
+        self._active_child_isolation_frozen_connector_signature = plan.frozen_connector_signature
+        self._active_child_isolation_frozen_mediator_color = plan.frozen_mediator_color
+        self._active_child_isolation_target_signature = plan.target_signature
 
     def select(self, observation: Observation) -> ActionRequest:
         if observation.state in {GameStateName.GAME_OVER, GameStateName.NOT_PLAYED}:
@@ -5113,10 +6007,15 @@ class VisualCausalPolicy:
             self._failed_plan_signatures.add(self._plan[0].plan_signature)
             self._plan.clear()
             self._active_hierarchy_signature = None
+            self._active_hierarchy_relation_key = None
             self._active_hierarchy_supports = ()
+            self._clear_child_isolation_execution()
             self._last_probe_failed = True
         if ActionName.ACTION6 in observation.available_actions and not (
-            self._plan and self._plan[0].plan_signature.startswith("affine-hierarchy:")
+            self._plan
+            and self._plan[0].plan_signature.startswith(
+                ("affine-hierarchy:", "affine-child-isolation:")
+            )
         ):
             marker_scene = extract_visual_scene(observation.frames[-1])
             marker_groups = _embedded_marker_groups(marker_scene)
@@ -5242,7 +6141,9 @@ class VisualCausalPolicy:
                 )
         if (
             self._plan
-            and self._plan[0].plan_signature.startswith("affine-hierarchy:")
+            and self._plan[0].plan_signature.startswith(
+                ("affine-hierarchy:", "affine-child-isolation:")
+            )
             and (
                 self._last_active_color is None
                 or not _hierarchy_planned_click_is_safe(
@@ -5255,7 +6156,9 @@ class VisualCausalPolicy:
             self._failed_plan_signatures.add(self._plan[0].plan_signature)
             self._plan.clear()
             self._active_hierarchy_signature = None
+            self._active_hierarchy_relation_key = None
             self._active_hierarchy_supports = ()
+            self._clear_child_isolation_execution()
         if self._plan:
             planned = self._plan.popleft()
             action = ActionRequest(ActionName.ACTION6, planned.coordinate)
@@ -5271,6 +6174,13 @@ class VisualCausalPolicy:
                 arity=planned.arity,
                 completes_local_target=planned.completes_local_target,
                 completes_hierarchy=planned.completes_hierarchy,
+                completes_child_isolation=planned.completes_child_isolation,
+                expected_child_mediator_center=(planned.expected_child_mediator_center),
+                expected_child_mediator_signature=(planned.expected_child_mediator_signature),
+                expected_child_endpoint_centers=(planned.expected_child_endpoint_centers),
+                expected_child_endpoint_signature=(planned.expected_child_endpoint_signature),
+                expected_child_connector_signature=(planned.expected_child_connector_signature),
+                expected_active_center=planned.expected_active_center,
             )
             return action
 
@@ -5283,9 +6193,11 @@ class VisualCausalPolicy:
             transferable = self._affine_ledger_ref is not None and learner.ledger.get(
                 self._affine_ledger_ref
             ).status in {MechanicStatus.SUPPORTED, MechanicStatus.STABLE_WITHIN_SCOPE}
-            if self._last_active_color is not None and not self._last_probe_failed and transferable:
+            if self._last_active_color is not None and transferable:
                 hierarchy: _AffineHierarchy | None = None
                 hierarchy_plan: _HierarchyPlan | None = None
+                child_isolation_plan: _ChildIsolationPlan | None = None
+                hierarchy_relation_key: str | None = None
                 search_budget = _HierarchySearchBudget(_MAX_HIERARCHY_SEARCH_BUDGET)
                 try:
                     hierarchy = _unique_affine_hierarchy(
@@ -5296,22 +6208,86 @@ class VisualCausalPolicy:
                     if hierarchy is not None:
                         deferred_hierarchy = hierarchy
                         deferred_hierarchy_ref = hierarchy.mechanic_ref
-                        hierarchy_plan = _hierarchy_joint_layout(
+                        hierarchy_relation_key = _hierarchy_relation_key(
+                            hierarchy,
+                            level_index=observation.levels_completed,
+                        )
+                        if hierarchy_relation_key in self._failed_child_isolation_relation_keys:
+                            rejection_reason = self._failed_child_isolation_relation_reasons.get(
+                                hierarchy_relation_key,
+                                "was already rejected by a prior returned consequence",
+                            )
+                            raise PolicyError(
+                                f"readable affine child-isolation relation {rejection_reason}"
+                            )
+                        child_isolation_plan = _child_isolation_plan(
                             scene,
                             hierarchy,
+                            level_index=observation.levels_completed,
                             rejected_signatures=self._failed_plan_signatures,
                             search_budget=search_budget,
                         )
-                        if hierarchy_plan is None:
-                            deferred_hierarchy_reason = (
-                                "readable affine hierarchy has no fully joint "
-                                "target-protected layout"
-                            )
+                        if child_isolation_plan is None:
+                            if hierarchy_relation_key in self._failed_hierarchy_relation_keys:
+                                deferred_hierarchy_reason = (
+                                    "readable affine hierarchy has no exact child-isolation "
+                                    "layout and its joint completion hypothesis was already "
+                                    "falsified by an official NOT_FINISHED consequence"
+                                )
+                            else:
+                                hierarchy_plan = _hierarchy_joint_layout(
+                                    scene,
+                                    hierarchy,
+                                    rejected_signatures=self._failed_plan_signatures,
+                                    search_budget=search_budget,
+                                )
+                        if child_isolation_plan is None and hierarchy_plan is None:
+                            if deferred_hierarchy_reason is None:
+                                deferred_hierarchy_reason = (
+                                    "readable affine hierarchy has neither an exact "
+                                    "child-isolation layout nor a fully joint "
+                                    "target-protected layout"
+                                )
                 except _HierarchySearchExhausted as exc:
                     deferred_hierarchy_reason = str(exc)
                 if hierarchy is not None:
+                    if child_isolation_plan is not None:
+                        self._install_child_isolation_plan(child_isolation_plan)
+                        planned = self._plan.popleft()
+                        action = ActionRequest(ActionName.ACTION6, planned.coordinate)
+                        self._stage_pending(
+                            observation,
+                            action,
+                            purpose=planned.purpose,
+                            prediction=planned.expectation,
+                            mechanic_refs=(planned.mechanic_ref,),
+                            plan_signature=planned.plan_signature,
+                            target_center=planned.target_center,
+                            mediator_color=planned.mediator_color,
+                            arity=planned.arity,
+                            completes_child_isolation=planned.completes_child_isolation,
+                            expected_child_mediator_center=(planned.expected_child_mediator_center),
+                            expected_child_mediator_signature=(
+                                planned.expected_child_mediator_signature
+                            ),
+                            expected_child_endpoint_centers=(
+                                planned.expected_child_endpoint_centers
+                            ),
+                            expected_child_endpoint_signature=(
+                                planned.expected_child_endpoint_signature
+                            ),
+                            expected_child_connector_signature=(
+                                planned.expected_child_connector_signature
+                            ),
+                            expected_active_center=planned.expected_active_center,
+                        )
+                        return action
                     if hierarchy_plan is not None:
-                        self._install_hierarchy_plan(hierarchy_plan)
+                        assert hierarchy_relation_key is not None
+                        self._install_hierarchy_plan(
+                            hierarchy_plan,
+                            relation_key=hierarchy_relation_key,
+                        )
                         planned = self._plan.popleft()
                         action = ActionRequest(ActionName.ACTION6, planned.coordinate)
                         self._stage_pending(
@@ -5327,7 +6303,7 @@ class VisualCausalPolicy:
                             completes_hierarchy=planned.completes_hierarchy,
                         )
                         return action
-                elif deferred_hierarchy_reason is None:
+                elif deferred_hierarchy_reason is None and not self._last_probe_failed:
                     transferred = infer_transferred_affine_mechanic(
                         scene,
                         level_index=observation.levels_completed,
@@ -5462,6 +6438,13 @@ class VisualCausalPolicy:
         arity: int | None = None,
         completes_local_target: bool = False,
         completes_hierarchy: bool = False,
+        completes_child_isolation: bool = False,
+        expected_child_mediator_center: tuple[int, int] | None = None,
+        expected_child_mediator_signature: _VisualObjectStateSignature | None = None,
+        expected_child_endpoint_centers: tuple[tuple[int, int], ...] = (),
+        expected_child_endpoint_signature: _EndpointStateSignature = (),
+        expected_child_connector_signature: _ConnectorStateSignature = None,
+        expected_active_center: tuple[int, int] | None = None,
         affine_reacquisition: bool = False,
     ) -> None:
         if self._pending_action is not None:
@@ -5480,6 +6463,13 @@ class VisualCausalPolicy:
         self._pending_arity = arity
         self._pending_completes_local_target = completes_local_target
         self._pending_completes_hierarchy = completes_hierarchy
+        self._pending_completes_child_isolation = completes_child_isolation
+        self._pending_expected_child_mediator_center = expected_child_mediator_center
+        self._pending_expected_child_mediator_signature = expected_child_mediator_signature
+        self._pending_expected_child_endpoint_centers = expected_child_endpoint_centers
+        self._pending_expected_child_endpoint_signature = expected_child_endpoint_signature
+        self._pending_expected_child_connector_signature = expected_child_connector_signature
+        self._pending_expected_active_center = expected_active_center
         self._pending_affine_reacquisition = affine_reacquisition
         self._pending_clef_prediction = _predicted_clef_effects(
             purpose=purpose,
@@ -5511,9 +6501,20 @@ class VisualCausalPolicy:
         mechanic: AffineMechanic | None = None
         before_scene = extract_visual_scene(before.frames[-1])
         after_scene = extract_visual_scene(observation.frames[-1])
-        hierarchy_action = (
+        joint_hierarchy_action = (
             self._pending_plan_signature is not None
             and self._pending_plan_signature.startswith("affine-hierarchy:")
+        )
+        child_isolation_action = (
+            self._pending_plan_signature is not None
+            and self._pending_plan_signature.startswith("affine-child-isolation:")
+        )
+        hierarchy_action = joint_hierarchy_action or child_isolation_action
+        hierarchy_relation_key = (
+            self._active_hierarchy_relation_key if joint_hierarchy_action else None
+        )
+        child_isolation_relation_key = (
+            self._active_child_isolation_relation_key if child_isolation_action else None
         )
         hierarchy_target_readable = bool(
             self._pending_target_center is not None
@@ -5554,11 +6555,61 @@ class VisualCausalPolicy:
             len(before_parent_targets) == len(after_parent_targets) == 1
             and before_parent_targets[0].object_ref == after_parent_targets[0].object_ref
         )
+        child_isolation_constraints_preserved = bool(
+            not child_isolation_action
+            or (
+                after_hierarchy is not None
+                and self._pending_target_center is not None
+                and self._active_child_isolation_frozen_mediator_center is not None
+                and self._active_child_isolation_frozen_mediator_signature is not None
+                and self._active_child_isolation_frozen_endpoint_centers
+                and self._active_child_isolation_frozen_endpoint_signature
+                and self._active_child_isolation_frozen_mediator_color is not None
+                and self._active_child_isolation_target_signature is not None
+                and self._pending_expected_child_mediator_center is not None
+                and self._pending_expected_child_mediator_signature is not None
+                and self._pending_expected_child_endpoint_centers
+                and self._pending_expected_child_endpoint_signature
+                and self._pending_expected_active_center is not None
+                and self._pending_mediator_color is not None
+                and _child_isolation_target_surface_signature(
+                    after_scene,
+                    sink_center=self._pending_target_center,
+                )
+                == self._active_child_isolation_target_signature
+                and any(
+                    _child_group_matches_state(
+                        child,
+                        mediator_signature=(self._active_child_isolation_frozen_mediator_signature),
+                        endpoint_signature=(self._active_child_isolation_frozen_endpoint_signature),
+                    )
+                    and _hierarchy_connector_state_signature(after_scene, child)
+                    == self._active_child_isolation_frozen_connector_signature
+                    for child in after_hierarchy.children
+                )
+                and any(
+                    _child_group_matches_state(
+                        child,
+                        mediator_signature=self._pending_expected_child_mediator_signature,
+                        endpoint_signature=self._pending_expected_child_endpoint_signature,
+                    )
+                    and _hierarchy_connector_state_signature(after_scene, child)
+                    == self._pending_expected_child_connector_signature
+                    and any(
+                        endpoint.color == after_hierarchy.active_color
+                        and endpoint.rounded_center == self._pending_expected_active_center
+                        for endpoint in child.endpoints
+                    )
+                    for child in after_hierarchy.children
+                )
+            )
+        )
         hierarchy_structure_readable = bool(
             hierarchy_action
             and changed > 0
             and hierarchy_target_readable
             and hierarchy_parent_target_preserved
+            and child_isolation_constraints_preserved
             and after_hierarchy is not None
             and len(before_scene.endpoints) == len(after_scene.endpoints)
             and len(before_scene.mediators) == len(after_scene.mediators)
@@ -5574,12 +6625,24 @@ class VisualCausalPolicy:
             )
         )
         hierarchy_supports_observed = bool(
-            hierarchy_structure_readable
+            joint_hierarchy_action
+            and hierarchy_structure_readable
             and after_hierarchy is not None
             and _hierarchy_supports_were_observed(
                 after_hierarchy,
                 expected_supports=self._active_hierarchy_supports,
                 expected_target=self._pending_target_center,
+            )
+        )
+        child_isolation_observed = bool(
+            child_isolation_action
+            and hierarchy_structure_readable
+            and after_hierarchy is not None
+            and _child_isolation_was_observed(
+                after_hierarchy,
+                target_center=self._pending_target_center,
+                mediator_color=self._pending_mediator_color,
+                arity=self._pending_arity,
             )
         )
         if hierarchy_recognition_residual is not None:
@@ -5599,7 +6662,7 @@ class VisualCausalPolicy:
         marker_bootstrap_succeeded = bootstrap_active_color is not None
         reset_recovered = (
             action.name is ActionName.RESET
-            and before.state is GameStateName.GAME_OVER
+            and before.state in {GameStateName.GAME_OVER, GameStateName.NOT_PLAYED}
             and observation.state is GameStateName.NOT_FINISHED
         )
         if (
@@ -5723,11 +6786,16 @@ class VisualCausalPolicy:
             )
         if (
             hierarchy_action
+            and not level_progress
             and observation.state is GameStateName.NOT_FINISHED
             and not hierarchy_structure_readable
             and residual is None
         ):
-            residual = "planned hierarchy consequence was not structurally readable"
+            residual = (
+                "planned child-isolation consequence was not structurally readable"
+                if child_isolation_action
+                else "planned hierarchy consequence was not structurally readable"
+            )
         coordinate_transform = (
             local_target_satisfied
             or hierarchy_structure_readable
@@ -5914,7 +6982,7 @@ class VisualCausalPolicy:
         if marker_action_structure_readable:
             self._marker_reacquire_after_local_solve = False
             self._affine_reacquire_target_center = None
-        if observation.state is GameStateName.GAME_OVER:
+        if observation.state in {GameStateName.GAME_OVER, GameStateName.NOT_PLAYED}:
             if self._pending_plan_signature is not None:
                 self._failed_plan_signatures.add(self._pending_plan_signature)
             if self._episode_exploration_root is not None:
@@ -5929,7 +6997,9 @@ class VisualCausalPolicy:
             self._marker_reacquire_after_local_solve = False
             self._affine_reacquire_target_center = None
             self._active_hierarchy_signature = None
+            self._active_hierarchy_relation_key = None
             self._active_hierarchy_supports = ()
+            self._clear_child_isolation_execution()
             self._last_probe_failed = True
         elif observation.state is GameStateName.WIN:
             self._plan.clear()
@@ -5937,12 +7007,30 @@ class VisualCausalPolicy:
             self._marker_reacquire_after_local_solve = False
             self._affine_reacquire_target_center = None
             self._active_hierarchy_signature = None
+            self._active_hierarchy_relation_key = None
             self._active_hierarchy_supports = ()
+            self._clear_child_isolation_execution()
             self._last_probe_failed = False
         elif level_progress:
             self._begin_level(observation)
         elif reset_recovered:
             self._begin_reset_epoch()
+        elif observation.state is GameStateName.UNKNOWN:
+            if self._pending_plan_signature is not None:
+                self._failed_plan_signatures.add(self._pending_plan_signature)
+            self._plan.clear()
+            self._active_hierarchy_signature = None
+            self._active_hierarchy_relation_key = None
+            self._active_hierarchy_supports = ()
+            self._clear_child_isolation_execution()
+            self._last_probe_failed = True
+            if residual is None:
+                residual = (
+                    "official environment state was UNKNOWN; planned hierarchy sufficiency "
+                    "was not assessed"
+                    if hierarchy_action
+                    else "official environment state was UNKNOWN"
+                )
         elif marker_bootstrap:
             self._plan.clear()
             if mechanic is None and not marker_bootstrap_succeeded:
@@ -5952,13 +7040,39 @@ class VisualCausalPolicy:
             else:
                 self._marker_reacquire_after_local_solve = False
                 self._last_probe_failed = False
-        elif self._pending_completes_hierarchy:
+        elif (
+            self._pending_completes_child_isolation
+            and observation.state is GameStateName.NOT_FINISHED
+        ):
             if self._pending_plan_signature is not None:
                 self._failed_plan_signatures.add(self._pending_plan_signature)
+            if child_isolation_observed and child_isolation_relation_key is not None:
+                self._failed_child_isolation_relation_keys.add(child_isolation_relation_key)
+                self._failed_child_isolation_relation_reasons[child_isolation_relation_key] = (
+                    "was already falsified by an exact child-at-target official "
+                    "NOT_FINISHED consequence"
+                )
+            self._plan.clear()
+            self._clear_child_isolation_execution()
+            self._last_probe_failed = True
+            if child_isolation_observed:
+                residual = (
+                    "the selected child mediator reached the parent target while its "
+                    "sibling remained distinct, but the official environment remained "
+                    "NOT_FINISHED"
+                )
+            elif residual is None:
+                residual = "planned child-isolation consequence was not structurally readable"
+        elif self._pending_completes_hierarchy and observation.state is GameStateName.NOT_FINISHED:
+            if self._pending_plan_signature is not None:
+                self._failed_plan_signatures.add(self._pending_plan_signature)
+            if hierarchy_supports_observed and hierarchy_relation_key is not None:
+                self._failed_hierarchy_relation_keys.add(hierarchy_relation_key)
             self._plan.clear()
             self._active_hierarchy_signature = None
+            self._active_hierarchy_relation_key = None
             self._active_hierarchy_supports = ()
-            self._last_probe_failed = not hierarchy_supports_observed
+            self._last_probe_failed = True
             if hierarchy_supports_observed:
                 residual = (
                     "distinct child mediators reached the predicted parent centroid but "
@@ -5999,7 +7113,10 @@ class VisualCausalPolicy:
             self._marker_stage_pending_switch = None
             if hierarchy_action:
                 self._active_hierarchy_signature = None
+                self._active_hierarchy_relation_key = None
                 self._active_hierarchy_supports = ()
+            if child_isolation_action:
+                self._clear_child_isolation_execution()
             self._last_probe_failed = True
 
         receipt = VisualActionReceipt(
@@ -6036,6 +7153,13 @@ class VisualCausalPolicy:
         self._pending_arity = None
         self._pending_completes_local_target = False
         self._pending_completes_hierarchy = False
+        self._pending_completes_child_isolation = False
+        self._pending_expected_child_mediator_center = None
+        self._pending_expected_child_mediator_signature = None
+        self._pending_expected_child_endpoint_centers = ()
+        self._pending_expected_child_endpoint_signature = ()
+        self._pending_expected_child_connector_signature = None
+        self._pending_expected_active_center = None
         self._pending_affine_reacquisition = False
         self._pending_clef_prediction = EffectVector.unknown()
         self._pending_mechanic_prediction = None
@@ -6071,10 +7195,20 @@ class VisualCausalPolicy:
             "exploration_root_capacity_exhausted": (self._exploration_root_capacity_exhausted),
             "failed_exploration_root_count": len(self._failed_exploration_roots),
             "failed_plan_count": len(self._failed_plan_signatures),
+            "child_isolation_active": (self._active_child_isolation_relation_key is not None),
+            "child_isolation_relation_key": self._active_child_isolation_relation_key,
+            "child_isolation_relation_rejected_count": len(
+                self._failed_child_isolation_relation_keys
+            ),
+            "child_isolation_rejected_count": sum(
+                item.startswith("affine-child-isolation:") for item in self._failed_plan_signatures
+            ),
             "hierarchy_active": self._active_hierarchy_signature is not None,
             "hierarchy_rejected_count": sum(
                 item.startswith("affine-hierarchy:") for item in self._failed_plan_signatures
             ),
+            "hierarchy_relation_key": self._active_hierarchy_relation_key,
+            "hierarchy_relation_rejected_count": len(self._failed_hierarchy_relation_keys),
             "hierarchy_search_deferred_count": self._hierarchy_search_deferred_count,
             "hierarchy_search_residual": self._last_hierarchy_search_residual,
             "hierarchy_signature": self._active_hierarchy_signature,

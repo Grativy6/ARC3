@@ -3361,6 +3361,7 @@ def _two_layer_affine_frame(
     *,
     active_group: int = 0,
     active_index: int = 0,
+    connector_color: int | None = None,
 ) -> GridFrame:
     """Render a generic two-child affine hierarchy plus unrelated target surfaces."""
 
@@ -3370,14 +3371,18 @@ def _two_layer_affine_frame(
         for dx, dy in _OFFSET_SPARSE_TARGET_RING:
             rows[target[1] + dy][target[0] + dx] = 11 if dx < 0 else 13
     for group_index, endpoints in enumerate(groups):
-        for endpoint_index, endpoint in enumerate(endpoints):
-            color = 0 if (group_index, endpoint_index) == (active_group, active_index) else 3
-            _paint(rows, endpoint, _ENDPOINT_SHAPE, color)
-            rows[endpoint[1]][endpoint[0]] = 4
         hub = (
             sum(x for x, _y in endpoints) // len(endpoints),
             sum(y for _x, y in endpoints) // len(endpoints),
         )
+        if connector_color is not None:
+            for endpoint in endpoints:
+                for x, y in visual_causal._raster_line_cells(endpoint, hub):
+                    rows[y][x] = connector_color
+        for endpoint_index, endpoint in enumerate(endpoints):
+            color = 0 if (group_index, endpoint_index) == (active_group, active_index) else 3
+            _paint(rows, endpoint, _ENDPOINT_SHAPE, color)
+            rows[endpoint[1]][endpoint[0]] = 4
         _paint(rows, hub, _HUB_OUTER, 0)
         rows[hub[1]][hub[0]] = 0
     return GridFrame.from_rows(rows)
@@ -3400,6 +3405,8 @@ class _TwoLayerAffineEnvironment:
     active_index: int = 0
     levels_completed: int = 0
     state: GameStateName = GameStateName.NOT_FINISHED
+    win_on_hierarchy: bool = True
+    connector_color: int | None = None
     hierarchy_actions: list[Coordinate] = field(default_factory=list)
     unsafe_hierarchy_actions: list[Coordinate] = field(default_factory=list)
     unreadable_hierarchy_actions: list[Coordinate] = field(default_factory=list)
@@ -3414,6 +3421,7 @@ class _TwoLayerAffineEnvironment:
                 tuple(tuple(group) for group in self.groups),
                 active_group=self.active_group,
                 active_index=self.active_index,
+                connector_color=self.connector_color,
             )
         return Observation(
             game_id=GameId("synthetic-two-layer-affine"),
@@ -3519,7 +3527,7 @@ class _TwoLayerAffineEnvironment:
             and sum(y for _x, y in endpoints) == len(endpoints) * hub[1]
             for endpoints, hub in zip(self.groups, hubs, strict=True)
         )
-        if (
+        if self.win_on_hierarchy and (
             exact_child_centers
             and len(set(hubs)) == len(hubs)
             and sum(x for x, _y in hubs) == len(hubs) * _HIERARCHY_PARENT_TARGET[0]
@@ -3530,6 +3538,46 @@ class _TwoLayerAffineEnvironment:
             self.levels_completed = 2
             self.state = GameStateName.WIN
         return self.observation(returned_action=action)
+
+
+def _reach_two_layer_hierarchy(
+    environment: _TwoLayerAffineEnvironment,
+    policy: VisualCausalPolicy,
+) -> Observation:
+    observation = environment.observation()
+    for _ in range(12):
+        action = policy.select(observation)
+        observation = environment.step(action)
+        policy.accept_consequence(observation)
+        if observation.levels_completed == 1:
+            break
+    assert observation.levels_completed == 1
+    return observation
+
+
+def _install_joint_hierarchy_for_test(
+    policy: VisualCausalPolicy,
+    observation: Observation,
+) -> visual_causal._AffineHierarchy:
+    """Exercise the retained joint mechanism independently of policy priority."""
+
+    scene = extract_visual_scene(observation.frames[-1])
+    hierarchy = visual_causal._unique_affine_hierarchy(scene, active_color=0)
+    assert hierarchy is not None
+    plan = visual_causal._hierarchy_joint_layout(
+        scene,
+        hierarchy,
+        rejected_signatures=set(),
+    )
+    assert plan is not None
+    policy._install_hierarchy_plan(
+        plan,
+        relation_key=visual_causal._hierarchy_relation_key(
+            hierarchy,
+            level_index=observation.levels_completed,
+        ),
+    )
+    return hierarchy
 
 
 def test_two_layer_affine_hierarchy_is_an_exact_disjoint_cover() -> None:
@@ -3614,6 +3662,7 @@ def test_policy_completes_two_layer_affine_hierarchy_without_flat_target_collaps
     )
     assert harmful_flat is not None
 
+    _install_joint_hierarchy_for_test(policy, observation)
     first_hierarchy_action = policy.select(observation)
     assert first_hierarchy_action.coordinate not in {
         harmful_flat[0],
@@ -3658,6 +3707,8 @@ def test_ignored_final_hierarchy_action_preserves_structural_failure() -> None:
             break
     assert observation.levels_completed == 1
 
+    _install_joint_hierarchy_for_test(policy, observation)
+
     ignored_final_action = False
     for _ in range(20):
         action = policy.select(observation)
@@ -3683,6 +3734,157 @@ def test_ignored_final_hierarchy_action_preserves_structural_failure() -> None:
     assert snapshot["pending_plan_actions"] == 0
     assert snapshot["hierarchy_rejected_count"] == 1
     assert policy._last_probe_failed is True
+
+
+def test_structurally_complete_not_finished_hierarchy_is_rejected_across_reset() -> None:
+    environment = _TwoLayerAffineEnvironment(win_on_hierarchy=False)
+    policy = VisualCausalPolicy(max_coordinate_candidates=8)
+    observation = _reach_two_layer_hierarchy(environment, policy)
+    initial_hierarchy = visual_causal._unique_affine_hierarchy(
+        extract_visual_scene(observation.frames[-1]),
+        active_color=0,
+    )
+    assert initial_hierarchy is not None
+    relation_key = visual_causal._hierarchy_relation_key(
+        initial_hierarchy,
+        level_index=observation.levels_completed,
+    )
+    _install_joint_hierarchy_for_test(policy, observation)
+
+    completed = False
+    for _ in range(20):
+        action = policy.select(observation)
+        completes_hierarchy = policy._pending_completes_hierarchy
+        observation = environment.step(action)
+        policy.accept_consequence(observation)
+        if completes_hierarchy:
+            completed = True
+            break
+
+    assert completed
+    assert observation.state is GameStateName.NOT_FINISHED
+    assert policy.receipts[-1].residual == (
+        "distinct child mediators reached the predicted parent centroid but "
+        "the official environment remained NOT_FINISHED"
+    )
+    returned_hierarchy = visual_causal._unique_affine_hierarchy(
+        extract_visual_scene(observation.frames[-1]),
+        active_color=0,
+    )
+    assert returned_hierarchy is not None
+    assert (
+        visual_causal._hierarchy_relation_key(
+            returned_hierarchy,
+            level_index=observation.levels_completed,
+        )
+        == relation_key
+    )
+    assert policy._failed_hierarchy_relation_keys == {relation_key}
+    assert policy.snapshot()["hierarchy_relation_rejected_count"] == 1
+    assert policy._last_probe_failed is True
+
+    alternative = policy.select(observation)
+    assert alternative.name is ActionName.ACTION6
+    assert policy._pending_plan_signature is not None
+    assert policy._pending_plan_signature.startswith("affine-child-isolation:")
+    failed = replace(
+        observation,
+        state=GameStateName.GAME_OVER,
+        returned_action=alternative,
+    )
+    policy.accept_consequence(failed)
+    reset = policy.select(failed)
+    recovered = replace(
+        observation,
+        full_reset=False,
+        returned_action=reset,
+    )
+    policy.accept_consequence(recovered)
+
+    assert reset == ActionRequest(ActionName.RESET)
+    assert policy._failed_hierarchy_relation_keys == {relation_key}
+    assert policy._failed_child_isolation_relation_keys == set()
+    retry = policy.select(recovered)
+    assert retry.name is ActionName.ACTION6
+    assert policy._pending_plan_signature is not None
+    assert policy._pending_plan_signature.startswith("affine-child-isolation:")
+
+    advanced = replace(
+        recovered,
+        levels_completed=2,
+        win_levels=3,
+        returned_action=retry,
+    )
+    policy.accept_consequence(advanced)
+    assert policy.snapshot()["hierarchy_relation_rejected_count"] == 0
+    assert policy.snapshot()["child_isolation_relation_rejected_count"] == 0
+
+
+def test_hierarchy_child_layouts_reject_zero_displacement_progress() -> None:
+    environment = _TwoLayerAffineEnvironment(win_on_hierarchy=False)
+    policy = VisualCausalPolicy(max_coordinate_candidates=8)
+    observation = _reach_two_layer_hierarchy(environment, policy)
+    scene = extract_visual_scene(observation.frames[-1])
+    hierarchy = visual_causal._unique_affine_hierarchy(scene, active_color=0)
+    assert hierarchy is not None
+    plan = visual_causal._hierarchy_joint_layout(
+        scene,
+        hierarchy,
+        rejected_signatures=set(),
+    )
+    assert plan is not None
+    for planned in plan.actions:
+        observation = environment.step(ActionRequest(ActionName.ACTION6, planned.coordinate))
+
+    completed_scene = extract_visual_scene(observation.frames[-1])
+    completed_hierarchy = visual_causal._unique_affine_hierarchy(
+        completed_scene,
+        active_color=0,
+    )
+    assert completed_hierarchy is not None
+    initial_dynamic = frozenset(
+        cell
+        for child in completed_hierarchy.children
+        for cell in visual_causal._hierarchy_dynamic_footprint(completed_scene, child)
+    )
+    occupied = frozenset(
+        (x, y)
+        for y, row in enumerate(completed_scene.cells)
+        for x, value in enumerate(row)
+        if value != completed_scene.background
+    )
+    static_cells = occupied - initial_dynamic
+    target_regions = visual_causal._visible_target_regions(completed_scene)
+    ignored_refs = frozenset(
+        item.object_ref
+        for child in completed_hierarchy.children
+        for item in (*child.endpoints, child.mediator)
+    )
+
+    for child_index, child in enumerate(completed_hierarchy.children):
+        active = tuple(endpoint for endpoint in child.endpoints if endpoint.color == 0)
+        active_ref = active[0].object_ref if child_index == 0 else None
+        layouts = visual_causal._hierarchy_child_layouts(
+            completed_scene,
+            completed_hierarchy,
+            child,
+            support=child.mediator.rounded_center,
+            active_ref=active_ref,
+            static_cells=static_cells,
+            target_regions=target_regions,
+            ignored_refs=ignored_refs,
+            search_budget=visual_causal._HierarchySearchBudget(
+                visual_causal._MAX_HIERARCHY_SEARCH_BUDGET
+            ),
+        )
+
+        assert layouts
+        assert all(layout.movement_cost > 0 for layout in layouts)
+        assert all(
+            mover.rounded_center != point
+            for layout in layouts
+            for mover, point in zip(layout.movers, layout.points, strict=True)
+        )
 
 
 def test_hierarchy_no_solution_has_one_deterministic_global_evaluation_budget(
@@ -3815,7 +4017,8 @@ def test_six_child_support_orders_are_fair_before_the_120_assignment_cap() -> No
     (
         (
             "no-layout",
-            "readable affine hierarchy has no fully joint target-protected layout",
+            "readable affine hierarchy has neither an exact child-isolation layout "
+            "nor a fully joint target-protected layout",
         ),
         (
             "budget-exhausted",
@@ -3849,6 +4052,11 @@ def test_policy_defers_unavailable_hierarchy_layout_without_flat_reuse(
         visual_causal,
         "_hierarchy_joint_layout",
         unavailable_layout,
+    )
+    monkeypatch.setattr(
+        visual_causal,
+        "_child_isolation_plan",
+        lambda *_args, **_kwargs: None,
     )
     scene = extract_visual_scene(observation.frames[-1])
     hierarchy = visual_causal._unique_affine_hierarchy(scene, active_color=0)
@@ -3936,6 +4144,7 @@ def test_consequence_hierarchy_search_exhaustion_is_receipted_and_recoverable(
             break
     assert observation.levels_completed == 1
 
+    _install_joint_hierarchy_for_test(policy, observation)
     hierarchy_action = policy.select(observation)
     hierarchy_signature = policy._pending_plan_signature
     assert hierarchy_signature is not None
