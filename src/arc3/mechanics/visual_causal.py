@@ -1506,17 +1506,25 @@ def _raster_line_cells(
     start: tuple[int, int],
     end: tuple[int, int],
 ) -> frozenset[tuple[int, int]]:
-    """Raster one observed center-to-center connector without color assumptions."""
+    """Raster endpoint ``start`` to mediator ``end``, resolving ties toward ``start``."""
 
     delta_x = end[0] - start[0]
     delta_y = end[1] - start[1]
     steps = max(abs(delta_x), abs(delta_y))
     if steps == 0:
         return frozenset({start})
+
+    def rounded_displacement(delta: int, step: int) -> int:
+        """Round an exact displacement to nearest, with ties toward the start."""
+
+        quotient, remainder = divmod(abs(delta) * step, steps)
+        magnitude = quotient + int((2 * remainder) > steps)
+        return magnitude if delta >= 0 else -magnitude
+
     return frozenset(
         (
-            round(start[0] + (delta_x * step) / steps),
-            round(start[1] + (delta_y * step) / steps),
+            start[0] + rounded_displacement(delta_x, step),
+            start[1] + rounded_displacement(delta_y, step),
         )
         for step in range(steps + 1)
     )
@@ -6378,6 +6386,14 @@ class VisualCausalPolicy:
                 raise PolicyError(
                     "a local affine target is complete but no unique structurally safe "
                     "remaining-group role exchange is readable"
+                )
+            if deferred_hierarchy is not None:
+                reason = deferred_hierarchy_reason or (
+                    "readable affine hierarchy has no certified layout"
+                )
+                raise PolicyError(
+                    f"{reason}; readable affine hierarchy has no parser-safe "
+                    "target-preserving continuation"
                 )
             coordinate = self._probe_coordinate(scene)
             action = ActionRequest(ActionName.ACTION6, coordinate)

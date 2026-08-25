@@ -20,10 +20,75 @@ from arc3.mechanics.visual_causal import (
     _child_isolation_target_surface_signature,
     _hierarchy_connector_evidence,
     _hierarchy_relation_key,
+    _raster_line_cells,
     _unique_affine_hierarchy,
     extract_visual_scene,
 )
 from arc3.types import ActionName, GameStateName
+
+
+def test_connector_raster_resolves_exact_ties_toward_the_endpoint_start() -> None:
+    decreasing_x = _raster_line_cells((53, 36), (48, 46))
+    increasing_y = _raster_line_cells((53, 17), (39, 26))
+
+    assert (51, 41) in decreasing_x
+    assert (50, 41) not in decreasing_x
+    assert (46, 21) in increasing_y
+    assert (46, 22) not in increasing_y
+
+
+def test_connector_evidence_accepts_independently_rendered_start_tie_leg() -> None:
+    groups = (
+        ((10, 54), (28, 53)),
+        ((41, 47), (52, 55), (53, 36)),
+    )
+    base = _two_layer_affine_frame(groups, active_group=1, active_index=2)
+    rows = [list(row) for row in base.cells]
+
+    def reference_line(
+        start: tuple[int, int],
+        end: tuple[int, int],
+    ) -> frozenset[tuple[int, int]]:
+        delta_x = end[0] - start[0]
+        delta_y = end[1] - start[1]
+        steps = max(abs(delta_x), abs(delta_y))
+        cells: set[tuple[int, int]] = set()
+        for step in range(steps + 1):
+            coordinate: list[int] = []
+            for origin, delta in ((start[0], delta_x), (start[1], delta_y)):
+                quotient, remainder = divmod((origin * steps) + (delta * step), steps)
+                if (2 * remainder) < steps:
+                    rounded = quotient
+                elif (2 * remainder) > steps:
+                    rounded = quotient + 1
+                else:
+                    rounded = quotient if delta >= 0 else quotient + 1
+                coordinate.append(rounded)
+            cells.add((coordinate[0], coordinate[1]))
+        return frozenset(cells)
+
+    for endpoints in groups:
+        mediator = (
+            sum(x for x, _y in endpoints) // len(endpoints),
+            sum(y for _x, y in endpoints) // len(endpoints),
+        )
+        for endpoint in endpoints:
+            for x, y in reference_line(endpoint, mediator):
+                if rows[y][x] == 5:
+                    rows[y][x] = 9
+
+    scene = extract_visual_scene(GridFrame.from_rows(rows))
+    hierarchy = _unique_affine_hierarchy(scene, active_color=0)
+    assert hierarchy is not None
+    selected = next(child for child in hierarchy.children if child.arity == 3)
+    connector = _hierarchy_connector_evidence(scene, selected)
+
+    assert connector is not None
+    color, cells = connector
+    assert color == 9
+    assert len(cells) == 13
+    assert (51, 41) in cells
+    assert (50, 41) not in cells
 
 
 def test_fresh_two_child_hierarchy_isolates_the_initially_nonactive_child() -> None:

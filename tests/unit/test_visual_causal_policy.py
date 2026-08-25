@@ -4098,6 +4098,43 @@ def test_policy_defers_unavailable_hierarchy_layout_without_flat_reuse(
     assert snapshot["pending_plan_actions"] == 0
 
 
+def test_exhausted_readable_hierarchy_never_falls_back_to_coordinate_probe(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    environment = _TwoLayerAffineEnvironment()
+    policy = VisualCausalPolicy(max_coordinate_candidates=8)
+    observation = _reach_two_layer_hierarchy(environment, policy)
+    scene = extract_visual_scene(observation.frames[-1])
+    hierarchy = visual_causal._unique_affine_hierarchy(scene, active_color=0)
+    assert hierarchy is not None
+
+    monkeypatch.setattr(
+        visual_causal,
+        "_child_isolation_plan",
+        lambda *_args, **_kwargs: None,
+    )
+    monkeypatch.setattr(
+        visual_causal,
+        "_hierarchy_joint_layout",
+        lambda *_args, **_kwargs: None,
+    )
+    policy._attempted_activation_refs.update(endpoint.object_ref for endpoint in scene.endpoints)
+
+    def reject_unsafe_fallback(*_args: object, **_kwargs: object) -> Coordinate:
+        pytest.fail("generic coordinate fallback was called")
+
+    monkeypatch.setattr(policy, "_probe_coordinate", reject_unsafe_fallback)
+
+    with pytest.raises(
+        PolicyError,
+        match="no parser-safe target-preserving continuation",
+    ):
+        policy.select(observation)
+
+    assert policy._pending_action is None
+    assert observation.frames[-1].digest == environment.observation().frames[-1].digest
+
+
 def test_unrelated_centerline_occupant_rejects_hierarchy_plan() -> None:
     rows = [list(row) for row in _two_layer_affine_frame().cells]
     blocker = (16, 46)
