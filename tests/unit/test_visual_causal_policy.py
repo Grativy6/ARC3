@@ -352,6 +352,26 @@ def test_marker_relocation_checks_the_observed_endpoint_footprint() -> None:
     assert _endpoint_placement_is_open(scene, endpoint, x=9, y=48)
 
 
+def test_marker_relocation_preserves_outer_component_separation() -> None:
+    frame = _marker_frame(
+        (((8, 48), (48, 8)),),
+        ((18, 38),),
+        (12,),
+        active_group=0,
+        active_index=0,
+        background=5,
+        active_color=0,
+        fixed_color=3,
+    )
+    rows = [list(row) for row in frame.cells]
+    rows[20][23] = 0
+    scene = extract_visual_scene(GridFrame.from_rows(rows))
+    endpoint = next(item for item in scene.endpoints if item.color == 0)
+
+    assert not _endpoint_placement_is_open(scene, endpoint, x=20, y=20)
+    assert _endpoint_placement_is_open(scene, endpoint, x=20, y=30)
+
+
 def test_nonfinal_mediator_preserves_target_ring_readability_at_radius_sum() -> None:
     scene = extract_visual_scene(_sparse_target_overlay_frame())
     group = _embedded_marker_groups(scene)[0]
@@ -1292,6 +1312,67 @@ def test_large_plan_residual_aborts_the_stale_queue() -> None:
 
     assert policy.snapshot()["pending_plan_actions"] == 0
     assert policy.snapshot()["failed_plan_count"] == 1
+
+
+def test_marker_group_unlink_rejects_the_planned_signature(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    environment = _MarkerAffineEnvironment(
+        groups=[[(10, 50), (30, 50)]],
+        targets=((20, 28),),
+        marker_colors=(12,),
+    )
+    policy = VisualCausalPolicy()
+    policy._last_active_color = environment.active_color
+
+    def planned_improvement(
+        _scene: VisualScene,
+        _group: visual_causal._EmbeddedMarkerGroup,
+        endpoint: visual_causal.VisualObject,
+        **_kwargs: object,
+    ) -> tuple[int, Coordinate] | None:
+        if endpoint.color == environment.active_color:
+            return (100, Coordinate(20, 20))
+        return None
+
+    monkeypatch.setattr(
+        visual_causal,
+        "_best_marker_relocation",
+        planned_improvement,
+    )
+    before = environment.observation()
+    action = policy.select(before)
+    assert action == ActionRequest(ActionName.ACTION6, Coordinate(20, 20))
+
+    after_frame = _marker_frame(
+        (((20, 20), (30, 50)),),
+        environment.targets,
+        environment.marker_colors,
+        active_group=0,
+        active_index=0,
+        background=environment.background,
+        active_color=environment.active_color,
+        fixed_color=environment.fixed_color,
+    )
+    rows = [list(row) for row in after_frame.cells]
+    rows[20][20] = environment.active_color
+    after = Observation(
+        game_id=before.game_id,
+        frames=(GridFrame.from_rows(rows),),
+        state=GameStateName.NOT_FINISHED,
+        levels_completed=0,
+        win_levels=before.win_levels,
+        available_actions=(ActionName.ACTION6,),
+        returned_action=action,
+    )
+
+    policy.accept_consequence(after)
+
+    assert policy.receipts[-1].residual == (
+        "planned marker endpoint became structurally unreadable"
+    )
+    assert policy.snapshot()["failed_plan_count"] == 1
+    assert "marker:12:improve:20,20" in policy._failed_plan_signatures
 
 
 def test_pending_coordinate_plan_respects_changed_action_space() -> None:

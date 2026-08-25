@@ -824,9 +824,10 @@ def _endpoint_placement_is_open(
     center_x, center_y = endpoint.rounded_center
     current_footprint = set(endpoint.cells)
     current_footprint.add((center_x, center_y))
-    footprint = {(cell_x - center_x, cell_y - center_y) for cell_x, cell_y in endpoint.cells}
+    outer_footprint = {(cell_x - center_x, cell_y - center_y) for cell_x, cell_y in endpoint.cells}
+    footprint = set(outer_footprint)
     footprint.add((0, 0))
-    return all(
+    placement_is_open = all(
         0 < x + dx < scene.width - 1
         and 0 < y + dy < scene.height - 1
         and (
@@ -834,6 +835,25 @@ def _endpoint_placement_is_open(
         )
         for dx, dy in footprint
     )
+    if not placement_is_open:
+        return False
+
+    # Component identity must remain readable after the move.  An otherwise
+    # open placement can make the endpoint's outer-color glyph eight-connected
+    # to a same-color overlay just outside its footprint.  That absorbs the
+    # endpoint into another component and severs the visible marker relation.
+    # Ignore the current glyph because those cells are erased by the move.
+    prospective_outer = {(x + dx, y + dy) for dx, dy in outer_footprint}
+    current_outer = set(endpoint.cells)
+    for cell_x, cell_y in prospective_outer:
+        for neighbor_y in range(cell_y - 1, cell_y + 2):
+            for neighbor_x in range(cell_x - 1, cell_x + 2):
+                neighbor = (neighbor_x, neighbor_y)
+                if neighbor in prospective_outer or neighbor in current_outer:
+                    continue
+                if scene.cells[neighbor_y][neighbor_x] == endpoint.color:
+                    return False
+    return True
 
 
 def _chebyshev_distance(left: tuple[int, int], right: tuple[int, int]) -> int:
@@ -857,6 +877,26 @@ def _object_footprint(item: VisualObject) -> frozenset[tuple[int, int]]:
     """Return the observed glyph cells, including a differently colored center."""
 
     return frozenset((*item.cells, item.rounded_center))
+
+
+def _marker_action_structure_is_readable(
+    scene: VisualScene,
+    *,
+    marker_color: int,
+    arity: int,
+    coordinate: Coordinate,
+) -> bool:
+    """Confirm that a planned marker action retained its visible group link."""
+
+    return any(
+        group.marker_color == marker_color
+        and group.arity == arity
+        and any(
+            (coordinate.x, coordinate.y) in _object_footprint(endpoint)
+            for endpoint in group.endpoints
+        )
+        for group in _embedded_marker_groups(scene)
+    )
 
 
 def _translated_object_footprint(
@@ -2312,6 +2352,25 @@ class VisualCausalPolicy:
                 arity=self._pending_arity,
             )
         )
+        marker_action_structure_failed = (
+            self._pending_plan_signature is not None
+            and self._pending_plan_signature.startswith("marker:")
+            and self._pending_mediator_color is not None
+            and self._pending_arity is not None
+            and action.name is ActionName.ACTION6
+            and action.coordinate is not None
+            and not level_progress
+            and observation.state is GameStateName.NOT_FINISHED
+            and not local_target_satisfied
+            and not _marker_action_structure_is_readable(
+                after_scene,
+                marker_color=self._pending_mediator_color,
+                arity=self._pending_arity,
+                coordinate=action.coordinate,
+            )
+        )
+        if marker_action_structure_failed:
+            residual = "planned marker endpoint became structurally unreadable"
         coordinate_transform = local_target_satisfied or _coordinate_transform_observed(
             before_scene,
             after_scene,
@@ -2458,20 +2517,23 @@ class VisualCausalPolicy:
             self._pending_plan_signature is not None
             and not level_progress
             and observation.state is GameStateName.NOT_FINISHED
-            and any(
-                item.channel
-                in {
-                    EffectChannel.CONTROLLABLE_OBJECT_DISPLACEMENT,
-                    EffectChannel.OTHER_OBJECT_CHANGE,
-                }
-                and item.predicted.knowledge is EffectKnowledge.KNOWN
-                and item.kind
-                in {
-                    CausalResidualKind.MISMATCH,
-                    CausalResidualKind.MISSING_EFFECT,
-                    CausalResidualKind.UNREADABLE,
-                }
-                for item in effect_comparison.residual_effects
+            and (
+                marker_action_structure_failed
+                or any(
+                    item.channel
+                    in {
+                        EffectChannel.CONTROLLABLE_OBJECT_DISPLACEMENT,
+                        EffectChannel.OTHER_OBJECT_CHANGE,
+                    }
+                    and item.predicted.knowledge is EffectKnowledge.KNOWN
+                    and item.kind
+                    in {
+                        CausalResidualKind.MISMATCH,
+                        CausalResidualKind.MISSING_EFFECT,
+                        CausalResidualKind.UNREADABLE,
+                    }
+                    for item in effect_comparison.residual_effects
+                )
             )
         )
         marker_bootstrap = (
