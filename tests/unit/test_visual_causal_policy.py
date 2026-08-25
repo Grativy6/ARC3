@@ -3664,6 +3664,7 @@ def _install_joint_hierarchy_for_test(
     policy._install_hierarchy_plan(
         plan,
         relation_key=visual_causal._hierarchy_relation_key(
+            scene,
             hierarchy,
             level_index=observation.levels_completed,
         ),
@@ -3809,6 +3810,7 @@ def test_weighted_hierarchy_transient_bridge_and_recovery_replay_exactly() -> No
         (3, (42, 52)),
     ]
     relation_key = visual_causal._hierarchy_relation_key(
+        scene,
         hierarchy,
         level_index=4,
     )
@@ -3936,6 +3938,331 @@ def test_weighted_hierarchy_transient_bridge_and_recovery_replay_exactly() -> No
     )
 
 
+def test_active_arity_two_child_isolates_and_recovers_on_campaign27_boundary() -> None:
+    frame = _campaign26_weighted_origin_frame()
+    scene = extract_visual_scene(frame)
+    hierarchy = visual_causal._unique_affine_hierarchy(scene, active_color=0)
+    assert hierarchy is not None
+    relation_key = visual_causal._hierarchy_relation_key(scene, hierarchy, level_index=4)
+    hypothesis_keys = {
+        child.arity: visual_causal._child_isolation_hypothesis_key(
+            scene,
+            child,
+            relation_key=relation_key,
+        )
+        for child in hierarchy.children
+    }
+    assert set(hypothesis_keys) == {2, 3}
+
+    plan = visual_causal._child_isolation_plan(
+        scene,
+        hierarchy,
+        level_index=4,
+        rejected_signatures=set(),
+        rejected_hypothesis_keys={hypothesis_keys[3]},
+    )
+    assert plan is not None
+    assert plan.hypothesis_key == hypothesis_keys[2]
+    assert [(item.coordinate.x, item.coordinate.y) for item in plan.actions] == [
+        (50, 22),
+        (43, 34),
+        (56, 34),
+    ]
+    assert [item.purpose for item in plan.actions] == [
+        VisualActionPurpose.PROGRESS,
+        VisualActionPurpose.PROBE,
+        VisualActionPurpose.PROGRESS,
+    ]
+    assert [item.expected_child_protected_raster_hash for item in plan.actions] == [
+        "sha256:54e6cf1538d879848e5dad91562ecbab7790b79e62441e8559cb5d8ec01d7314",
+        "sha256:496ca0f16d7e60f1e1129126f4db1d2aa9fde32d6505eeea4b59c53541bb6125",
+        "sha256:2e16a8705f23412d22a3154118e36e351e89e6e5e9fb12c978dbfaed74da5d75",
+    ]
+    assert all(item.expected_visible_endpoint_count == 5 for item in plan.actions)
+    assert all(item.expected_visible_mediator_count == 2 for item in plan.actions)
+    assert plan.actions[-1].completes_child_isolation is True
+    assert [(item.coordinate.x, item.coordinate.y) for item in plan.recovery_actions] == [
+        (43, 34),
+        (50, 22),
+        (25, 35),
+    ]
+    assert [item.purpose for item in plan.recovery_actions] == [
+        VisualActionPurpose.PROGRESS,
+        VisualActionPurpose.PROBE,
+        VisualActionPurpose.PROGRESS,
+    ]
+
+    environment = _ProjectedWeightedHierarchyEnvironment(scene, hierarchy)
+    initial_positions = dict(environment.positions)
+    initial_colors = dict(environment.colors)
+    initial_hash = visual_causal._child_isolation_protected_raster_hash(scene)
+    policy = VisualCausalPolicy(max_coordinate_candidates=8)
+    policy._level_index = 4
+    policy._last_active_color = hierarchy.active_color
+    policy._failed_child_isolation_hypothesis_keys.add(hypothesis_keys[3])
+    policy._child_isolation_hypotheses_by_relation[relation_key] = frozenset(
+        hypothesis_keys.values()
+    )
+    policy._current_child_isolation_hypothesis_keys = frozenset(hypothesis_keys.values())
+    policy._install_child_isolation_plan(plan)
+    observation = environment.observation()
+
+    for expected in plan.actions:
+        action = policy.select(observation)
+        assert action.coordinate == expected.coordinate
+        observation = environment.step(action)
+        returned_scene = extract_visual_scene(observation.frames[-1])
+        assert visual_causal._child_isolation_protected_raster_hash(returned_scene) == (
+            expected.expected_child_protected_raster_hash
+        )
+        policy.accept_consequence(observation)
+        assert policy.snapshot()["hierarchy_lineage_lost"] is False
+
+    assert hypothesis_keys[2] in policy._failed_child_isolation_hypothesis_keys
+    assert policy.snapshot()["child_isolation_hypothesis_rejected_count"] == 2
+    assert policy.snapshot()["child_isolation_relation_rejected_count"] == 1
+    assert policy.snapshot()["pending_plan_actions"] == 3
+
+    for expected in plan.recovery_actions:
+        action = policy.select(observation)
+        assert action.coordinate == expected.coordinate
+        observation = environment.step(action)
+        returned_scene = extract_visual_scene(observation.frames[-1])
+        assert visual_causal._child_isolation_protected_raster_hash(returned_scene) == (
+            expected.expected_child_protected_raster_hash
+        )
+        policy.accept_consequence(observation)
+        assert policy.snapshot()["hierarchy_lineage_lost"] is False
+
+    restored_scene = extract_visual_scene(observation.frames[-1])
+    assert visual_causal._child_isolation_protected_raster_hash(restored_scene) == initial_hash
+    assert environment.positions == initial_positions
+    assert environment.colors == initial_colors
+    assert policy.snapshot()["pending_plan_actions"] == 0
+    assert policy.receipts[-1].residual == (
+        "exact pre-discriminator hierarchy restored after child-only sufficiency was falsified"
+    )
+
+
+def test_active_arity_two_forward_corruption_does_not_reject_its_stratum() -> None:
+    scene = extract_visual_scene(_campaign26_weighted_origin_frame())
+    hierarchy = visual_causal._unique_affine_hierarchy(scene, active_color=0)
+    assert hierarchy is not None
+    relation_key = visual_causal._hierarchy_relation_key(scene, hierarchy, level_index=4)
+    hypothesis_keys = {
+        child.arity: visual_causal._child_isolation_hypothesis_key(
+            scene,
+            child,
+            relation_key=relation_key,
+        )
+        for child in hierarchy.children
+    }
+    plan = visual_causal._child_isolation_plan(
+        scene,
+        hierarchy,
+        level_index=4,
+        rejected_signatures=set(),
+        rejected_hypothesis_keys={hypothesis_keys[3]},
+    )
+    assert plan is not None
+    environment = _ProjectedWeightedHierarchyEnvironment(scene, hierarchy)
+    policy = VisualCausalPolicy(max_coordinate_candidates=8)
+    policy._level_index = 4
+    policy._last_active_color = hierarchy.active_color
+    policy._failed_child_isolation_hypothesis_keys.add(hypothesis_keys[3])
+    policy._child_isolation_hypotheses_by_relation[relation_key] = frozenset(
+        hypothesis_keys.values()
+    )
+    policy._current_child_isolation_hypothesis_keys = frozenset(hypothesis_keys.values())
+    policy._install_child_isolation_plan(plan)
+    observation = environment.observation()
+
+    action = policy.select(observation)
+    plan_signature = policy._pending_plan_signature
+    assert plan_signature is not None
+    returned = environment.step(action)
+    rows = [list(row) for row in returned.frames[-1].cells]
+    rows[1][1] = 6
+    corrupted = replace(returned, frames=(GridFrame.from_rows(rows),))
+    policy.accept_consequence(corrupted)
+
+    assert hypothesis_keys[3] in policy._failed_child_isolation_hypothesis_keys
+    assert hypothesis_keys[2] not in policy._failed_child_isolation_hypothesis_keys
+    assert plan_signature in policy._failed_plan_signatures
+    assert policy.snapshot()["child_isolation_hypothesis_rejected_count"] == 1
+    assert policy.snapshot()["child_isolation_relation_rejected_count"] == 0
+    assert policy.snapshot()["hierarchy_lineage_lost"] is True
+    assert policy.snapshot()["pending_plan_actions"] == 0
+
+
+def test_active_arity_two_recovery_corruption_latches_lineage() -> None:
+    scene = extract_visual_scene(_campaign26_weighted_origin_frame())
+    hierarchy = visual_causal._unique_affine_hierarchy(scene, active_color=0)
+    assert hierarchy is not None
+    relation_key = visual_causal._hierarchy_relation_key(scene, hierarchy, level_index=4)
+    hypothesis_keys = {
+        child.arity: visual_causal._child_isolation_hypothesis_key(
+            scene,
+            child,
+            relation_key=relation_key,
+        )
+        for child in hierarchy.children
+    }
+    plan = visual_causal._child_isolation_plan(
+        scene,
+        hierarchy,
+        level_index=4,
+        rejected_signatures=set(),
+        rejected_hypothesis_keys={hypothesis_keys[3]},
+    )
+    assert plan is not None
+    environment = _ProjectedWeightedHierarchyEnvironment(scene, hierarchy)
+    policy = VisualCausalPolicy(max_coordinate_candidates=8)
+    policy._level_index = 4
+    policy._last_active_color = hierarchy.active_color
+    policy._failed_child_isolation_hypothesis_keys.add(hypothesis_keys[3])
+    policy._child_isolation_hypotheses_by_relation[relation_key] = frozenset(
+        hypothesis_keys.values()
+    )
+    policy._current_child_isolation_hypothesis_keys = frozenset(hypothesis_keys.values())
+    policy._install_child_isolation_plan(plan)
+    observation = environment.observation()
+
+    for expected in plan.actions:
+        action = policy.select(observation)
+        assert action.coordinate == expected.coordinate
+        observation = environment.step(action)
+        policy.accept_consequence(observation)
+
+    recovery = policy.select(observation)
+    recovery_signature = policy._pending_plan_signature
+    assert recovery_signature is not None
+    returned = environment.step(recovery)
+    rows = [list(row) for row in returned.frames[-1].cells]
+    rows[1][1] = 6
+    corrupted = replace(returned, frames=(GridFrame.from_rows(rows),))
+    policy.accept_consequence(corrupted)
+
+    assert recovery_signature in policy._failed_plan_signatures
+    assert set(hypothesis_keys.values()) <= policy._failed_child_isolation_hypothesis_keys
+    assert policy.receipts[-1].residual == (
+        "planned child-recovery inverse certificate was not structurally readable"
+    )
+    assert policy.snapshot()["hierarchy_lineage_lost"] is True
+    assert policy.snapshot()["child_isolation_hypothesis_rejected_count"] == 2
+    assert policy.snapshot()["pending_plan_actions"] == 0
+
+
+def test_active_arity_two_queued_inverse_precondition_mismatch_fails_closed() -> None:
+    scene = extract_visual_scene(_campaign26_weighted_origin_frame())
+    hierarchy = visual_causal._unique_affine_hierarchy(scene, active_color=0)
+    assert hierarchy is not None
+    relation_key = visual_causal._hierarchy_relation_key(scene, hierarchy, level_index=4)
+    hypothesis_keys = {
+        child.arity: visual_causal._child_isolation_hypothesis_key(
+            scene,
+            child,
+            relation_key=relation_key,
+        )
+        for child in hierarchy.children
+    }
+    plan = visual_causal._child_isolation_plan(
+        scene,
+        hierarchy,
+        level_index=4,
+        rejected_signatures=set(),
+        rejected_hypothesis_keys={hypothesis_keys[3]},
+    )
+    assert plan is not None
+    environment = _ProjectedWeightedHierarchyEnvironment(scene, hierarchy)
+    policy = VisualCausalPolicy(max_coordinate_candidates=8)
+    policy._level_index = 4
+    policy._last_active_color = hierarchy.active_color
+    policy._failed_child_isolation_hypothesis_keys.add(hypothesis_keys[3])
+    policy._child_isolation_hypotheses_by_relation[relation_key] = frozenset(
+        hypothesis_keys.values()
+    )
+    policy._current_child_isolation_hypothesis_keys = frozenset(hypothesis_keys.values())
+    policy._install_child_isolation_plan(plan)
+    observation = environment.observation()
+
+    for expected in plan.actions:
+        action = policy.select(observation)
+        assert action.coordinate == expected.coordinate
+        observation = environment.step(action)
+        policy.accept_consequence(observation)
+
+    recovery = policy.select(observation)
+    returned = environment.step(recovery)
+    policy.accept_consequence(returned)
+    assert len(policy._plan) == 2
+    queued_signature = policy._plan[0].plan_signature
+    rows = [list(row) for row in returned.frames[-1].cells]
+    rows[1][1] = 6
+    corrupted = replace(returned, frames=(GridFrame.from_rows(rows),))
+
+    with pytest.raises(PolicyError, match="queued hierarchy precondition"):
+        policy.select(corrupted)
+
+    assert queued_signature in policy._failed_plan_signatures
+    assert policy.snapshot()["hierarchy_lineage_lost"] is True
+    assert policy.snapshot()["child_isolation_hypothesis_rejected_count"] == 2
+    assert policy.snapshot()["pending_plan_actions"] == 0
+
+
+def test_all_child_strata_equal_and_weighted_hypotheses_exhaustion_fails_closed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    environment = _TwoLayerAffineEnvironment()
+    policy = VisualCausalPolicy(max_coordinate_candidates=8)
+    observation = _reach_two_layer_hierarchy(environment, policy)
+    scene = extract_visual_scene(observation.frames[-1])
+    hierarchy = visual_causal._unique_affine_hierarchy(scene, active_color=0)
+    assert hierarchy is not None
+    relation_key = visual_causal._hierarchy_relation_key(
+        scene,
+        hierarchy,
+        level_index=observation.levels_completed,
+    )
+    hypothesis_keys = frozenset(
+        visual_causal._child_isolation_hypothesis_key(
+            scene,
+            child,
+            relation_key=relation_key,
+        )
+        for child in hierarchy.children
+    )
+    assert len(hypothesis_keys) == 2
+    policy._failed_child_isolation_hypothesis_keys.update(hypothesis_keys)
+    policy._failed_hierarchy_relation_keys.add(relation_key)
+    policy._failed_weighted_hierarchy_relation_keys.add(relation_key)
+
+    def reject_unfalsified_planner(*_args: object, **_kwargs: object) -> None:
+        pytest.fail("a falsified hierarchy hypothesis was replanned")
+
+    def reject_raw_fallback(*_args: object, **_kwargs: object) -> Coordinate:
+        pytest.fail("uncertified hierarchy fallback was called")
+
+    monkeypatch.setattr(visual_causal, "_child_isolation_plan", reject_unfalsified_planner)
+    monkeypatch.setattr(visual_causal, "_hierarchy_joint_layout", reject_unfalsified_planner)
+    monkeypatch.setattr(visual_causal, "_hierarchy_weighted_layout", reject_unfalsified_planner)
+    monkeypatch.setattr(policy, "_activation_coordinate", reject_raw_fallback)
+    monkeypatch.setattr(policy, "_probe_coordinate", reject_raw_fallback)
+
+    with pytest.raises(
+        PolicyError,
+        match="all structurally distinct child-only sufficiency",
+    ):
+        policy.select(observation)
+
+    snapshot = policy.snapshot()
+    assert policy._pending_action is None
+    assert snapshot["child_isolation_hypothesis_rejected_count"] == 2
+    assert snapshot["child_isolation_remaining_strata_count"] == 0
+    assert snapshot["child_isolation_relation_rejected_count"] == 1
+    assert snapshot["pending_plan_actions"] == 0
+
+
 def test_weighted_move_order_sample_covers_first_and_active_successor_roles() -> None:
     for endpoint_count in range(2, 13):
         mover_refs = ("active", *(f"endpoint-{index}" for index in range(1, endpoint_count)))
@@ -3949,9 +4276,9 @@ def test_weighted_move_order_sample_covers_first_and_active_successor_roles() ->
             len(order) == len(mover_refs) and set(order) == set(mover_refs) for order in orders
         )
         assert {order[0] for order in orders} == set(mover_refs)
-        assert {order[1] for order in orders if order[0] == "active"} == set(
-            mover_refs
-        ) - {"active"}
+        assert {order[1] for order in orders if order[0] == "active"} == set(mover_refs) - {
+            "active"
+        }
     assert visual_causal._bounded_weighted_move_orders(
         ("active", "endpoint-b"),
         active_ref="active",
@@ -4073,8 +4400,7 @@ def test_weighted_child_layout_cap_keeps_eight_distinct_frozen_candidates() -> N
             result_limit=visual_causal._MAX_HIERARCHY_CHILD_LAYOUTS,
         )
         identities = {
-            (tuple(item.object_ref for item in layout.movers), layout.points)
-            for layout in layouts
+            (tuple(item.object_ref for item in layout.movers), layout.points) for layout in layouts
         }
 
         assert len(layouts) == visual_causal._MAX_HIERARCHY_CHILD_LAYOUTS
@@ -4127,12 +4453,14 @@ def test_structurally_complete_not_finished_hierarchy_is_rejected_across_reset()
     environment = _TwoLayerAffineEnvironment(win_on_hierarchy=False)
     policy = VisualCausalPolicy(max_coordinate_candidates=8)
     observation = _reach_two_layer_hierarchy(environment, policy)
+    initial_scene = extract_visual_scene(observation.frames[-1])
     initial_hierarchy = visual_causal._unique_affine_hierarchy(
-        extract_visual_scene(observation.frames[-1]),
+        initial_scene,
         active_color=0,
     )
     assert initial_hierarchy is not None
     relation_key = visual_causal._hierarchy_relation_key(
+        initial_scene,
         initial_hierarchy,
         level_index=observation.levels_completed,
     )
@@ -4157,13 +4485,15 @@ def test_structurally_complete_not_finished_hierarchy_is_rejected_across_reset()
         "distinct child mediators reached the predicted parent centroid but "
         "the official environment remained NOT_FINISHED"
     )
+    returned_scene = extract_visual_scene(observation.frames[-1])
     returned_hierarchy = visual_causal._unique_affine_hierarchy(
-        extract_visual_scene(observation.frames[-1]),
+        returned_scene,
         active_color=0,
     )
     assert returned_hierarchy is not None
     assert (
         visual_causal._hierarchy_relation_key(
+            returned_scene,
             returned_hierarchy,
             level_index=observation.levels_completed,
         )
@@ -4232,8 +4562,10 @@ def test_terminal_joint_hierarchy_raster_mismatch_does_not_falsify_relation() ->
     environment = _TwoLayerAffineEnvironment(win_on_hierarchy=False)
     policy = VisualCausalPolicy(max_coordinate_candidates=8)
     observation = _reach_two_layer_hierarchy(environment, policy)
+    scene = extract_visual_scene(observation.frames[-1])
     hierarchy = _install_joint_hierarchy_for_test(policy, observation)
     relation_key = visual_causal._hierarchy_relation_key(
+        scene,
         hierarchy,
         level_index=observation.levels_completed,
     )
@@ -4268,8 +4600,10 @@ def test_joint_hierarchy_recovery_raster_mismatch_latches_lineage(
     environment = _TwoLayerAffineEnvironment(win_on_hierarchy=False)
     policy = VisualCausalPolicy(max_coordinate_candidates=8)
     observation = _reach_two_layer_hierarchy(environment, policy)
+    scene = extract_visual_scene(observation.frames[-1])
     hierarchy = _install_joint_hierarchy_for_test(policy, observation)
     relation_key = visual_causal._hierarchy_relation_key(
+        scene,
         hierarchy,
         level_index=observation.levels_completed,
     )
@@ -4545,31 +4879,14 @@ def test_policy_defers_unavailable_hierarchy_layout_without_flat_reuse(
     hierarchy = visual_causal._unique_affine_hierarchy(scene, active_color=0)
     assert hierarchy is not None
 
-    action = policy.select(observation)
+    with pytest.raises(
+        PolicyError,
+        match="no parser-safe target-preserving continuation",
+    ) as exc_info:
+        policy.select(observation)
 
-    assert action.name is ActionName.ACTION6
-    assert action.coordinate is not None
-    clicked = (action.coordinate.x, action.coordinate.y)
-    selected = tuple(endpoint for endpoint in scene.endpoints if endpoint.rounded_center == clicked)
-    if selected:
-        assert len(selected) == 1
-        assert selected[0].color != hierarchy.active_color
-        assert visual_causal._role_swap_remains_readable(
-            scene,
-            selected[0],
-            active_color=hierarchy.active_color,
-        )
-        expected_continuation = "test one structurally safe alternate active-role binding"
-    else:
-        assert scene.is_open(action.coordinate.x, action.coordinate.y)
-        assert all(
-            (action.coordinate.x, action.coordinate.y) not in region
-            for _center, region in visual_causal._visible_target_regions(scene)
-        )
-        expected_continuation = "test one bounded coordinate alternative"
-    assert policy._pending_purpose is VisualActionPurpose.PROBE
-    assert policy._pending_prediction == f"{expected_residual}; {expected_continuation}"
-    assert policy._pending_mechanic_refs == (hierarchy.mechanic_ref,)
+    assert expected_residual in str(exc_info.value)
+    assert policy._pending_action is None
     assert policy._pending_plan_signature is None
     assert policy._pending_target_center is None
     assert policy._pending_completes_local_target is False
@@ -4601,11 +4918,11 @@ def test_exhausted_readable_hierarchy_never_falls_back_to_coordinate_probe(
         "_hierarchy_joint_layout",
         lambda *_args, **_kwargs: None,
     )
-    policy._attempted_activation_refs.update(endpoint.object_ref for endpoint in scene.endpoints)
 
     def reject_unsafe_fallback(*_args: object, **_kwargs: object) -> Coordinate:
-        pytest.fail("generic coordinate fallback was called")
+        pytest.fail("uncertified hierarchy fallback was called")
 
+    monkeypatch.setattr(policy, "_activation_coordinate", reject_unsafe_fallback)
     monkeypatch.setattr(policy, "_probe_coordinate", reject_unsafe_fallback)
 
     with pytest.raises(
@@ -4616,6 +4933,37 @@ def test_exhausted_readable_hierarchy_never_falls_back_to_coordinate_probe(
 
     assert policy._pending_action is None
     assert observation.frames[-1].digest == environment.observation().frames[-1].digest
+
+
+def test_hierarchy_recognition_exhaustion_never_uses_raw_fallback(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    environment = _TwoLayerAffineEnvironment()
+    policy = VisualCausalPolicy(max_coordinate_candidates=8)
+    observation = _reach_two_layer_hierarchy(environment, policy)
+    residual = "affine hierarchy recognition budget exhausted"
+
+    def exhaust_recognition(*_args: object, **_kwargs: object) -> None:
+        raise visual_causal._HierarchySearchExhausted(residual)
+
+    def reject_raw_fallback(*_args: object, **_kwargs: object) -> Coordinate:
+        pytest.fail("uncertified raw hierarchy fallback was called")
+
+    monkeypatch.setattr(visual_causal, "_unique_affine_hierarchy", exhaust_recognition)
+    monkeypatch.setattr(policy, "_activation_coordinate", reject_raw_fallback)
+    monkeypatch.setattr(policy, "_probe_coordinate", reject_raw_fallback)
+
+    with pytest.raises(
+        PolicyError,
+        match="no parser-safe target-preserving continuation",
+    ) as exc_info:
+        policy.select(observation)
+
+    assert residual in str(exc_info.value)
+    assert policy._pending_action is None
+    snapshot = policy.snapshot()
+    assert snapshot["hierarchy_search_deferred_count"] == 1
+    assert snapshot["hierarchy_search_residual"] == residual
 
 
 def test_unrelated_centerline_occupant_rejects_hierarchy_plan() -> None:

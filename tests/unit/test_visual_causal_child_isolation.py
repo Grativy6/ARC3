@@ -20,6 +20,7 @@ from arc3.errors import PolicyError
 from arc3.mechanics.visual_causal import (
     VisualActionPurpose,
     VisualCausalPolicy,
+    VisualObject,
     _child_isolation_target_surface_signature,
     _hierarchy_connector_evidence,
     _hierarchy_projected_scene,
@@ -392,7 +393,9 @@ def test_fresh_two_child_hierarchy_isolates_the_initially_nonactive_child() -> N
 
     assert isolation_signature in policy._failed_plan_signatures
     assert isolation_relation_key in policy._failed_child_isolation_relation_keys
-    assert policy.snapshot()["child_isolation_relation_rejected_count"] == 1
+    assert policy.snapshot()["child_isolation_hypothesis_rejected_count"] == 1
+    assert policy.snapshot()["child_isolation_relation_rejected_count"] == 0
+    assert policy.snapshot()["child_isolation_remaining_strata_count"] == 1
     assert policy._last_probe_failed is False
     assert policy.snapshot()["pending_plan_actions"] == 6
     recovery = policy.select(observation)
@@ -432,6 +435,7 @@ def test_child_isolation_accepts_exact_projected_endpoint_deocclusion(
     deocclusion_observed = False
     terminal_observed = False
     relation_key: str | None = None
+    hypothesis_key: str | None = None
     forward_coordinates: list[tuple[int, int]] = []
     for _ in range(16):
         before_scene = extract_visual_scene(observation.frames[-1])
@@ -439,6 +443,7 @@ def test_child_isolation_accepts_exact_projected_endpoint_deocclusion(
         assert action.coordinate is not None
         forward_coordinates.append((action.coordinate.x, action.coordinate.y))
         relation_key = policy._active_child_isolation_relation_key
+        hypothesis_key = policy._active_child_isolation_hypothesis_key
         completes_isolation = policy._pending_completes_child_isolation
         expected_endpoint_count = policy._pending_expected_visible_endpoint_count
         expected_mediator_count = policy._pending_expected_visible_mediator_count
@@ -468,6 +473,8 @@ def test_child_isolation_accepts_exact_projected_endpoint_deocclusion(
     assert deocclusion_observed
     assert terminal_observed
     assert relation_key is not None
+    assert hypothesis_key is not None
+    assert hypothesis_key in policy._failed_child_isolation_hypothesis_keys
     assert relation_key in policy._failed_child_isolation_relation_keys
     assert policy.receipts[-1].residual == (
         "the selected child mediator reached the parent target while its sibling "
@@ -497,10 +504,102 @@ def test_child_isolation_accepts_exact_projected_endpoint_deocclusion(
     assert policy.receipts[-1].residual == (
         "exact pre-discriminator hierarchy restored after child-only sufficiency was falsified"
     )
+    direct_child = environment.active_group
     continuation = policy.select(observation)
     assert continuation.name is ActionName.ACTION6
     assert policy._pending_plan_signature is not None
-    assert policy._pending_plan_signature.startswith("affine-hierarchy:")
+    assert policy._pending_plan_signature.startswith("affine-child-isolation:")
+    direct_hypothesis_key = policy._active_child_isolation_hypothesis_key
+    assert direct_hypothesis_key is not None
+    assert direct_hypothesis_key != hypothesis_key
+    assert policy._pending_purpose is VisualActionPurpose.PROGRESS
+
+    direct_forward_coordinates: list[tuple[int, int]] = []
+    for _ in range(4):
+        assert continuation.coordinate is not None
+        direct_forward_coordinates.append((continuation.coordinate.x, continuation.coordinate.y))
+        completes_isolation = policy._pending_completes_child_isolation
+        observation = environment.step(continuation)
+        policy.accept_consequence(observation)
+        assert policy.snapshot()["hierarchy_lineage_lost"] is False
+        if completes_isolation:
+            break
+        continuation = policy.select(observation)
+    else:
+        raise AssertionError("the direct child-isolation plan never reached its terminal action")
+
+    assert len(direct_forward_coordinates) == 3
+    assert sum(x for x, _y in environment.groups[direct_child]) == (
+        len(environment.groups[direct_child]) * parent_target[0]
+    )
+    assert sum(y for _x, y in environment.groups[direct_child]) == (
+        len(environment.groups[direct_child]) * parent_target[1]
+    )
+    assert direct_hypothesis_key in policy._failed_child_isolation_hypothesis_keys
+    assert policy.snapshot()["child_isolation_hypothesis_rejected_count"] == 2
+    assert policy.snapshot()["child_isolation_relation_rejected_count"] == 1
+    assert policy.snapshot()["child_isolation_remaining_strata_count"] == 0
+    assert policy.snapshot()["pending_plan_actions"] == 3
+
+    direct_recovery_coordinates: list[tuple[int, int]] = []
+    for _ in range(4):
+        recovery = policy.select(observation)
+        assert recovery.coordinate is not None
+        direct_recovery_coordinates.append((recovery.coordinate.x, recovery.coordinate.y))
+        completes_recovery = policy._pending_completes_child_recovery
+        observation = environment.step(recovery)
+        policy.accept_consequence(observation)
+        assert policy.snapshot()["hierarchy_lineage_lost"] is False
+        if completes_recovery:
+            break
+    else:
+        raise AssertionError("the direct child-isolation rollback never completed")
+
+    assert direct_recovery_coordinates == [
+        direct_forward_coordinates[1],
+        direct_forward_coordinates[0],
+        entry_active[0],
+    ]
+    assert observation.frames[-1].digest == entry_frame.digest
+    assert policy.receipts[-1].residual == (
+        "exact pre-discriminator hierarchy restored after child-only sufficiency was falsified"
+    )
+
+
+def test_terminal_child_game_over_rejects_only_active_structural_stratum() -> None:
+    environment = _TwoLayerAffineEnvironment(win_on_hierarchy=False)
+    policy = VisualCausalPolicy(max_coordinate_candidates=8)
+    observation = _reach_two_layer_hierarchy(environment, policy)
+    terminal_signature: str | None = None
+    hypothesis_key: str | None = None
+
+    for _ in range(16):
+        action = policy.select(observation)
+        terminal = policy._pending_completes_child_isolation
+        if terminal:
+            terminal_signature = policy._pending_plan_signature
+            hypothesis_key = policy._active_child_isolation_hypothesis_key
+        observation = environment.step(action)
+        if terminal:
+            observation = replace(observation, state=GameStateName.GAME_OVER)
+        policy.accept_consequence(observation)
+        if terminal:
+            break
+    else:
+        raise AssertionError("the child-isolation plan never reached its terminal action")
+
+    assert terminal_signature is not None
+    assert hypothesis_key is not None
+    assert terminal_signature in policy._failed_plan_signatures
+    assert hypothesis_key in policy._failed_child_isolation_hypothesis_keys
+    assert policy._failed_child_isolation_hypothesis_reasons[hypothesis_key] == (
+        "was falsified by an exact child-at-target official GAME_OVER consequence "
+        "for this structural child stratum"
+    )
+    assert policy.snapshot()["child_isolation_hypothesis_rejected_count"] == 1
+    assert policy.snapshot()["child_isolation_relation_rejected_count"] == 0
+    assert policy.snapshot()["pending_plan_actions"] == 0
+    assert policy.select(observation).name is ActionName.RESET
 
 
 def test_child_isolation_rejects_only_the_failed_layout_after_sibling_displacement() -> None:
@@ -683,10 +782,13 @@ def test_game_over_reset_during_child_recovery_preserves_relation_rejection() ->
     policy.accept_consequence(recovered)
 
     assert relation_key in policy._failed_child_isolation_relation_keys
+    assert policy.snapshot()["child_isolation_hypothesis_rejected_count"] == 1
+    assert policy.snapshot()["child_isolation_relation_rejected_count"] == 0
     continuation = policy.select(recovered)
     assert continuation.name is ActionName.ACTION6
     assert policy._pending_plan_signature is not None
-    assert policy._pending_plan_signature.startswith("affine-hierarchy:")
+    assert policy._pending_plan_signature.startswith("affine-child-isolation:")
+    assert policy._pending_purpose is VisualActionPurpose.PROGRESS
 
 
 def test_readable_child_consequence_with_one_raster_residual_latches_lineage() -> None:
@@ -953,6 +1055,8 @@ def test_child_isolation_level_progress_is_not_receipted_as_structural_failure()
         "planned child-isolation consequence was not structurally readable"
     )
     assert policy.snapshot()["active_level_index"] == 2
+    assert policy.snapshot()["child_isolation_hypothesis_rejected_count"] == 0
+    assert policy.snapshot()["child_isolation_distinct_strata_count"] == 0
 
 
 def test_child_isolation_rejects_frozen_connector_mutation() -> None:
@@ -993,14 +1097,17 @@ def test_hierarchy_relation_key_tracks_stable_center_markers_not_active_role_col
     base_scene = extract_visual_scene(base_frame)
     base_hierarchy = _unique_affine_hierarchy(base_scene, active_color=0)
     assert base_hierarchy is not None
-    base_key = _hierarchy_relation_key(base_hierarchy, level_index=1)
+    base_key = _hierarchy_relation_key(base_scene, base_hierarchy, level_index=1)
 
     role_swapped_scene = extract_visual_scene(
         _two_layer_affine_frame(active_group=1, active_index=0)
     )
     role_swapped_hierarchy = _unique_affine_hierarchy(role_swapped_scene, active_color=0)
     assert role_swapped_hierarchy is not None
-    assert _hierarchy_relation_key(role_swapped_hierarchy, level_index=1) == base_key
+    assert (
+        _hierarchy_relation_key(role_swapped_scene, role_swapped_hierarchy, level_index=1)
+        == base_key
+    )
 
     rows = [list(row) for row in base_frame.cells]
     for child in base_hierarchy.children:
@@ -1010,7 +1117,170 @@ def test_hierarchy_relation_key_tracks_stable_center_markers_not_active_role_col
     remarked_scene = extract_visual_scene(GridFrame.from_rows(rows))
     remarked_hierarchy = _unique_affine_hierarchy(remarked_scene, active_color=0)
     assert remarked_hierarchy is not None
-    assert _hierarchy_relation_key(remarked_hierarchy, level_index=1) != base_key
+    assert _hierarchy_relation_key(remarked_scene, remarked_hierarchy, level_index=1) != base_key
+
+
+def test_child_hypothesis_key_is_structural_and_translation_invariant() -> None:
+    base_scene = extract_visual_scene(_two_layer_affine_frame())
+    base_hierarchy = _unique_affine_hierarchy(base_scene, active_color=0)
+    assert base_hierarchy is not None
+    relation_key = _hierarchy_relation_key(base_scene, base_hierarchy, level_index=1)
+    keys_by_arity = {
+        child.arity: visual_causal._child_isolation_hypothesis_key(
+            base_scene,
+            child,
+            relation_key=relation_key,
+        )
+        for child in base_hierarchy.children
+    }
+    assert set(keys_by_arity) == {2, 3}
+    assert keys_by_arity[2] != keys_by_arity[3]
+
+    role_scene = extract_visual_scene(_two_layer_affine_frame(active_group=1, active_index=0))
+    role_hierarchy = _unique_affine_hierarchy(role_scene, active_color=0)
+    assert role_hierarchy is not None
+    assert _hierarchy_relation_key(role_scene, role_hierarchy, level_index=1) == relation_key
+    assert {
+        child.arity: visual_causal._child_isolation_hypothesis_key(
+            role_scene,
+            child,
+            relation_key=relation_key,
+        )
+        for child in role_hierarchy.children
+    } == keys_by_arity
+
+    def shifted(item: VisualObject, *, dx: int, dy: int) -> VisualObject:
+        return replace(
+            item,
+            object_ref=f"translated:{item.object_ref}",
+            cells=tuple((x + dx, y + dy) for x, y in item.cells),
+            min_x=item.min_x + dx,
+            min_y=item.min_y + dy,
+            max_x=item.max_x + dx,
+            max_y=item.max_y + dy,
+            center_x=item.center_x + dx,
+            center_y=item.center_y + dy,
+        )
+
+    translated_children = tuple(
+        replace(
+            child,
+            mediator=shifted(child.mediator, dx=1, dy=-1),
+            endpoints=tuple(shifted(endpoint, dx=1, dy=-1) for endpoint in child.endpoints),
+        )
+        for child in base_hierarchy.children
+    )
+    translated_hierarchy = replace(base_hierarchy, children=translated_children)
+    assert _hierarchy_relation_key(base_scene, translated_hierarchy, level_index=1) == relation_key
+    assert {
+        child.arity: visual_causal._child_isolation_hypothesis_key(
+            base_scene,
+            child,
+            relation_key=relation_key,
+        )
+        for child in translated_hierarchy.children
+    } == keys_by_arity
+
+    duplicate = replace(
+        base_hierarchy,
+        children=(base_hierarchy.children[0], base_hierarchy.children[0]),
+    )
+    duplicate_keys = {
+        visual_causal._child_isolation_hypothesis_key(
+            base_scene,
+            child,
+            relation_key=_hierarchy_relation_key(base_scene, duplicate, level_index=1),
+        )
+        for child in duplicate.children
+    }
+    assert len(duplicate_keys) == 1
+
+
+def test_connector_distinct_same_glyph_children_have_distinct_hypothesis_keys() -> None:
+    groups = (
+        ((12, 46), (28, 46)),
+        ((42, 48), (58, 48)),
+    )
+    initial_frame = _two_layer_affine_frame(groups, connector_color=9)
+    initial_scene = extract_visual_scene(initial_frame)
+    initial_hierarchy = _unique_affine_hierarchy(initial_scene, active_color=0)
+    assert initial_hierarchy is not None
+    assert [child.arity for child in initial_hierarchy.children] == [2, 2]
+    recolored_group = max(
+        initial_hierarchy.children,
+        key=lambda child: child.mediator.rounded_center[0],
+    )
+    connector = _hierarchy_connector_evidence(initial_scene, recolored_group)
+    assert connector is not None
+    connector_color, connector_cells = connector
+    assert connector_color == 9
+
+    rows = [list(row) for row in initial_frame.cells]
+    for x, y in connector_cells:
+        rows[y][x] = 8
+    scene = extract_visual_scene(GridFrame.from_rows(rows))
+    hierarchy = _unique_affine_hierarchy(scene, active_color=0)
+    assert hierarchy is not None
+    signatures = [
+        visual_causal._child_structure_signature(scene, child) for child in hierarchy.children
+    ]
+    assert signatures[0][:-1] == signatures[1][:-1]
+    assert signatures[0][-1] is not None
+    assert signatures[1][-1] is not None
+    assert signatures[0][-1][1] == signatures[1][-1][1]
+    assert {signatures[0][-1][0], signatures[1][-1][0]} == {8, 9}
+
+    relation_key = _hierarchy_relation_key(scene, hierarchy, level_index=1)
+    hypothesis_keys = {
+        visual_causal._child_isolation_hypothesis_key(
+            scene,
+            child,
+            relation_key=relation_key,
+        )
+        for child in hierarchy.children
+    }
+    assert len(hypothesis_keys) == 2
+
+
+def test_connector_structure_key_ignores_movable_raster_layout() -> None:
+    base_scene = extract_visual_scene(_two_layer_affine_frame(connector_color=9))
+    base_hierarchy = _unique_affine_hierarchy(base_scene, active_color=0)
+    assert base_hierarchy is not None
+    moved_groups = (
+        ((10, 54), (28, 53)),
+        ((41, 47), (52, 55), (53, 36)),
+    )
+    moved_scene = extract_visual_scene(
+        _two_layer_affine_frame(
+            moved_groups,
+            active_group=1,
+            active_index=2,
+            connector_color=9,
+        )
+    )
+    moved_hierarchy = _unique_affine_hierarchy(moved_scene, active_color=0)
+    assert moved_hierarchy is not None
+
+    base_relation = _hierarchy_relation_key(base_scene, base_hierarchy, level_index=1)
+    moved_relation = _hierarchy_relation_key(moved_scene, moved_hierarchy, level_index=1)
+    assert moved_relation == base_relation
+    base_keys = {
+        child.arity: visual_causal._child_isolation_hypothesis_key(
+            base_scene,
+            child,
+            relation_key=base_relation,
+        )
+        for child in base_hierarchy.children
+    }
+    moved_keys = {
+        child.arity: visual_causal._child_isolation_hypothesis_key(
+            moved_scene,
+            child,
+            relation_key=moved_relation,
+        )
+        for child in moved_hierarchy.children
+    }
+    assert moved_keys == base_keys
 
 
 def test_child_isolation_not_played_return_clears_plan_and_reset_recovers() -> None:
