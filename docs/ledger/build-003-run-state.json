@@ -6,8 +6,8 @@
   "owner": "Christopher D. Pang",
   "build_status": "ACTIVE",
   "status": "IN_PROGRESS",
-  "current_stage": "02",
-  "current_task": "preserve Campaign 28 as sealed FAILED_MECHANISM evidence, repair and verify the incomplete Workflow 003 Stages 02-09 gates, bind production mechanical-policy reachability, and only then freeze Campaign 29 toward official WIN",
+  "current_stage": "07",
+  "current_task": "repair or honestly classify the frozen-budget synthetic authoritative-WIN failure, close the required Stage 09 adversarial gaps, then freeze and execute the final v0.2 evidence gates before Campaign 29",
   "implementation_branch": "build/003-bla-clef-mechanical-learner",
   "base": {
     "main_commit": "bea1eac99cb0f1b351526b1dc487d132ba1d40ef",
@@ -197,14 +197,14 @@
   "stage_status": {
     "00": "PASS",
     "01": "PASS",
-    "02": "PENDING",
-    "03": "PENDING",
-    "04": "PENDING",
-    "05": "PENDING",
-    "06": "PENDING",
+    "02": "PARTIAL",
+    "03": "PARTIAL",
+    "04": "PARTIAL",
+    "05": "PARTIAL",
+    "06": "PARTIAL",
     "07": "PENDING",
     "08": "FAILED_MECHANISM",
-    "09": "PENDING",
+    "09": "PARTIAL",
     "10": "PENDING",
     "11": "PENDING"
   },
@@ -223,6 +223,53 @@
       "full_suite": "FAILED_INFRASTRUCTURE",
       "tests": "1463 passed, 21 skipped, 2 failed initially; 1 reproducible host-topology failure",
       "holdout_untouched": true,
+      "environment_opened": false
+    },
+    "02": {
+      "status": "PARTIAL",
+      "learner_lifecycle_commit": "ca86e33a047e5e6b6689e509cea899f6c5bd07a6",
+      "production_reachability_commit": "6080f9937017c03db9995f912669a72746a524ba",
+      "delivered": "all ten consequence channels, observation-derived transition facts, prediction and causal action links, replay-link audit, and MyAgent-to-VisualCausalPolicy-to-MechanicalLearner reachability",
+      "focused_verification": "36 passed with the legacy synthetic authoritative-WIN acceptance excluded; affected Ruff and strict MyPy passed",
+      "remaining": "end-to-end public observation tests for initial movement/resource promotion and distinct-context strengthening remain incomplete",
+      "environment_opened": false
+    },
+    "03": {
+      "status": "PARTIAL",
+      "implementation_commit": "ca86e33a047e5e6b6689e509cea899f6c5bd07a6",
+      "delivered": "observation-grounded residual lifecycle, passive confirmation, scoped repairs, two-failure implicated reopening, factorized metrics, and replay-linked receipts",
+      "remaining": "resource exhaustion/reset failure-link and restoration-localization adversarial cases remain under focused repair",
+      "environment_opened": false
+    },
+    "04": {
+      "status": "PARTIAL",
+      "implementation_commit": "ca86e33a047e5e6b6689e509cea899f6c5bd07a6",
+      "delivered": "measured CLEF promote, park, stop, and active-pressure fields with a behaviorally distinct BLA-only path",
+      "remaining": "harmless-animation parking and high-impact-versus-stable-base end-to-end adversarial evidence remain incomplete",
+      "environment_opened": false
+    },
+    "05": {
+      "status": "PARTIAL",
+      "implementation_commits": [
+        "ca86e33a047e5e6b6689e509cea899f6c5bd07a6",
+        "6080f9937017c03db9995f912669a72746a524ba"
+      ],
+      "delivered": "bounded observation-only selection, production mechanical route ownership, and action/receipt lifecycle hardening",
+      "remaining": "the complete progressive curriculum is not yet solved within frozen v0.2 limits and the additive-versus-competing-restoration discriminator remains open",
+      "environment_opened": false
+    },
+    "06": {
+      "status": "PARTIAL",
+      "implementation_commit": "ca86e33a047e5e6b6689e509cea899f6c5bd07a6",
+      "delivered": "cross-level retention is credited only after returned-observation transfer confirmation; additive, conditional, gating, override, and delayed event counts are explicit",
+      "remaining": "paired transfer savings, visually remapped probe-count evidence, and sequential cross-game quarantine are not yet fully established",
+      "environment_opened": false
+    },
+    "07": {
+      "status": "IN_PROGRESS",
+      "legacy_acceptance_boundary": "the already-exposed v0.1 synthetic frozen-case authoritative-WIN integration test currently ends WALL_CLOCK_BUDGET after three of ten levels under its 20-second diagnostic bound",
+      "v02_development_profile": "IN_PROGRESS on the first declared v0.2 development seed under the frozen 192-action, 48-action-per-attempt, 10-reset, 10-second, 1-GiB limits",
+      "v02_heldout_or_final_executed": false,
       "environment_opened": false
     },
     "08": {
@@ -244,10 +291,35 @@
       "v02_amendment": "docs/evaluation/build-003-preregistration-amendment.v0.2.json",
       "v02_exact_build002_baseline_commit": "5448c53f3b7e08f606cf292e6068f3f9c9db16d4",
       "v02_exact_build002_baseline_tree": "700718c09c2a1532cea16526b290f57be0120371",
+      "v02_protocol_implementation_commit": "a642a4c63aa1d90605646c948a44140234b48001",
+      "v02_lifecycle_commit": "ca86e33a047e5e6b6689e509cea899f6c5bd07a6",
+      "v02_literal_gate_commit": "d68815fc421758b90ef805d2bdea706deceec2ed",
+      "v02_literal_gate_status": "PASS: exact v0.2 identity, H1-H3 decisions, replay links, receipts, worker counters, environment actions, and resets are independently gated; a structurally complete anti-result cannot be labeled PASS",
+      "v02_focused_verification": "36 passed excluding only the preserved legacy authoritative-WIN acceptance; seven decision-gate regressions passed; affected Ruff, strict MyPy, and compilation passed",
       "v02_heldout_seed_count": 30,
       "v02_required_rows": 1200,
       "v02_results_executed": false,
       "public_or_holdout_environment_opened": false
+    },
+    "09": {
+      "status": "PARTIAL",
+      "immutable_audit_commits": [
+        "6080f9937017c03db9995f912669a72746a524ba",
+        "ca86e33a047e5e6b6689e509cea899f6c5bd07a6"
+      ],
+      "audit_result": "four bullets directly covered, ten partial, and two uncovered before the focused repair tasks; lifecycle integration strengthens residual repair and transfer accounting without converting synthetic fixtures into measured comparative evidence",
+      "directly_covered": [
+        "deeper reopening after repeated local failures",
+        "bounded coordinate behavior without whole-grid brute force",
+        "failure/reset retains mechanics without blindly replaying the identical plan",
+        "fixture privileged state is unreachable"
+      ],
+      "highest_priority_open": [
+        "paired ledger or persistence loss",
+        "resource exhaustion to GAME_OVER to RESET failure-link learning",
+        "minimal additive-versus-competing-restoration discriminator"
+      ],
+      "environment_opened": false
     }
   },
   "human_gates": {
@@ -261,7 +333,7 @@
     "pull_request_merged": false,
     "external_message_sent_as_owner": false
   },
-  "next_action": "complete Workflow 003 Stages 02-09 from the earliest incomplete gate: repair the observation-only learner lifecycle and protocol under a frozen v0.2 predeclaration, bind the exact Stage 01 Build 002 baseline, integrate production MyAgent reachability, run the exact paired matrix and adversarial verification, then freeze and replay-certify Campaign 29 before resuming authorized development play",
+  "next_action": "finish the v0.2 development-only performance repair and Stage 09 focused adversarial tests; if the frozen synthetic gate passes, freeze code and execute the final matrix once, otherwise preserve FAILED_MECHANISM; then complete integrity, package, and clean replay gates before Campaign 29",
   "notes": [
     "Update atomically after each meaningful task and preserve failed attempts.",
     "No synthetic or local result is completion unless the official target environment returns GameState.WIN.",
