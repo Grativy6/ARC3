@@ -258,6 +258,7 @@ class MechanicLedger:
         self._evidence: dict[MechanicRef, list[MechanicEvidence]] = {}
         self._event_ids_by_ref: dict[MechanicRef, list[str]] = {}
         self._superseded_by: dict[MechanicRef, MechanicRef] = {}
+        self._view_cache: dict[MechanicRef, MechanicView] = {}
         for event in events:
             self.apply(event)
 
@@ -270,13 +271,16 @@ class MechanicLedger:
         return self._events[-1].event_hash if self._events else None
 
     def get(self, ref: MechanicRef) -> MechanicView:
+        cached = self._view_cache.get(ref)
+        if cached is not None:
+            return cached
         try:
             version = self._versions[ref]
         except KeyError as error:
             raise MechanicsError(
                 f"unknown mechanic version: {ref.mechanic_id}@{ref.version}"
             ) from error
-        return MechanicView(
+        view = MechanicView(
             version=version,
             status=self._statuses[ref],
             evidence_receipt_ids=tuple(item.receipt_id for item in self._evidence[ref]),
@@ -284,6 +288,8 @@ class MechanicLedger:
             event_ids=tuple(self._event_ids_by_ref[ref]),
             superseded_by=self._superseded_by.get(ref),
         )
+        self._view_cache[ref] = view
+        return view
 
     def current_ref(self, mechanic_id: str) -> MechanicRef:
         try:
@@ -609,6 +615,10 @@ class MechanicLedger:
         self._events.append(event)
         self._event_ids.add(event.event_id)
         self._event_ids_by_ref[event.ref].append(event.event_id)
+        # Views are immutable projections.  Invalidate only the mechanic touched
+        # by this accepted event after every backing index, including event IDs,
+        # has been updated.
+        self._view_cache.pop(event.ref, None)
 
     def _apply_version(self, version: MechanicVersion) -> None:
         self._preflight_version(version)

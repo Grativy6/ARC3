@@ -345,6 +345,11 @@ class ObservationOnlyVariantPolicy:
         self._visited: set[Point] = set()
         self._blocked: set[Point] = set()
         self._wall_colors: set[int] = set()
+        self._player_probe_failures: Counter[Point] = Counter()
+        self._level_navigation_key: str | None = None
+        self._level_navigation_memory: dict[
+            str, tuple[frozenset[int], tuple[tuple[Point, int], ...]]
+        ] = {}
         self._pending_interaction = False
         self._interaction_used = False
         self._probe_counts: Counter[ActionName] = Counter()
@@ -380,7 +385,13 @@ class ObservationOnlyVariantPolicy:
             budget=MechanicLedgerBudget(max_events=4096, max_contexts_per_channel=128),
         )
 
-    def _enter_level(self, index: int, *, reset: bool = False) -> None:
+    def _enter_level(
+        self,
+        index: int,
+        *,
+        observation: Observation,
+    ) -> None:
+        self._remember_level_navigation()
         self._level_index = index
         self._player_position = None
         self._player_color = None
@@ -388,6 +399,7 @@ class ObservationOnlyVariantPolicy:
         self._visited.clear()
         self._blocked.clear()
         self._wall_colors.clear()
+        self._player_probe_failures.clear()
         self._pending_interaction = False
         self._interaction_used = False
         self._probe_counts.clear()
@@ -401,6 +413,12 @@ class ObservationOnlyVariantPolicy:
         self._delayed_refs.clear()
         self._retained_refs.clear()
         self._transferred_refs.clear()
+        self._level_navigation_key = self._navigation_key(index, observation)
+        remembered = self._level_navigation_memory.get(self._level_navigation_key)
+        if self._persistent and remembered is not None:
+            wall_colors, player_probe_failures = remembered
+            self._wall_colors.update(wall_colors)
+            self._player_probe_failures.update(dict(player_probe_failures))
         if not self._persistent:
             self._movement.clear()
             self._movement_refs.clear()
@@ -430,7 +448,7 @@ class ObservationOnlyVariantPolicy:
         if not self._game_scope:
             self._game_scope = str(observation.game_id)
             self._attempt = _metadata_int(observation, "attempt", 0)
-            self._enter_level(observation.levels_completed)
+            self._enter_level(observation.levels_completed, observation=observation)
         self._consume_observation(observation)
         if observation.state is GameStateName.WIN:
             raise RuntimeError("WIN is terminal and has no next action")
@@ -480,11 +498,35 @@ class ObservationOnlyVariantPolicy:
         self._last_before_ref = None
         if observation.full_reset:
             self._attempt = _metadata_int(observation, "attempt", self._attempt + 1)
-            self._enter_level(0, reset=True)
+            self._enter_level(0, observation=observation)
         elif observation.levels_completed > before.levels_completed:
             self._metrics[old_level].completed = True
             if observation.state is not GameStateName.WIN:
-                self._enter_level(observation.levels_completed)
+                self._enter_level(observation.levels_completed, observation=observation)
+
+    @staticmethod
+    def _navigation_key(index: int, observation: Observation) -> str:
+        frame = observation.frames[-1]
+        return _digest(
+            {
+                "level_index": index,
+                "frame_digest": str(frame.digest),
+                "available_actions": [item.value for item in observation.available_actions],
+            }
+        )
+
+    def _remember_level_navigation(self) -> None:
+        key = self._level_navigation_key
+        if not self._persistent or key is None:
+            return
+        prior_walls, prior_failures = self._level_navigation_memory.get(key, (frozenset(), ()))
+        merged_failures = Counter(dict(prior_failures))
+        for point, count in self._player_probe_failures.items():
+            merged_failures[point] = max(merged_failures[point], count)
+        self._level_navigation_memory[key] = (
+            prior_walls | frozenset(self._wall_colors),
+            tuple(sorted(merged_failures.items())),
+        )
 
     def _begin_action(self, action: ActionRequest, reason: str, *, target: Point | None) -> None:
         metric = self._metrics[self._level_index]
@@ -661,16 +703,25 @@ class ObservationOnlyVariantPolicy:
             raise RuntimeError("mechanical learner is not initialized")
         candidates: list[ProbeCandidate] = []
         available = set(observation.available_actions)
+        player_candidates = self._visible_player_candidates(observation)
         for action in MOVE_ACTIONS:
             if action not in available:
                 continue
             novelty = 2 if action not in self._movement else 1
+            information_gain = novelty
+            vector = self._movement.get(action)
+            if self._player_position is None and vector is not None and player_candidates:
+                information_gain = sum(
+                    max(0, 2 - self._player_probe_failures[position])
+                    for position in player_candidates
+                    if self._candidate_can_move(position, vector, observation)
+                )
             candidates.append(
                 ProbeCandidate(
                     action=ActionRequest(action),
                     context=self._context,
                     target_channels=(ConsequenceChannel.CONTROLLED_DISPLACEMENT,),
-                    expected_information_gain=novelty,
+                    expected_information_gain=information_gain,
                     reversibility=1,
                     failure_cost=1,
                     novelty=novelty,
@@ -683,6 +734,30 @@ class ObservationOnlyVariantPolicy:
         if self._probe_counts[selected] > 1:
             self._metrics[self._level_index].redundant_probes += 1
         return selected
+
+    def _visible_player_candidates(self, observation: Observation) -> tuple[Point, ...]:
+        rows = _board(observation)
+        counts = Counter(
+            value for y, row in enumerate(rows) if y > 0 for value in row if value != 0
+        )
+        return tuple(
+            (x, y)
+            for y, row in enumerate(rows)
+            if y > 0
+            for x, value in enumerate(row)
+            if value != 0 and counts[value] == 1
+        )
+
+    def _candidate_can_move(
+        self,
+        position: Point,
+        vector: Point,
+        observation: Observation,
+    ) -> bool:
+        destination = _add(position, vector)
+        return (
+            self._inside(destination, observation) and _cell(_board(observation), destination) == 0
+        )
 
     def _path_to_nearest_candidate(self, observation: Observation) -> tuple[Point, Point] | None:
         if self._player_position is None:
@@ -766,11 +841,19 @@ class ObservationOnlyVariantPolicy:
             learned = self._movement.get(action.name)
             if learned is None:
                 self._movement[action.name] = vector
-            entered_visible_candidate = _cell(before_rows, new_position) not in {0, color}
-            if not self._interaction_used and (
-                self._last_target == new_position or entered_visible_candidate
-            ):
-                self._pending_interaction = True
+            entered_visible_candidate = (
+                _cell(before_rows, new_position) not in {0, color}
+                and new_position not in self._ignored_dynamic
+            )
+            reached_candidate = self._last_target == new_position or entered_visible_candidate
+            if reached_candidate:
+                # A still-visible reusable effect must not immediately become
+                # the nearest target again.  Record the observed encounter even
+                # when the level's one bounded interaction probe was already
+                # spent; otherwise the policy oscillates across the same cell.
+                self._visited.add(new_position)
+                if not self._interaction_used:
+                    self._pending_interaction = True
         elif action.name in MOVE_ACTIONS and old_position is not None:
             self._player_position = old_position
             self._player_color = old_color
@@ -791,6 +874,21 @@ class ObservationOnlyVariantPolicy:
                 self._failed_probe_signatures[signature] += 1
                 if self._failed_probe_signatures[signature] > 1:
                     metric.redundant_probes += 1
+        elif action.name in MOVE_ACTIONS:
+            learned_vector = self._movement.get(action.name)
+            if learned_vector is not None:
+                for candidate in self._visible_player_candidates(before):
+                    destination = _add(candidate, learned_vector)
+                    if (
+                        self._candidate_can_move(candidate, learned_vector, before)
+                        and _cell(before_rows, candidate) == _cell(after_rows, candidate)
+                        and _cell(before_rows, destination) == _cell(after_rows, destination)
+                    ):
+                        # A visible singleton that remained fixed despite an
+                        # unobstructed learned move is a weaker next probe than
+                        # an untested candidate.  This is ranking evidence only;
+                        # the candidate is never erased or promoted to truth.
+                        self._player_probe_failures[candidate] += 1
 
         before_resource = _resource(before)
         after_resource = _resource(after)

@@ -98,6 +98,22 @@ def test_transfer_confirmation_is_separate_source_linked_support() -> None:
     assert summary.occurrence_support_count == 1
 
 
+def test_immutable_view_cache_is_reused_and_invalidated_after_evidence() -> None:
+    ledger, ref = _opened_ledger()
+    initial = ledger.get(ref)
+
+    assert ledger.get(ref) is initial
+    updated = ledger.record_evidence(ref, _support("R-CACHE", "cache-context", 1))
+
+    assert updated is not initial
+    assert ledger.get(ref) is updated
+    assert updated.evidence_receipt_ids == ("R-CACHE",)
+    assert (
+        updated.summary_for(ConsequenceChannel.CONTROLLED_DISPLACEMENT).occurrence_support_count
+        == 1
+    )
+
+
 def test_contradictions_stress_recur_and_reopen_without_deleting_history() -> None:
     ledger, ref = _opened_ledger()
     for index, context in enumerate(("wall-a", "wall-b"), start=1):
