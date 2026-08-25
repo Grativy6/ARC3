@@ -122,7 +122,7 @@ Do not delete a burden when later evidence resolves it. Append a resolution with
 
 ## B-003-0010 - Compound-target sector overlay blocked post-collapse reacquisition
 
-- **Status:** LOCAL REPAIR VERIFIED; OFFICIAL RECHECK PENDING
+- **Status:** RESOLVED BY CAMPAIGN 18
 - **Stage:** 10
 - **Opened:** 2026-08-25
 - **Owner:** Codex
@@ -134,3 +134,18 @@ Do not delete a burden when later evidence resolves it. Append a resolution with
 - **Local verification evidence:** Repair commit `23b3b8b04eb00a8635e0c3efcfb9103c7dc1120a`. Focused replay matches Campaign 17 official actions 1-40 and first diverges at action 41 to `marker:14:separate:41,12`. The exact final official frame now localizes bootstrap active color 0, plans `marker:14:activate:44,12`, and projects separation `(41,12)`. The visual-policy suite reports 56 passed. Negative tests reject near-target similarity, retained marker bridges, and swapped target-sector colors. Ruff, format, strict mypy, JSON, and diff checks pass; independent final review found no remaining actionable issue.
 - **Next discriminating action:** Freeze Campaign 18 from the verified repair. Require official observation of the separation and continued level-3 progress; any later distinct horizon remains a new burden rather than retroactively broadening this repair.
 - **Resolution condition:** A fresh official campaign preserves the prior route, observes the exact target-sector separation, and continues without repeating the Campaign 17 reacquisition/bootstrap failure. Authoritative completion remains returned `GameState.WIN` under B-003-0003.
+- **Official resolution evidence:** Frozen commit `98633c8f30d82ed0a92317a15a09566abe41ef56`; Campaign 18 root `C:\a\arc3-b003-play\build003-r11l-mechanical-seed7-98633c8f-campaign18`; official recording SHA-256 `2e478defe3b2af689e7266d45843fd72a6de93086b378cc5ea22bba6f22b315d`. Action 41 moved the certified contaminant from `(44,12)` to `(41,12)` and the returned frame passed the exact target restoration receipt. The identity constraint remained installed. Action 54's returned bootstrap frame localized active color 0 at `(6,43)` without residual. The subsequent planner exhaustion implicates the distinct staging horizon in B-003-0011, not the overlay or bootstrap readers.
+
+## B-003-0011 - One-stage continuation horizon cannot enter a parser-safe two-stage bridge
+
+- **Status:** OPEN; LOCAL DIAGNOSIS IN PROGRESS
+- **Stage:** 10
+- **Opened:** 2026-08-25
+- **Owner:** Codex
+- **Burden:** Campaign 18 officially observed the repaired target separation and retained target identity, then exhausted the remaining level-3 marker group after 54 non-reset actions. The final bootstrap correctly localized an active endpoint outside the sole unresolved group, but group transfer required an immediate relocation or separation. All such one-stage continuations were absent, so the policy raised `PolicyError` while the official environment remained `NOT_FINISHED` at `levels_completed=3/6`.
+- **Why it matters:** The learner must retain reliable mechanics and continue toward official `WIN`, but a deeper controller must remain bounded and observation-derived. Relaxing collision, target, or mediator readability would convert a planning horizon into unsupported actions.
+- **Failure evidence:** Frozen commit `98633c8f30d82ed0a92317a15a09566abe41ef56`; campaign root `C:\a\arc3-b003-play\build003-r11l-mechanical-seed7-98633c8f-campaign18`; official recording `C:\a\arc3-b003-play\build003-r11l-mechanical-seed7-98633c8f-campaign18\official-recordings\c2120ed7e4beb839e4d0\f2649d8b-c748-40e7-8dc5-8053977efa7f\r11l-495a7899-77287f8f-b6d0-4fba-8008-216a875c072d.jsonl`; recording SHA-256 `2e478defe3b2af689e7266d45843fd72a6de93086b378cc5ea22bba6f22b315d`; trace SHA-256 `ec60e614e97d7b7f32204bfaa9e8cb5c1f9358310894123f748a534e8fb72aa4`. The recording contains 55 events: one initial observation and 54 non-reset submissions, zero resets, raw and official final `NOT_FINISHED`, and no observed `WIN`.
+- **Exact residual:** The sole complete group has marker 14, endpoints `(46,3)`, `(50,34)`, `(37,12)`, mediator `(44,16)`, target `(50,12)`, and potential 410. No endpoint has a parser-safe strict relocation, exact separation, or existing one-stage staged continuation. Current frozen policy replay matches all 54 official actions and then reproduces the same `PolicyError`.
+- **Projected candidate, not official evidence:** A bounded parser-safe projection currently suggests activation `(46,3)`, stage `(31,12)` to potential 1424, switch `(37,12)`, relocate `(60,12)` to potential 481, switch `(50,34)`, then solve `(59,14)` to potential 0. This route has not been executed in the official environment and does not establish level completion.
+- **Next discriminating action:** Independently verify every projected transition and implement only the smallest fixed-depth bridge that preserves existing collision, component, target-identity, and consequence gates. Replay Campaign 18 exactly through its residual before freezing Campaign 19.
+- **Resolution condition:** A fresh official campaign enters the remaining group through a bounded receipt-backed continuation, advances beyond the Campaign 18 boundary without weakening structural gates, and continues under returned `NOT_FINISHED`; authoritative completion remains B-003-0003.
