@@ -1,0 +1,86 @@
+{
+  "schema": "arc3.build-003.preregistration-amendment.v0.2",
+  "status": "FROZEN_BEFORE_V02_RESULTS",
+  "registered_at": "2026-08-25T21:17:52.7971800Z",
+  "registered_before_v02_results": true,
+  "source_commit_before_implementation": "ad3c604cbaa8ca97e451d58c8fa24dd15c73f611",
+  "amends": "docs/evaluation/build-003-preregistration.v0.1.json",
+  "new_protocol": "docs/evaluation/build-003-curriculum-protocol.v0.2.json",
+  "new_seed_manifest": "docs/evaluation/build-003-heldout-seeds.v0.2.json",
+  "retroactive_reinterpretation_of_v01_permitted": false,
+  "v01_evidence_disposition": "Retained as immutable synthetic evidence under the seeds, budgets, baseline checkout, and implementation actually used. It is not evidence for protocol v0.2.",
+  "v01_discrepancies": {
+    "seed_identity": {
+      "preregistration_declared": "the literal integer sequence 73000 through 73029",
+      "manifest_and_runner_used": "30 sha256-derived values from the textual domain arc3-build003-heldout-v1 followed by the two characters backslash and zero plus decimal_index",
+      "effect": "The v0.1 matrix did not evaluate the literal seed set declared in the v0.1 preregistration.",
+      "v02_resolution": "A new 30-case manifest is frozen from an unambiguous UTF-8 domain, one NUL byte, and the ASCII decimal index; CLI receipts must identify its protocol and manifest."
+    },
+    "budgets": {
+      "preregistration_declared": {
+        "maximum_environment_actions_per_sequence": 192,
+        "maximum_environment_actions_per_level": 48,
+        "maximum_wall_clock_seconds": 10
+      },
+      "v01_protocol_and_runner_used": {
+        "maximum_environment_actions_per_sequence": 1500,
+        "maximum_environment_actions_per_level": null,
+        "maximum_resets": 10,
+        "maximum_wall_clock_seconds": 120,
+        "maximum_peak_memory_bytes": 1073741824,
+        "maximum_policy_cycle_seconds": 10
+      },
+      "effect": "The v0.1 matrix did not use the preregistered sequence, level, or wall-clock bounds.",
+      "v02_resolution": {
+        "maximum_environment_actions_per_sequence": 192,
+        "maximum_environment_actions_per_level_attempt": 48,
+        "maximum_resets": 10,
+        "maximum_wall_clock_seconds": 10,
+        "maximum_peak_memory_bytes": 1073741824,
+        "maximum_policy_cycle_seconds": 10
+      }
+    },
+    "build002_baseline_identity": {
+      "stage01_receipt_declared": {
+        "commit": "5448c53f3b7e08f606cf292e6068f3f9c9db16d4",
+        "tree": "700718c09c2a1532cea16526b290f57be0120371"
+      },
+      "v01_runner_and_worker_used": {
+        "commit": "753b0e007222a973a2c8a6d7ce14a395135d3c5f",
+        "tree": "d07e72716a1f918ed04a6892adb1e3f46259e345"
+      },
+      "ancestry_note": "The Stage 01 Build 002 head is not an ancestor of the checkout used by the v0.1 runner.",
+      "effect": "The v0.1 BUILD002_FROZEN rows measured a later, different checkout rather than the Stage 01 frozen baseline.",
+      "v02_resolution": "The runner and worker receive the v0.2 protocol identity and must verify the exact Stage 01 commit and tree before importing ARC3."
+    }
+  },
+  "v02_sequence_invariants": {
+    "one_seeded_base_movement_resource_cost_per_sequence": true,
+    "one_seeded_action_to_cardinal_vector_permutation_per_sequence": true,
+    "both_reused_unchanged_across_all_ten_levels": true,
+    "both_vary_across_seeds": true,
+    "independent_seeded_D4_layout_per_level": true,
+    "independent_seeded_palette_permutation_per_level": true
+  },
+  "development_seeds": {
+    "domain_utf8": "arc3-build003-curriculum-v0.2-development",
+    "derivation": "sha256(UTF-8(domain_utf8) || 0x00 || ASCII(decimal_index)); first 8 bytes big-endian modulo 2^63",
+    "values": [
+      6874251961348085655,
+      3388909520128205192,
+      3850300081851112306,
+      1640502136065166465,
+      4937484858137383334
+    ]
+  },
+  "heldout_execution_gate": {
+    "final_30_by_4_matrix_executed_as_part_of_this_amendment": false,
+    "permitted_before_protocol_assets_commit": false,
+    "permitted_after_protocol_assets_commit": "development seeds and bounded small smoke only",
+    "future_full_matrix_requires_explicit_protocol_and_heldout_selection": true,
+    "row_replacement_permitted": false
+  },
+  "hypotheses_and_decision_rules": "Unchanged from v0.1; only protocol identity, seed set, executable budgets, baseline identity, and sequence-level mechanic randomization are amended.",
+  "real_completion": "Only the target official environment returning GameState.WIN; synthetic WIN never substitutes for it.",
+  "authority_boundary": "No public, sealed-holdout target, or official game environment is opened by this synthetic protocol."
+}
