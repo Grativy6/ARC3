@@ -5,6 +5,7 @@ from dataclasses import dataclass, field
 
 import pytest
 
+import arc3.mechanics.visual_causal as visual_causal
 from arc3.adapters import GridFrame, Observation
 from arc3.errors import PolicyError
 from arc3.exploration.causal_events import RiskLevel
@@ -12,6 +13,9 @@ from arc3.mechanics.visual_causal import (
     VisualCausalPolicy,
     VisualObjectRole,
     VisualScene,
+    _embedded_marker_groups,
+    _endpoint_placement_is_open,
+    _marker_mediator_remains_readable,
     _radial_plan_points,
     extract_visual_scene,
     infer_affine_mechanic,
@@ -56,6 +60,20 @@ _TARGET_RING = tuple(
         (0, 2),
         (1, 2),
     )
+)
+_SPARSE_TARGET_RING = (
+    (-1, -3),
+    (0, -3),
+    (1, -3),
+    (-3, -1),
+    (3, -1),
+    (-3, 0),
+    (3, 0),
+    (-3, 1),
+    (3, 1),
+    (-1, 3),
+    (0, 3),
+    (1, 3),
 )
 
 
@@ -162,6 +180,30 @@ def _marker_frame(
     return GridFrame.from_rows(rows)
 
 
+def _sparse_target_overlay_frame(
+    *,
+    target_center: tuple[int, int] = (30, 30),
+    target_overlay: int = 1,
+) -> GridFrame:
+    groups = (((10, 50), (30, 50), (50, 30)),)
+    frame = _marker_frame(
+        groups,
+        (target_center,),
+        (12,),
+        active_group=0,
+        active_index=0,
+        background=5,
+        active_color=0,
+        fixed_color=3,
+    )
+    rows = [list(row) for row in frame.cells]
+    for dx, dy in _TARGET_RING:
+        rows[target_center[1] + dy][target_center[0] + dx] = 5
+    _paint(rows, target_center, _SPARSE_TARGET_RING, 12)
+    rows[target_center[1]][target_center[0]] = target_overlay
+    return GridFrame.from_rows(rows)
+
+
 @dataclass
 class _MarkerAffineEnvironment:
     groups: list[list[tuple[int, int]]]
@@ -249,6 +291,117 @@ def test_scene_roles_are_descriptive_and_identity_blind() -> None:
     assert scene.mediators[0].role is VisualObjectRole.MEDIATOR_CANDIDATE
     assert len(scene.targets) == 1
     assert scene.targets[0].role is VisualObjectRole.HOLLOW_TARGET_CANDIDATE
+
+
+def test_sparse_target_ring_survives_nonbackground_center_overlay() -> None:
+    frame = _sparse_target_overlay_frame()
+    scene = extract_visual_scene(frame)
+
+    assert len(scene.targets) == 1
+    assert scene.targets[0].rounded_center == (30, 30)
+    assert scene.targets[0].area == 12
+    assert (scene.targets[0].width, scene.targets[0].height) == (7, 7)
+    assert scene.targets[0].center_cell == 1
+    assert len(scene.endpoints) == 3
+    assert len(scene.mediators) == 1
+    assert len(_embedded_marker_groups(scene)) == 1
+
+    observation = Observation(
+        game_id=GameId("synthetic-sparse-overlay"),
+        frames=(frame,),
+        state=GameStateName.NOT_FINISHED,
+        levels_completed=0,
+        win_levels=1,
+        available_actions=(ActionName.ACTION6,),
+    )
+    policy = VisualCausalPolicy()
+
+    action = policy.select(observation)
+
+    assert action.coordinate == Coordinate(10, 10)
+    assert "marker-group affine solution" in policy._pending_prediction
+
+
+def test_marker_relocation_checks_the_observed_endpoint_footprint() -> None:
+    frame = _marker_frame(
+        (((8, 48), (48, 8)),),
+        ((18, 38),),
+        (12,),
+        active_group=0,
+        active_index=0,
+        background=5,
+        active_color=0,
+        fixed_color=3,
+    )
+    rows = [list(row) for row in frame.cells]
+    for x, y in (
+        (39, 3),
+        (46, 59),
+        (55, 5),
+        (59, 5),
+        (55, 9),
+        (59, 9),
+    ):
+        rows[y][x] = 9
+    scene = extract_visual_scene(GridFrame.from_rows(rows))
+    endpoint = next(item for item in scene.endpoints if item.color == 0)
+
+    assert not _endpoint_placement_is_open(scene, endpoint, x=39, y=5)
+    assert not _endpoint_placement_is_open(scene, endpoint, x=48, y=59)
+    assert _endpoint_placement_is_open(scene, endpoint, x=57, y=7)
+    assert _endpoint_placement_is_open(scene, endpoint, x=9, y=48)
+
+
+def test_nonfinal_mediator_preserves_target_ring_readability_at_radius_sum() -> None:
+    scene = extract_visual_scene(_sparse_target_overlay_frame())
+    group = _embedded_marker_groups(scene)[0]
+    endpoint = next(item for item in group.endpoints if item.color == 0)
+
+    assert not _marker_mediator_remains_readable(
+        scene,
+        group,
+        endpoint,
+        coordinate=Coordinate(10, 28),
+        mediator_after=(30, 36),
+        final=False,
+    )
+    assert _marker_mediator_remains_readable(
+        scene,
+        group,
+        endpoint,
+        coordinate=Coordinate(10, 31),
+        mediator_after=(30, 37),
+        final=False,
+    )
+
+
+def test_predicted_mediator_rejects_cross_group_endpoint_near_overlap() -> None:
+    scene = extract_visual_scene(
+        _marker_frame(
+            (
+                ((10, 50), (30, 50), (50, 30)),
+                ((40, 35), (55, 20)),
+            ),
+            ((20, 10), (50, 10)),
+            (12, 14),
+            active_group=0,
+            active_index=0,
+            background=5,
+            active_color=0,
+            fixed_color=3,
+        )
+    )
+    group = next(item for item in _embedded_marker_groups(scene) if item.marker_color == 12)
+    endpoint = next(item for item in group.endpoints if item.color == 0)
+
+    assert not _marker_mediator_remains_readable(
+        scene,
+        group,
+        endpoint,
+        coordinate=Coordinate(25, 25),
+        mediator_after=(35, 35),
+        final=False,
+    )
 
 
 def test_one_discriminating_transition_opens_provisional_affine_mechanic() -> None:
@@ -446,26 +599,117 @@ def test_marker_planner_does_not_emit_an_unreadable_direct_destination(
         marker_colors=(12,),
     )
     blocked_direct = Coordinate(*environment.direct_solution())
-    original_is_open = VisualScene.is_open
+    original_is_open = visual_causal._endpoint_placement_is_open
 
     def block_direct(
         scene: VisualScene,
+        endpoint: visual_causal.VisualObject,
+        *,
         x: int,
         y: int,
-        *,
-        radius: int = 2,
     ) -> bool:
         if (x, y) == (blocked_direct.x, blocked_direct.y):
             return False
-        return original_is_open(scene, x, y, radius=radius)
+        return original_is_open(scene, endpoint, x=x, y=y)
 
-    monkeypatch.setattr(VisualScene, "is_open", block_direct)
+    monkeypatch.setattr(visual_causal, "_endpoint_placement_is_open", block_direct)
     policy = VisualCausalPolicy()
 
     action = policy.select(environment.observation())
 
     assert action.coordinate != blocked_direct
     assert "marker-group" in policy._pending_prediction
+    assert policy.snapshot()["pending_plan_actions"] == 0
+
+
+def test_active_known_without_a_safe_marker_plan_does_not_bootstrap(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    environment = _MarkerAffineEnvironment(
+        groups=[[(10, 50), (30, 50)]],
+        targets=((20, 28),),
+        marker_colors=(12,),
+    )
+    policy = VisualCausalPolicy()
+    policy._last_active_color = environment.active_color
+    monkeypatch.setattr(
+        visual_causal,
+        "_endpoint_placement_is_open",
+        lambda *_args, **_kwargs: False,
+    )
+
+    with pytest.raises(PolicyError, match="no bounded same-group action"):
+        policy.select(environment.observation())
+
+    assert policy.snapshot()["marker_bootstrap_attempted"] is False
+    assert policy.snapshot()["pending_plan_actions"] == 0
+
+
+def test_marker_staging_reobserves_then_switches_before_exact_solve(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    environment = _MarkerAffineEnvironment(
+        groups=[[(8, 48), (48, 8)]],
+        targets=((18, 38),),
+        marker_colors=(12,),
+    )
+    policy = VisualCausalPolicy()
+    policy._last_active_color = environment.active_color
+    original_open = visual_causal._endpoint_placement_is_open
+    stage = Coordinate(18, 22)
+    solve = Coordinate(18, 54)
+
+    def potential() -> int:
+        endpoints = environment.groups[0]
+        sum_x = sum(x for x, _y in endpoints)
+        sum_y = sum(y for _x, y in endpoints)
+        lower_x = len(endpoints) * environment.targets[0][0]
+        lower_y = len(endpoints) * environment.targets[0][1]
+        dx = min(abs(sum_x - value) for value in range(lower_x, lower_x + len(endpoints)))
+        dy = min(abs(sum_y - value) for value in range(lower_y, lower_y + len(endpoints)))
+        return dx * dx + dy * dy
+
+    def constrained_open(
+        scene: VisualScene,
+        endpoint: visual_causal.VisualObject,
+        *,
+        x: int,
+        y: int,
+    ) -> bool:
+        center = endpoint.rounded_center
+        allowed = (center == (8, 48) and (x, y) == (stage.x, stage.y)) or (
+            center == (48, 8) and (x, y) == (solve.x, solve.y)
+        )
+        return allowed and original_open(scene, endpoint, x=x, y=y)
+
+    monkeypatch.setattr(visual_causal, "_endpoint_placement_is_open", constrained_open)
+    observation = environment.observation()
+    initial_potential = potential()
+
+    first = policy.select(observation)
+    assert first.coordinate == stage
+    assert "stage the active endpoint" in policy._pending_prediction
+    observation = environment.step(first)
+    policy.accept_consequence(observation)
+    staged_potential = potential()
+
+    second = policy.select(observation)
+    assert second.coordinate == Coordinate(48, 8)
+    assert "after bounded marker staging" in policy._pending_prediction
+    observation = environment.step(second)
+    policy.accept_consequence(observation)
+
+    third = policy.select(observation)
+    assert third.coordinate == solve
+    observation = environment.step(third)
+    policy.accept_consequence(observation)
+    final_potential = potential()
+
+    assert observation.levels_completed == 1
+    assert environment.action_kinds == ["move", "switch", "move"]
+    assert staged_potential > initial_potential
+    assert final_potential < initial_potential
+    assert policy.snapshot()["marker_stage_pending_switch"] is None
     assert policy.snapshot()["pending_plan_actions"] == 0
 
 
