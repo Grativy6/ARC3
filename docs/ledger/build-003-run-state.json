@@ -7,7 +7,7 @@
   "build_status": "ACTIVE",
   "status": "IN_PROGRESS",
   "current_stage": "10",
-  "current_task": "bind the verified post-local-closure reacquisition repair and run frozen Campaign 21",
+  "current_task": "freeze Campaign 21 at the binding commit and run a fresh official target campaign",
   "implementation_branch": "build/003-bla-clef-mechanical-learner",
   "base": {
     "main_commit": "bea1eac99cb0f1b351526b1dc487d132ba1d40ef",
@@ -55,7 +55,7 @@
     "latest_campaign_replay_verified": true,
     "latest_campaign_completion_observed": false,
     "campaign20_frozen_commit": "25afad247b6037aee1d6ab80f1ccc9b490930b52",
-    "candidate_repair_commit": "pending",
+    "candidate_repair_commit": "858650c4b6494faaeee5e8ef24cd1bf27257e82d",
     "candidate_repair_replay": "matched Campaign 20 non-reset actions 1-64; first divergence action 65 from (53,17) to parser-safe remaining-group role exchange (34,55); exact returned swap transfers arity 3 and yields dynamically color-safe radial supports (57,18);(60,37);(42,29)"
   },
   "stage_status": {
@@ -101,7 +101,7 @@
     "pull_request_merged": false,
     "external_message_sent_as_owner": false
   },
-  "next_action": "commit and push the verified Campaign 21 repair, bind its commit identity, then start a fresh official campaign and recompute after every returned frame",
+  "next_action": "commit and push this evidence binding, freeze that exact HEAD as Campaign 21, then start a fresh official campaign and recompute after every returned frame",
   "notes": [
     "Update atomically after each meaningful task and preserve failed attempts.",
     "No synthetic or local result is completion unless the official target environment returns GameState.WIN.",
