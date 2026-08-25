@@ -155,7 +155,18 @@
     "campaign28_pre_run_exposure_development_events": 51,
     "campaign28_pre_run_exposure_holdout_events": 0,
     "campaign28_pre_run_exposure_tail_event_hash": "sha256:5abf066a3f6ecfd00c637e812e71065e3fe3695a151c2b29e5ebd16812a85e4f",
-    "campaign28_pre_run_exposure_ledger_sha256": "sha256:9d9591e1688339bed930889c4a14d10585aa930d9dd1038eddf88d1b17ec0812"
+    "campaign28_pre_run_exposure_ledger_sha256": "sha256:9d9591e1688339bed930889c4a14d10585aa930d9dd1038eddf88d1b17ec0812",
+    "campaign28_live_integrity_preflight_status": "FAILED_INFRASTRUCTURE: 36 passed and one repository-integrity case reported unscannable_candidate because OneDrive candidate bytes changed during the bounded read; no secret or policy finding was reported",
+    "campaign28_immutable_preflight_commit": "896d5556a415bcbb14bb695b7c5314a2dd8a7d75",
+    "campaign28_immutable_preflight_status": "PASS: detached clean commit; 37 integrity tests passed; offline competition-integrity receipt passed archive, policy, secret, source-identity, and supply-chain checks with zero findings; action-semantics scan passed with zero findings",
+    "campaign28_immutable_integrity_receipt": "C:\\a\\arc3-b003-preflight-896d555-integrity.json",
+    "campaign28_immutable_integrity_receipt_sha256": "sha256:14d5c537f390005f5bd473603b6b4bcc0c66d6765c0f4982e598b657663be0ae",
+    "campaign28_immutable_integrity_payload_sha256": "sha256:679abe5c78eed105181fd7cb01263d3176e2223a99a086dcb7e6ef4d4f23c1d4",
+    "campaign28_immutable_package_only_receipt": "C:\\a\\arc3-b003-preflight-896d555-package-only.json",
+    "campaign28_immutable_package_only_receipt_sha256": "sha256:3a10ec22794cd17aa7f3d46e06f3bbbf53bf870a92ba7968f5f3870ec60457a4",
+    "campaign28_immutable_package_only_payload_sha256": "sha256:4f1fd462993e09677bbbc7983b9b2a7c2f824b71dbbc4b784dab8f447096b1f5",
+    "campaign28_immutable_package_only_status": "PASS: package_only_passed=true; exact clean commit and index bound to 377 immutable Git blobs; zero blocking, warning, secret, or policy findings; source identity and supply chain passed; public identifier scan intentionally out of scope for package-only and covered by the separate manifest-aware integrity receipt",
+    "campaign28_action_semantics_receipt_hash": "sha256:0c21392cb273165bec218b42b09e94d6ce6840504d21579bf4f0f820a553c99a"
   },
   "stage_status": {
     "00": "PASS",
@@ -220,6 +231,7 @@
     "Campaign 26 is sealed failure evidence rather than completion: the official environment returned NOT_FINISHED through all 87 ACTION6 submissions at 4/6 with zero RESET, GAME_OVER, or WIN; the evaluator status FAILED_INFRASTRUCTURE records the later policy boundary and does not replace the official state.",
     "The current Campaign 26 replay is local recorded-frame verification only: it matched submissions 1-82, certified exact recovery plus an arity-weighted continuation, issued no environment action, inspected no game source, and does not claim official progress.",
     "The first post-Campaign 26 integrity-test attempt is preserved as FAILED_INFRASTRUCTURE: the shared Windows pytest temp root denied enumeration and a concurrent live OneDrive scan observed changing candidate bytes. A retry with an explicit fresh C:\\a basetemp passed all 37 policy, secret, and repository-integrity tests in 12.74 seconds.",
-    "The exposure ledger contains 51 development events through Campaign 27 and zero public-holdout events; last sequence 50, tail event hash sha256:5abf066a3f6ecfd00c637e812e71065e3fe3695a151c2b29e5ebd16812a85e4f, file SHA-256 9d9591e1688339bed930889c4a14d10585aa930d9dd1038eddf88d1b17ec0812, and the sealed holdout remains unconsumed."
+    "The exposure ledger contains 51 development events through Campaign 27 and zero public-holdout events; last sequence 50, tail event hash sha256:5abf066a3f6ecfd00c637e812e71065e3fe3695a151c2b29e5ebd16812a85e4f, file SHA-256 9d9591e1688339bed930889c4a14d10585aa930d9dd1038eddf88d1b17ec0812, and the sealed holdout remains unconsumed.",
+    "The first Campaign 28 live-worktree integrity preflight is preserved as FAILED_INFRASTRUCTURE: 36 tests passed and one bounded scanner read observed OneDrive candidate bytes changing. The same three integrity files passed all 37 cases from clean detached commit 896d555, whose deterministic offline integrity receipt passed with zero findings; action-semantics scanning also passed with zero findings."
   ]
 }
