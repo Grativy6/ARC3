@@ -286,6 +286,34 @@ def test_unique_other_object_motion_and_behavioral_topology_are_not_conflated() 
     assert not topology.observed.topology_changes.is_unknown
 
 
+def test_occluded_repeated_color_is_not_promoted_to_a_singleton_target() -> None:
+    observation = _observation(15, {(3, 3): 2, (4, 3): 4, (6, 3): 7})
+    policy, _ = _initialized(observation=observation)
+    policy._player_position = (3, 3)
+    policy._player_color = 2
+    policy._player_under_color = 4
+
+    assert policy._path_to_nearest_candidate(observation) == ((1, 0), (6, 3))
+
+
+def test_observed_pushed_object_is_not_retained_as_occluded_substrate() -> None:
+    before = _observation(15, {(3, 3): 2, (4, 3): 4})
+    after = _observation(
+        14,
+        {(4, 3): 2, (5, 3): 4},
+        returned_action=ActionRequest(ActionName.ACTION1),
+    )
+    policy, _ = _initialized(observation=before)
+    policy._movement[ActionName.ACTION1] = (1, 0)
+    policy._player_position = (3, 3)
+    policy._player_color = 2
+
+    _submit(policy, before, ActionRequest(ActionName.ACTION1), after)
+
+    assert policy._player_position == (4, 3)
+    assert policy._player_under_color is None
+
+
 def test_delayed_mechanic_requires_two_distinct_fixed_lag_associations() -> None:
     policy, quiet = _initialized(observation=_observation(7, {(2, 3): 2, (5, 5): 4}))
     changed = _observation(7, {(2, 3): 2, (5, 5): 5})

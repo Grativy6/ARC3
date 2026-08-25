@@ -101,7 +101,7 @@ class _TransitionFacts:
     context: MechanicContext
     observed: ConsequenceVector
     controlled_displacement: tuple[Point, Point, int] | None
-    other_object_motion: tuple[str, Point] | None
+    other_object_motion: tuple[str, Point, Point, Point] | None
     target: Point | None
     target_role: str | None
     changed_points: tuple[Point, ...]
@@ -342,6 +342,7 @@ class ObservationOnlyVariantPolicy:
         self._last_player_color: int | None = None
         self._player_position: Point | None = None
         self._player_color: int | None = None
+        self._player_under_color: int | None = None
         self._visited: set[Point] = set()
         self._blocked: set[Point] = set()
         self._wall_colors: set[int] = set()
@@ -395,6 +396,7 @@ class ObservationOnlyVariantPolicy:
         self._level_index = index
         self._player_position = None
         self._player_color = None
+        self._player_under_color = None
         self._last_context_target = None
         self._visited.clear()
         self._blocked.clear()
@@ -770,6 +772,13 @@ class ObservationOnlyVariantPolicy:
             for value in row
             if value != 0 and value != self._player_color
         )
+        # The current frame necessarily hides the cell the controllable object
+        # occupies.  Preserve that cell's last directly observed color in the
+        # multiplicity count so one remaining visible instance is not promoted
+        # to a singleton merely because its peer is temporarily occluded.
+        under_color = self._player_under_color
+        if under_color is not None and under_color != self._player_color:
+            counts[under_color] += 1
         candidates = {
             (x, y)
             for y, row in enumerate(rows)
@@ -838,6 +847,8 @@ class ObservationOnlyVariantPolicy:
             vector = (new_position[0] - old_position[0], new_position[1] - old_position[1])
             self._player_position = new_position
             self._player_color = color
+            entered_color = _cell(before_rows, new_position)
+            self._player_under_color = entered_color if entered_color not in {0, color} else None
             learned = self._movement.get(action.name)
             if learned is None:
                 self._movement[action.name] = vector
@@ -905,6 +916,12 @@ class ObservationOnlyVariantPolicy:
             before=before,
             after=after,
         )
+        if facts.other_object_motion is not None:
+            _subject, _vector, moved_from, _moved_to = facts.other_object_motion
+            if moved_from == self._player_position:
+                # The destination color moved ahead of the controllable object;
+                # it is observed motion, not an occluded substrate instance.
+                self._player_under_color = None
         if facts.other_object_motion is not None:
             metric.other_object_effects_observed += 1
         if not facts.observed.topology_changes.is_unknown:
@@ -1101,9 +1118,7 @@ class ObservationOnlyVariantPolicy:
             context=context,
             observed=observed,
             controlled_displacement=displacement,
-            other_object_motion=(
-                None if other_motion is None else (other_motion[0], other_motion[1])
-            ),
+            other_object_motion=other_motion,
             target=context_target,
             target_role=target_role,
             changed_points=changed,
