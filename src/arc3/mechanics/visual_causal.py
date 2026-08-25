@@ -734,13 +734,15 @@ def _radial_plan_points(
     scene: VisualScene,
     *,
     target: tuple[int, int],
-    arity: int,
+    movers: tuple[VisualObject, ...],
     rejected_signatures: set[str],
 ) -> tuple[Coordinate, ...] | None:
     """Choose a small target-relative equivalence class, never a grid sweep."""
 
+    arity = len(movers)
     if not 2 <= arity <= 6:
         return None
+    active_color = movers[0].color
     for radius in (7, 9, 11, 13, 16, 19, 23, 27):
         for rotation_index in range(16):
             rotation = (2 * math.pi * rotation_index) / 16
@@ -753,7 +755,57 @@ def _radial_plan_points(
             )
             if len(set(raw)) != arity:
                 continue
-            if not all(scene.is_open(x, y) for x, y in raw):
+            prospective_footprints: list[frozenset[tuple[int, int]]] = []
+            plan_is_readable = True
+            for index, (mover, (x, y)) in enumerate(zip(movers, raw, strict=True)):
+                prior_and_current_refs = frozenset(item.object_ref for item in movers[: index + 1])
+                vacated_footprints = frozenset(
+                    cell
+                    for prior_mover in movers[:index]
+                    for cell in _object_footprint(prior_mover)
+                )
+                if not _endpoint_placement_is_open(
+                    scene,
+                    mover,
+                    x=x,
+                    y=y,
+                    permitted_occupied_cells=vacated_footprints,
+                    prospective_color=active_color,
+                    ignored_object_refs=prior_and_current_refs,
+                ):
+                    plan_is_readable = False
+                    break
+                # Every support point except the last is only temporarily
+                # active.  Clicking the next anchor transfers the active role
+                # and recolors this endpoint to that anchor's prior color.
+                # Preflight that returned-frame identity as well as the
+                # immediate active-color placement; otherwise a plan can be
+                # readable for one step and merge on the following role swap.
+                if index + 1 < arity and not _endpoint_placement_is_open(
+                    scene,
+                    mover,
+                    x=x,
+                    y=y,
+                    permitted_occupied_cells=vacated_footprints,
+                    prospective_color=movers[index + 1].color,
+                    ignored_object_refs=frozenset(item.object_ref for item in movers[: index + 2]),
+                ):
+                    plan_is_readable = False
+                    break
+                prospective = _translated_object_footprint(mover, center=(x, y))
+                if any(
+                    min(
+                        max(abs(lx - rx), abs(ly - ry))
+                        for lx, ly in prospective
+                        for rx, ry in prior
+                    )
+                    <= 1
+                    for prior in prospective_footprints
+                ):
+                    plan_is_readable = False
+                    break
+                prospective_footprints.append(prospective)
+            if not plan_is_readable:
                 continue
             signature = ";".join(f"{x},{y}" for x, y in raw)
             if signature in rejected_signatures:
@@ -1255,6 +1307,8 @@ def _endpoint_placement_is_open(
     x: int,
     y: int,
     permitted_occupied_cells: frozenset[tuple[int, int]] = frozenset(),
+    prospective_color: int | None = None,
+    ignored_object_refs: frozenset[str] = frozenset(),
 ) -> bool:
     """Check the observed endpoint footprint, not its enclosing square.
 
@@ -1289,9 +1343,14 @@ def _endpoint_placement_is_open(
     # joins them and severs the visible marker relation.  The current glyph is
     # erased by the move and therefore is not a prospective neighbor.
     prospective_outer = {(x + dx, y + dy) for dx, dy in outer_footprint}
+    effective_color = endpoint.color if prospective_color is None else prospective_color
     if len(prospective_outer) <= _SMALL_COMPONENT_FRAGMENT_AREA:
         for item in scene.objects:
-            if item.object_ref == endpoint.object_ref or item.color != endpoint.color:
+            if (
+                item.object_ref == endpoint.object_ref
+                or item.object_ref in ignored_object_refs
+                or item.color != effective_color
+            ):
                 continue
             separation = min(
                 max(abs(left_x - right_x), abs(left_y - right_y))
@@ -3211,22 +3270,152 @@ def _coordinate_transform_observed(
     changed_cells: int,
     level_progress: bool,
     inferred_mechanic: AffineMechanic | None,
+    active_color: int | None,
 ) -> bool:
     if action.name is not ActionName.ACTION6 or changed_cells == 0:
         return False
     if inferred_mechanic is not None or level_progress:
         return True
-    if action.coordinate is None or not before_scene.endpoints:
+    return _endpoint_role_switch_observed(
+        before_scene,
+        after_scene,
+        action=action,
+        active_color=active_color,
+    )
+
+
+def _endpoint_role_switch_observed(
+    before_scene: VisualScene,
+    after_scene: VisualScene,
+    *,
+    action: ActionRequest,
+    active_color: int | None,
+) -> bool:
+    """Recognize an exact readable endpoint-role exchange without displacement."""
+
+    if action.coordinate is None or active_color is None or not before_scene.endpoints:
         return False
     before_roles = {item.rounded_center: item.color for item in before_scene.endpoints}
     after_roles = {item.rounded_center: item.color for item in after_scene.endpoints}
     clicked = (action.coordinate.x, action.coordinate.y)
-    return (
-        before_roles.keys() == after_roles.keys()
-        and before_roles != after_roles
-        and any(_distance(item.rounded_center, clicked) <= 2.25 for item in after_scene.endpoints)
-        and {item.rounded_center for item in before_scene.mediators}
-        == {item.rounded_center for item in after_scene.mediators}
+    if before_roles.keys() != after_roles.keys() or clicked not in before_roles:
+        return False
+    active_centers = tuple(
+        center for center, color in before_roles.items() if color == active_color
+    )
+    if len(active_centers) != 1 or clicked == active_centers[0]:
+        return False
+    prior_active = active_centers[0]
+    changed_centers = {
+        center for center in before_roles if before_roles[center] != after_roles[center]
+    }
+    if changed_centers != {prior_active, clicked}:
+        return False
+    if (
+        before_roles[clicked] == active_color
+        or after_roles[clicked] != active_color
+        or after_roles[prior_active] != before_roles[clicked]
+    ):
+        return False
+    before_mediators = {item.rounded_center: item.color for item in before_scene.mediators}
+    after_mediators = {item.rounded_center: item.color for item in after_scene.mediators}
+    return before_mediators == after_mediators
+
+
+def _unique_affine_endpoint_group(
+    scene: VisualScene,
+    hub: VisualObject,
+) -> tuple[VisualObject, ...] | None:
+    """Return one uniquely readable endpoint subset whose centroid explains a hub."""
+
+    if not 2 <= len(scene.endpoints) <= 12:
+        return None
+    best: tuple[float, tuple[VisualObject, ...]] | None = None
+    ambiguous = False
+    for arity in range(2, min(6, len(scene.endpoints)) + 1):
+        for endpoints in itertools.combinations(scene.endpoints, arity):
+            centroid = (
+                sum(item.center_x for item in endpoints) / arity,
+                sum(item.center_y for item in endpoints) / arity,
+            )
+            error = abs(centroid[0] - hub.center_x) + abs(centroid[1] - hub.center_y)
+            if best is None or error < best[0] - 1e-9:
+                best = (error, endpoints)
+                ambiguous = False
+            elif (
+                best is not None
+                and math.isclose(error, best[0], abs_tol=1e-9)
+                and tuple(item.object_ref for item in endpoints)
+                != tuple(item.object_ref for item in best[1])
+            ):
+                ambiguous = True
+    if best is None or best[0] > 1.5 or ambiguous:
+        return None
+    return best[1]
+
+
+def _remaining_unsatisfied_affine_hubs(
+    scene: VisualScene,
+    *,
+    completed_target_center: tuple[int, int],
+) -> tuple[VisualObject, ...]:
+    """Exclude the just-completed hub and any hub on another visible target."""
+
+    visible_target_centers = tuple(item.rounded_center for item in scene.targets)
+    return tuple(
+        hub
+        for hub in scene.mediators
+        if _distance((hub.center_x, hub.center_y), completed_target_center) > 2.0
+        and all(
+            _distance((hub.center_x, hub.center_y), target_center) > 2.0
+            for target_center in visible_target_centers
+        )
+    )
+
+
+def _component_cells_remain_distinct(
+    scene: VisualScene,
+    cells: tuple[tuple[int, int], ...],
+    *,
+    prospective_color: int,
+    ignored_object_refs: frozenset[str],
+) -> bool:
+    for item in scene.objects:
+        if item.object_ref in ignored_object_refs or item.color != prospective_color:
+            continue
+        separation = min(
+            max(abs(left_x - right_x), abs(left_y - right_y))
+            for left_x, left_y in cells
+            for right_x, right_y in item.cells
+        )
+        if separation <= 1 or _small_components_would_merge(cells, item.cells):
+            return False
+    return True
+
+
+def _role_swap_remains_readable(
+    scene: VisualScene,
+    selected: VisualObject,
+    *,
+    active_color: int,
+) -> bool:
+    """Preflight both recolored endpoint components for a role exchange."""
+
+    active_endpoints = tuple(item for item in scene.endpoints if item.color == active_color)
+    if len(active_endpoints) != 1 or selected.color == active_color:
+        return False
+    current_active = active_endpoints[0]
+    ignored = frozenset({selected.object_ref, current_active.object_ref})
+    return _component_cells_remain_distinct(
+        scene,
+        selected.cells,
+        prospective_color=active_color,
+        ignored_object_refs=ignored,
+    ) and _component_cells_remain_distinct(
+        scene,
+        current_active.cells,
+        prospective_color=selected.color,
+        ignored_object_refs=ignored,
     )
 
 
@@ -3445,6 +3634,8 @@ class VisualCausalPolicy:
         self._marker_bootstrap_attempted = False
         self._marker_stage_pending_switch: int | None = None
         self._marker_reacquire_after_local_solve = False
+        self._affine_reacquire_target_center: tuple[int, int] | None = None
+        self._pending_affine_reacquisition = False
         self._marker_target_identity_constraints: set[int] = set()
         self._marker_structural_actions: set[str] = set()
         self._marker_structural_action_order: deque[str] = deque()
@@ -3517,6 +3708,8 @@ class VisualCausalPolicy:
         self._marker_bootstrap_attempted = False
         self._marker_stage_pending_switch = None
         self._marker_reacquire_after_local_solve = False
+        self._affine_reacquire_target_center = None
+        self._pending_affine_reacquisition = False
         self._marker_target_identity_constraints.clear()
         self._marker_structural_actions.clear()
         self._marker_structural_action_order.clear()
@@ -3534,6 +3727,8 @@ class VisualCausalPolicy:
         self._marker_bootstrap_attempted = False
         self._marker_stage_pending_switch = None
         self._marker_reacquire_after_local_solve = False
+        self._affine_reacquire_target_center = None
+        self._pending_affine_reacquisition = False
         self._marker_structural_actions.clear()
         self._marker_structural_action_order.clear()
         self._episode_exploration_root = None
@@ -3634,48 +3829,93 @@ class VisualCausalPolicy:
             return coordinate
         raise PolicyError("all bounded coordinate-probe episode roots already failed")
 
-    def _activation_coordinate(self, scene: VisualScene) -> Coordinate | None:
+    def _activation_coordinate(
+        self,
+        scene: VisualScene,
+        *,
+        completed_target_center: tuple[int, int] | None = None,
+    ) -> Coordinate | None:
         if self._exploration_root_capacity_exhausted:
             raise PolicyError("level-scoped exploration-root capacity exhausted")
-        pairs = self._unsolved_pairs(scene)
-        if not pairs:
-            return None
-        hub, _target = pairs[0]
-        candidates = sorted(
-            (
-                item
-                for item in scene.endpoints
-                if item.object_ref not in self._attempted_activation_refs
-                and item.color != self._last_active_color
-            ),
-            key=lambda item: (
-                _distance((item.center_x, item.center_y), (hub.center_x, hub.center_y)),
-                item.object_ref,
-            ),
-        )
+        if completed_target_center is None:
+            hubs = tuple(hub for hub, _target in self._unsolved_pairs(scene))
+        else:
+            hubs = _remaining_unsatisfied_affine_hubs(
+                scene,
+                completed_target_center=completed_target_center,
+            )
+        candidates: list[tuple[float, str, VisualObject]] = []
+        for hub in hubs:
+            group = _unique_affine_endpoint_group(scene, hub)
+            if group is None:
+                continue
+            for item in group:
+                if item.object_ref in self._attempted_activation_refs or (
+                    self._last_active_color is not None
+                    and (
+                        item.color == self._last_active_color
+                        or not _role_swap_remains_readable(
+                            scene,
+                            item,
+                            active_color=self._last_active_color,
+                        )
+                    )
+                ):
+                    continue
+                coordinate = Coordinate(*item.rounded_center)
+                if self._episode_exploration_root is None and (
+                    self._exploration_root_key(
+                        scene,
+                        kind="activation",
+                        coordinate=coordinate,
+                    )
+                    in self._failed_exploration_roots
+                ):
+                    continue
+                candidates.append(
+                    (
+                        _distance((item.center_x, item.center_y), (hub.center_x, hub.center_y)),
+                        item.object_ref,
+                        item,
+                    )
+                )
         if not candidates:
             return None
-        for selected in candidates:
-            x, y = selected.rounded_center
-            coordinate = Coordinate(x, y)
-            if self._episode_exploration_root is None and (
-                self._exploration_root_key(
-                    scene,
-                    kind="activation",
-                    coordinate=coordinate,
-                )
-                in self._failed_exploration_roots
-            ):
-                continue
-            self._attempted_activation_refs.add(selected.object_ref)
-            return coordinate
-        return None
+        candidates.sort(key=lambda item: item[:2])
+        minimum_distance = candidates[0][0]
+        nearest = tuple(
+            item for item in candidates if math.isclose(item[0], minimum_distance, abs_tol=1e-9)
+        )
+        if self._last_active_color is not None and len(nearest) != 1:
+            return None
+        selected = nearest[0][2]
+        x, y = selected.rounded_center
+        coordinate = Coordinate(x, y)
+        self._attempted_activation_refs.add(selected.object_ref)
+        return coordinate
 
     def _install_plan(self, mechanic: AffineMechanic, scene: VisualScene) -> bool:
+        active = tuple(item for item in scene.endpoints if item.color == mechanic.active_color)
+        if len(active) != 1:
+            return False
+        movers: list[VisualObject] = [active[0]]
+        used_refs = {active[0].object_ref}
+        for center in mechanic.anchor_centers:
+            matches = tuple(
+                item
+                for item in scene.endpoints
+                if item.rounded_center == center and item.object_ref not in used_refs
+            )
+            if len(matches) != 1:
+                return False
+            movers.append(matches[0])
+            used_refs.add(matches[0].object_ref)
+        if len(movers) != mechanic.arity:
+            return False
         points = _radial_plan_points(
             scene,
             target=mechanic.target_center,
-            arity=mechanic.arity,
+            movers=tuple(movers),
             rejected_signatures=self._failed_plan_signatures,
         )
         if points is None:
@@ -3809,6 +4049,7 @@ class VisualCausalPolicy:
                 # hypothesis for this level must not override stronger visible
                 # grouping evidence.
                 self._plan.clear()
+                self._affine_reacquire_target_center = None
                 if marker_plan.stages_for_switch:
                     self._marker_stage_pending_switch = marker_plan.mediator_color
                 elif self._marker_stage_pending_switch is not None:
@@ -3924,7 +4165,15 @@ class VisualCausalPolicy:
                         completes_local_target=planned.completes_local_target,
                     )
                     return action
-            activation = self._activation_coordinate(scene) if self._last_probe_failed else None
+            reacquire_target = self._affine_reacquire_target_center
+            activation = (
+                self._activation_coordinate(
+                    scene,
+                    completed_target_center=reacquire_target,
+                )
+                if self._last_probe_failed or reacquire_target is not None
+                else None
+            )
             if activation is not None:
                 action = ActionRequest(ActionName.ACTION6, activation)
                 self._remember_exploration_root(
@@ -3933,13 +4182,25 @@ class VisualCausalPolicy:
                     coordinate=activation,
                 )
                 self._last_probe_failed = False
+                dedicated_reacquisition = reacquire_target is not None
+                self._affine_reacquire_target_center = None
                 self._stage_pending(
                     observation,
                     action,
                     purpose=VisualActionPurpose.PROBE,
-                    prediction="test whether a nearby endpoint transfers the active intervention role",
+                    prediction=(
+                        "reacquire the active role within the remaining readable affine group"
+                        if dedicated_reacquisition
+                        else "test whether a nearby endpoint transfers the active intervention role"
+                    ),
+                    affine_reacquisition=dedicated_reacquisition,
                 )
                 return action
+            if reacquire_target is not None:
+                raise PolicyError(
+                    "a local affine target is complete but no unique structurally safe "
+                    "remaining-group role exchange is readable"
+                )
             coordinate = self._probe_coordinate(scene)
             action = ActionRequest(ActionName.ACTION6, coordinate)
             self._remember_exploration_root(
@@ -3991,6 +4252,7 @@ class VisualCausalPolicy:
         mediator_color: int | None = None,
         arity: int | None = None,
         completes_local_target: bool = False,
+        affine_reacquisition: bool = False,
     ) -> None:
         if self._pending_action is not None:
             raise PolicyError("a consequence is required before selecting another action")
@@ -4007,6 +4269,7 @@ class VisualCausalPolicy:
         self._pending_mediator_color = mediator_color
         self._pending_arity = arity
         self._pending_completes_local_target = completes_local_target
+        self._pending_affine_reacquisition = affine_reacquisition
         self._pending_clef_prediction = _predicted_clef_effects(
             purpose=purpose,
             mechanic_refs=mechanic_refs,
@@ -4037,6 +4300,12 @@ class VisualCausalPolicy:
         mechanic: AffineMechanic | None = None
         before_scene = extract_visual_scene(before.frames[-1])
         after_scene = extract_visual_scene(observation.frames[-1])
+        endpoint_role_switch = _endpoint_role_switch_observed(
+            before_scene,
+            after_scene,
+            action=action,
+            active_color=self._last_active_color,
+        )
         marker_bootstrap = (
             self._pending_plan_signature is not None
             and self._pending_plan_signature.startswith("marker-bootstrap:")
@@ -4074,6 +4343,11 @@ class VisualCausalPolicy:
             elif marker_bootstrap_succeeded:
                 self._last_active_color = bootstrap_active_color
                 self._last_probe_failed = False
+            elif endpoint_role_switch:
+                self._last_probe_failed = False
+            elif self._pending_affine_reacquisition:
+                self._last_probe_failed = True
+                residual = "remaining-group role reacquisition was not structurally readable"
             elif (
                 self._pending_purpose is VisualActionPurpose.PROBE
                 and not self._pending_mechanic_refs
@@ -4180,6 +4454,7 @@ class VisualCausalPolicy:
                 changed_cells=changed,
                 level_progress=level_progress,
                 inferred_mechanic=mechanic,
+                active_color=self._last_active_color,
             )
         )
         recognized_effects: list[FactoredEffect] = []
@@ -4346,6 +4621,7 @@ class VisualCausalPolicy:
         )
         if marker_action_structure_readable:
             self._marker_reacquire_after_local_solve = False
+            self._affine_reacquire_target_center = None
         if observation.state is GameStateName.GAME_OVER:
             if self._pending_plan_signature is not None:
                 self._failed_plan_signatures.add(self._pending_plan_signature)
@@ -4359,11 +4635,13 @@ class VisualCausalPolicy:
             self._plan.clear()
             self._marker_stage_pending_switch = None
             self._marker_reacquire_after_local_solve = False
+            self._affine_reacquire_target_center = None
             self._last_probe_failed = True
         elif observation.state is GameStateName.WIN:
             self._plan.clear()
             self._marker_stage_pending_switch = None
             self._marker_reacquire_after_local_solve = False
+            self._affine_reacquire_target_center = None
             self._last_probe_failed = False
         elif level_progress:
             self._begin_level(observation)
@@ -4386,6 +4664,23 @@ class VisualCausalPolicy:
         elif local_target_satisfied:
             self._plan.clear()
             self._marker_reacquire_after_local_solve = True
+            is_ordinary_affine = any(
+                item.startswith(("affine:", "affine-transfer:"))
+                for item in self._pending_mechanic_refs
+            )
+            completed_target = self._pending_target_center
+            has_remaining_group = bool(
+                is_ordinary_affine
+                and completed_target is not None
+                and any(
+                    _unique_affine_endpoint_group(after_scene, hub) is not None
+                    for hub in _remaining_unsatisfied_affine_hubs(
+                        after_scene,
+                        completed_target_center=completed_target,
+                    )
+                )
+            )
+            self._affine_reacquire_target_center = completed_target if has_remaining_group else None
             self._last_probe_failed = False
         elif plan_prediction_failed or self._pending_completes_local_target:
             if self._pending_plan_signature is not None:
@@ -4427,6 +4722,7 @@ class VisualCausalPolicy:
         self._pending_mediator_color = None
         self._pending_arity = None
         self._pending_completes_local_target = False
+        self._pending_affine_reacquisition = False
         self._pending_clef_prediction = EffectVector.unknown()
         self._pending_mechanic_prediction = None
         self._step_index += 1
@@ -4451,6 +4747,9 @@ class VisualCausalPolicy:
             transfer_levels.append(level)
         return {
             "active_level_index": self._level_index,
+            "affine_reacquire_after_local_solve": (
+                self._affine_reacquire_target_center is not None
+            ),
             "affine_ledger_ref": (
                 self._affine_ledger_ref.to_dict() if self._affine_ledger_ref is not None else None
             ),

@@ -10,6 +10,7 @@ from arc3.adapters import GridFrame, Observation
 from arc3.errors import PolicyError
 from arc3.exploration.causal_events import RiskLevel
 from arc3.mechanics.visual_causal import (
+    VisualActionPurpose,
     VisualCausalPolicy,
     VisualObjectRole,
     VisualScene,
@@ -147,6 +148,30 @@ def _palette_mismatched_target_frame(
     _paint(rows, anchor, _ENDPOINT_SHAPE, 3)
     _paint(rows, hub, _HUB_OUTER, 0)
     rows[hub[1]][hub[0]] = 6
+    return GridFrame.from_rows(rows)
+
+
+def _ordinary_two_group_frame(
+    *,
+    active: tuple[int, int],
+    first_hub: tuple[int, int],
+    fixed_endpoints: tuple[tuple[int, int], ...] = (
+        (60, 28),
+        (52, 55),
+        (34, 55),
+        (41, 47),
+    ),
+) -> GridFrame:
+    rows = [[5 for _ in range(64)] for _ in range(64)]
+    _paint(rows, (53, 28), _OFFSET_SPARSE_TARGET_RING, 14)
+    for endpoint in fixed_endpoints:
+        _paint(rows, endpoint, _ENDPOINT_SHAPE, 3)
+        rows[endpoint[1]][endpoint[0]] = 4
+    _paint(rows, active, _ENDPOINT_SHAPE, 0)
+    rows[active[1]][active[0]] = 4
+    for hub in (first_hub, (42, 52)):
+        _paint(rows, hub, _HUB_OUTER, 0)
+        rows[hub[1]][hub[0]] = 0
     return GridFrame.from_rows(rows)
 
 
@@ -1070,10 +1095,14 @@ def test_one_mismatched_target_does_not_resolve_a_tied_mediator_relation() -> No
 
 def test_failed_target_relative_plan_signature_is_not_repeated() -> None:
     scene = extract_visual_scene(_frame((8, 32), (32, 32), (20, 10)))
+    movers = (
+        next(item for item in scene.endpoints if item.color == 0),
+        next(item for item in scene.endpoints if item.color == 3),
+    )
     first = _radial_plan_points(
         scene,
         target=(20, 10),
-        arity=2,
+        movers=movers,
         rejected_signatures=set(),
     )
     assert first is not None
@@ -1082,7 +1111,7 @@ def test_failed_target_relative_plan_signature_is_not_repeated() -> None:
     second = _radial_plan_points(
         scene,
         target=(20, 10),
-        arity=2,
+        movers=movers,
         rejected_signatures={signature},
     )
 
@@ -2650,6 +2679,202 @@ def test_local_target_success_is_not_mislabeled_as_level_failure() -> None:
     assert observation.levels_completed == 0
     assert policy.snapshot()["failed_plan_count"] == 0
     assert policy.snapshot()["pending_plan_actions"] == 0
+
+
+def test_local_affine_closure_reacquires_a_safe_remaining_group() -> None:
+    def observation(
+        frame: GridFrame,
+        *,
+        returned_action: ActionRequest | None = None,
+    ) -> Observation:
+        return Observation(
+            game_id=GameId("synthetic-ordinary-affine-reacquisition"),
+            frames=(frame,),
+            state=GameStateName.NOT_FINISHED,
+            levels_completed=4,
+            win_levels=6,
+            available_actions=(ActionName.ACTION6,),
+            returned_action=returned_action,
+        )
+
+    before = observation(_ordinary_two_group_frame(active=(43, 34), first_hub=(52, 31)))
+    completion = ActionRequest(ActionName.ACTION6, Coordinate(46, 28))
+    completed = observation(
+        _ordinary_two_group_frame(active=(46, 28), first_hub=(53, 28)),
+        returned_action=completion,
+    )
+    policy = VisualCausalPolicy()
+    policy._begin_level(before)
+    policy._last_active_color = 0
+    policy._stage_pending(
+        before,
+        completion,
+        purpose=VisualActionPurpose.PROGRESS,
+        prediction="complete one observed affine relation",
+        mechanic_refs=("affine-transfer:synthetic",),
+        plan_signature="synthetic-local-completion",
+        target_center=(53, 28),
+        mediator_color=0,
+        arity=2,
+        completes_local_target=True,
+    )
+    policy.accept_consequence(completed)
+
+    assert policy.snapshot()["affine_reacquire_after_local_solve"] is True
+    completed_scene = extract_visual_scene(completed.frames[-1])
+    unsafe = next(item for item in completed_scene.endpoints if item.rounded_center == (41, 47))
+    assert not visual_causal._role_swap_remains_readable(
+        completed_scene,
+        unsafe,
+        active_color=0,
+    )
+
+    reacquire = policy.select(completed)
+
+    assert reacquire == ActionRequest(ActionName.ACTION6, Coordinate(34, 55))
+    assert "reacquire the active role" in policy._pending_prediction
+    swapped = observation(
+        _ordinary_two_group_frame(
+            active=(34, 55),
+            first_hub=(53, 28),
+            fixed_endpoints=((60, 28), (52, 55), (46, 28), (41, 47)),
+        ),
+        returned_action=reacquire,
+    )
+    policy.accept_consequence(swapped)
+
+    assert policy._last_probe_failed is False
+    assert policy.snapshot()["affine_reacquire_after_local_solve"] is False
+    assert policy.receipts[-1].residual != "probe did not localize a supported affine response"
+
+    transferred = infer_transferred_affine_mechanic(
+        extract_visual_scene(swapped.frames[-1]),
+        level_index=4,
+        active_color=0,
+        supported_prior=policy.mechanics,
+    )
+    assert transferred is not None
+    assert transferred.arity == 3
+    assert set(transferred.anchor_centers) == {(52, 55), (41, 47)}
+    assert transferred.target_center == (53, 28)
+
+
+def test_endpoint_role_switch_requires_exact_clicked_active_exchange() -> None:
+    before = extract_visual_scene(_ordinary_two_group_frame(active=(46, 28), first_hub=(53, 28)))
+    valid_after_frame = _ordinary_two_group_frame(
+        active=(34, 55),
+        first_hub=(53, 28),
+        fixed_endpoints=((60, 28), (52, 55), (46, 28), (41, 47)),
+    )
+    valid_after = extract_visual_scene(valid_after_frame)
+    selected_action = ActionRequest(ActionName.ACTION6, Coordinate(34, 55))
+
+    assert visual_causal._endpoint_role_switch_observed(
+        before,
+        valid_after,
+        action=selected_action,
+        active_color=0,
+    )
+
+    third_recolor_rows = [list(row) for row in valid_after_frame.cells]
+    _paint(third_recolor_rows, (52, 55), _ENDPOINT_SHAPE, 2)
+    third_recolor_rows[55][52] = 4
+    third_recolor = extract_visual_scene(GridFrame.from_rows(third_recolor_rows))
+
+    assert not visual_causal._endpoint_role_switch_observed(
+        before,
+        third_recolor,
+        action=selected_action,
+        active_color=0,
+    )
+    assert not visual_causal._endpoint_role_switch_observed(
+        before,
+        valid_after,
+        action=ActionRequest(ActionName.ACTION6, Coordinate(52, 55)),
+        active_color=0,
+    )
+
+
+def test_affine_endpoint_group_rejects_exact_cross_arity_tie() -> None:
+    rows = [[5 for _ in range(64)] for _ in range(64)]
+    for endpoint in ((12, 32), (52, 32), (32, 10), (10, 43), (54, 43)):
+        _paint(rows, endpoint, _ENDPOINT_SHAPE, 3)
+        rows[endpoint[1]][endpoint[0]] = 4
+    _paint(rows, (32, 32), _HUB_OUTER, 0)
+    rows[32][32] = 0
+    scene = extract_visual_scene(GridFrame.from_rows(rows))
+
+    assert len(scene.mediators) == 1
+    assert visual_causal._unique_affine_endpoint_group(scene, scene.mediators[0]) is None
+
+
+def test_affine_reacquisition_does_not_undo_another_visible_satisfied_group() -> None:
+    rows = [[5 for _ in range(64)] for _ in range(64)]
+    for target in ((20, 20), (44, 44)):
+        _paint(rows, target, _OFFSET_SPARSE_TARGET_RING, 14)
+    for endpoint, color in (
+        ((12, 20), 0),
+        ((28, 20), 3),
+        ((36, 44), 3),
+        ((52, 44), 3),
+    ):
+        _paint(rows, endpoint, _ENDPOINT_SHAPE, color)
+        rows[endpoint[1]][endpoint[0]] = 4
+    for hub in ((20, 20), (44, 44)):
+        _paint(rows, hub, _HUB_OUTER, 0)
+        rows[hub[1]][hub[0]] = 0
+    scene = extract_visual_scene(GridFrame.from_rows(rows))
+
+    assert len(scene.targets) == 2
+    assert len(scene.mediators) == 2
+    assert not visual_causal._remaining_unsatisfied_affine_hubs(
+        scene,
+        completed_target_center=(20, 20),
+    )
+    policy = VisualCausalPolicy()
+    policy._last_active_color = 0
+    assert policy._activation_coordinate(scene, completed_target_center=(20, 20)) is None
+
+
+def test_radial_affine_plan_uses_parser_safe_mover_footprints() -> None:
+    scene = extract_visual_scene(
+        _ordinary_two_group_frame(
+            active=(34, 55),
+            first_hub=(53, 28),
+            fixed_endpoints=((60, 28), (52, 55), (46, 28), (41, 47)),
+        )
+    )
+    movers = (
+        next(item for item in scene.endpoints if item.rounded_center == (34, 55)),
+        next(item for item in scene.endpoints if item.rounded_center == (52, 55)),
+        next(item for item in scene.endpoints if item.rounded_center == (41, 47)),
+    )
+
+    points = _radial_plan_points(
+        scene,
+        target=(53, 28),
+        movers=movers,
+        rejected_signatures=set(),
+    )
+
+    assert points is not None
+    assert Coordinate(59, 31) not in points
+    assert points != (Coordinate(53, 35), Coordinate(47, 24), Coordinate(59, 24))
+    assert len(points) == 3
+    for index, point in enumerate(points[:-1]):
+        assert visual_causal._endpoint_placement_is_open(
+            scene,
+            movers[index],
+            x=point.x,
+            y=point.y,
+            prospective_color=movers[index + 1].color,
+            ignored_object_refs=frozenset(item.object_ref for item in movers[: index + 2]),
+        )
+    centroid = (
+        sum(point.x for point in points) / len(points),
+        sum(point.y for point in points) / len(points),
+    )
+    assert math.dist(centroid, (53, 28)) <= 1.0
 
 
 def test_exact_marker_collapse_reacquires_another_visible_group() -> None:
