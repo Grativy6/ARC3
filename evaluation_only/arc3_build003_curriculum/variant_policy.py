@@ -53,6 +53,7 @@ from arc3.mechanics import (
     ScopeCeiling,
     ScoreProgressEffect,
     StatusEffect,
+    SupportDimension,
     TerminalEffect,
     TopologyEffect,
     TopologyOperation,
@@ -84,6 +85,9 @@ MOVE_ACTIONS = (
 )
 CARDINALS: frozenset[Point] = frozenset({(0, -1), (0, 1), (-1, 0), (1, 0)})
 SUPPORTED_VARIANTS = frozenset({"BLA_CLEF_LEVEL_RESET", "BLA_ONLY_PERSISTENT", "BLA_CLEF_FULL"})
+_MAX_FAILED_PLAN_ROOTS = 8
+_MAX_RESOURCE_AMBIGUITIES = 4
+_MAX_RESOURCE_DISCRIMINATION_RECEIPTS = 8
 
 
 def _channel_counter() -> dict[str, int]:
@@ -106,6 +110,10 @@ class _TransitionFacts:
     target_role: str | None
     changed_points: tuple[Point, ...]
     visible_effect_signature: str | None
+    resource_before: int
+    resource_after: int
+    after_state: GameStateName
+    full_reset: bool
     source_event_id: str
 
 
@@ -115,6 +123,75 @@ class _TrackedRepair:
     ref: MechanicRef
     channel: ConsequenceChannel
     failures: int = 0
+
+
+@dataclass(frozen=True, slots=True)
+class _PendingFailureReset:
+    ref: MechanicRef
+    residual_id: str
+    failure_event_id: str
+
+
+@dataclass(slots=True)
+class _ResourceAmbiguity:
+    ambiguity_id: str
+    residual_id: str
+    action: ActionName
+    target_role: str
+    origin: Point
+    target: Point
+    base_delta: int
+    additive_bonus: int
+    set_value: int
+    initial_before: int
+    initial_after: int
+    initial_event_id: str
+    additive_ref: MechanicRef
+    material_reason: str | None
+    competing_modes: tuple[CompositionMode, CompositionMode] = (
+        CompositionMode.ADDITIVE,
+        CompositionMode.OVERRIDE,
+    )
+    probe_attempted: bool = False
+
+
+@dataclass(slots=True)
+class _ActiveResourceProbe:
+    ambiguity_id: str
+    leave_action: ActionName
+    reenter_action: ActionName
+    origin: Point
+    target: Point
+    phase: str = "await_leave"
+    observed_actions: list[ActionName] = field(default_factory=list)
+
+
+@dataclass(frozen=True, slots=True)
+class _ResourceDiscriminationReceipt:
+    ambiguity_id: str
+    residual_id: str
+    material_reason: str
+    planned_actions: tuple[ActionName, ActionName]
+    observed_actions: tuple[ActionName, ...]
+    additive_expected_after: int
+    override_expected_after: int
+    observed_after: int
+    resolved_mode: CompositionMode | None
+    complete: bool
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "ambiguity_id": self.ambiguity_id,
+            "residual_id": self.residual_id,
+            "material_reason": self.material_reason,
+            "planned_actions": [item.value for item in self.planned_actions],
+            "observed_actions": [item.value for item in self.observed_actions],
+            "additive_expected_after": self.additive_expected_after,
+            "override_expected_after": self.override_expected_after,
+            "observed_after": self.observed_after,
+            "resolved_mode": (None if self.resolved_mode is None else self.resolved_mode.value),
+            "complete": self.complete,
+        }
 
 
 @dataclass(frozen=True, slots=True)
@@ -175,6 +252,8 @@ class _LevelMetrics:
     other_object_effects_observed: int = 0
     topology_changes_confirmed: int = 0
     delayed_candidates_confirmed: int = 0
+    resource_discrimination_actions: int = 0
+    restoration_ambiguities_resolved: int = 0
     unresolved_ledger_count: int = 0
     active_ledger_pressure: int = 0
     receipt_count: int = 0
@@ -371,6 +450,15 @@ class ObservationOnlyVariantPolicy:
         self._delayed_refs: dict[tuple[str, str, int], MechanicRef] = {}
         self._action_links: list[_ActionLink] = []
         self._receipt_digests: list[str] = []
+        self._failure_link_refs: dict[ActionName, MechanicRef] = {}
+        self._confirmed_failure_links: set[MechanicRef] = set()
+        self._pending_failure_reset: _PendingFailureReset | None = None
+        self._failed_plan_roots: deque[str] = deque(maxlen=_MAX_FAILED_PLAN_ROOTS)
+        self._resource_ambiguities: dict[str, _ResourceAmbiguity] = {}
+        self._active_resource_probe: _ActiveResourceProbe | None = None
+        self._resource_discrimination_receipts: deque[_ResourceDiscriminationReceipt] = deque(
+            maxlen=_MAX_RESOURCE_DISCRIMINATION_RECEIPTS
+        )
 
     @property
     def _context(self) -> MechanicContext:
@@ -391,8 +479,10 @@ class ObservationOnlyVariantPolicy:
         index: int,
         *,
         observation: Observation,
+        reset: bool = False,
     ) -> None:
         self._remember_level_navigation()
+        hard_level_boundary = self._learner is not None and not reset
         self._level_index = index
         self._player_position = None
         self._player_color = None
@@ -415,13 +505,15 @@ class ObservationOnlyVariantPolicy:
         self._delayed_refs.clear()
         self._retained_refs.clear()
         self._transferred_refs.clear()
+        self._active_resource_probe = None
+        self._resource_ambiguities.clear()
         self._level_navigation_key = self._navigation_key(index, observation)
         remembered = self._level_navigation_memory.get(self._level_navigation_key)
         if self._persistent and remembered is not None:
             wall_colors, player_probe_failures = remembered
             self._wall_colors.update(wall_colors)
             self._player_probe_failures.update(dict(player_probe_failures))
-        if not self._persistent:
+        if not self._persistent and hard_level_boundary:
             self._movement.clear()
             self._movement_refs.clear()
             self._resource_refs.clear()
@@ -431,6 +523,10 @@ class ObservationOnlyVariantPolicy:
             self._repair_keys.clear()
             self._origin_residuals.clear()
             self._pending_residual_refs.clear()
+            self._failure_link_refs.clear()
+            self._confirmed_failure_links.clear()
+            self._pending_failure_reset = None
+            self._failed_plan_roots.clear()
             self._learner = self._new_learner()
         elif self._learner is None:
             self._learner = self._new_learner()
@@ -482,6 +578,14 @@ class ObservationOnlyVariantPolicy:
             "receipt_digest": _digest(self._receipt_digests),
             "receipt_count": len(self._receipt_digests),
             "action_links": [item.to_dict() for item in self._action_links],
+            "resource_lifecycle": {
+                "confirmed_failure_links": len(self._confirmed_failure_links),
+                "failed_plan_roots": len(self._failed_plan_roots),
+                "open_restoration_ambiguities": len(self._resource_ambiguities),
+                "resource_discriminations": [
+                    item.to_dict() for item in self._resource_discrimination_receipts
+                ],
+            },
             "final_state": observation.state.value,
             "levels_completed": observation.levels_completed,
             "win_levels": observation.win_levels,
@@ -500,7 +604,7 @@ class ObservationOnlyVariantPolicy:
         self._last_before_ref = None
         if observation.full_reset:
             self._attempt = _metadata_int(observation, "attempt", self._attempt + 1)
-            self._enter_level(0, observation=observation)
+            self._enter_level(0, observation=observation, reset=True)
         elif observation.levels_completed > before.levels_completed:
             self._metrics[old_level].completed = True
             if observation.state is not GameStateName.WIN:
@@ -546,7 +650,7 @@ class ObservationOnlyVariantPolicy:
         if observation is None:
             raise RuntimeError("an action requires a current observation")
         action_target = self._action_target(action, target)
-        context = self._context_for(observation, action_target)
+        context = self._context_for(observation, action_target, action=action.name)
         try:
             prediction = self._learner.predict(action, context, emitted_step=self._step)
         except MechanicsError:
@@ -575,17 +679,351 @@ class ObservationOnlyVariantPolicy:
             return _add(self._player_position, self._movement[action.name])
         return explicit
 
-    def _context_for(self, observation: Observation, target: Point | None) -> MechanicContext:
+    def _context_for(
+        self,
+        observation: Observation,
+        target: Point | None,
+        *,
+        action: ActionName | None = None,
+    ) -> MechanicContext:
         role = _role_signature(_board(observation), target)
+        visible_resource = _resource(observation)
+        state_tags = [
+            "visible-resource-zero" if visible_resource == 0 else "visible-resource-positive"
+        ]
+        if action is not None:
+            predicted_delta = self._resource_delta_by_action.get(action)
+            if predicted_delta is not None and visible_resource + predicted_delta <= 0:
+                state_tags.append("visible-resource-exhaustion-risk")
         return MechanicContext(
             game_scope=self._game_scope,
             level_scope=self._context.level_scope,
             object_roles=() if role is None else (role,),
+            state_tags=tuple(state_tags),
         )
+
+    def _plan_root_signature(self, observation: Observation, action: ActionRequest) -> str:
+        coordinate = action.coordinate
+        return _digest(
+            {
+                "game_scope": self._game_scope,
+                "levels_completed": observation.levels_completed,
+                "frame_digest": str(observation.frames[-1].digest),
+                "action": action.name.value,
+                "coordinate": (
+                    None if coordinate is None else {"x": coordinate.x, "y": coordinate.y}
+                ),
+            }
+        )
+
+    def _record_resource_failure(
+        self,
+        before: Observation,
+        action: ActionRequest,
+        facts: _TransitionFacts,
+        learning: LearningReceipt | None,
+    ) -> None:
+        if (
+            self._learner is None
+            or action.name is ActionName.RESET
+            or facts.after_state is not GameStateName.GAME_OVER
+            or facts.resource_before <= 0
+            or facts.resource_after != 0
+            or facts.resource_after >= facts.resource_before
+        ):
+            return
+        root = self._plan_root_signature(before, action)
+        if root not in self._failed_plan_roots:
+            self._failed_plan_roots.append(root)
+
+        ref = self._failure_link_refs.get(action.name)
+        if ref is None:
+            try:
+                view = self._learner.ledger.open(
+                    action=action.name,
+                    scope=MechanicScope(
+                        ScopeCeiling.GAME,
+                        game_scope=self._game_scope,
+                        state_tags=("visible-resource-exhaustion-risk",),
+                    ),
+                    consequence=ConsequenceVector(
+                        terminal_changes=ChannelValue.known(TerminalEffect(GameStateName.GAME_OVER))
+                    ),
+                    composition_mode=CompositionMode.CONDITIONAL,
+                    created_step=self._step,
+                    created_from_event_ids=(facts.source_event_id,),
+                    provenance=EvidenceProvenance.OBSERVED_THIS_GAME,
+                    mechanic_id=(
+                        f"visible-resource-exhaustion-failure-{action.name.value.casefold()}"
+                    ),
+                    priority=120,
+                    note="observed resource exhaustion linked to terminal failure",
+                )
+            except MechanicsError:
+                self._metrics[self._level_index].hazard_prediction_errors += 1
+                return
+            ref = view.ref
+            self._failure_link_refs[action.name] = ref
+        if learning is None:
+            return
+        residual_id = learning.residual.residual_id
+        self._associate_origin(ref, residual_id)
+        self._pending_failure_reset = _PendingFailureReset(
+            ref=ref,
+            residual_id=residual_id,
+            failure_event_id=facts.source_event_id,
+        )
+        self._active_resource_probe = None
+
+    def _confirm_failure_reset(self, facts: _TransitionFacts) -> None:
+        if (
+            self._learner is None
+            or self._pending_failure_reset is None
+            or not facts.full_reset
+            or facts.after_state is GameStateName.GAME_OVER
+        ):
+            return
+        pending = self._pending_failure_reset
+        try:
+            self._learner.ledger.confirm_passively(
+                pending.ref,
+                channels=(ConsequenceChannel.TERMINAL_CHANGES,),
+                source_event_ids=(pending.failure_event_id, facts.source_event_id),
+                context_key=facts.context.context_key,
+                observed_step=self._step,
+                receipt_id=_digest(
+                    {
+                        "kind": "returned-reset-confirms-failure-link",
+                        "ref": pending.ref.to_dict(),
+                        "failure_event": pending.failure_event_id,
+                        "reset_event": facts.source_event_id,
+                    }
+                ),
+                dimensions=(SupportDimension.OCCURRENCE,),
+            )
+        except MechanicsError:
+            self._metrics[self._level_index].hazard_prediction_errors += 1
+            return
+        self._confirmed_failure_links.add(pending.ref)
+        self._resolve_origin_for_ref(pending.ref)
+        self._pending_failure_reset = None
+
+    def _remember_restoration_ambiguity(
+        self,
+        action: ActionName,
+        residual: ChannelResidual,
+        facts: _TransitionFacts,
+        additive_ref: MechanicRef,
+        residual_id: str,
+    ) -> None:
+        if (
+            residual.channel is not ConsequenceChannel.RESOURCE_CHANGES
+            or facts.controlled_displacement is None
+            or facts.target_role is None
+        ):
+            return
+        base_delta = _quantity_delta(residual.predicted)
+        observed_delta = _quantity_delta(residual.observed)
+        if base_delta is None or observed_delta is None:
+            return
+        additive_bonus = observed_delta - base_delta
+        if additive_bonus <= 0:
+            return
+        failure_ref = self._failure_link_refs.get(action)
+        material_reason = (
+            "confirmed-visible-resource-failure-link"
+            if failure_ref is not None and failure_ref in self._confirmed_failure_links
+            else None
+        )
+        origin, target, _color = facts.controlled_displacement
+        ambiguity_id = _digest(
+            {
+                "kind": "restoration-composition-ambiguity",
+                "residual_id": residual_id,
+                "action": action.value,
+                "target_role": facts.target_role,
+                "event": facts.source_event_id,
+            }
+        )
+        if ambiguity_id in self._resource_ambiguities:
+            return
+        if len(self._resource_ambiguities) >= _MAX_RESOURCE_AMBIGUITIES:
+            oldest = next(iter(self._resource_ambiguities))
+            if (
+                self._active_resource_probe is not None
+                and self._active_resource_probe.ambiguity_id == oldest
+            ):
+                return
+            self._resource_ambiguities.pop(oldest)
+        self._resource_ambiguities[ambiguity_id] = _ResourceAmbiguity(
+            ambiguity_id=ambiguity_id,
+            residual_id=residual_id,
+            action=action,
+            target_role=facts.target_role,
+            origin=origin,
+            target=target,
+            base_delta=base_delta,
+            additive_bonus=additive_bonus,
+            set_value=facts.resource_after,
+            initial_before=facts.resource_before,
+            initial_after=facts.resource_after,
+            initial_event_id=facts.source_event_id,
+            additive_ref=additive_ref,
+            material_reason=material_reason,
+        )
+
+    def _select_resource_probe_action(
+        self, observation: Observation
+    ) -> tuple[ActionRequest, str, Point | None] | None:
+        active = self._active_resource_probe
+        if active is not None:
+            ambiguity = self._resource_ambiguities.get(active.ambiguity_id)
+            if ambiguity is None:
+                self._active_resource_probe = None
+            elif (
+                active.phase == "await_reenter"
+                and self._player_position == active.origin
+                and active.reenter_action in observation.available_actions
+            ):
+                self._metrics[self._level_index].resource_discrimination_actions += 1
+                return (
+                    ActionRequest(active.reenter_action),
+                    "probe-resource-composition-reenter",
+                    active.target,
+                )
+            else:
+                self._active_resource_probe = None
+
+        visible_resource = _resource(observation)
+        available = set(observation.available_actions)
+        for ambiguity in self._resource_ambiguities.values():
+            if (
+                ambiguity.material_reason is None
+                or ambiguity.probe_attempted
+                or self._player_position != ambiguity.target
+                or ambiguity.action not in available
+                or self._movement.get(ambiguity.action)
+                != (
+                    ambiguity.target[0] - ambiguity.origin[0],
+                    ambiguity.target[1] - ambiguity.origin[1],
+                )
+            ):
+                continue
+            leave_vector = (
+                ambiguity.origin[0] - ambiguity.target[0],
+                ambiguity.origin[1] - ambiguity.target[1],
+            )
+            leave_action = next(
+                (
+                    candidate
+                    for candidate, vector in sorted(
+                        self._movement.items(), key=lambda item: item[0].value
+                    )
+                    if vector == leave_vector and candidate in available
+                ),
+                None,
+            )
+            if leave_action is None:
+                continue
+            leave_delta = self._resource_delta_by_action.get(leave_action)
+            if leave_delta is None or visible_resource + leave_delta <= 0:
+                continue
+            additive_expected = (
+                visible_resource + leave_delta + ambiguity.base_delta + ambiguity.additive_bonus
+            )
+            if additive_expected == ambiguity.set_value:
+                continue
+            ambiguity.probe_attempted = True
+            self._active_resource_probe = _ActiveResourceProbe(
+                ambiguity_id=ambiguity.ambiguity_id,
+                leave_action=leave_action,
+                reenter_action=ambiguity.action,
+                origin=ambiguity.origin,
+                target=ambiguity.target,
+            )
+            self._metrics[self._level_index].resource_discrimination_actions += 1
+            return (
+                ActionRequest(leave_action),
+                "probe-resource-composition-leave",
+                ambiguity.origin,
+            )
+        return None
+
+    def _advance_resource_probe(self, action: ActionRequest, facts: _TransitionFacts) -> None:
+        active = self._active_resource_probe
+        if active is None:
+            return
+        ambiguity = self._resource_ambiguities.get(active.ambiguity_id)
+        if ambiguity is None:
+            self._active_resource_probe = None
+            return
+        displacement = facts.controlled_displacement
+        if active.phase == "await_leave":
+            if (
+                action.name is active.leave_action
+                and displacement is not None
+                and displacement[0] == active.target
+                and displacement[1] == active.origin
+            ):
+                active.observed_actions.append(action.name)
+                active.phase = "await_reenter"
+            else:
+                self._active_resource_probe = None
+            return
+
+        active.observed_actions.append(action.name)
+        additive_expected = facts.resource_before + ambiguity.base_delta + ambiguity.additive_bonus
+        override_expected = ambiguity.set_value
+        valid_reentry = (
+            action.name is active.reenter_action
+            and displacement is not None
+            and displacement[0] == active.origin
+            and displacement[1] == active.target
+        )
+        additive_match = facts.resource_after == additive_expected
+        override_match = facts.resource_after == override_expected
+        resolved_mode: CompositionMode | None = None
+        if valid_reentry and additive_expected != override_expected:
+            if additive_match and not override_match:
+                resolved_mode = CompositionMode.ADDITIVE
+            elif override_match and not additive_match:
+                resolved_mode = CompositionMode.OVERRIDE
+        receipt = _ResourceDiscriminationReceipt(
+            ambiguity_id=ambiguity.ambiguity_id,
+            residual_id=ambiguity.residual_id,
+            material_reason=ambiguity.material_reason or "unrecorded-material-reason",
+            planned_actions=(active.leave_action, active.reenter_action),
+            observed_actions=tuple(active.observed_actions),
+            additive_expected_after=additive_expected,
+            override_expected_after=override_expected,
+            observed_after=facts.resource_after,
+            resolved_mode=resolved_mode,
+            complete=valid_reentry and resolved_mode is not None,
+        )
+        self._resource_discrimination_receipts.append(receipt)
+        if resolved_mode is CompositionMode.OVERRIDE and self._learner is not None:
+            try:
+                self._learner.ledger.reject(
+                    ambiguity.additive_ref,
+                    occurred_step=self._step,
+                    caused_by_event_ids=(facts.source_event_id,),
+                    note="minimal restoration probe favored override over additive",
+                )
+            except MechanicsError:
+                self._metrics[self._level_index].hazard_prediction_errors += 1
+            self._repairs.pop(ambiguity.additive_ref, None)
+            self._detach_origin_without_resolution(ambiguity.additive_ref)
+        if resolved_mode is not None:
+            self._resource_ambiguities.pop(ambiguity.ambiguity_id, None)
+            self._metrics[self._level_index].restoration_ambiguities_resolved += 1
+        self._active_resource_probe = None
 
     def _select_nonterminal_action(
         self, observation: Observation
     ) -> tuple[ActionRequest, str, Point | None]:
+        resource_probe = self._select_resource_probe_action(observation)
+        if resource_probe is not None:
+            return resource_probe
         if self._player_position is None or len(self._movement) < 3:
             action = self._probe_action(observation)
             return ActionRequest(action), "probe-movement", None
@@ -718,6 +1156,9 @@ class ObservationOnlyVariantPolicy:
                     for position in player_candidates
                     if self._candidate_can_move(position, vector, observation)
                 )
+            failed_root = self._plan_root_signature(observation, ActionRequest(action)) in set(
+                self._failed_plan_roots
+            )
             candidates.append(
                 ProbeCandidate(
                     action=ActionRequest(action),
@@ -725,7 +1166,7 @@ class ObservationOnlyVariantPolicy:
                     target_channels=(ConsequenceChannel.CONTROLLED_DISPLACEMENT,),
                     expected_information_gain=information_gain,
                     reversibility=1,
-                    failure_cost=1,
+                    failure_cost=4 if failed_root else 1,
                     novelty=novelty,
                     repetition_count=min(self._probe_counts[action], 1),
                 )
@@ -942,6 +1383,10 @@ class ObservationOnlyVariantPolicy:
             except MechanicsError:
                 metric.hazard_prediction_errors += 1
 
+        if after.state is GameStateName.GAME_OVER:
+            self._record_resource_failure(before, action, facts, learning)
+        self._advance_resource_probe(action, facts)
+
         causal_digest, causal_complete = self._record_causal_receipt(
             before, after, action, displacement, resource_delta
         )
@@ -1090,7 +1535,7 @@ class ObservationOnlyVariantPolicy:
         context = (
             self._last_prediction.context
             if self._last_prediction is not None
-            else self._context_for(before, context_target)
+            else self._context_for(before, context_target, action=action.name)
         )
         observed = ConsequenceVector(
             controlled_displacement=controlled,
@@ -1123,6 +1568,10 @@ class ObservationOnlyVariantPolicy:
             target_role=target_role,
             changed_points=changed,
             visible_effect_signature=visible_signature,
+            resource_before=_resource(before),
+            resource_after=_resource(after),
+            after_state=after.state,
+            full_reset=after.full_reset,
             source_event_id=f"observation:{self._step}",
         )
 
@@ -1172,6 +1621,10 @@ class ObservationOnlyVariantPolicy:
         action: ActionRequest,
     ) -> None:
         if self._learner is None:
+            return
+        if action.name is ActionName.RESET:
+            self._confirm_failure_reset(facts)
+            self._learner.resolve_residual(learning.residual.residual_id)
             return
         metric = self._metrics[self._level_index]
         consequential = learning.residual.consequential
@@ -1290,6 +1743,13 @@ class ObservationOnlyVariantPolicy:
                     learning.residual.residual_id, repair_ref, item.channel
                 )
                 metric.local_repair_candidates_opened += 1
+                self._remember_restoration_ambiguity(
+                    action.name,
+                    item,
+                    facts,
+                    repair_ref,
+                    learning.residual.residual_id,
+                )
 
         self._update_delayed_evidence(action, facts)
 
@@ -1319,6 +1779,11 @@ class ObservationOnlyVariantPolicy:
                 ConsequenceChannel.STATUS_ANIMATION_CHANGES,
                 ConsequenceChannel.DELAYED_EFFECTS,
             }:
+                continue
+            if (
+                channel is ConsequenceChannel.TERMINAL_CHANGES
+                and self._terminal_state(observed) is GameStateName.GAME_OVER
+            ):
                 continue
             if (
                 channel is ConsequenceChannel.CONTROLLED_DISPLACEMENT
@@ -1386,6 +1851,18 @@ class ObservationOnlyVariantPolicy:
         self._learner.resolve_residual(residual_id)
         self._metrics[origin_level].residuals_resolved += 1
 
+    def _detach_origin_without_resolution(self, ref: MechanicRef) -> None:
+        origin = self._origin_residuals.pop(ref, None)
+        if origin is None:
+            return
+        residual_id, _origin_level = origin
+        pending = self._pending_residual_refs.get(residual_id)
+        if pending is None:
+            return
+        pending.discard(ref)
+        if not pending:
+            self._pending_residual_refs.pop(residual_id, None)
+
     def _initial_ref_for(
         self,
         action: ActionName,
@@ -1400,6 +1877,11 @@ class ObservationOnlyVariantPolicy:
             ConsequenceChannel.INVENTORY_CHANGES,
             ConsequenceChannel.DELAYED_EFFECTS,
         }:
+            return None
+        if (
+            channel is ConsequenceChannel.TERMINAL_CHANGES
+            and self._terminal_state(observed) is GameStateName.GAME_OVER
+        ):
             return None
         if channel is ConsequenceChannel.CONTROLLED_DISPLACEMENT:
             if action in self._movement_refs:
@@ -1471,11 +1953,7 @@ class ObservationOnlyVariantPolicy:
             if predicted_delta is not None and observed_delta is not None:
                 correction = observed_delta - predicted_delta
                 value = _quantity_value("visible-hud", correction)
-                mode = (
-                    CompositionMode.ADDITIVE
-                    if not facts.context.object_roles
-                    else CompositionMode.CONDITIONAL
-                )
+                mode = CompositionMode.ADDITIVE
         elif channel is ConsequenceChannel.CONTROLLED_DISPLACEMENT:
             if observed.is_known_empty:
                 mode = CompositionMode.GATING
@@ -1512,6 +1990,12 @@ class ObservationOnlyVariantPolicy:
         if len(value.effects) != 1 or not isinstance(value.effects[0], DisplacementEffect):
             return None
         return value.effects[0]
+
+    @staticmethod
+    def _terminal_state(value: ChannelValue) -> GameStateName | None:
+        if len(value.effects) != 1 or not isinstance(value.effects[0], TerminalEffect):
+            return None
+        return value.effects[0].state
 
     def _mode_for_ref(self, ref: MechanicRef) -> CompositionMode | None:
         if self._learner is None:
