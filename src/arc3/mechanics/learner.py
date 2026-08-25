@@ -307,6 +307,26 @@ class MechanicalLearner:
         self._prediction_sequence += 1
         return receipt
 
+    def cancel_unsubmitted_prediction(self, prediction_id: str) -> None:
+        """Retract only the latest prediction before its action is submitted.
+
+        The mechanical policy emits a prediction while selecting an action, but
+        the outer competition governor can still reject that request.  Such a
+        request earned no environment consequence and therefore must consume
+        neither the learner's sole pending slot nor a prediction sequence ID.
+        """
+
+        try:
+            prediction = self._pending[prediction_id]
+        except KeyError as error:
+            raise MechanicsError(
+                "unsubmitted cancellation requires the current pending prediction"
+            ) from error
+        if len(self._pending) != 1 or prediction.sequence != self._prediction_sequence - 1:
+            raise MechanicsError("only the latest sole pending prediction can be cancelled")
+        del self._pending[prediction_id]
+        self._prediction_sequence -= 1
+
     def observe_consequence(
         self,
         prediction_id: str,

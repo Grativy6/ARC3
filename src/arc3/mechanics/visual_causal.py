@@ -1257,6 +1257,58 @@ def _embedded_marker_groups(scene: VisualScene) -> tuple[_EmbeddedMarkerGroup, .
     return tuple(sorted(groups, key=lambda item: item.marker_color))
 
 
+def _unsolved_mediator_targets(
+    scene: VisualScene,
+) -> tuple[tuple[VisualObject, VisualObject], ...]:
+    """Return readable same-color mediator/target pairs that still disagree."""
+
+    pairs: list[tuple[VisualObject, VisualObject]] = []
+    for mediator in scene.mediators:
+        targets = _affine_target_candidates(scene, mediator_color=mediator.color)
+        if not targets:
+            continue
+        target = min(
+            targets,
+            key=lambda item: _distance(
+                (item.center_x, item.center_y),
+                (mediator.center_x, mediator.center_y),
+            ),
+        )
+        if (
+            _distance(
+                (mediator.center_x, mediator.center_y),
+                (target.center_x, target.center_y),
+            )
+            > 2.0
+        ):
+            pairs.append((mediator, target))
+    return tuple(sorted(pairs, key=lambda pair: (pair[0].color, pair[0].object_ref)))
+
+
+def supports_visual_causal_observation(observation: Observation) -> bool:
+    """Return whether visible evidence supports the coordinate learner.
+
+    This compatibility gate is deliberately observation-only.  It consumes no
+    game identity, retained mechanic, campaign constant, or hidden source: the
+    current official frame must advertise ACTION6, expose at least two readable
+    endpoints, and contain an unresolved mediator/target relation.
+    """
+
+    if (
+        observation.state is not GameStateName.NOT_FINISHED
+        or ActionName.ACTION6 not in observation.available_actions
+        or not observation.frames
+    ):
+        return False
+    scene = extract_visual_scene(observation.frames[-1])
+    if len(scene.endpoints) < 2:
+        return False
+    marker_groups = _embedded_marker_groups(scene)
+    if any(group.mediator.rounded_center != group.target.rounded_center for group in marker_groups):
+        return True
+    return bool(_unsolved_mediator_targets(scene))
+
+
 def _embedded_marker_active_endpoint(
     scene: VisualScene,
     *,
@@ -7161,20 +7213,7 @@ class VisualCausalPolicy:
             )
 
     def _unsolved_pairs(self, scene: VisualScene) -> tuple[tuple[VisualObject, VisualObject], ...]:
-        pairs: list[tuple[VisualObject, VisualObject]] = []
-        for hub in scene.mediators:
-            targets = _affine_target_candidates(scene, mediator_color=hub.color)
-            if not targets:
-                continue
-            target = min(
-                targets,
-                key=lambda item: _distance(
-                    (item.center_x, item.center_y), (hub.center_x, hub.center_y)
-                ),
-            )
-            if _distance((hub.center_x, hub.center_y), (target.center_x, target.center_y)) > 2.0:
-                pairs.append((hub, target))
-        return tuple(sorted(pairs, key=lambda pair: (pair[0].color, pair[0].object_ref)))
+        return _unsolved_mediator_targets(scene)
 
     def _probe_coordinate(
         self,
@@ -8036,6 +8075,38 @@ class VisualCausalPolicy:
             action=action,
         )
         self._pending_mechanic_prediction = mechanic_prediction
+
+    def _clear_pending_action_state(self) -> None:
+        """Restore the exact no-pending invariant after acceptance or cancellation."""
+
+        self._pending_before = None
+        self._pending_action = None
+        self._pending_purpose = VisualActionPurpose.PROBE
+        self._pending_prediction = "all factored channels UNKNOWN"
+        self._pending_mechanic_refs = ()
+        self._pending_plan_signature = None
+        self._pending_target_center = None
+        self._pending_mediator_color = None
+        self._pending_arity = None
+        self._pending_completes_local_target = False
+        self._pending_completes_hierarchy = False
+        self._pending_completes_child_isolation = False
+        self._pending_completes_child_recovery = False
+        self._pending_expected_child_mediator_center = None
+        self._pending_expected_child_mediator_signature = None
+        self._pending_expected_child_endpoint_centers = ()
+        self._pending_expected_child_endpoint_signature = ()
+        self._pending_expected_child_connector_signature = None
+        self._pending_expected_active_center = None
+        self._pending_expected_child_protected_raster_hash = None
+        self._pending_expected_child_raster_signature = ()
+        self._pending_expected_occluded_endpoint_centers = ()
+        self._pending_expected_occluded_endpoint_cells = ()
+        self._pending_expected_visible_endpoint_count = None
+        self._pending_expected_visible_mediator_count = None
+        self._pending_affine_reacquisition = False
+        self._pending_clef_prediction = EffectVector.unknown()
+        self._pending_mechanic_prediction = None
 
     def accept_consequence(self, observation: Observation) -> None:
         before = self._pending_before
@@ -8964,38 +9035,39 @@ class VisualCausalPolicy:
         self._durable_receipts.append(receipt.to_dict())
 
         self._previous_observation = observation
-        self._pending_before = None
-        self._pending_action = None
-        self._pending_prediction = "all factored channels UNKNOWN"
-        self._pending_mechanic_refs = ()
-        self._pending_plan_signature = None
-        self._pending_target_center = None
-        self._pending_mediator_color = None
-        self._pending_arity = None
-        self._pending_completes_local_target = False
-        self._pending_completes_hierarchy = False
-        self._pending_completes_child_isolation = False
-        self._pending_completes_child_recovery = False
-        self._pending_expected_child_mediator_center = None
-        self._pending_expected_child_mediator_signature = None
-        self._pending_expected_child_endpoint_centers = ()
-        self._pending_expected_child_endpoint_signature = ()
-        self._pending_expected_child_connector_signature = None
-        self._pending_expected_active_center = None
-        self._pending_expected_child_protected_raster_hash = None
-        self._pending_expected_child_raster_signature = ()
-        self._pending_expected_occluded_endpoint_centers = ()
-        self._pending_expected_occluded_endpoint_cells = ()
-        self._pending_expected_visible_endpoint_count = None
-        self._pending_expected_visible_mediator_count = None
-        self._pending_affine_reacquisition = False
-        self._pending_clef_prediction = EffectVector.unknown()
-        self._pending_mechanic_prediction = None
+        self._clear_pending_action_state()
         self._step_index += 1
 
     def close(self) -> None:
         if self._pending_action is not None:
             raise PolicyError("cannot close with an unresolved submitted action")
+
+    def cancel_unsubmitted_action(self) -> None:
+        """Discard a selected action that never crossed the environment boundary.
+
+        Cancellation earns no receipt, learning update, or prediction sequence.
+        The learner prediction is retracted before every policy-side pending
+        field is restored to the same invariant used after a real consequence.
+        """
+
+        before = self._pending_before
+        action = self._pending_action
+        prediction = self._pending_mechanic_prediction
+        learner = self._mechanical_learner
+        learner_pending = learner.pending if learner is not None else ()
+        if before is None and action is None and prediction is None and not learner_pending:
+            return
+        if learner is None:
+            raise PolicyError("cannot cancel pending policy state without its mechanical learner")
+        prediction_id = prediction.prediction_id if prediction is not None else None
+        if prediction_id is None:
+            if len(learner_pending) != 1:
+                raise PolicyError("cannot identify the sole interrupted mechanical prediction")
+            prediction_id = learner_pending[0].prediction_id
+        elif tuple(item.prediction_id for item in learner_pending) != (prediction_id,):
+            raise PolicyError("policy and learner pending prediction identities disagree")
+        learner.cancel_unsubmitted_prediction(prediction_id)
+        self._clear_pending_action_state()
 
     def drain_durable_receipts(self) -> tuple[dict[str, JSONValue], ...]:
         """Return each newly completed receipt exactly once for durable journaling."""
@@ -9136,6 +9208,23 @@ class VisualCausalPolicy:
             "marker_target_identity_constraint_count": len(
                 self._marker_target_identity_constraints
             ),
+            "pending_action": (
+                {
+                    "coordinate": (
+                        [self._pending_action.coordinate.x, self._pending_action.coordinate.y]
+                        if self._pending_action.coordinate is not None
+                        else None
+                    ),
+                    "name": self._pending_action.name.value,
+                }
+                if self._pending_action is not None
+                else None
+            ),
+            "pending_prediction_id": (
+                self._pending_mechanic_prediction.prediction_id
+                if self._pending_mechanic_prediction is not None
+                else None
+            ),
             "pending_plan_actions": len(self._plan),
             "receipt_count": len(self._receipts),
             "receipts": [item.to_dict() for item in self._receipts[-192:]],
@@ -9156,4 +9245,5 @@ __all__ = [
     "extract_visual_scene",
     "infer_affine_mechanic",
     "infer_transferred_affine_mechanic",
+    "supports_visual_causal_observation",
 ]

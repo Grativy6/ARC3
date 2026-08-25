@@ -297,6 +297,10 @@ def test_stage17_payload_excludes_build_tools_from_runtime_reachability(tmp_path
         assert "src/arc3/competition/governor.py" in members
         assert "src/arc3/competition_runtime.py" in members
         assert "src/arc3/policy/controller.py" in members
+        assert "src/arc3/mechanics/visual_causal.py" in members
+        assert "src/arc3/mechanics/learner.py" in members
+        assert "src/arc3/mechanics/ledger.py" in members
+        assert "src/arc3/exploration/causal_events.py" in members
         assert "src/arc3/packaging/runtime_launcher.py" in members
         assert "src/arc3/packaging/models.py" in members
         assert "src/arc3/packaging/builder.py" not in members

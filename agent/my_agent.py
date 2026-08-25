@@ -22,6 +22,10 @@ from arc3.competition import GovernorStopReason, TournamentGovernor
 from arc3.competition_runtime import FROZEN_COMPETITION_RUNTIME
 from arc3.config import ARC3Config, derive_seed
 from arc3.errors import CompetitionIntegrityError, ConfigurationError
+from arc3.mechanics.visual_causal import (
+    VisualCausalPolicy,
+    supports_visual_causal_observation,
+)
 from arc3.policy import ARC3Controller, ControllerPhase, ControllerPreset, RunContext
 from arc3.trace.canonical import normalize_json, sha256_json
 from arc3.types import (
@@ -85,6 +89,13 @@ class _ActionDeadlineExpired(TimeoutError):
 
 class _ResourceBudgetExceeded(RuntimeError):
     """A measured competition resource crossed its frozen ceiling."""
+
+
+class _PolicyRoute(StrEnum):
+    """One game-local production policy owner selected from visible evidence."""
+
+    CONTROLLER = "controller"
+    MECHANICAL = "mechanical"
 
 
 def _peak_rss_bytes() -> int | None:
@@ -374,6 +385,12 @@ class MyAgent(_AgentBase):  # type: ignore[misc,valid-type]
         self.action_counter = 0
         self._controller: ARC3Controller | None = None
         self._controller_closed = False
+        self._mechanical_policy = VisualCausalPolicy(
+            max_coordinate_candidates=FROZEN_COMPETITION_RUNTIME.max_coordinate_candidates
+        )
+        self._mechanical_policy_closed = False
+        self._policy_route: _PolicyRoute | None = None
+        self._pending_policy_route: _PolicyRoute | None = None
         self._controller_failed = False
         self._game_started = False
         self._game_finalized = False
@@ -436,6 +453,14 @@ class MyAgent(_AgentBase):  # type: ignore[misc,valid-type]
                 receipt["compact_trace_tail_hash"] = (
                     cast(str, compact[-1]["event_hash"]) if compact else None
                 )
+            mechanical_snapshot = self._mechanical_policy.snapshot()
+            receipt["mechanical_receipt_count"] = cast(int, mechanical_snapshot["receipt_count"])
+            receipt["pending_policy_route"] = (
+                self._pending_policy_route.value if self._pending_policy_route is not None else None
+            )
+            receipt["policy_route"] = (
+                self._policy_route.value if self._policy_route is not None else None
+            )
             self._failure_receipts.append(receipt)
             identity = sha256_json(
                 {
@@ -445,6 +470,31 @@ class MyAgent(_AgentBase):  # type: ignore[misc,valid-type]
                 }
             ).removeprefix("sha256:")[:16]
             self._write_receipt(f"failure-{identity}.json", receipt)
+
+    def _write_policy_snapshot(self) -> None:
+        """Persist bounded in-memory policy evidence exactly once at close."""
+
+        snapshot = _normalized_dict(
+            {
+                "authorized_actions": self._authorized_actions,
+                "controller_closed": self._controller_closed,
+                "controller_failed": self._controller_failed,
+                "game_id": str(self.game_id),
+                "mechanical_policy": self._mechanical_policy.snapshot(),
+                "mechanical_policy_closed": self._mechanical_policy_closed,
+                "pending_policy_route": (
+                    self._pending_policy_route.value
+                    if self._pending_policy_route is not None
+                    else None
+                ),
+                "policy_route": (
+                    self._policy_route.value if self._policy_route is not None else None
+                ),
+                "schema": "arc3.production-policy-route.v0.2",
+            }
+        )
+        identity = sha256_json({"game_id": str(self.game_id)}).removeprefix("sha256:")[:16]
+        self._write_receipt(f"policy-{identity}.json", snapshot)
 
     def _finalize_game(self, reason: GovernorStopReason) -> None:
         if self._game_finalized:
@@ -476,6 +526,7 @@ class MyAgent(_AgentBase):  # type: ignore[misc,valid-type]
             )
             self._controller_failed = True
             effective_reason = GovernorStopReason.FAILURE
+        self._write_policy_snapshot()
         with self._tournament_lock:
             governor = self._require_governor()
             if self._game_started and governor.active_game_id == str(self.game_id):
@@ -490,9 +541,16 @@ class MyAgent(_AgentBase):  # type: ignore[misc,valid-type]
             self._game_finalized = True
 
     def _close_controller(self, *, boundary: str) -> Exception | None:
+        first_error: Exception | None = None
+        if not self._mechanical_policy_closed:
+            try:
+                self._mechanical_policy.close()
+            except Exception as error:
+                first_error = error
+            else:
+                self._mechanical_policy_closed = True
         if self._controller is None or self._controller_closed:
-            return None
-        self._controller_closed = True
+            return first_error
         stop = self._require_governor().stop_decision(str(self.game_id))
         seconds = min(
             30.0,
@@ -500,7 +558,9 @@ class MyAgent(_AgentBase):  # type: ignore[misc,valid-type]
             stop.tournament_playable_seconds_remaining,
         )
         if seconds <= 0.0:
-            return _ActionDeadlineExpired(f"{boundary} has no remaining governed wall-clock slice")
+            return first_error or _ActionDeadlineExpired(
+                f"{boundary} has no remaining governed wall-clock slice"
+            )
         try:
             _bounded_call(
                 self._controller.close,
@@ -508,8 +568,77 @@ class MyAgent(_AgentBase):  # type: ignore[misc,valid-type]
                 boundary=boundary,
             )
         except Exception as error:
+            return first_error or error
+        self._controller_closed = True
+        return first_error
+
+    def _accept_pending_policy_consequence(self, observation: Observation) -> None:
+        """Deliver one returned observation to exactly the selecting policy."""
+
+        route = self._pending_policy_route
+        if route is None:
+            return
+        if route is _PolicyRoute.MECHANICAL:
+            if self._mechanical_policy_closed:
+                raise RuntimeError("closed mechanical policy still owns a pending action")
+            self._mechanical_policy.accept_consequence(observation)
+        else:
+            controller = self._controller
+            if controller is None or controller.phase is not ControllerPhase.AWAITING_CONSEQUENCE:
+                raise RuntimeError("controller consequence has no pending production action")
+            controller.apply_consequence(observation)
+        self._pending_policy_route = None
+
+    def _cancel_unsubmitted_policy_request(self) -> Exception | None:
+        """Cancel a mechanical selection that never reached environment.step."""
+
+        route = self._pending_policy_route
+        if route is None:
+            return None
+        if route is _PolicyRoute.CONTROLLER:
+            return RuntimeError(
+                "generic controller request is already durably submitted to its adapter boundary"
+            )
+        try:
+            self._mechanical_policy.cancel_unsubmitted_action()
+        except Exception as error:
             return error
+        self._pending_policy_route = None
         return None
+
+    def _fail_before_environment(
+        self,
+        *,
+        boundary: str,
+        classification: str,
+        error: Exception,
+        reason: GovernorStopReason,
+    ) -> None:
+        """Cancel definite non-submission, preserve receipts, and seal the game."""
+
+        cancellation_error = self._cancel_unsubmitted_policy_request()
+        if cancellation_error is not None:
+            self._record_failure(
+                boundary="policy-cancellation",
+                classification="execution",
+                error=cancellation_error,
+            )
+        self._record_failure(
+            boundary=boundary,
+            classification=classification,
+            error=error,
+        )
+        self._finalize_game(reason)
+
+    def _decision_slice_seconds(self) -> float:
+        """Return the remaining single-cycle computation slice."""
+
+        stop = self._require_governor().stop_decision(str(self.game_id))
+        return min(
+            FROZEN_COMPETITION_RUNTIME.decision_seconds,
+            stop.game_seconds_remaining,
+            stop.tournament_playable_seconds_remaining,
+        )
 
     def is_done(self, frames: list[object], latest_frame: object) -> bool:
         del frames
@@ -517,6 +646,34 @@ class MyAgent(_AgentBase):  # type: ignore[misc,valid-type]
             return True
         self._ensure_game_started()
         resource_error = self._resource_budget_error()
+        state_name = _enum_name(getattr(latest_frame, "state", "UNKNOWN"))
+        stop = self._require_governor().stop_decision(str(self.game_id))
+        terminal_or_stopped = state_name in {"WIN", "GAME_OVER", "UNKNOWN"} or stop.should_stop
+        if (
+            self._pending_policy_route is not None
+            and resource_error is None
+            and terminal_or_stopped
+        ):
+            try:
+                observation = replace(normalize_frame_data(latest_frame), returned_action=None)
+                _bounded_call(
+                    lambda: self._accept_pending_policy_consequence(observation),
+                    seconds=self._decision_slice_seconds(),
+                    boundary="policy-consequence-terminal",
+                )
+            except Exception as error:
+                self._record_failure(
+                    boundary="policy-consequence-terminal",
+                    classification=(
+                        "budget exhaustion"
+                        if isinstance(error, _ActionDeadlineExpired)
+                        else "execution"
+                    ),
+                    error=error,
+                )
+                self._controller_failed = True
+                self._finalize_game(GovernorStopReason.FAILURE)
+                return True
         if resource_error is not None:
             self._record_failure(
                 boundary="resource-budget",
@@ -525,16 +682,15 @@ class MyAgent(_AgentBase):  # type: ignore[misc,valid-type]
             )
             self._finalize_game(GovernorStopReason.FAILURE)
             return True
-        if _enum_name(getattr(latest_frame, "state", "UNKNOWN")) == "WIN":
+        if state_name == "WIN":
             self._finalize_game(GovernorStopReason.WIN)
             return True
-        if _enum_name(getattr(latest_frame, "state", "UNKNOWN")) == "GAME_OVER":
+        if state_name == "GAME_OVER":
             # RESET from GAME_OVER is a whole-game reset in the official
             # lifecycle. Competition mode permits level resets only, so this
             # environment is terminal even though RESET is the sole SDK action.
             self._finalize_game(GovernorStopReason.AGENT_DONE)
             return True
-        stop = self._require_governor().stop_decision(str(self.game_id))
         if stop.should_stop:
             self._finalize_game(stop.reason)
             return True
@@ -624,13 +780,44 @@ class MyAgent(_AgentBase):  # type: ignore[misc,valid-type]
         return observation.available_actions
 
     def _controller_request(self, observation: Observation) -> tuple[ActionRequest, float]:
+        # Returned-consequence folding and the next selection share this one
+        # bounded call; the frozen 10-second slice explicitly covers both.
+        self._accept_pending_policy_consequence(observation)
+        if self._policy_route is None and observation.state is GameStateName.NOT_PLAYED:
+            self._pending_policy_route = _PolicyRoute.MECHANICAL
+            action = self._mechanical_policy.select(observation)
+            return action, 0.0
+        if self._policy_route is None:
+            self._policy_route = (
+                _PolicyRoute.MECHANICAL
+                if supports_visual_causal_observation(observation)
+                else _PolicyRoute.CONTROLLER
+            )
+        elif (
+            self._policy_route is _PolicyRoute.MECHANICAL
+            and observation.state is GameStateName.NOT_FINISHED
+            and not supports_visual_causal_observation(observation)
+        ):
+            # Once current visible support disappears, switch exactly once to
+            # a controller initialized from this returned observation.  Never
+            # alternate two stateful policies across environment actions.
+            self._mechanical_policy.close()
+            self._mechanical_policy_closed = True
+            self._policy_route = _PolicyRoute.CONTROLLER
+
+        if self._policy_route is _PolicyRoute.MECHANICAL:
+            self._pending_policy_route = _PolicyRoute.MECHANICAL
+            action = self._mechanical_policy.select(observation)
+            return action, 0.0
+
         if self._controller is None:
             self._controller = self._start_controller(str(observation.game_id))
             self._controller.observe(observation)
-        elif self._controller.phase is ControllerPhase.AWAITING_CONSEQUENCE:
-            self._controller.apply_consequence(observation)
         elif self._controller.phase is ControllerPhase.NEW:
             self._controller.observe(observation)
+        elif self._controller.phase is ControllerPhase.AWAITING_CONSEQUENCE:
+            raise RuntimeError("controller pending consequence bypassed production ownership")
+        self._pending_policy_route = _PolicyRoute.CONTROLLER
         decision = self._controller.choose_action()
         selected_value = next(
             (
@@ -694,11 +881,41 @@ class MyAgent(_AgentBase):  # type: ignore[misc,valid-type]
             except _BoundedTournamentStop:
                 raise
             except Exception as error:
+                staged_route = self._pending_policy_route
+                cancellation_error = (
+                    self._cancel_unsubmitted_policy_request()
+                    if staged_route is _PolicyRoute.MECHANICAL
+                    else None
+                )
+                if cancellation_error is not None:
+                    self._record_failure(
+                        boundary="policy-cancellation",
+                        classification="execution",
+                        error=cancellation_error,
+                    )
                 self._record_failure(
                     boundary="controller-decision",
-                    classification="execution",
+                    classification=(
+                        "budget exhaustion"
+                        if isinstance(error, _ActionDeadlineExpired)
+                        else "execution"
+                    ),
                     error=error,
                 )
+                mechanical_owned = (
+                    staged_route is _PolicyRoute.MECHANICAL
+                    or self._policy_route is _PolicyRoute.MECHANICAL
+                    or (
+                        observation.state is GameStateName.NOT_PLAYED and self._policy_route is None
+                    )
+                )
+                # A mechanical failure while support remains, or a generic
+                # controller that already emitted its durable submitted-action
+                # receipt, cannot honestly own a different fallback action.
+                if mechanical_owned or staged_route is _PolicyRoute.CONTROLLER:
+                    self._controller_failed = True
+                    self._finalize_game(GovernorStopReason.FAILURE)
+                    raise _BoundedTournamentStop("policy-decision") from None
                 self._controller_failed = True
                 force_fallback = True
         try:
@@ -710,6 +927,13 @@ class MyAgent(_AgentBase):  # type: ignore[misc,valid-type]
                 force_fallback=force_fallback,
             )
         except CompetitionIntegrityError as error:
+            cancellation_error = self._cancel_unsubmitted_policy_request()
+            if cancellation_error is not None:
+                self._record_failure(
+                    boundary="policy-cancellation",
+                    classification="execution",
+                    error=cancellation_error,
+                )
             stop = self._require_governor().stop_decision(str(self.game_id))
             if not stop.should_stop:
                 self._record_failure(
@@ -727,6 +951,13 @@ class MyAgent(_AgentBase):  # type: ignore[misc,valid-type]
             self._finalize_game(stop.reason)
             raise _BoundedTournamentStop(stop.reason.value) from None
         if authorization.fallback_used and not force_fallback:
+            cancellation_error = self._cancel_unsubmitted_policy_request()
+            if cancellation_error is not None:
+                self._record_failure(
+                    boundary="policy-cancellation",
+                    classification="execution",
+                    error=cancellation_error,
+                )
             replacement_error = RuntimeError("governor replaced an illegal controller request")
             self._record_failure(
                 boundary="governor-legality",
@@ -734,10 +965,19 @@ class MyAgent(_AgentBase):  # type: ignore[misc,valid-type]
                 error=replacement_error,
             )
             self._controller_failed = True
+            self._finalize_game(GovernorStopReason.FAILURE)
+            raise _BoundedTournamentStop("governor-legality")
         self._authorized_actions += 1
         try:
             return _translate_action(authorization.authorized_action)
         except Exception as error:
+            cancellation_error = self._cancel_unsubmitted_policy_request()
+            if cancellation_error is not None:
+                self._record_failure(
+                    boundary="policy-cancellation",
+                    classification="execution",
+                    error=cancellation_error,
+                )
             self._record_failure(
                 boundary="action-translation",
                 classification="execution",
@@ -778,20 +1018,44 @@ class MyAgent(_AgentBase):  # type: ignore[misc,valid-type]
         """Submit immutable per-decision data at the pinned request boundary."""
 
         if not isinstance(action, _FrameworkActionRequest):
-            raise RuntimeError("official wrapper received an unsealed action request")
+            shape_error = RuntimeError("official wrapper received an unsealed action request")
+            self._fail_before_environment(
+                boundary="environment-request-shape",
+                classification="platform",
+                error=shape_error,
+                reason=GovernorStopReason.FAILURE,
+            )
+            raise shape_error
         environment = getattr(self, "arc_env", None)
         step = getattr(environment, "step", None)
         if not callable(step):
-            raise RuntimeError("official wrapper has no callable environment step")
+            step_error = RuntimeError("official wrapper has no callable environment step")
+            self._fail_before_environment(
+                boundary="environment-step-unavailable",
+                classification="platform",
+                error=step_error,
+                reason=GovernorStopReason.FAILURE,
+            )
+            raise step_error
+        converter = getattr(self, "_convert_raw_frame_data", None)
+        if not callable(converter):
+            converter_error = RuntimeError("official wrapper has no frame conversion boundary")
+            self._fail_before_environment(
+                boundary="environment-converter-unavailable",
+                classification="platform",
+                error=converter_error,
+                reason=GovernorStopReason.FAILURE,
+            )
+            raise converter_error
         stop = self._require_governor().stop_decision(str(self.game_id))
         if stop.should_stop:
-            error = _ActionDeadlineExpired("governor boundary expired before environment step")
-            self._record_failure(
+            stop_error = _ActionDeadlineExpired("governor boundary expired before environment step")
+            self._fail_before_environment(
                 boundary="environment-step-before-boundary",
                 classification="budget exhaustion",
-                error=error,
+                error=stop_error,
+                reason=stop.reason,
             )
-            self._finalize_game(stop.reason)
             raise _BoundedTournamentStop(stop.reason.value) from None
         remaining_seconds = min(
             stop.game_seconds_remaining,
@@ -803,9 +1067,6 @@ class MyAgent(_AgentBase):  # type: ignore[misc,valid-type]
                 seconds=remaining_seconds,
                 boundary="environment-step",
             )
-            converter = getattr(self, "_convert_raw_frame_data", None)
-            if not callable(converter):
-                raise RuntimeError("official wrapper has no frame conversion boundary")
             return converter(raw)
         except _ActionDeadlineExpired as error:
             self._record_failure(
