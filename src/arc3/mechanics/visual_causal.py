@@ -8690,7 +8690,7 @@ class VisualCausalPolicy:
                 created_from_event_ids=(receipt_id,),
                 provenance=EvidenceProvenance.OBSERVED_THIS_GAME,
                 priority=40,
-                note="coordinate action transformed a readable endpoint system and its mediator",
+                note="coordinate action produced an observed endpoint and mediator change",
             )
             self._affine_ledger_ref = opened.ref
             learner.resolve_residual(learning.residual.residual_id)
