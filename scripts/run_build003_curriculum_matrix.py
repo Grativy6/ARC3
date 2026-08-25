@@ -55,6 +55,28 @@ def _git(source_root: Path, *arguments: str) -> str:
     ).strip()
 
 
+def _build003_source_binding(
+    repository: Path,
+) -> tuple[dict[str, object], dict[str, dict[str, str]]]:
+    """Bind a matrix to one observable Build 003 checkout and its critical files."""
+
+    commit = _git(repository, "rev-parse", "HEAD")
+    tree = _git(repository, "show", "-s", "--format=%T", "HEAD")
+    clean = not bool(_git(repository, "status", "--porcelain=v1"))
+    runner = Path(__file__).resolve()
+    result_ledger = repository / "src/arc3/evaluation/build003_results.py"
+    return (
+        {"commit": commit, "tree": tree, "clean": clean},
+        {
+            "matrix_runner": {"path": str(runner), "sha256": _sha256(runner)},
+            "result_ledger": {
+                "path": str(result_ledger),
+                "sha256": _sha256(result_ledger),
+            },
+        },
+    )
+
+
 def _matrix_status(
     *,
     complete_preregistered_matrix: bool,
@@ -97,6 +119,18 @@ def main(argv: list[str] | None = None) -> int:
     if not 1 <= args.jobs <= 8:
         raise SystemExit("--jobs must be between 1 and 8")
     repository = Path(__file__).resolve().parents[1]
+    output_root = args.output_root.resolve()
+    if output_root.exists() and any(output_root.iterdir()):
+        raise SystemExit(f"replacement is forbidden; output root is not empty: {output_root}")
+    try:
+        build003_source_identity, build003_source_files = _build003_source_binding(repository)
+    except (OSError, subprocess.CalledProcessError) as error:
+        raise SystemExit(f"Build 003 source identity preflight failed: {error}") from error
+    build003_commit = str(build003_source_identity["commit"])
+    build003_tree = str(build003_source_identity["tree"])
+    build003_clean = build003_source_identity["clean"] is True
+    if args.seed_set == "heldout" and not build003_clean:
+        raise SystemExit("full held-out matrix requires a clean Build 003 source checkout")
     for source in (repository, repository / "src"):
         if str(source) not in sys.path:
             sys.path.insert(0, str(source))
@@ -156,9 +190,6 @@ def main(argv: list[str] | None = None) -> int:
             f"--limit must be between 1 and {len(available_seeds)} for {args.seed_set}"
         )
 
-    output_root = args.output_root.resolve()
-    if output_root.exists() and any(output_root.iterdir()):
-        raise SystemExit(f"replacement is forbidden; output root is not empty: {output_root}")
     output_root.mkdir(parents=True, exist_ok=True)
     rows_path = output_root / "rows.jsonl"
     storage_root = (
@@ -287,6 +318,8 @@ def main(argv: list[str] | None = None) -> int:
         "worker_storage_root": str(storage_root),
         "budgets": asdict(budgets_for_protocol(definition)),
         "build002_baseline_identity": asdict(definition.baseline),
+        "build003_source_identity": build003_source_identity,
+        "build003_source_files": build003_source_files,
         "paired_summary": paired_summary,
         "build002_source_root": (
             str(args.build002_source_root.resolve())
@@ -322,6 +355,9 @@ def main(argv: list[str] | None = None) -> int:
                 f"- Receipts SHA-256: `{batch['sequence_receipts_sha256']}`",
                 f"- Frozen Build 002 commit: `{definition.baseline.commit}`",
                 f"- Frozen Build 002 tree: `{definition.baseline.tree}`",
+                f"- Build 003 source commit: `{build003_commit}`",
+                f"- Build 003 source tree: `{build003_tree}`",
+                f"- Build 003 source clean: `{build003_clean}`",
                 "",
                 "This is synthetic evidence only. No public, holdout, or official target game "
                 "was opened, and these results do not establish target-game completion.",
