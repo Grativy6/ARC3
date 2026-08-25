@@ -339,9 +339,7 @@ def _small_components_would_merge(
         or len(right_cells) > _SMALL_COMPONENT_FRAGMENT_AREA
     ):
         return False
-    combined = tuple(
-        sorted({*left_cells, *right_cells}, key=lambda item: (item[1], item[0]))
-    )
+    combined = tuple(sorted({*left_cells, *right_cells}, key=lambda item: (item[1], item[0])))
     if len(combined) > _SMALL_COMPONENT_COMBINED_AREA:
         return False
     xs = [item[0] for item in combined]
@@ -352,11 +350,25 @@ def _small_components_would_merge(
     ):
         return False
     separation = min(
-        max(abs(lx - rx), abs(ly - ry))
-        for lx, ly in left_cells
-        for rx, ry in right_cells
+        max(abs(lx - rx), abs(ly - ry)) for lx, ly in left_cells for rx, ry in right_cells
     )
     return separation <= _SMALL_COMPONENT_MERGE_DISTANCE
+
+
+def _marker_center_would_merge_with_target(
+    group: _EmbeddedMarkerGroup,
+    endpoint: VisualObject,
+    *,
+    center: tuple[int, int],
+) -> bool:
+    """Apply the parser's bounded merge rule to a prospective marker center."""
+
+    residual_target = tuple(cell for cell in group.target.cells if cell != endpoint.rounded_center)
+    return bool(residual_target and _small_components_would_merge((center,), residual_target))
+
+
+def _marker_target_identity_constraint(marker_color: int) -> str:
+    return f"marker:{marker_color}:preserve-target-identity"
 
 
 def _merge_small_same_color_groups(
@@ -708,10 +720,7 @@ def _radial_plan_points(
 
 
 _COMPOSITE_MEDIATOR_OFFSETS = frozenset(
-    (dx, dy)
-    for dy in range(-2, 3)
-    for dx in range(-2, 3)
-    if (abs(dx), abs(dy)) != (2, 2)
+    (dx, dy) for dy in range(-2, 3) for dx in range(-2, 3) if (abs(dx), abs(dy)) != (2, 2)
 )
 _COMPOSITE_TARGET_OFFSETS = frozenset(
     {
@@ -744,9 +753,7 @@ def _proxy_visual_object(
     """Build one bounded compound-object projection without changing base components."""
 
     ordered = tuple(sorted(cells, key=lambda cell: (cell[1], cell[0])))
-    identity = identity_kind + "|" + ";".join(
-        f"{x},{y},{scene.cells[y][x]}" for x, y in ordered
-    )
+    identity = identity_kind + "|" + ";".join(f"{x},{y},{scene.cells[y][x]}" for x, y in ordered)
     object_ref = (
         f"visual-{identity_kind}:"
         + hashlib.sha256(f"{marker_color}|{identity}".encode("ascii")).hexdigest()[:20]
@@ -766,7 +773,9 @@ def _proxy_visual_object(
         center_x=float(center[0]),
         center_y=float(center[1]),
         center_cell=center_cell,
-        touches_edge=(min_x == 0 or min_y == 0 or max_x == scene.width - 1 or max_y == scene.height - 1),
+        touches_edge=(
+            min_x == 0 or min_y == 0 or max_x == scene.width - 1 or max_y == scene.height - 1
+        ),
         role=role,
     )
 
@@ -781,19 +790,13 @@ def _compound_outer_signature(
 
     footprint = frozenset(cells)
     cell_to_object = {
-        cell: item
-        for item in scene.objects
-        for cell in item.cells
-        if cell in footprint
+        cell: item for item in scene.objects for cell in item.cells if cell in footprint
     }
     return frozenset(
         scene.cells[y][x]
         for x, y in cells
         if (x, y) != center
-        and (
-            (item := cell_to_object.get((x, y))) is None
-            or frozenset(item.cells) <= footprint
-        )
+        and ((item := cell_to_object.get((x, y))) is None or frozenset(item.cells) <= footprint)
     )
 
 
@@ -805,11 +808,7 @@ def _compound_raw_outer_signature(
 ) -> frozenset[int]:
     """Return every observed non-core color in an exact compound footprint."""
 
-    return frozenset(
-        scene.cells[y][x]
-        for x, y in cells
-        if (x, y) != center
-    )
+    return frozenset(scene.cells[y][x] for x, y in cells if (x, y) != center)
 
 
 def _composite_marker_mediator(
@@ -856,9 +855,7 @@ def _composite_sparse_targets(
     """Find exact multicolor 12-cell rings without loosening component roles globally."""
 
     targets: list[tuple[VisualObject, frozenset[int]]] = []
-    complete_box = frozenset(
-        (dx, dy) for dy in range(-3, 4) for dx in range(-3, 4)
-    )
+    complete_box = frozenset((dx, dy) for dy in range(-3, 4) for dx in range(-3, 4))
     for center_y in range(3, scene.height - 3):
         for center_x in range(3, scene.width - 3):
             observed = frozenset(
@@ -870,10 +867,7 @@ def _composite_sparse_targets(
                 continue
             cells = tuple(
                 sorted(
-                    (
-                        (center_x + dx, center_y + dy)
-                        for dx, dy in _COMPOSITE_TARGET_OFFSETS
-                    ),
+                    ((center_x + dx, center_y + dy) for dx, dy in _COMPOSITE_TARGET_OFFSETS),
                     key=lambda cell: (cell[1], cell[0]),
                 )
             )
@@ -1028,6 +1022,36 @@ def _marker_group_potential(
     return dx * dx + dy * dy
 
 
+def _certified_marker_target_contaminant(
+    group: _EmbeddedMarkerGroup,
+) -> VisualObject | None:
+    """Return one endpoint whose marker center is joined to an exact sparse ring.
+
+    This is an observation-level parsing residual, not a target rewrite.  The
+    endpoint is identified only when removing its center leaves the complete
+    symmetric 12-cell ring used by the generic sparse-target detector.
+    """
+
+    candidates = tuple(
+        endpoint for endpoint in group.endpoints if endpoint.rounded_center in group.target.cells
+    )
+    if len(candidates) != 1:
+        return None
+    contaminant = candidates[0]
+    remaining = frozenset(group.target.cells) - {contaminant.rounded_center}
+    if len(remaining) != len(_COMPOSITE_TARGET_OFFSETS):
+        return None
+    min_x = min(x for x, _y in remaining)
+    max_x = max(x for x, _y in remaining)
+    min_y = min(y for _x, y in remaining)
+    max_y = max(y for _x, y in remaining)
+    if (min_x + max_x) % 2 or (min_y + max_y) % 2:
+        return None
+    center = ((min_x + max_x) // 2, (min_y + max_y) // 2)
+    offsets = frozenset((x - center[0], y - center[1]) for x, y in remaining)
+    return contaminant if offsets == _COMPOSITE_TARGET_OFFSETS else None
+
+
 def _final_marker_target_overlap_cells(
     scene: VisualScene,
     group: _EmbeddedMarkerGroup,
@@ -1098,6 +1122,8 @@ def _marker_relocation_candidates(
     target_regions = _visible_target_regions(scene) if group.is_composite else ()
     candidates: list[Coordinate] = []
     for x, y in sorted(raw, key=lambda item: (item[1], item[0])):
+        if endpoint.min_x <= x <= endpoint.max_x and endpoint.min_y <= y <= endpoint.max_y:
+            continue
         potential = _marker_group_potential(
             group,
             sum_x=current_sum_x - endpoint.rounded_center[0] + x,
@@ -1175,10 +1201,7 @@ def _endpoint_placement_is_open(
     prospective_outer = {(x + dx, y + dy) for dx, dy in outer_footprint}
     if len(prospective_outer) <= _SMALL_COMPONENT_FRAGMENT_AREA:
         for item in scene.objects:
-            if (
-                item.object_ref == endpoint.object_ref
-                or item.color != endpoint.color
-            ):
+            if item.object_ref == endpoint.object_ref or item.color != endpoint.color:
                 continue
             separation = min(
                 max(abs(left_x - right_x), abs(left_y - right_y))
@@ -1267,23 +1290,148 @@ def _object_footprint(item: VisualObject) -> frozenset[tuple[int, int]]:
 
 
 def _marker_action_structure_is_readable(
-    scene: VisualScene,
+    before_scene: VisualScene,
+    after_scene: VisualScene,
+    *,
+    marker_color: int,
+    arity: int,
+    coordinate: Coordinate,
+    active_color: int | None,
+    plan_signature: str,
+    target_separation_observed: bool,
+) -> bool:
+    """Confirm the exact movement or role transfer predicted by a marker plan."""
+
+    if active_color is None:
+        return False
+    signature_parts = plan_signature.split(":")
+    if len(signature_parts) < 4 or signature_parts[0] != "marker":
+        return False
+    kind = signature_parts[2]
+    before_groups = tuple(
+        group
+        for group in _embedded_marker_groups(before_scene)
+        if group.marker_color == marker_color and group.arity == arity
+    )
+    after_groups = tuple(
+        group
+        for group in _embedded_marker_groups(after_scene)
+        if group.marker_color == marker_color and group.arity == arity
+    )
+
+    movement_kinds = {"improve", "solve", "stage", "separate"}
+    if kind in movement_kinds:
+        before_active = _embedded_marker_active_endpoint(
+            before_scene,
+            active_color=active_color,
+        )
+        if before_active is None:
+            return False
+        matching_before = tuple(
+            group
+            for group in before_groups
+            if before_active.object_ref in {endpoint.object_ref for endpoint in group.endpoints}
+        )
+        if len(matching_before) != 1:
+            return False
+        before_group = matching_before[0]
+        expected_centers = {
+            (coordinate.x, coordinate.y)
+            if endpoint.object_ref == before_active.object_ref
+            else endpoint.rounded_center
+            for endpoint in before_group.endpoints
+        }
+        matching_after = tuple(
+            group
+            for group in after_groups
+            if {endpoint.rounded_center for endpoint in group.endpoints} == expected_centers
+            and any(
+                endpoint.rounded_center == (coordinate.x, coordinate.y)
+                and endpoint.color == active_color
+                for endpoint in group.endpoints
+            )
+        )
+        return len(matching_after) == 1 and (kind != "separate" or target_separation_observed)
+
+    role_transfer_kinds = {"activate", "defer", "rotate", "separate-activate"}
+    if kind not in role_transfer_kinds:
+        return False
+    selected = tuple(
+        (group, endpoint)
+        for group in before_groups
+        for endpoint in group.endpoints
+        if endpoint.rounded_center == (coordinate.x, coordinate.y)
+    )
+    if len(selected) != 1:
+        return False
+    selected_group, selected_endpoint = selected[0]
+    selected_centers = {endpoint.rounded_center for endpoint in selected_group.endpoints}
+    matching_after = tuple(
+        group
+        for group in after_groups
+        if {endpoint.rounded_center for endpoint in group.endpoints} == selected_centers
+        and any(
+            endpoint.rounded_center == (coordinate.x, coordinate.y)
+            and endpoint.color == active_color
+            for endpoint in group.endpoints
+        )
+    )
+    if len(matching_after) != 1:
+        return False
+    before_active = _embedded_marker_active_endpoint(
+        before_scene,
+        active_color=active_color,
+    )
+    if before_active is None:
+        return kind == "activate"
+    if before_active.rounded_center == (coordinate.x, coordinate.y):
+        return False
+    return any(
+        endpoint.rounded_center == before_active.rounded_center
+        and endpoint.color == selected_endpoint.color
+        for endpoint in after_scene.endpoints
+    )
+
+
+def _marker_target_separation_observed(
+    before_scene: VisualScene,
+    after_scene: VisualScene,
     *,
     marker_color: int,
     arity: int,
     coordinate: Coordinate,
 ) -> bool:
-    """Confirm that a planned marker action retained its visible group link."""
+    """Confirm that one planned separation restored the exact target ring."""
 
-    return any(
-        group.marker_color == marker_color
-        and group.arity == arity
-        and any(
-            (coordinate.x, coordinate.y) in _object_footprint(endpoint)
-            for endpoint in group.endpoints
-        )
-        for group in _embedded_marker_groups(scene)
+    before_groups = tuple(
+        group
+        for group in _embedded_marker_groups(before_scene)
+        if group.marker_color == marker_color and group.arity == arity
     )
+    after_groups = tuple(
+        group
+        for group in _embedded_marker_groups(after_scene)
+        if group.marker_color == marker_color and group.arity == arity
+    )
+    for before_group in before_groups:
+        contaminant = _certified_marker_target_contaminant(before_group)
+        if contaminant is None:
+            continue
+        expected_centers = {
+            (coordinate.x, coordinate.y)
+            if endpoint.object_ref == contaminant.object_ref
+            else endpoint.rounded_center
+            for endpoint in before_group.endpoints
+        }
+        clean_target_cells = frozenset(before_group.target.cells) - {contaminant.rounded_center}
+        if any(
+            {endpoint.rounded_center for endpoint in after_group.endpoints} == expected_centers
+            and frozenset(after_group.target.cells) == clean_target_cells
+            and _certified_marker_target_contaminant(after_group) is None
+            for after_group in after_groups
+        ):
+            return True
+    return False
 
 
 def _marker_bootstrap_active_color(
@@ -1409,10 +1557,7 @@ def _marker_mediator_remains_readable(
     final: bool,
     static_cells: frozenset[tuple[int, int]] | None = None,
     other_mediators: tuple[VisualObject, ...] | None = None,
-    target_regions: tuple[
-        tuple[tuple[int, int], frozenset[tuple[int, int]]], ...
-    ]
-    | None = None,
+    target_regions: tuple[tuple[tuple[int, int], frozenset[tuple[int, int]]], ...] | None = None,
 ) -> bool:
     """Preserve component separation for the predicted mediator glyph."""
 
@@ -1677,6 +1822,115 @@ def _scene_after_marker_role_switch(
     return projected_scene, projected_group, projected_active[0]
 
 
+def _best_marker_target_separation(
+    scene: VisualScene,
+    group: _EmbeddedMarkerGroup,
+    endpoint: VisualObject,
+    *,
+    rejected_signatures: set[str],
+) -> Coordinate | None:
+    """Find the smallest move that restores a contaminated sparse target."""
+
+    contaminant = _certified_marker_target_contaminant(group)
+    if contaminant is None or contaminant.object_ref != endpoint.object_ref:
+        return None
+    clean_target_cells = frozenset(group.target.cells) - {endpoint.rounded_center}
+    sum_x = sum(item.rounded_center[0] for item in group.endpoints)
+    sum_y = sum(item.rounded_center[1] for item in group.endpoints)
+    static_cells = _large_static_component_cells(
+        scene,
+        reference_footprint_size=len(_object_footprint(group.mediator)),
+    )
+    other_mediators = (
+        tuple(
+            candidate.mediator
+            for candidate in _embedded_marker_groups(scene)
+            if candidate.marker_color != group.marker_color
+        )
+        if group.is_composite
+        else ()
+    )
+    target_regions = _visible_target_regions(scene) if group.is_composite else ()
+    best: tuple[int, int, int, int, Coordinate] | None = None
+    for coordinate in _marker_relocation_candidates(scene, group, endpoint):
+        signature = f"marker:{group.marker_color}:separate:{coordinate.x},{coordinate.y}"
+        if signature in rejected_signatures:
+            continue
+        resulting_sum_x = sum_x - endpoint.rounded_center[0] + coordinate.x
+        resulting_sum_y = sum_y - endpoint.rounded_center[1] + coordinate.y
+        mediator_after = (
+            resulting_sum_x // group.arity,
+            resulting_sum_y // group.arity,
+        )
+        if group.is_composite:
+            remains_readable = _marker_mediator_remains_readable(
+                scene,
+                group,
+                endpoint,
+                coordinate=coordinate,
+                mediator_after=mediator_after,
+                final=False,
+                static_cells=static_cells,
+                other_mediators=other_mediators,
+                target_regions=target_regions,
+            )
+        else:
+            remains_readable = _marker_mediator_remains_readable(
+                scene,
+                group,
+                endpoint,
+                coordinate=coordinate,
+                mediator_after=mediator_after,
+                final=False,
+                static_cells=static_cells,
+            )
+        if not remains_readable:
+            continue
+        projection = _scene_after_marker_stage(scene, group, endpoint, coordinate)
+        if projection is None:
+            continue
+        projected_scene, _projected_group = projection
+        refreshed_scene = extract_visual_scene(GridFrame(projected_scene.cells))
+        expected_centers = {
+            (coordinate.x, coordinate.y)
+            if candidate.object_ref == endpoint.object_ref
+            else candidate.rounded_center
+            for candidate in group.endpoints
+        }
+        refreshed_groups = tuple(
+            candidate
+            for candidate in _embedded_marker_groups(refreshed_scene)
+            if candidate.marker_color == group.marker_color
+            and candidate.arity == group.arity
+            and {item.rounded_center for item in candidate.endpoints} == expected_centers
+            and frozenset(candidate.target.cells) == clean_target_cells
+            and _certified_marker_target_contaminant(candidate) is None
+        )
+        if len(refreshed_groups) != 1:
+            continue
+        refreshed_group = refreshed_groups[0]
+        refreshed_sum_x = sum(item.rounded_center[0] for item in refreshed_group.endpoints)
+        refreshed_sum_y = sum(item.rounded_center[1] for item in refreshed_group.endpoints)
+        refreshed_potential = _marker_group_potential(
+            refreshed_group,
+            sum_x=refreshed_sum_x,
+            sum_y=refreshed_sum_y,
+        )
+        displacement = (coordinate.x - endpoint.rounded_center[0]) ** 2 + (
+            coordinate.y - endpoint.rounded_center[1]
+        ) ** 2
+        candidate = (
+            displacement,
+            refreshed_potential,
+            coordinate.y,
+            coordinate.x,
+            coordinate,
+        )
+        if best is None or candidate[:4] < best[:4]:
+            best = candidate
+    return None if best is None else best[4]
+
+
 def _scene_after_marker_reacquisition(
     scene: VisualScene,
     group: _EmbeddedMarkerGroup,
@@ -1717,8 +1971,7 @@ def _scene_after_marker_reacquisition(
     projected_active = tuple(
         endpoint
         for endpoint in projected_group.endpoints
-        if endpoint.rounded_center == selected.rounded_center
-        and endpoint.color == active_color
+        if endpoint.rounded_center == selected.rounded_center and endpoint.color == active_color
     )
     if len(projected_active) != 1:
         return None
@@ -1827,6 +2080,16 @@ def _best_marker_staging_relocation(
             sum_x=resulting_sum_x,
             sum_y=resulting_sum_y,
         )
+        if (
+            _marker_target_identity_constraint(group.marker_color) in rejected_signatures
+            and stage_potential != 0
+            and _marker_center_would_merge_with_target(
+                group,
+                endpoint,
+                center=(coordinate.x, coordinate.y),
+            )
+        ):
+            continue
         if stage_potential < current:
             continue
         signature = f"marker:{group.marker_color}:stage:{coordinate.x},{coordinate.y}"
@@ -1943,6 +2206,15 @@ def _best_marker_relocation(
     best: tuple[int, int, int, int, Coordinate] | None = None
     for coordinates in candidate_batches:
         for coordinate in coordinates:
+            if (
+                endpoint.min_x <= coordinate.x <= endpoint.max_x
+                and endpoint.min_y <= coordinate.y <= endpoint.max_y
+            ):
+                # ACTION6 within the active glyph's observed bounding box does
+                # not provide evidence of a relocation.  Even an unpainted
+                # corner can remain inside the input hitbox and only animate
+                # the rendered endpoint in place.
+                continue
             resulting_sum_x = sum_x - endpoint.rounded_center[0] + coordinate.x
             resulting_sum_y = sum_y - endpoint.rounded_center[1] + coordinate.y
             potential = _marker_group_potential(
@@ -1950,6 +2222,16 @@ def _best_marker_relocation(
                 sum_x=resulting_sum_x,
                 sum_y=resulting_sum_y,
             )
+            if (
+                _marker_target_identity_constraint(group.marker_color) in rejected_signatures
+                and potential != 0
+                and _marker_center_would_merge_with_target(
+                    group,
+                    endpoint,
+                    center=(coordinate.x, coordinate.y),
+                )
+            ):
+                continue
             mediator_after = (
                 resulting_sum_x // group.arity,
                 resulting_sum_y // group.arity,
@@ -2168,9 +2450,7 @@ def _embedded_marker_plan(
             ),
             mechanic_ref=mechanic_ref,
             plan_id=plan_id,
-            plan_signature=(
-                f"marker:{group.marker_color}:activate:{coordinate.x},{coordinate.y}"
-            ),
+            plan_signature=(f"marker:{group.marker_color}:activate:{coordinate.x},{coordinate.y}"),
             target_center=group.target.rounded_center,
             mediator_color=group.marker_color,
             arity=group.arity,
@@ -2377,6 +2657,71 @@ def _embedded_marker_plan(
         )
         fallback_stage_switch_candidates.append((staged_potential, endpoint.object_ref, endpoint))
     if not switch_candidates:
+        target_contaminant = _certified_marker_target_contaminant(group)
+        if target_contaminant is not None:
+            if target_contaminant.object_ref == active.object_ref:
+                separation = _best_marker_target_separation(
+                    scene,
+                    group,
+                    active,
+                    rejected_signatures=rejected_signatures,
+                )
+                if separation is not None:
+                    signature = (
+                        f"marker:{group.marker_color}:separate:{separation.x},{separation.y}"
+                    )
+                    return PlannedClick(
+                        coordinate=separation,
+                        purpose=VisualActionPurpose.PROBE,
+                        expectation=(
+                            "separate the active marker center from a certified "
+                            "sparse-target ring after direct and switched progress "
+                            "are exhausted"
+                        ),
+                        mechanic_ref=mechanic_ref,
+                        plan_id=plan_id,
+                        plan_signature=signature,
+                        target_center=group.target.rounded_center,
+                        mediator_color=group.marker_color,
+                        arity=group.arity,
+                    )
+            else:
+                coordinate = Coordinate(*target_contaminant.rounded_center)
+                signature = (
+                    f"marker:{group.marker_color}:separate-activate:{coordinate.x},{coordinate.y}"
+                )
+                projection = _scene_after_marker_role_switch(
+                    scene,
+                    group,
+                    active,
+                    target_contaminant,
+                )
+                if signature not in rejected_signatures and projection is not None:
+                    projected_scene, projected_group, projected_active = projection
+                    if (
+                        _best_marker_target_separation(
+                            projected_scene,
+                            projected_group,
+                            projected_active,
+                            rejected_signatures=rejected_signatures,
+                        )
+                        is not None
+                    ):
+                        return PlannedClick(
+                            coordinate=coordinate,
+                            purpose=VisualActionPurpose.PROBE,
+                            expectation=(
+                                "transfer the active role to the endpoint whose marker "
+                                "center is joined to a certified sparse-target ring after "
+                                "direct and switched progress are exhausted"
+                            ),
+                            mechanic_ref=mechanic_ref,
+                            plan_id=plan_id,
+                            plan_signature=signature,
+                            target_center=group.target.rounded_center,
+                            mediator_color=group.marker_color,
+                            arity=group.arity,
+                        )
         stage = _best_marker_staging_relocation(
             scene,
             group,
@@ -2555,9 +2900,7 @@ def _local_target_satisfied(
 ) -> bool:
     if target_center is None or mediator_color is None or arity is None:
         return False
-    marker_endpoints = tuple(
-        item for item in scene.endpoints if item.center_cell == mediator_color
-    )
+    marker_endpoints = tuple(item for item in scene.endpoints if item.center_cell == mediator_color)
     if len(marker_endpoints) == arity:
         marker_centroid = (
             sum(item.center_x for item in marker_endpoints) / arity,
@@ -2762,6 +3105,7 @@ class VisualCausalPolicy:
         self._marker_bootstrap_attempted = False
         self._marker_stage_pending_switch: int | None = None
         self._marker_reacquire_after_local_solve = False
+        self._marker_target_identity_constraints: set[int] = set()
         self._marker_structural_actions: set[str] = set()
         self._marker_structural_action_order: deque[str] = deque()
         self._last_probe_failed = False
@@ -2830,6 +3174,7 @@ class VisualCausalPolicy:
         self._marker_bootstrap_attempted = False
         self._marker_stage_pending_switch = None
         self._marker_reacquire_after_local_solve = False
+        self._marker_target_identity_constraints.clear()
         self._marker_structural_actions.clear()
         self._marker_structural_action_order.clear()
         self._last_probe_failed = False
@@ -3011,12 +3356,20 @@ class VisualCausalPolicy:
             marker_plan: PlannedClick | None = None
             structural_rejections: set[str] = set()
             for _attempt in range(64):
+                target_identity_constraints = {
+                    _marker_target_identity_constraint(marker_color)
+                    for marker_color in self._marker_target_identity_constraints
+                }
                 candidate_plan = _embedded_marker_plan(
                     marker_scene,
                     level_index=observation.levels_completed,
                     active_color=self._last_active_color,
                     staged_marker_color=self._marker_stage_pending_switch,
-                    rejected_signatures=(self._failed_plan_signatures | structural_rejections),
+                    rejected_signatures=(
+                        self._failed_plan_signatures
+                        | structural_rejections
+                        | target_identity_constraints
+                    ),
                     allow_reacquisition=self._marker_reacquire_after_local_solve,
                 )
                 if candidate_plan is None:
@@ -3353,21 +3706,46 @@ class VisualCausalPolicy:
             and not local_target_satisfied
         )
         marker_action_structure_readable = False
+        marker_target_separated = False
         if marker_action_planned:
+            assert self._pending_plan_signature is not None
             assert self._pending_mediator_color is not None
             assert self._pending_arity is not None
             assert action.coordinate is not None
-            marker_action_structure_readable = _marker_action_structure_is_readable(
+            marker_target_separated = _marker_target_separation_observed(
+                before_scene,
                 after_scene,
                 marker_color=self._pending_mediator_color,
                 arity=self._pending_arity,
                 coordinate=action.coordinate,
             )
+            marker_action_structure_readable = bool(
+                changed > 0
+                and _marker_action_structure_is_readable(
+                    before_scene,
+                    after_scene,
+                    marker_color=self._pending_mediator_color,
+                    arity=self._pending_arity,
+                    coordinate=action.coordinate,
+                    active_color=self._last_active_color,
+                    plan_signature=self._pending_plan_signature,
+                    target_separation_observed=marker_target_separated,
+                )
+            )
+        if marker_action_structure_readable and marker_target_separated:
+            assert self._pending_mediator_color is not None
+            self._marker_target_identity_constraints.add(self._pending_mediator_color)
         marker_action_structure_failed = (
             marker_action_planned and not marker_action_structure_readable
         )
         if marker_action_structure_failed:
-            residual = "planned marker endpoint became structurally unreadable"
+            residual = (
+                "planned marker target separation was not observed"
+                if self._pending_plan_signature is not None
+                and ":separate:" in self._pending_plan_signature
+                and not marker_target_separated
+                else "planned marker endpoint became structurally unreadable"
+            )
         coordinate_transform = (
             local_target_satisfied
             or marker_action_structure_readable
@@ -3653,11 +4031,12 @@ class VisualCausalPolicy:
             ),
             "mechanics": [item.to_dict() for item in self._mechanics[-64:]],
             "marker_bootstrap_attempted": self._marker_bootstrap_attempted,
-            "marker_reacquire_after_local_solve": (
-                self._marker_reacquire_after_local_solve
-            ),
+            "marker_reacquire_after_local_solve": (self._marker_reacquire_after_local_solve),
             "marker_stage_pending_switch": self._marker_stage_pending_switch,
             "marker_structural_action_count": len(self._marker_structural_actions),
+            "marker_target_identity_constraint_count": len(
+                self._marker_target_identity_constraints
+            ),
             "pending_plan_actions": len(self._plan),
             "receipt_count": len(self._receipts),
             "receipts": [item.to_dict() for item in self._receipts[-192:]],

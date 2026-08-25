@@ -229,7 +229,9 @@ def _composite_marker_frame() -> GridFrame:
 
     for marker, (endpoints, target) in groups.items():
         for endpoint_index, endpoint in enumerate(endpoints):
-            _paint(rows, endpoint, _ENDPOINT_SHAPE, 0 if marker == 12 and endpoint_index == 0 else 3)
+            _paint(
+                rows, endpoint, _ENDPOINT_SHAPE, 0 if marker == 12 and endpoint_index == 0 else 3
+            )
             rows[endpoint[1]][endpoint[0]] = marker
         mediator = (
             sum(x for x, _y in endpoints) // len(endpoints),
@@ -269,6 +271,23 @@ def _sparse_target_overlay_frame(
         rows[target_center[1] + dy][target_center[0] + dx] = 5
     _paint(rows, target_center, _SPARSE_TARGET_RING, 12)
     rows[target_center[1]][target_center[0]] = target_overlay
+    return GridFrame.from_rows(rows)
+
+
+def _contaminated_marker_target_frame(*, active_index: int) -> GridFrame:
+    target = (44, 44)
+    endpoints = ((39, 22), (48, 40), (22, 22), (48, 58))
+    rows = [[5 for _ in range(64)] for _ in range(64)]
+    _paint(rows, target, _OFFSET_SPARSE_TARGET_RING, 12)
+    for index, endpoint in enumerate(endpoints):
+        _paint(rows, endpoint, _ENDPOINT_SHAPE, 0 if index == active_index else 3)
+        rows[endpoint[1]][endpoint[0]] = 12
+    mediator = (
+        sum(x for x, _y in endpoints) // len(endpoints),
+        sum(y for _x, y in endpoints) // len(endpoints),
+    )
+    _paint(rows, mediator, _HUB_OUTER, 12)
+    rows[mediator[1]][mediator[0]] = 6
     return GridFrame.from_rows(rows)
 
 
@@ -453,26 +472,19 @@ def test_multicolor_marker_compounds_retain_affine_groups_and_blocker_gate() -> 
     )
     assert projection is not None
     projected_scene, _projected_group = projection
-    reparsed = {
-        group.marker_color: group for group in _embedded_marker_groups(projected_scene)
-    }
+    reparsed = {group.marker_color: group for group in _embedded_marker_groups(projected_scene)}
     assert reparsed[12].target.rounded_center == (45, 58)
-    assert (
-        visual_causal._compound_outer_signature(
-            projected_scene,
-            cells=reparsed[12].mediator.cells,
-            center=reparsed[12].mediator.rounded_center,
-        )
-        == frozenset({7, 12})
-    )
+    assert visual_causal._compound_outer_signature(
+        projected_scene,
+        cells=reparsed[12].mediator.cells,
+        center=reparsed[12].mediator.rounded_center,
+    ) == frozenset({7, 12})
     candidates = visual_causal._marker_relocation_candidates(
         scene,
         groups[12],
         active,
     )
-    other_target_box = frozenset(
-        (x, y) for y in range(55, 62) for x in range(35, 42)
-    )
+    other_target_box = frozenset((x, y) for y in range(55, 62) for x in range(35, 42))
     assert Coordinate(41, 54) not in candidates
     assert all(
         not (
@@ -500,22 +512,16 @@ def test_compound_group_uses_exact_raw_signature_only_when_filtered_match_is_los
     assert 12 in groups
     assert groups[12].mediator.rounded_center == (18, 13)
     assert groups[12].target.rounded_center == (45, 58)
-    assert (
-        visual_causal._compound_outer_signature(
-            scene,
-            cells=groups[12].mediator.cells,
-            center=groups[12].mediator.rounded_center,
-        )
-        == frozenset({12})
-    )
-    assert (
-        visual_causal._compound_raw_outer_signature(
-            scene,
-            cells=groups[12].mediator.cells,
-            center=groups[12].mediator.rounded_center,
-        )
-        == frozenset({7, 12})
-    )
+    assert visual_causal._compound_outer_signature(
+        scene,
+        cells=groups[12].mediator.cells,
+        center=groups[12].mediator.rounded_center,
+    ) == frozenset({12})
+    assert visual_causal._compound_raw_outer_signature(
+        scene,
+        cells=groups[12].mediator.cells,
+        center=groups[12].mediator.rounded_center,
+    ) == frozenset({7, 12})
 
 
 def test_marker_relocation_checks_the_observed_endpoint_footprint() -> None:
@@ -624,9 +630,7 @@ def test_predicted_mediator_permits_endpoint_tangent_but_rejects_overlap() -> No
         )
     )
     group = next(item for item in _embedded_marker_groups(scene) if item.marker_color == 12)
-    other_group = next(
-        item for item in _embedded_marker_groups(scene) if item.marker_color == 14
-    )
+    other_group = next(item for item in _embedded_marker_groups(scene) if item.marker_color == 14)
     endpoint = next(item for item in group.endpoints if item.color == 0)
     nearby_ordinary_mediator = visual_causal._translated_visual_object(
         other_group.mediator,
@@ -1291,6 +1295,398 @@ def test_marker_staging_reobserves_then_switches_before_exact_solve(
     assert policy.snapshot()["pending_plan_actions"] == 0
 
 
+def test_marker_relocation_rejects_coordinate_inside_active_glyph(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    scene = extract_visual_scene(
+        _marker_frame(
+            (((10, 50), (30, 50)),),
+            ((20, 28),),
+            (12,),
+            active_group=0,
+            active_index=0,
+            background=5,
+            active_color=0,
+            fixed_color=3,
+        )
+    )
+    group = _embedded_marker_groups(scene)[0]
+    endpoint = next(item for item in group.endpoints if item.color == 0)
+
+    monkeypatch.setattr(
+        visual_causal,
+        "_marker_relocation_candidates",
+        lambda *_args, **_kwargs: (Coordinate(10, 48),),
+    )
+    monkeypatch.setattr(
+        visual_causal,
+        "_marker_mediator_remains_readable",
+        lambda *_args, **_kwargs: True,
+    )
+
+    assert (
+        visual_causal._best_marker_relocation(
+            scene,
+            group,
+            endpoint,
+            rejected_signatures=set(),
+            allow_extended=False,
+        )
+        is None
+    )
+
+
+def test_marker_relocation_rejects_empty_active_bbox_corner(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    scene = extract_visual_scene(
+        _marker_frame(
+            (((10, 50), (30, 50)),),
+            ((20, 28),),
+            (12,),
+            active_group=0,
+            active_index=0,
+            background=5,
+            active_color=0,
+            fixed_color=3,
+        )
+    )
+    group = _embedded_marker_groups(scene)[0]
+    endpoint = next(item for item in group.endpoints if item.color == 0)
+    assert scene.cells[48][8] == 5
+
+    monkeypatch.setattr(
+        visual_causal,
+        "_marker_relocation_candidates",
+        lambda *_args, **_kwargs: (Coordinate(8, 48),),
+    )
+    monkeypatch.setattr(
+        visual_causal,
+        "_marker_mediator_remains_readable",
+        lambda *_args, **_kwargs: True,
+    )
+
+    assert (
+        visual_causal._best_marker_relocation(
+            scene,
+            group,
+            endpoint,
+            rejected_signatures=set(),
+            allow_extended=False,
+        )
+        is None
+    )
+
+
+def test_unchanged_marker_role_switch_is_rejected() -> None:
+    environment = _MarkerAffineEnvironment(
+        groups=[[(10, 50), (30, 50)]],
+        targets=((20, 28),),
+        marker_colors=(12,),
+    )
+    policy = VisualCausalPolicy()
+    policy._last_active_color = environment.active_color
+    before = environment.observation()
+    action = ActionRequest(ActionName.ACTION6, Coordinate(30, 50))
+    policy._stage_pending(
+        before,
+        action,
+        purpose=visual_causal.VisualActionPurpose.PROBE,
+        prediction="transfer the active role within the same marker group",
+        mechanic_refs=("affine-marker:test",),
+        plan_signature="marker:12:rotate:30,50",
+        target_center=(20, 28),
+        mediator_color=12,
+        arity=2,
+    )
+    unchanged = Observation(
+        game_id=before.game_id,
+        frames=before.frames,
+        state=before.state,
+        levels_completed=before.levels_completed,
+        win_levels=before.win_levels,
+        available_actions=before.available_actions,
+        returned_action=action,
+    )
+
+    policy.accept_consequence(unchanged)
+
+    assert policy.snapshot()["failed_plan_count"] == 1
+    assert policy.receipts[-1].residual == "planned marker endpoint became structurally unreadable"
+
+
+def test_marker_target_contamination_transfers_then_restores_sparse_ring(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    original_best_relocation = visual_causal._best_marker_relocation
+    monkeypatch.setattr(
+        visual_causal,
+        "_best_marker_relocation",
+        lambda *_args, **_kwargs: None,
+    )
+    inactive_scene = extract_visual_scene(_contaminated_marker_target_frame(active_index=0))
+    inactive_group = _embedded_marker_groups(inactive_scene)[0]
+    contaminant = visual_causal._certified_marker_target_contaminant(inactive_group)
+
+    assert contaminant is not None
+    assert contaminant.rounded_center == (48, 40)
+    transfer = visual_causal._embedded_marker_plan(
+        inactive_scene,
+        level_index=0,
+        active_color=0,
+        staged_marker_color=None,
+        rejected_signatures=set(),
+    )
+    assert transfer is not None
+    assert transfer.coordinate == Coordinate(48, 40)
+    assert "transfer the active role" in transfer.expectation
+
+    active_frame = _contaminated_marker_target_frame(active_index=1)
+    active_scene = extract_visual_scene(active_frame)
+    active_group = _embedded_marker_groups(active_scene)[0]
+    active = visual_causal._embedded_marker_active_endpoint(active_scene, active_color=0)
+    assert active is not None
+    separation = visual_causal._embedded_marker_plan(
+        active_scene,
+        level_index=0,
+        active_color=0,
+        staged_marker_color=None,
+        rejected_signatures=set(),
+    )
+    assert separation is not None
+    assert separation.coordinate == Coordinate(51, 41)
+    assert "separate the active marker center" in separation.expectation
+
+    monkeypatch.setattr(
+        visual_causal,
+        "_best_marker_relocation",
+        original_best_relocation,
+    )
+
+    projection = visual_causal._scene_after_marker_stage(
+        active_scene,
+        active_group,
+        active,
+        separation.coordinate,
+    )
+    assert projection is not None
+    projected_scene, _projected_group = projection
+    refreshed = extract_visual_scene(GridFrame(projected_scene.cells))
+    refreshed_group = _embedded_marker_groups(refreshed)[0]
+    assert refreshed_group.target.area == len(_OFFSET_SPARSE_TARGET_RING)
+    assert refreshed_group.target.rounded_center == (44, 44)
+    assert visual_causal._certified_marker_target_contaminant(refreshed_group) is None
+    assert visual_causal._marker_target_separation_observed(
+        active_scene,
+        refreshed,
+        marker_color=12,
+        arity=4,
+        coordinate=separation.coordinate,
+    )
+
+    before = Observation(
+        game_id=GameId("synthetic-contaminated-target"),
+        frames=(active_frame,),
+        state=GameStateName.NOT_FINISHED,
+        levels_completed=0,
+        win_levels=1,
+        available_actions=(ActionName.ACTION6,),
+    )
+    after = Observation(
+        game_id=before.game_id,
+        frames=(GridFrame(projected_scene.cells),),
+        state=GameStateName.NOT_FINISHED,
+        levels_completed=0,
+        win_levels=1,
+        available_actions=(ActionName.ACTION6,),
+        returned_action=ActionRequest(ActionName.ACTION6, separation.coordinate),
+    )
+    policy = VisualCausalPolicy()
+    policy._last_active_color = 0
+    policy._stage_pending(
+        before,
+        ActionRequest(ActionName.ACTION6, separation.coordinate),
+        purpose=visual_causal.VisualActionPurpose.PROBE,
+        prediction="restore one certified sparse target ring",
+        mechanic_refs=("affine-marker:test",),
+        plan_signature="marker:12:separate:51,41",
+        target_center=(44, 44),
+        mediator_color=12,
+        arity=4,
+    )
+    policy.accept_consequence(after)
+    assert policy.snapshot()["marker_target_identity_constraint_count"] == 1
+
+
+def test_ordinary_marker_improvement_retains_restored_target_identity() -> None:
+    before_frame = _contaminated_marker_target_frame(active_index=1)
+    before_scene = extract_visual_scene(before_frame)
+    group = _embedded_marker_groups(before_scene)[0]
+    active = visual_causal._embedded_marker_active_endpoint(before_scene, active_color=0)
+    assert active is not None
+    coordinate = Coordinate(52, 52)
+    projection = visual_causal._scene_after_marker_stage(
+        before_scene,
+        group,
+        active,
+        coordinate,
+    )
+    assert projection is not None
+    projected_scene, _projected_group = projection
+    after_frame = GridFrame(projected_scene.cells)
+    after_scene = extract_visual_scene(after_frame)
+    assert visual_causal._marker_target_separation_observed(
+        before_scene,
+        after_scene,
+        marker_color=12,
+        arity=4,
+        coordinate=coordinate,
+    )
+
+    before = Observation(
+        game_id=GameId("synthetic-ordinary-target-separation"),
+        frames=(before_frame,),
+        state=GameStateName.NOT_FINISHED,
+        levels_completed=0,
+        win_levels=1,
+        available_actions=(ActionName.ACTION6,),
+    )
+    after = Observation(
+        game_id=before.game_id,
+        frames=(after_frame,),
+        state=GameStateName.NOT_FINISHED,
+        levels_completed=0,
+        win_levels=1,
+        available_actions=(ActionName.ACTION6,),
+        returned_action=ActionRequest(ActionName.ACTION6, coordinate),
+    )
+    policy = VisualCausalPolicy()
+    policy._last_active_color = 0
+    policy._stage_pending(
+        before,
+        ActionRequest(ActionName.ACTION6, coordinate),
+        purpose=visual_causal.VisualActionPurpose.PROGRESS,
+        prediction="strictly reduce the marker-group floor-centroid residual",
+        mechanic_refs=("affine-marker:test",),
+        plan_signature="marker:12:improve:52,52",
+        target_center=(44, 44),
+        mediator_color=12,
+        arity=4,
+    )
+
+    policy.accept_consequence(after)
+
+    assert policy.snapshot()["marker_target_identity_constraint_count"] == 1
+    assert policy.snapshot()["failed_plan_count"] == 0
+
+
+def test_dedicated_marker_separation_requires_restored_target_identity(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    before_frame = _contaminated_marker_target_frame(active_index=1)
+    before_scene = extract_visual_scene(before_frame)
+    group = _embedded_marker_groups(before_scene)[0]
+    active = visual_causal._embedded_marker_active_endpoint(before_scene, active_color=0)
+    assert active is not None
+    coordinate = Coordinate(51, 41)
+    projection = visual_causal._scene_after_marker_stage(
+        before_scene,
+        group,
+        active,
+        coordinate,
+    )
+    assert projection is not None
+    projected_scene, _projected_group = projection
+    before = Observation(
+        game_id=GameId("synthetic-failed-target-separation"),
+        frames=(before_frame,),
+        state=GameStateName.NOT_FINISHED,
+        levels_completed=0,
+        win_levels=1,
+        available_actions=(ActionName.ACTION6,),
+    )
+    after = Observation(
+        game_id=before.game_id,
+        frames=(GridFrame(projected_scene.cells),),
+        state=GameStateName.NOT_FINISHED,
+        levels_completed=0,
+        win_levels=1,
+        available_actions=(ActionName.ACTION6,),
+        returned_action=ActionRequest(ActionName.ACTION6, coordinate),
+    )
+    policy = VisualCausalPolicy()
+    policy._last_active_color = 0
+    policy._stage_pending(
+        before,
+        ActionRequest(ActionName.ACTION6, coordinate),
+        purpose=visual_causal.VisualActionPurpose.PROBE,
+        prediction="restore one certified sparse target ring",
+        mechanic_refs=("affine-marker:test",),
+        plan_signature="marker:12:separate:51,41",
+        target_center=(44, 44),
+        mediator_color=12,
+        arity=4,
+    )
+    monkeypatch.setattr(
+        visual_causal,
+        "_marker_target_separation_observed",
+        lambda *_args, **_kwargs: False,
+    )
+
+    policy.accept_consequence(after)
+
+    assert policy.snapshot()["failed_plan_count"] == 1
+    assert policy.snapshot()["marker_target_identity_constraint_count"] == 0
+    assert policy.receipts[-1].residual == "planned marker target separation was not observed"
+
+
+def test_marker_relocation_does_not_rejoin_center_to_nonfinal_target(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    contaminated = extract_visual_scene(_contaminated_marker_target_frame(active_index=1))
+    contaminated_group = _embedded_marker_groups(contaminated)[0]
+    contaminated_endpoint = visual_causal._embedded_marker_active_endpoint(
+        contaminated,
+        active_color=0,
+    )
+    assert contaminated_endpoint is not None
+    projection = visual_causal._scene_after_marker_stage(
+        contaminated,
+        contaminated_group,
+        contaminated_endpoint,
+        Coordinate(51, 41),
+    )
+    assert projection is not None
+    projected_scene, _projected_group = projection
+    scene = extract_visual_scene(GridFrame(projected_scene.cells))
+    group = _embedded_marker_groups(scene)[0]
+    endpoint = visual_causal._embedded_marker_active_endpoint(scene, active_color=0)
+    assert endpoint is not None
+    assert endpoint.rounded_center == (51, 41)
+
+    monkeypatch.setattr(
+        visual_causal,
+        "_marker_relocation_candidates",
+        lambda *_args, **_kwargs: (Coordinate(48, 40),),
+    )
+    monkeypatch.setattr(
+        visual_causal,
+        "_marker_mediator_remains_readable",
+        lambda *_args, **_kwargs: True,
+    )
+
+    assert (
+        visual_causal._best_marker_relocation(
+            scene,
+            group,
+            endpoint,
+            rejected_signatures={visual_causal._marker_target_identity_constraint(12)},
+            allow_extended=False,
+        )
+        is None
+    )
+
+
 def test_readable_marker_stage_survives_generic_effect_unreadability(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -1723,9 +2119,7 @@ def test_exact_marker_collapse_reacquires_another_visible_group() -> None:
     assert (reacquire.coordinate.x, reacquire.coordinate.y) in remaining_endpoints
     assert "reacquire the active role" in policy._pending_prediction
 
-    selected_index = ((38, 52), (58, 52)).index(
-        (reacquire.coordinate.x, reacquire.coordinate.y)
-    )
+    selected_index = ((38, 52), (58, 52)).index((reacquire.coordinate.x, reacquire.coordinate.y))
     reacquired_frame = _marker_frame(
         (((38, 52), (58, 52)),),
         ((48, 32),),

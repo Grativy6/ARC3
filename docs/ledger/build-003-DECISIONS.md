@@ -79,3 +79,31 @@ This ledger is append-oriented. Supersede decisions with new entries; do not era
 - **Why:** Planning safety must preserve the evidence surfaces on which the generic learner depends. A guard expressed in the parser's observable topology is falsifiable and game-agnostic; a separate approximation can authorize exactly the collision that perception later interprets as disappearance.
 - **Consequences:** Production policy protects compound identity without a game ID, fixed coordinate, color exception, or walkthrough. A predicted exact local collapse remains bounded local progress only; it never substitutes for an official level transition or `GameState.WIN`.
 - **Reopening condition:** A fresh official residual shows that the shared perception/planning relation rejects a necessary action or still permits observable compound evidence to be erased.
+
+## D-003-0007 - Rank certified two-step staging routes with bounded follow-up potential
+
+- **Status:** SUPERSEDED BY D-003-0008
+- **Stage:** 10
+- **Date:** 2026-08-25
+- **Commit:** pending
+- **Decision:** When the current same-group choices offer only shallow immediate improvement, allow an observation-certified two-step staging route to compete with immediate role switching by ranking the route's best legal follow-up potential. Execute only the first environment action, observe its consequence, and replan; do not bind or simulate an unobserved second action.
+- **Alternatives:** Continue greedy immediate-potential ranking; enumerate arbitrary multi-step action sequences; encode the Campaign 16 coordinates or target identity; globally prefer staging over role switching.
+- **Evidence:** Campaign 16, frozen at `0b87a923500041757213fc421e5e165530b0c11c`, completed two levels but entered a shallow-improvement cycle and exhausted bounded same-group actions after 33 official submissions. The raw and official final states remained `NOT_FINISHED`; recording SHA-256 `9531e3137b8b08d7f178c6df0d33f248f6b87740bbb58471b131b992778891a0`.
+- **Why:** The smallest discriminating repair compares a mechanically certified stage-plus-follow-up route against the already available role-switch alternative without opening an unbounded search surface. Re-observation after the first action preserves trace honesty and permits residuals to reopen the route.
+- **Intended consequences (not earned):** Lookahead would have remained deterministic, local to the currently observed mechanic, and bounded to one certified follow-up. Replay regression prevented these intended consequences from becoming accepted policy.
+- **Reopening condition:** Local tests cannot certify the follow-up relation, the bounded ranking regresses an earlier official route, or a fresh official residual shows that deeper planning is necessary.
+- **Supersession evidence:** Implementing the broad follow-up ranking changed a previously preserved official replay route. The replay regression rejected the mechanism before fresh official play. A narrower observation-level diagnosis found that the implicated candidate coordinate was inside the current active glyph and that an endpoint center had contaminated a sparse target under the parser's own merge relation.
+- **Superseded by:** D-003-0008. Preserve D-003-0007 as failed-mechanism evidence; do not treat its unexecuted second-action estimate as accepted policy.
+
+## D-003-0008 - Reject hitbox-contained relocations and separate certified sparse-target contaminants
+
+- **Status:** ADOPTED
+- **Stage:** 10
+- **Date:** 2026-08-25
+- **Commit:** pending
+- **Decision:** Reject any proposed relocation coordinate inside the active endpoint's currently observed bounding box because it provides no evidence of a new center. When exactly one endpoint center is joined to a sparse target and removing that center reconstructs the parser's complete symmetric target ring, prioritize the smallest readable separation action. Accept a planned marker consequence only when the predicted center movement or outer-color role transfer is observed. Retain the target-identity constraint whenever any relocation restores the exact ring, and require a dedicated separation plan to do so. Certify contamination and prospective separation with the parser's exact small-component merge relation, then reobserve before further planning.
+- **Alternatives:** Retain the broad two-step follow-up ranking; treat a click on a glyph edge as a translated center; rewrite the parsed target from history; use a target-specific coordinate or color exception; reject all endpoint/target proximity.
+- **Evidence:** Replay falsified D-003-0007 by regressing a previously preserved route. Official Campaign 15 then directly falsified both the painted-edge click `(41,16)` and the unpainted bounding-box corner `(41,15)` as relocations: each left the endpoint center and mediator unchanged. The narrower repair preserves the full known official Level 1 route and replaces that failed Level 2 sequence with a four-action chain into the recorded Level 3 frame. No-op consequence, successful role-transfer, dedicated-separation, and incidental-restoration regressions are covered. The visual-policy suite reports 50 passed; Ruff and strict mypy are clean.
+- **Why:** The failure is an observation-geometry error, not evidence that broader search is needed. A coordinate within the observed endpoint hitbox cannot certify relocation, while the exact residual target ring can certify that one differently colored endpoint center is the contaminant. Reusing perception's merge predicate keeps action selection and reparsing isomorphic.
+- **Consequences:** Production planning gains a bounded separation route without a game ID, fixed board coordinate, color exception, or walkthrough. Separation is only local evidence repair; it does not establish a solved mechanic, level completion, or official `WIN`.
+- **Reopening condition:** Campaign 17 regresses the preserved Level 1/Level 2 route, the returned observation does not restore the certified sparse target, or a necessary relocation is rejected despite being outside the observed bounding box and parser merge boundary.
