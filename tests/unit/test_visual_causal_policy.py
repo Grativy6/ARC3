@@ -373,7 +373,7 @@ def test_marker_relocation_preserves_outer_component_separation() -> None:
     assert _endpoint_placement_is_open(scene, endpoint, x=20, y=30)
 
 
-def test_nonfinal_mediator_preserves_target_ring_readability_at_radius_sum() -> None:
+def test_nonfinal_mediator_rejects_observed_target_component_adjacency() -> None:
     scene = extract_visual_scene(_sparse_target_overlay_frame())
     group = _embedded_marker_groups(scene)[0]
     endpoint = next(item for item in group.endpoints if item.color == 0)
@@ -392,6 +392,21 @@ def test_nonfinal_mediator_preserves_target_ring_readability_at_radius_sum() -> 
         endpoint,
         coordinate=Coordinate(10, 31),
         mediator_after=(30, 37),
+        final=False,
+    )
+
+
+def test_nonfinal_mediator_uses_sparse_target_footprint_not_bounding_radius() -> None:
+    scene = extract_visual_scene(_sparse_target_overlay_frame())
+    group = _embedded_marker_groups(scene)[0]
+    endpoint = next(item for item in group.endpoints if item.color == 0)
+
+    assert _marker_mediator_remains_readable(
+        scene,
+        group,
+        endpoint,
+        coordinate=Coordinate(10, 31),
+        mediator_after=(25, 25),
         final=False,
     )
 

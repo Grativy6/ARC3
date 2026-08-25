@@ -994,8 +994,15 @@ def _marker_mediator_remains_readable(
         return False
     mediator_radius = _glyph_radius(group.mediator)
     if not final:
-        target_clearance = mediator_radius + _glyph_radius(group.target) + 1
-        if _chebyshev_distance(mediator_after, group.target.rounded_center) <= target_clearance:
+        prospective_mediator = _translated_object_footprint(
+            group.mediator,
+            center=mediator_after,
+        )
+        if any(
+            _chebyshev_distance(mediator_cell, target_cell) <= 1
+            for mediator_cell in prospective_mediator
+            for target_cell in group.target.cells
+        ):
             return False
     for candidate_endpoint in scene.endpoints:
         endpoint_center = (
