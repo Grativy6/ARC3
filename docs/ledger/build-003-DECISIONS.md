@@ -66,3 +66,16 @@ This ledger is append-oriented. Supersede decisions with new entries; do not era
 - **Why:** The safety rule is earned by a composite-glyph failure mode and must not backflow into mechanics whose readable identity is a single observed component.
 - **Consequences:** Production logic remains observation-derived and contains no game ID, fixed board coordinate, color exception, or walkthrough. Composite preservation remains covered by the multicolor fixture; ordinary target-box and inter-mediator proximity semantics have regression assertions.
 - **Reopening condition:** A later official residual demonstrates the same destructive cross-group occlusion for a non-composite group and a generic observable discriminator can be established.
+
+## D-003-0006 - Preserve observable affine evidence with perception-isomorphic guards
+
+- **Status:** ADOPTED
+- **Stage:** 10
+- **Date:** 2026-08-25
+- **Commit:** pending
+- **Decision:** Before accepting a compound affine relocation, protect every currently observable target region and the prospective connector/tether raster, and reject endpoint or mediator-sector placements that the production parser's own component-merging relation would make unreadable. Use the same observed geometry and merge thresholds in planning that perception uses after the action.
+- **Alternatives:** Protect only occupied target cells; use independent hand-tuned planning distances; enumerate target-specific safe coordinates; accept evidence loss and reconstruct the group from historical confidence.
+- **Evidence:** Campaign 15 officially reached level 3, then actions whose endpoint, connector, tether, or translated compound sector crossed a visible target region or merged with same-color scene structure erased mechanics that had been readable immediately before the action. The campaign ended `NOT_FINISHED` after 112 submissions, including two `RESET` actions, with the score boundary reporting `GAME_OVER`; recording SHA-256 `2a2b3da7fad9e5bb8d4fea3b2f33133bdf2e9076ac66ea49f02dc9c6744b2a14`.
+- **Why:** Planning safety must preserve the evidence surfaces on which the generic learner depends. A guard expressed in the parser's observable topology is falsifiable and game-agnostic; a separate approximation can authorize exactly the collision that perception later interprets as disappearance.
+- **Consequences:** Production policy protects compound identity without a game ID, fixed coordinate, color exception, or walkthrough. A predicted exact local collapse remains bounded local progress only; it never substitutes for an official level transition or `GameState.WIN`.
+- **Reopening condition:** A fresh official residual shows that the shared perception/planning relation rejects a necessary action or still permits observable compound evidence to be erased.

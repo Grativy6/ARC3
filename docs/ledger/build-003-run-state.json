@@ -7,7 +7,7 @@
   "build_status": "ACTIVE",
   "status": "IN_PROGRESS",
   "current_stage": "10",
-  "current_task": "continue official public target play from the composite-affine repair",
+  "current_task": "verify the Campaign 15 compound-evidence repair and start a fresh official target campaign",
   "implementation_branch": "build/003-bla-clef-mechanical-learner",
   "base": {
     "main_commit": "bea1eac99cb0f1b351526b1dc487d132ba1d40ef",
@@ -35,12 +35,17 @@
     "completion_authority": "official returned GameState.WIN only",
     "completion_observed": false,
     "best_levels_completed": 3,
-    "latest_campaign": "build003-r11l-mechanical-seed7-b1a695ec-campaign14",
+    "latest_campaign": "build003-r11l-mechanical-seed7-e87a2762-campaign15",
     "latest_campaign_status": "FAILED_INFRASTRUCTURE",
-    "latest_campaign_levels_completed": 2,
+    "latest_campaign_levels_completed": 3,
     "latest_campaign_final_state": "NOT_FINISHED",
-    "latest_campaign_actions": 29,
-    "latest_campaign_recording_sha256": "sha256:993031c8909e386c89a0fb35a9604c32e88260ddba151b082747709de4c43245"
+    "latest_campaign_score_boundary_state": "GAME_OVER",
+    "latest_campaign_actions": 110,
+    "latest_campaign_submissions": 112,
+    "latest_campaign_resets": 2,
+    "latest_campaign_root": "C:\\a\\arc3-b003-play\\build003-r11l-mechanical-seed7-e87a2762-campaign15",
+    "latest_campaign_recording": "C:\\a\\arc3-b003-play\\build003-r11l-mechanical-seed7-e87a2762-campaign15\\official-recordings\\c2120ed7e4beb839e4d0\\d5a89114-d780-4700-9741-1ce5c7a2a91d\\r11l-495a7899-8f76d262-4475-4265-9851-5a4184c54c1a.jsonl",
+    "latest_campaign_recording_sha256": "sha256:2a2b3da7fad9e5bb8d4fea3b2f33133bdf2e9076ac66ea49f02dc9c6744b2a14"
   },
   "stage_status": {
     "00": "PASS",
@@ -85,7 +90,7 @@
     "pull_request_merged": false,
     "external_message_sent_as_owner": false
   },
-  "next_action": "commit the composite-only preservation repair and start a fresh official target campaign",
+  "next_action": "finish local verification of the Campaign 15 compound-evidence repair, commit it, and start a fresh official target campaign",
   "notes": [
     "Update atomically after each meaningful task and preserve failed attempts.",
     "No synthetic or local result is completion unless the official target environment returns GameState.WIN.",

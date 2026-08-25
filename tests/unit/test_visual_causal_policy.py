@@ -437,6 +437,14 @@ def test_multicolor_marker_compounds_retain_affine_groups_and_blocker_gate() -> 
         mediator_after=groups[9].mediator.rounded_center,
         final=False,
     )
+    assert not visual_causal._marker_mediator_remains_readable(
+        scene,
+        groups[12],
+        active,
+        coordinate=Coordinate(60, 3),
+        mediator_after=(35, 11),
+        final=False,
+    )
     projection = visual_causal._scene_after_marker_stage(
         scene,
         groups[12],
@@ -475,6 +483,38 @@ def test_multicolor_marker_compounds_retain_affine_groups_and_blocker_gate() -> 
             & other_target_box
         )
         for candidate in candidates
+    )
+
+
+def test_compound_group_uses_exact_raw_signature_only_when_filtered_match_is_lost() -> None:
+    frame = _composite_marker_frame()
+    rows = [list(row) for row in frame.cells]
+    # Extend the right-hand color-7 sector of marker 12 one cell beyond the
+    # exact 21-cell disk.  The primary connector filter must omit that extended
+    # component, while the complete local disk still exactly matches one ring.
+    rows[13][21] = 7
+    scene = extract_visual_scene(GridFrame.from_rows(rows))
+
+    groups = {group.marker_color: group for group in _embedded_marker_groups(scene)}
+
+    assert 12 in groups
+    assert groups[12].mediator.rounded_center == (18, 13)
+    assert groups[12].target.rounded_center == (45, 58)
+    assert (
+        visual_causal._compound_outer_signature(
+            scene,
+            cells=groups[12].mediator.cells,
+            center=groups[12].mediator.rounded_center,
+        )
+        == frozenset({12})
+    )
+    assert (
+        visual_causal._compound_raw_outer_signature(
+            scene,
+            cells=groups[12].mediator.cells,
+            center=groups[12].mediator.rounded_center,
+        )
+        == frozenset({7, 12})
     )
 
 
@@ -1289,6 +1329,7 @@ def test_readable_marker_stage_survives_generic_effect_unreadability(
     policy.accept_consequence(after)
 
     assert policy.snapshot()["marker_stage_pending_switch"] == 12
+    assert policy.snapshot()["failed_plan_count"] == 0
     assert policy.receipts[-1].residual != "planned marker endpoint became structurally unreadable"
 
 
@@ -1423,6 +1464,39 @@ def test_ambiguous_arity_two_bootstraps_once_then_replans_from_learned_color(
     assert policy.snapshot()["pending_plan_actions"] == 0
     direct = policy.select(observation)
     assert direct.coordinate == Coordinate(*environment.direct_solution())
+
+
+def test_readable_marker_bootstrap_succeeds_without_generic_affine_inference(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    environment = _MarkerAffineEnvironment(
+        groups=[[(10, 50), (30, 50)]],
+        targets=((20, 28),),
+        marker_colors=(12,),
+    )
+    policy = VisualCausalPolicy()
+    before = environment.observation()
+    bootstrap = policy.select(before)
+    after = environment.step(bootstrap)
+    monkeypatch.setattr(
+        visual_causal,
+        "infer_affine_mechanic",
+        lambda *_args, **_kwargs: None,
+    )
+
+    policy.accept_consequence(after)
+
+    assert policy._last_active_color == environment.active_color
+    assert policy.snapshot()["failed_plan_count"] == 0
+    assert policy.receipts[-1].residual != "probe did not localize a supported affine response"
+    assert (
+        policy.receipts[-1]
+        .causal_action_receipt.observed_effects.get(
+            visual_causal.EffectChannel.CONTROLLABLE_OBJECT_DISPLACEMENT
+        )
+        .knowledge
+        is visual_causal.EffectKnowledge.KNOWN
+    )
 
 
 def test_failed_marker_bootstrap_is_not_repeated_or_replaced_by_legacy_relocation() -> None:
@@ -1607,6 +1681,79 @@ def test_local_target_success_is_not_mislabeled_as_level_failure() -> None:
     assert policy.snapshot()["pending_plan_actions"] == 0
 
 
+def test_exact_marker_collapse_reacquires_another_visible_group() -> None:
+    environment = _MarkerAffineEnvironment(
+        groups=[[(10, 50), (30, 50)], [(38, 52), (58, 52)]],
+        targets=((20, 28), (48, 32)),
+        marker_colors=(12, 14),
+    )
+    policy = VisualCausalPolicy()
+    policy._last_active_color = environment.active_color
+    before = environment.observation()
+
+    solve = policy.select(before)
+    assert solve.coordinate == Coordinate(*environment.direct_solution())
+
+    remaining_frame = _marker_frame(
+        (((38, 52), (58, 52)),),
+        ((48, 32),),
+        (14,),
+        active_group=0,
+        active_index=0,
+        background=environment.background,
+        active_color=environment.fixed_color,
+        fixed_color=environment.fixed_color,
+    )
+    collapsed = Observation(
+        game_id=before.game_id,
+        frames=(remaining_frame,),
+        state=GameStateName.NOT_FINISHED,
+        levels_completed=0,
+        win_levels=before.win_levels,
+        available_actions=(ActionName.ACTION6,),
+        returned_action=solve,
+    )
+    policy.accept_consequence(collapsed)
+
+    assert policy.snapshot()["failed_plan_count"] == 0
+    assert policy.snapshot()["marker_reacquire_after_local_solve"] is True
+    reacquire = policy.select(collapsed)
+    remaining_endpoints = {(38, 52), (58, 52)}
+    assert reacquire.coordinate is not None
+    assert (reacquire.coordinate.x, reacquire.coordinate.y) in remaining_endpoints
+    assert "reacquire the active role" in policy._pending_prediction
+
+    selected_index = ((38, 52), (58, 52)).index(
+        (reacquire.coordinate.x, reacquire.coordinate.y)
+    )
+    reacquired_frame = _marker_frame(
+        (((38, 52), (58, 52)),),
+        ((48, 32),),
+        (14,),
+        active_group=0,
+        active_index=selected_index,
+        background=environment.background,
+        active_color=environment.active_color,
+        fixed_color=environment.fixed_color,
+    )
+    reacquired = Observation(
+        game_id=before.game_id,
+        frames=(reacquired_frame,),
+        state=GameStateName.NOT_FINISHED,
+        levels_completed=0,
+        win_levels=before.win_levels,
+        available_actions=(ActionName.ACTION6,),
+        returned_action=reacquire,
+    )
+    policy.accept_consequence(reacquired)
+
+    assert policy.snapshot()["failed_plan_count"] == 0
+    assert policy.snapshot()["marker_reacquire_after_local_solve"] is False
+    continuation = policy.select(reacquired)
+    assert continuation.coordinate is not None
+    assert (continuation.coordinate.x, continuation.coordinate.y) not in remaining_endpoints
+
+
 def test_level_transition_frame_cannot_open_an_affine_mechanic() -> None:
     policy = VisualCausalPolicy()
     before = _observation((8, 32), (32, 32), (20, 10))
@@ -1774,6 +1921,9 @@ def test_game_over_consequence_is_receipted_before_mandatory_reset() -> None:
     )
 
     policy.accept_consequence(failed)
+    policy._marker_bootstrap_attempted = True
+    policy._marker_structural_actions.add("episode-local-action")
+    policy._marker_structural_action_order.append("episode-local-action")
     reset = policy.select(failed)
     recovered = _observation(
         (8, 32),
@@ -1792,5 +1942,7 @@ def test_game_over_consequence_is_receipted_before_mandatory_reset() -> None:
     )
     assert reset == ActionRequest(ActionName.RESET)
     assert policy.snapshot()["failed_plan_count"] == 1
+    assert policy.snapshot()["marker_bootstrap_attempted"] is False
+    assert policy.snapshot()["marker_structural_action_count"] == 0
     assert tuple(item.ref for item in learner.ledger.active()) == retained_refs
     assert next_action != selected

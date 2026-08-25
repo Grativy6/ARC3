@@ -328,6 +328,37 @@ _SMALL_COMPONENT_MAX_SPAN = 9
 _SMALL_COMPONENT_MERGE_DISTANCE = 3
 
 
+def _small_components_would_merge(
+    left_cells: tuple[tuple[int, int], ...],
+    right_cells: tuple[tuple[int, int], ...],
+) -> bool:
+    """Apply the exact bounded relation used by perception's fragment merge."""
+
+    if (
+        len(left_cells) > _SMALL_COMPONENT_FRAGMENT_AREA
+        or len(right_cells) > _SMALL_COMPONENT_FRAGMENT_AREA
+    ):
+        return False
+    combined = tuple(
+        sorted({*left_cells, *right_cells}, key=lambda item: (item[1], item[0]))
+    )
+    if len(combined) > _SMALL_COMPONENT_COMBINED_AREA:
+        return False
+    xs = [item[0] for item in combined]
+    ys = [item[1] for item in combined]
+    if (
+        max(xs) - min(xs) + 1 > _SMALL_COMPONENT_MAX_SPAN
+        or max(ys) - min(ys) + 1 > _SMALL_COMPONENT_MAX_SPAN
+    ):
+        return False
+    separation = min(
+        max(abs(lx - rx), abs(ly - ry))
+        for lx, ly in left_cells
+        for rx, ry in right_cells
+    )
+    return separation <= _SMALL_COMPONENT_MERGE_DISTANCE
+
+
 def _merge_small_same_color_groups(
     groups: list[tuple[int, tuple[tuple[int, int], ...]]],
 ) -> list[tuple[int, tuple[tuple[int, int], ...]]]:
@@ -347,27 +378,13 @@ def _merge_small_same_color_groups(
                 continue
             for right_index in range(left_index + 1, len(working)):
                 right_color, right_cells = working[right_index]
-                if right_color != left_color or len(right_cells) > _SMALL_COMPONENT_FRAGMENT_AREA:
+                if right_color != left_color:
+                    continue
+                if not _small_components_would_merge(left_cells, right_cells):
                     continue
                 combined = tuple(
-                    sorted((*left_cells, *right_cells), key=lambda item: (item[1], item[0]))
+                    sorted({*left_cells, *right_cells}, key=lambda item: (item[1], item[0]))
                 )
-                if len(combined) > _SMALL_COMPONENT_COMBINED_AREA:
-                    continue
-                xs = [item[0] for item in combined]
-                ys = [item[1] for item in combined]
-                if (
-                    max(xs) - min(xs) + 1 > _SMALL_COMPONENT_MAX_SPAN
-                    or max(ys) - min(ys) + 1 > _SMALL_COMPONENT_MAX_SPAN
-                ):
-                    continue
-                separation = min(
-                    max(abs(lx - rx), abs(ly - ry))
-                    for lx, ly in left_cells
-                    for rx, ry in right_cells
-                )
-                if separation > _SMALL_COMPONENT_MERGE_DISTANCE:
-                    continue
                 working[left_index] = (left_color, combined)
                 working.pop(right_index)
                 changed = True
@@ -780,6 +797,21 @@ def _compound_outer_signature(
     )
 
 
+def _compound_raw_outer_signature(
+    scene: VisualScene,
+    *,
+    cells: tuple[tuple[int, int], ...],
+    center: tuple[int, int],
+) -> frozenset[int]:
+    """Return every observed non-core color in an exact compound footprint."""
+
+    return frozenset(
+        scene.cells[y][x]
+        for x, y in cells
+        if (x, y) != center
+    )
+
+
 def _composite_marker_mediator(
     scene: VisualScene,
     *,
@@ -905,6 +937,24 @@ def _embedded_marker_groups(scene: VisualScene) -> tuple[_EmbeddedMarkerGroup, .
                     and marker_color in signature
                     and signature == outer_colors
                 )
+                if len(matched_targets) != 1:
+                    # Connector filtering is the primary identity surface, but
+                    # an unrelated same-color component can extend beyond the
+                    # exact disk and make that filter omit a genuine sector.
+                    # Fall back only to the complete observed disk signature
+                    # and still require an exact unique target match.
+                    raw_outer_colors = _compound_raw_outer_signature(
+                        scene,
+                        cells=mediator.cells,
+                        center=mediator.rounded_center,
+                    )
+                    matched_targets = tuple(
+                        candidate
+                        for candidate, signature in composite_targets
+                        if len(signature) >= 2
+                        and marker_color in signature
+                        and signature == raw_outer_colors
+                    )
                 if len(matched_targets) == 1:
                     target = _proxy_visual_object(
                         scene,
@@ -1045,26 +1095,7 @@ def _marker_relocation_candidates(
     current_sum_x = sum(item.rounded_center[0] for item in group.endpoints)
     current_sum_y = sum(item.rounded_center[1] for item in group.endpoints)
     final_overlap_cells = _final_marker_target_overlap_cells(scene, group)
-    other_target_regions: tuple[frozenset[tuple[int, int]], ...] = ()
-    if group.is_composite:
-        visible_targets = tuple(
-            {
-                item.object_ref: item
-                for item in (
-                    *scene.targets,
-                    *(candidate for candidate, _signature in _composite_sparse_targets(scene)),
-                )
-            }.values()
-        )
-        other_target_regions = tuple(
-            frozenset(
-                (target_x, target_y)
-                for target_y in range(item.min_y, item.max_y + 1)
-                for target_x in range(item.min_x, item.max_x + 1)
-            )
-            for item in visible_targets
-            if item.rounded_center != group.target.rounded_center
-        )
+    target_regions = _visible_target_regions(scene) if group.is_composite else ()
     candidates: list[Coordinate] = []
     for x, y in sorted(raw, key=lambda item: (item[1], item[0])):
         potential = _marker_group_potential(
@@ -1091,7 +1122,11 @@ def _marker_relocation_candidates(
         ):
             continue
         prospective_endpoint = _translated_object_footprint(endpoint, center=(x, y))
-        if any(prospective_endpoint & region for region in other_target_regions):
+        if any(
+            prospective_endpoint & region
+            for center, region in target_regions
+            if potential != 0 or center != group.target.rounded_center
+        ):
             continue
         candidates.append(Coordinate(x, y))
     return tuple(candidates)
@@ -1143,7 +1178,6 @@ def _endpoint_placement_is_open(
             if (
                 item.object_ref == endpoint.object_ref
                 or item.color != endpoint.color
-                or item.area > _SMALL_COMPONENT_FRAGMENT_AREA
             ):
                 continue
             separation = min(
@@ -1155,6 +1189,10 @@ def _endpoint_placement_is_open(
             # the perception merge distance against every visible fragment,
             # rather than trusting the current compound bounding box to remain
             # intact after the action.
+            if item.area > _SMALL_COMPONENT_FRAGMENT_AREA:
+                if separation <= 1:
+                    return False
+                continue
             if separation <= _SMALL_COMPONENT_MERGE_DISTANCE:
                 return False
     return True
@@ -1162,6 +1200,51 @@ def _endpoint_placement_is_open(
 
 def _chebyshev_distance(left: tuple[int, int], right: tuple[int, int]) -> int:
     return max(abs(left[0] - right[0]), abs(left[1] - right[1]))
+
+
+def _raster_line_cells(
+    start: tuple[int, int],
+    end: tuple[int, int],
+) -> frozenset[tuple[int, int]]:
+    """Raster one observed center-to-center connector without color assumptions."""
+
+    delta_x = end[0] - start[0]
+    delta_y = end[1] - start[1]
+    steps = max(abs(delta_x), abs(delta_y))
+    if steps == 0:
+        return frozenset({start})
+    return frozenset(
+        (
+            round(start[0] + (delta_x * step) / steps),
+            round(start[1] + (delta_y * step) / steps),
+        )
+        for step in range(steps + 1)
+    )
+
+
+def _visible_target_regions(
+    scene: VisualScene,
+) -> tuple[tuple[tuple[int, int], frozenset[tuple[int, int]]], ...]:
+    """Return target centers and their evidence-sensitive observed bounding boxes."""
+
+    visible_targets = {
+        (item.rounded_center, item.object_ref): item
+        for item in (
+            *scene.targets,
+            *(candidate for candidate, _signature in _composite_sparse_targets(scene)),
+        )
+    }
+    return tuple(
+        (
+            item.rounded_center,
+            frozenset(
+                (target_x, target_y)
+                for target_y in range(item.min_y, item.max_y + 1)
+                for target_x in range(item.min_x, item.max_x + 1)
+            ),
+        )
+        for item in visible_targets.values()
+    )
 
 
 def _glyph_radius(item: VisualObject) -> int:
@@ -1203,6 +1286,24 @@ def _marker_action_structure_is_readable(
     )
 
 
+def _marker_bootstrap_active_color(
+    scene: VisualScene,
+    *,
+    coordinate: Coordinate,
+) -> int | None:
+    """Recover the active outer color from one returned marker bootstrap."""
+
+    matches = tuple(
+        endpoint
+        for group in _embedded_marker_groups(scene)
+        for endpoint in group.endpoints
+        if endpoint.rounded_center == (coordinate.x, coordinate.y)
+    )
+    if len(matches) != 1:
+        return None
+    return matches[0].color
+
+
 def _translated_object_footprint(
     item: VisualObject,
     *,
@@ -1212,6 +1313,46 @@ def _translated_object_footprint(
     dx = center[0] - old_x
     dy = center[1] - old_y
     return frozenset((x + dx, y + dy) for x, y in _object_footprint(item))
+
+
+def _compound_mediator_retains_component_identity(
+    scene: VisualScene,
+    group: _EmbeddedMarkerGroup,
+    endpoint: VisualObject,
+    *,
+    coordinate: Coordinate,
+    mediator_after: tuple[int, int],
+) -> bool:
+    """Preflight compound sectors through perception's exact merge relation."""
+
+    mediator_before = group.mediator.rounded_center
+    erased_cells = _object_footprint(group.mediator) | _object_footprint(endpoint)
+    prospective_by_color: dict[int, list[tuple[int, int]]] = {}
+    for cell_x, cell_y in group.mediator.cells:
+        if (cell_x, cell_y) == mediator_before:
+            continue
+        color = scene.cells[cell_y][cell_x]
+        prospective_by_color.setdefault(color, []).append(
+            (
+                mediator_after[0] + cell_x - mediator_before[0],
+                mediator_after[1] + cell_y - mediator_before[1],
+            )
+        )
+
+    for color, raw_prospective in prospective_by_color.items():
+        prospective = tuple(sorted(raw_prospective, key=lambda cell: (cell[1], cell[0])))
+        for item in scene.objects:
+            if item.color != color:
+                continue
+            residual = tuple(cell for cell in item.cells if cell not in erased_cells)
+            if residual and _small_components_would_merge(prospective, residual):
+                return False
+        if endpoint.center_cell == color and _small_components_would_merge(
+            prospective,
+            ((coordinate.x, coordinate.y),),
+        ):
+            return False
+    return True
 
 
 def _large_static_component_cells(
@@ -1268,6 +1409,10 @@ def _marker_mediator_remains_readable(
     final: bool,
     static_cells: frozenset[tuple[int, int]] | None = None,
     other_mediators: tuple[VisualObject, ...] | None = None,
+    target_regions: tuple[
+        tuple[tuple[int, int], frozenset[tuple[int, int]]], ...
+    ]
+    | None = None,
 ) -> bool:
     """Preserve component separation for the predicted mediator glyph."""
 
@@ -1279,6 +1424,42 @@ def _marker_mediator_remains_readable(
     ):
         return False
     mediator_radius = _glyph_radius(group.mediator)
+    if group.is_composite:
+        if not final and not _compound_mediator_retains_component_identity(
+            scene,
+            group,
+            endpoint,
+            coordinate=coordinate,
+            mediator_after=mediator_after,
+        ):
+            return False
+        protected_target_regions = tuple(
+            region
+            for center, region in (
+                _visible_target_regions(scene) if target_regions is None else target_regions
+            )
+            if not (final and center == group.target.rounded_center)
+        )
+        prospective_mediator = _translated_object_footprint(
+            group.mediator,
+            center=mediator_after,
+        )
+        prospective_endpoint_centers = tuple(
+            (coordinate.x, coordinate.y)
+            if candidate.object_ref == endpoint.object_ref
+            else candidate.rounded_center
+            for candidate in group.endpoints
+        )
+        prospective_connectors = frozenset(
+            cell
+            for endpoint_center in prospective_endpoint_centers
+            for cell in _raster_line_cells(endpoint_center, mediator_after)
+        )
+        if any(
+            (prospective_mediator | prospective_connectors) & region
+            for region in protected_target_regions
+        ):
+            return False
     if group.is_composite and any(
         _chebyshev_distance(mediator_after, other.rounded_center)
         < mediator_radius + _glyph_radius(other) + 1
@@ -1313,7 +1494,10 @@ def _marker_mediator_remains_readable(
             else candidate_endpoint.rounded_center
         )
         endpoint_clearance = mediator_radius + _glyph_radius(candidate_endpoint) + 1
-        if _chebyshev_distance(mediator_after, endpoint_center) < endpoint_clearance:
+        endpoint_distance = _chebyshev_distance(mediator_after, endpoint_center)
+        if endpoint_distance < endpoint_clearance or (
+            group.is_composite and endpoint_distance == endpoint_clearance
+        ):
             return False
     return True
 
@@ -1493,6 +1677,79 @@ def _scene_after_marker_role_switch(
     return projected_scene, projected_group, projected_active[0]
 
 
+def _scene_after_marker_reacquisition(
+    scene: VisualScene,
+    group: _EmbeddedMarkerGroup,
+    selected: VisualObject,
+    *,
+    active_color: int,
+) -> tuple[VisualScene, _EmbeddedMarkerGroup, VisualObject] | None:
+    """Project selecting a visible endpoint after its old active peer collapsed.
+
+    Exact target contact can consume the previously active endpoint's readable
+    group while leaving other groups visible.  The retained active outer color
+    and the observed one-click role-transfer mechanism are sufficient to test
+    a local continuation without reconstructing the consumed endpoint.
+    """
+
+    if selected.color == active_color or selected.object_ref not in {
+        endpoint.object_ref for endpoint in scene.endpoints
+    }:
+        return None
+    rows = [list(row) for row in scene.cells]
+    for cell_x, cell_y in selected.cells:
+        rows[cell_y][cell_x] = active_color
+    center_x, center_y = selected.rounded_center
+    rows[center_y][center_x] = selected.center_cell
+
+    projected_scene = extract_visual_scene(GridFrame.from_rows(rows))
+    expected_centers = {item.rounded_center for item in group.endpoints}
+    projected_groups = tuple(
+        candidate
+        for candidate in _embedded_marker_groups(projected_scene)
+        if candidate.marker_color == group.marker_color
+        and candidate.arity == group.arity
+        and {item.rounded_center for item in candidate.endpoints} == expected_centers
+    )
+    if len(projected_groups) != 1:
+        return None
+    projected_group = projected_groups[0]
+    projected_active = tuple(
+        endpoint
+        for endpoint in projected_group.endpoints
+        if endpoint.rounded_center == selected.rounded_center
+        and endpoint.color == active_color
+    )
+    if len(projected_active) != 1:
+        return None
+    return projected_scene, projected_group, projected_active[0]
+
+
+def _best_marker_relocation_after_reacquisition(
+    scene: VisualScene,
+    group: _EmbeddedMarkerGroup,
+    selected: VisualObject,
+    *,
+    active_color: int,
+    rejected_signatures: set[str],
+) -> tuple[int, Coordinate] | None:
+    projection = _scene_after_marker_reacquisition(
+        scene,
+        group,
+        selected,
+        active_color=active_color,
+    )
+    if projection is None:
+        return None
+    projected_scene, projected_group, projected_active = projection
+    return _best_marker_relocation(
+        projected_scene,
+        projected_group,
+        projected_active,
+        rejected_signatures=rejected_signatures,
+    )
+
+
 def _best_marker_relocation_after_switch(
     scene: VisualScene,
     group: _EmbeddedMarkerGroup,
@@ -1560,6 +1817,7 @@ def _best_marker_staging_relocation(
         if group.is_composite
         else ()
     )
+    target_regions = _visible_target_regions(scene) if group.is_composite else ()
     best: tuple[int, int, int, str, Coordinate] | None = None
     for coordinate in _marker_relocation_candidates(scene, group, endpoint):
         resulting_sum_x = sum_x - endpoint.rounded_center[0] + coordinate.x
@@ -1592,6 +1850,7 @@ def _best_marker_staging_relocation(
                 final=False,
                 static_cells=static_cells,
                 other_mediators=other_mediators,
+                target_regions=target_regions,
             )
         else:
             remains_readable = _marker_mediator_remains_readable(
@@ -1667,6 +1926,7 @@ def _best_marker_relocation(
         if group.is_composite
         else ()
     )
+    target_regions = _visible_target_regions(scene) if group.is_composite else ()
     ordinary = _marker_relocation_candidates(scene, group, endpoint)
     candidate_batches = [ordinary]
     if allow_extended:
@@ -1704,6 +1964,7 @@ def _best_marker_relocation(
                     final=potential == 0,
                     static_cells=static_cells,
                     other_mediators=other_mediators,
+                    target_regions=target_regions,
                 )
             else:
                 remains_readable = _marker_mediator_remains_readable(
@@ -1812,6 +2073,45 @@ def _best_marker_group_transfer(
     return None if best is None else (best[4], best[5])
 
 
+def _best_marker_group_reacquisition(
+    scene: VisualScene,
+    groups: tuple[_EmbeddedMarkerGroup, ...],
+    *,
+    active_color: int,
+    rejected_signatures: set[str],
+) -> tuple[_EmbeddedMarkerGroup, VisualObject] | None:
+    """Choose a visible group with a safe continuation after local collapse."""
+
+    best: tuple[int, int, int, str, _EmbeddedMarkerGroup, VisualObject] | None = None
+    for group in groups:
+        for endpoint in group.endpoints:
+            coordinate = Coordinate(*endpoint.rounded_center)
+            signature = f"marker:{group.marker_color}:activate:{coordinate.x},{coordinate.y}"
+            if signature in rejected_signatures:
+                continue
+            prospective = _best_marker_relocation_after_reacquisition(
+                scene,
+                group,
+                endpoint,
+                active_color=active_color,
+                rejected_signatures=rejected_signatures,
+            )
+            if prospective is None:
+                continue
+            potential, _followup = prospective
+            candidate = (
+                potential,
+                coordinate.y,
+                coordinate.x,
+                endpoint.object_ref,
+                group,
+                endpoint,
+            )
+            if best is None or candidate[:4] < best[:4]:
+                best = candidate
+    return None if best is None else (best[4], best[5])
+
+
 def _embedded_marker_plan(
     scene: VisualScene,
     *,
@@ -1819,6 +2119,7 @@ def _embedded_marker_plan(
     active_color: int | None,
     staged_marker_color: int | None,
     rejected_signatures: set[str],
+    allow_reacquisition: bool = False,
 ) -> PlannedClick | None:
     """Plan one direct, target-relative action from visible marker evidence.
 
@@ -1833,14 +2134,47 @@ def _embedded_marker_plan(
     groups = _embedded_marker_groups(scene)
     if not groups:
         return None
-    active = _embedded_marker_active_endpoint(scene, active_color=active_color)
-    if active is None:
-        return None
     unresolved = tuple(
         group for group in groups if group.mediator.rounded_center != group.target.rounded_center
     )
     if not unresolved:
         return None
+    active = _embedded_marker_active_endpoint(scene, active_color=active_color)
+    if active is None:
+        if not allow_reacquisition or active_color is None:
+            return None
+        reacquisition = _best_marker_group_reacquisition(
+            scene,
+            unresolved,
+            active_color=active_color,
+            rejected_signatures=rejected_signatures,
+        )
+        if reacquisition is None:
+            return None
+        group, selected = reacquisition
+        identity = f"marker|{level_index}|{group.marker_color}|{group.arity}|{scene.frame_hash}"
+        mechanic_ref = "affine-marker:" + hashlib.sha256(identity.encode("ascii")).hexdigest()[:20]
+        plan_id = (
+            "visual-plan:"
+            + hashlib.sha256(f"{mechanic_ref}|local".encode("ascii")).hexdigest()[:20]
+        )
+        coordinate = Coordinate(*selected.rounded_center)
+        return PlannedClick(
+            coordinate=coordinate,
+            purpose=VisualActionPurpose.PROBE,
+            expectation=(
+                "reacquire the active role in a visible unresolved group after exact "
+                "local target contact"
+            ),
+            mechanic_ref=mechanic_ref,
+            plan_id=plan_id,
+            plan_signature=(
+                f"marker:{group.marker_color}:activate:{coordinate.x},{coordinate.y}"
+            ),
+            target_center=group.target.rounded_center,
+            mediator_color=group.marker_color,
+            arity=group.arity,
+        )
     active_group = next(
         (
             group
@@ -2266,6 +2600,58 @@ def _local_target_satisfied(
     return False
 
 
+def _projected_marker_target_satisfied(
+    scene: VisualScene,
+    *,
+    target_center: tuple[int, int] | None,
+    mediator_color: int | None,
+    arity: int | None,
+    active_color: int | None,
+    coordinate: Coordinate | None,
+) -> bool:
+    """Confirm an exact target contact from the pre-action affine evidence.
+
+    The official result frame may consume or occlude a locally completed
+    group.  This bounded check only recognizes the target contact predicted by
+    the observed endpoint sum; it never promotes that contact to level or game
+    completion.
+    """
+
+    if (
+        target_center is None
+        or mediator_color is None
+        or arity is None
+        or active_color is None
+        or coordinate is None
+    ):
+        return False
+    active = _embedded_marker_active_endpoint(scene, active_color=active_color)
+    if active is None:
+        return False
+    groups = tuple(
+        group
+        for group in _embedded_marker_groups(scene)
+        if group.marker_color == mediator_color
+        and group.arity == arity
+        and group.target.rounded_center == target_center
+        and active.object_ref in {endpoint.object_ref for endpoint in group.endpoints}
+    )
+    if len(groups) != 1:
+        return False
+    group = groups[0]
+    sum_x = (
+        sum(endpoint.rounded_center[0] for endpoint in group.endpoints)
+        - active.rounded_center[0]
+        + coordinate.x
+    )
+    sum_y = (
+        sum(endpoint.rounded_center[1] for endpoint in group.endpoints)
+        - active.rounded_center[1]
+        + coordinate.y
+    )
+    return _marker_group_potential(group, sum_x=sum_x, sum_y=sum_y) == 0
+
+
 def _observed_bla_consequence(
     before: Observation,
     after: Observation,
@@ -2375,6 +2761,7 @@ class VisualCausalPolicy:
         self._attempted_activation_refs: set[str] = set()
         self._marker_bootstrap_attempted = False
         self._marker_stage_pending_switch: int | None = None
+        self._marker_reacquire_after_local_solve = False
         self._marker_structural_actions: set[str] = set()
         self._marker_structural_action_order: deque[str] = deque()
         self._last_probe_failed = False
@@ -2442,6 +2829,20 @@ class VisualCausalPolicy:
         self._attempted_activation_refs.clear()
         self._marker_bootstrap_attempted = False
         self._marker_stage_pending_switch = None
+        self._marker_reacquire_after_local_solve = False
+        self._marker_structural_actions.clear()
+        self._marker_structural_action_order.clear()
+        self._last_probe_failed = False
+        self._probe_ordinal = 0
+
+    def _begin_reset_epoch(self) -> None:
+        """Clear episode-local search state while retaining learned evidence."""
+
+        self._plan.clear()
+        self._attempted_activation_refs.clear()
+        self._marker_bootstrap_attempted = False
+        self._marker_stage_pending_switch = None
+        self._marker_reacquire_after_local_solve = False
         self._marker_structural_actions.clear()
         self._marker_structural_action_order.clear()
         self._last_probe_failed = False
@@ -2616,6 +3017,7 @@ class VisualCausalPolicy:
                     active_color=self._last_active_color,
                     staged_marker_color=self._marker_stage_pending_switch,
                     rejected_signatures=(self._failed_plan_signatures | structural_rejections),
+                    allow_reacquisition=self._marker_reacquire_after_local_solve,
                 )
                 if candidate_plan is None:
                     break
@@ -2859,6 +3261,24 @@ class VisualCausalPolicy:
         mechanic: AffineMechanic | None = None
         before_scene = extract_visual_scene(before.frames[-1])
         after_scene = extract_visual_scene(observation.frames[-1])
+        marker_bootstrap = (
+            self._pending_plan_signature is not None
+            and self._pending_plan_signature.startswith("marker-bootstrap:")
+        )
+        bootstrap_active_color = (
+            _marker_bootstrap_active_color(after_scene, coordinate=action.coordinate)
+            if marker_bootstrap
+            and action.name is ActionName.ACTION6
+            and action.coordinate is not None
+            and observation.state is GameStateName.NOT_FINISHED
+            else None
+        )
+        marker_bootstrap_succeeded = bootstrap_active_color is not None
+        reset_recovered = (
+            action.name is ActionName.RESET
+            and before.state is GameStateName.GAME_OVER
+            and observation.state is GameStateName.NOT_FINISHED
+        )
         if (
             action.name is ActionName.ACTION6
             and action.coordinate is not None
@@ -2874,6 +3294,9 @@ class VisualCausalPolicy:
             if mechanic is not None:
                 self._mechanics.append(mechanic)
                 self._last_active_color = mechanic.active_color
+                self._last_probe_failed = False
+            elif marker_bootstrap_succeeded:
+                self._last_active_color = bootstrap_active_color
                 self._last_probe_failed = False
             elif (
                 self._pending_purpose is VisualActionPurpose.PROBE
@@ -2891,12 +3314,31 @@ class VisualCausalPolicy:
         receipt_id = (
             "visual-receipt:" + hashlib.sha256(receipt_seed.encode("utf-8")).hexdigest()[:24]
         )
-        local_target_satisfied = self._pending_completes_local_target and (
-            _local_target_satisfied(
-                after_scene,
+        projected_target_satisfied = (
+            self._pending_completes_local_target
+            and observation.state is not GameStateName.GAME_OVER
+            and changed > 0
+            and _projected_marker_target_satisfied(
+                before_scene,
                 target_center=self._pending_target_center,
                 mediator_color=self._pending_mediator_color,
                 arity=self._pending_arity,
+                active_color=self._last_active_color,
+                coordinate=action.coordinate,
+            )
+        )
+        local_target_satisfied = (
+            self._pending_completes_local_target
+            and observation.state is not GameStateName.GAME_OVER
+            and changed > 0
+            and (
+                projected_target_satisfied
+                or _local_target_satisfied(
+                    after_scene,
+                    target_center=self._pending_target_center,
+                    mediator_color=self._pending_mediator_color,
+                    arity=self._pending_arity,
+                )
             )
         )
         marker_action_planned = (
@@ -2929,6 +3371,7 @@ class VisualCausalPolicy:
         coordinate_transform = (
             local_target_satisfied
             or marker_action_structure_readable
+            or marker_bootstrap_succeeded
             or _coordinate_transform_observed(
                 before_scene,
                 after_scene,
@@ -2948,7 +3391,12 @@ class VisualCausalPolicy:
                     (receipt_id,),
                 )
             )
-        if mechanic is not None or local_target_satisfied:
+        if (
+            mechanic is not None
+            or local_target_satisfied
+            or marker_action_structure_readable
+            or marker_bootstrap_succeeded
+        ):
             recognized_effects.append(
                 FactoredEffect(
                     EffectChannel.CONTROLLABLE_OBJECT_DISPLACEMENT,
@@ -3095,29 +3543,32 @@ class VisualCausalPolicy:
                 )
             )
         )
-        marker_bootstrap = (
-            self._pending_plan_signature is not None
-            and self._pending_plan_signature.startswith("marker-bootstrap:")
-        )
+        if marker_action_structure_readable:
+            self._marker_reacquire_after_local_solve = False
         if observation.state is GameStateName.GAME_OVER:
             if self._pending_plan_signature is not None:
                 self._failed_plan_signatures.add(self._pending_plan_signature)
             self._plan.clear()
             self._marker_stage_pending_switch = None
+            self._marker_reacquire_after_local_solve = False
             self._last_probe_failed = True
         elif observation.state is GameStateName.WIN:
             self._plan.clear()
             self._marker_stage_pending_switch = None
+            self._marker_reacquire_after_local_solve = False
             self._last_probe_failed = False
         elif level_progress:
             self._begin_level(observation)
+        elif reset_recovered:
+            self._begin_reset_epoch()
         elif marker_bootstrap:
             self._plan.clear()
-            if mechanic is None:
+            if mechanic is None and not marker_bootstrap_succeeded:
                 if self._pending_plan_signature is not None:
                     self._failed_plan_signatures.add(self._pending_plan_signature)
                 self._last_probe_failed = True
             else:
+                self._marker_reacquire_after_local_solve = False
                 self._last_probe_failed = False
         elif mechanic is not None and not self._pending_mechanic_refs:
             self._plan.clear()
@@ -3126,6 +3577,7 @@ class VisualCausalPolicy:
                 self._last_probe_failed = True
         elif local_target_satisfied:
             self._plan.clear()
+            self._marker_reacquire_after_local_solve = True
             self._last_probe_failed = False
         elif plan_prediction_failed or self._pending_completes_local_target:
             if self._pending_plan_signature is not None:
@@ -3201,6 +3653,9 @@ class VisualCausalPolicy:
             ),
             "mechanics": [item.to_dict() for item in self._mechanics[-64:]],
             "marker_bootstrap_attempted": self._marker_bootstrap_attempted,
+            "marker_reacquire_after_local_solve": (
+                self._marker_reacquire_after_local_solve
+            ),
             "marker_stage_pending_switch": self._marker_stage_pending_switch,
             "marker_structural_action_count": len(self._marker_structural_actions),
             "pending_plan_actions": len(self._plan),

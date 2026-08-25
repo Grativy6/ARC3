@@ -76,7 +76,7 @@ Do not delete a burden when later evidence resolves it. Append a resolution with
 
 ## B-003-0007 - Global composite-preservation guards regressed ordinary affine play
 
-- **Status:** RESOLVED LOCALLY; OFFICIAL RECHECK PENDING
+- **Status:** RESOLVED
 - **Stage:** 10
 - **Opened:** 2026-08-25
 - **Owner:** Codex
@@ -84,5 +84,19 @@ Do not delete a burden when later evidence resolves it. Append a resolution with
 - **Why it matters:** A repair that preserves later mechanics but removes a valid earlier route is not progress toward authoritative `WIN`.
 - **Failure evidence:** `C:\a\arc3-b003-play\build003-r11l-mechanical-seed7-b1a695ec-campaign14`; official recording SHA-256 `993031c8909e386c89a0fb35a9604c32e88260ddba151b082747709de4c43245`.
 - **Local resolution evidence:** The guards are now scoped by observed composite-mediator identity. Disabling only the target-box gate did not repair the first divergent action; disabling ordinary inter-mediator separation did. The repaired policy exactly matches all 29 pre-transition actions from Campaign 13 and reaches its returned level-3 `NOT_FINISHED` observation. The visual-policy suite reports 40 passed; Ruff and strict mypy pass.
-- **Next discriminating action:** Run a fresh official target campaign from the committed repair and require progress beyond the failed state without losing the level-3 composite preservation behavior.
-- **Resolution condition:** The fresh official campaign reaches level 3 through ordinary affine play and retains all unresolved composite groups after each accepted action.
+- **Official resolution evidence:** Campaign 15, rooted at `C:\a\arc3-b003-play\build003-r11l-mechanical-seed7-e87a2762-campaign15`, passed the Campaign 14 failure boundary and officially reached level 3. Its later compound-evidence failures are preserved separately as B-003-0008 rather than back-propagated into this resolved ordinary-affine regression.
+- **Next discriminating action:** None for this burden; preserve the Campaign 14 and Campaign 15 traces as paired regression evidence.
+- **Resolution condition:** Met by Campaign 15 reaching level 3 through ordinary affine play. Continued preservation of level-3 compound groups is governed by B-003-0008.
+
+## B-003-0008 - Compound evidence loss and false failure memory blocked level-3 continuation
+
+- **Status:** RESOLVED LOCALLY; OFFICIAL RECHECK PENDING
+- **Stage:** 10
+- **Opened:** 2026-08-25
+- **Owner:** Codex
+- **Burden:** Campaign 15 reached level 3 but did not reach `WIN`. Observable compound mechanics were erased when a moved endpoint, prospective connector/tether raster, or translated mediator sector crossed a target region or merged with same-color scene structure. Separately, readable marker displacements were classified as unrecognized changes and falsely blacklisted, while an exact predicted local target collapse became unreadable after its expected disappearance and could not drive continuation to another unresolved group.
+- **Why it matters:** Cross-level mechanic retention cannot serve progress when an action destroys the learner's own evidence, and false failure memory can exhaust otherwise valid same-group actions after `RESET`. Neither high confidence nor a local collapse is official completion; the controller must preserve bounded local progress and continue until the environment returns `WIN`.
+- **Failure evidence:** Campaign root `C:\a\arc3-b003-play\build003-r11l-mechanical-seed7-e87a2762-campaign15`; official recording `C:\a\arc3-b003-play\build003-r11l-mechanical-seed7-e87a2762-campaign15\official-recordings\c2120ed7e4beb839e4d0\d5a89114-d780-4700-9741-1ce5c7a2a91d\r11l-495a7899-8f76d262-4475-4265-9851-5a4184c54c1a.jsonl`; SHA-256 `2a2b3da7fad9e5bb8d4fea3b2f33133bdf2e9076ac66ea49f02dc9c6744b2a14`. The run ended `FAILED_INFRASTRUCTURE` on `PolicyError`; the latest raw environment state was `NOT_FINISHED`, the score boundary reported `GAME_OVER`, and measured progress was 3/6 levels after 112 submissions: 110 non-reset actions and two `RESET` actions.
+- **Local resolution evidence:** The bounded repair protects all observable target regions and prospective connector/tether rasters, applies the parser's own component-merge relation to endpoint and mediator-sector placement, recognizes structurally readable marker displacement as a known controllable effect, and carries observation-grounded exact local target contact forward as local continuation state. These changes do not establish a level completion or `WIN`.
+- **Next discriminating action:** Freeze the locally verified repair and run a fresh official campaign. Require progress beyond the Campaign 15 failure states while preserving every still-unresolved observable compound group after accepted actions.
+- **Resolution condition:** A fresh official campaign does not falsely blacklist readable compound actions, continues after an exact local collapse, and advances beyond the Campaign 15 boundary without erasing an unresolved compound mechanic; authoritative completion still requires returned `GameState.WIN` under B-003-0003.
