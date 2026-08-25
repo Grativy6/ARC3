@@ -12,8 +12,8 @@ from evaluation_only.arc3_build003_curriculum.runner import run_sequence
 
 
 @pytest.mark.integration
-def test_first_v02_development_seed_wins_within_frozen_budgets() -> None:
-    seed = development_seeds(PROTOCOL_V0_2)[0]
+@pytest.mark.parametrize("seed", development_seeds(PROTOCOL_V0_2))
+def test_v02_development_seed_wins_within_frozen_budgets(seed: int) -> None:
     execution = run_sequence(
         generate_curriculum(seed, PROTOCOL_V0_2),
         "BLA_CLEF_FULL",
