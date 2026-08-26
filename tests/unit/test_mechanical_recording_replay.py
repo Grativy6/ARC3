@@ -502,6 +502,8 @@ def test_replay_matches_recorded_policy_then_cancels_the_unsubmitted_candidate(
     assert isinstance(family_state, dict)
     assert family_state["hierarchy_bridge_relation_rejected_count"] == 0
     assert family_state["hierarchy_residual_linked_relation_rejected_count"] == 0
+    assert family_state["hierarchy_external_residual_linked_relation_rejected_count"] == 0
+    assert family_state["hierarchy_preterminal_retry_count"] == 0
 
 
 def test_replay_action_mismatch_cancels_the_policy_pending_state(
