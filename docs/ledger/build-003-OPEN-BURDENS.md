@@ -475,3 +475,15 @@ Do not delete a burden when later evidence resolves it. Append a resolution with
 - **Burden:** The recovered observation uniquely links the singleton raw color to one carrier-sharing source disk and one exact carrier-offset counterpart in the other bridge example. Those source disks are occupied 21-cell evidence surfaces rather than hollow sinks. Final projected layouts exist when only those exact surfaces are assigned for occlusion, but every transient, preserved-cell boundary, recovery step, and official consequence remains unverified.
 - **Impact:** No Campaign 35 action is earned yet. A final parser-readable projection cannot substitute for a complete sequential certificate or an official consequence.
 - **Reopening handle:** A generic implementation with no game, campaign, level, palette, or coordinate decision constants proves the complete forward sequence and inverse against exact projected rasters, passes sealed replay and clean-source CI, and then receives an official `WIN` or a bounded falsifying consequence.
+
+## B-003-0033 - Exact-head Windows coverage twice crossed the outer CI ceiling
+
+- **Status:** OPEN; BOUNDED INFRASTRUCTURE REPAIR IN PROGRESS
+- **Stage:** 10 and 11
+- **Opened:** 2026-08-26
+- **Owner:** Codex
+- **Burden:** Exact commit `5fccb5751fdbbd30e42e473fb3a33a7e699c0931` passed the full pull-request ARC3 CI matrix, but the duplicate push workflow's Windows job was cancelled at the configured 60-minute outer ceiling. An unchanged rerun reproduced the cancellation. Both attempts passed setup, dependency sync, Ruff, formatting, and strict typing and reached only the long coverage step; neither reported a test failure. Linux passed in both attempts.
+- **Preserved evidence:** Pull-request run `33015837950` passed Linux and Windows. Push run `33015834403` attempt one passed Linux and cancelled Windows at the 60-minute boundary; attempt two passed Linux and again cancelled Windows at the same boundary. The successful Windows suite reported 1,813 passed and 20 skipped in 3,493.53 seconds, only seconds inside the job cap. The prior `1315a603` Windows baseline was already 3,453.11 seconds, so the current 40.42-second increase does not support a mechanism or regression failure claim.
+- **Smallest repair:** Raise only `.github/workflows/ci.yml` `timeout-minutes` from 60 to 75. Preserve every command, test, platform, coverage threshold, runtime doctor, and fail-fast setting. Do not treat the separate exact-head success as permission to erase either cancellation, and do not launch official play until the repaired head passes all required CI jobs.
+- **Impact:** Campaign 35 remains gated. Clean-clone action semantics, competition integrity, package-only integrity, and the 237-action sealed replay already pass with zero environment actions, but they cannot substitute for the unresolved exact-head CI boundary.
+- **Resolution condition:** A new exact head containing the bounded ceiling repair completes all five required workflow runs and all nine jobs with no cancellation or failure, while the carrier-source production bytes and sealed-replay result remain unchanged and exactly bound.
