@@ -503,6 +503,7 @@ def test_replay_matches_recorded_policy_then_cancels_the_unsubmitted_candidate(
     assert family_state["hierarchy_bridge_relation_rejected_count"] == 0
     assert family_state["hierarchy_residual_linked_relation_rejected_count"] == 0
     assert family_state["hierarchy_external_residual_linked_relation_rejected_count"] == 0
+    assert family_state["hierarchy_raw_matching_composite_relation_rejected_count"] == 0
     assert family_state["hierarchy_preterminal_retry_count"] == 0
 
 
