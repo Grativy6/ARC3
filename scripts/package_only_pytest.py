@@ -65,6 +65,11 @@ BUILD001_BOUNDARY_EXCLUSIONS: tuple[tuple[str, str], ...] = (
         "the Build 003 curriculum contract intentionally reads a protected frozen seed manifest",
     ),
     (
+        "tests/evaluation/test_build003_development_performance.py",
+        "the Build 003 development performance test transitively launches a policy worker and "
+        "polls that child process's live RSS",
+    ),
+    (
         "tests/evaluation/test_build003_protocol_v02.py",
         "the Build 003 protocol contract intentionally reads the protected final seed manifest",
     ),

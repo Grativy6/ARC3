@@ -154,6 +154,7 @@ def test_package_only_test_selection_is_exact_and_full_ci_retains_excluded_cover
     assert all(reason.strip() for reason in reasons.values())
     assert {
         "tests/evaluation/test_build003_curriculum.py",
+        "tests/evaluation/test_build003_development_performance.py",
         "tests/evaluation/test_build003_protocol_v02.py",
         "tests/evaluation/test_build003_results.py",
         "tests/integration/test_pinned_agents_framework.py",
@@ -164,6 +165,10 @@ def test_package_only_test_selection_is_exact_and_full_ci_retains_excluded_cover
         "tests/unit/test_diagnose_hot_path.py",
         "tests/unit/test_measure_hot_path.py",
     } <= set(reasons)
+    assert (
+        "tests/evaluation/test_build003_development_performance.py"
+        not in selection.selected_test_files
+    )
     assert f"run: {ORDINARY_CI_FULL_SUITE_COMMAND}" in workflow
     assert "scripts.package_only_pytest" not in workflow
     assert "--ignore" not in workflow
