@@ -4994,6 +4994,43 @@ def test_external_carrier_mask_chain_selects_and_replays_exact_9_plus_9(
     assert win_policy.snapshot()["hierarchy_preterminal_retry_count"] == 0
 
 
+def test_earlier_hierarchy_preterminal_game_over_remains_a_failed_plan() -> None:
+    _frame_value, scene, hierarchy, _bridge, _mixed, relation, external_plan = (
+        _external_residual_chain_fixture()
+    )
+    signature = "affine-bridge-hierarchy:compatibility-probe"
+    plan = replace(
+        external_plan,
+        actions=tuple(
+            replace(planned, plan_signature=signature) for planned in external_plan.actions
+        ),
+        signature=signature,
+        recovery_actions=tuple(
+            replace(planned, plan_signature=f"{signature}-recovery")
+            for planned in external_plan.recovery_actions
+        ),
+    )
+    environment = _ProjectedWeightedHierarchyEnvironment(scene, hierarchy)
+    observation = environment.observation()
+    policy = VisualCausalPolicy(max_coordinate_candidates=8)
+    policy._level_index = 4
+    policy._last_active_color = hierarchy.active_color
+    policy._ensure_learner(observation)
+    policy._install_hierarchy_plan(plan, relation_key=relation.relation_key)
+
+    action = policy.select(observation)
+    interrupted = replace(
+        environment.step(action),
+        state=GameStateName.GAME_OVER,
+        available_actions=(ActionName.RESET,),
+    )
+    policy.accept_consequence(interrupted)
+
+    assert plan.signature in policy._failed_plan_signatures
+    assert policy.snapshot()["hierarchy_preterminal_retry_count"] == 0
+    assert "post-RESET retry" not in (policy.receipts[-1].residual or "")
+
+
 def test_hierarchy_preterminal_game_over_allows_one_same_plan_retry_after_reset(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
