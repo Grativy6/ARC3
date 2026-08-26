@@ -5637,7 +5637,9 @@ def test_external_own_composite_selects_and_replays_exact_9_plus_9(
     assert game_over_policy.snapshot()["hierarchy_preterminal_retry_count"] == 0
 
 
-def test_external_own_composite_preterminal_game_over_retains_one_retry() -> None:
+def test_external_own_composite_preterminal_game_over_closes_after_one_retry(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     (
         _frame_value,
         scene,
@@ -5666,13 +5668,21 @@ def test_external_own_composite_preterminal_game_over_retains_one_retry() -> Non
     )
     policy._install_hierarchy_plan(plan, relation_key=relation.relation_key)
 
-    action = policy.select(observation)
-    interrupted = replace(
-        environment.step(action),
+    for expected in plan.actions[:-2]:
+        action = policy.select(observation)
+        assert action.coordinate == expected.coordinate
+        observation = environment.step(action)
+        policy.accept_consequence(observation)
+    assert policy._affine_ledger_ref is not None
+
+    first_action = policy.select(observation)
+    assert first_action.coordinate == plan.actions[-2].coordinate
+    first_interruption = replace(
+        environment.step(first_action),
         state=GameStateName.GAME_OVER,
         available_actions=(ActionName.RESET,),
     )
-    policy.accept_consequence(interrupted)
+    policy.accept_consequence(first_interruption)
 
     assert plan.signature not in policy._failed_plan_signatures
     assert not policy._failed_external_own_composite_hierarchy_relation_keys
@@ -5682,13 +5692,86 @@ def test_external_own_composite_preterminal_game_over_retains_one_retry() -> Non
         "is retained after legal RESET"
     )
 
-    reset_action = policy.select(interrupted)
+    reset_action = policy.select(first_interruption)
+    assert reset_action.name is ActionName.RESET
     reset_environment = _ProjectedWeightedHierarchyEnvironment(scene, hierarchy)
-    reset_observation = reset_environment.observation(returned_action=reset_action)
+    reset_observation = replace(
+        reset_environment.observation(returned_action=reset_action),
+        full_reset=True,
+    )
     policy.accept_consequence(reset_observation)
     assert policy.snapshot()["hierarchy_preterminal_retry_count"] == 1
     assert not policy._failed_external_own_composite_hierarchy_relation_keys
     assert policy.snapshot()["pending_action"] is None
+
+    planner_calls = 0
+
+    def return_same_plan(
+        candidate_scene: VisualScene,
+        candidate_hierarchy: visual_causal._AffineHierarchy,
+        candidate_relation: visual_causal._ExternalOwnCompositeHierarchyRelation,
+        *,
+        rejected_signatures: set[str],
+        search_budget: visual_causal._HierarchySearchBudget | None = None,
+    ) -> visual_causal._HierarchyPlan:
+        nonlocal planner_calls
+        assert candidate_scene == scene
+        assert candidate_hierarchy == hierarchy
+        assert candidate_relation == relation
+        assert plan.signature not in rejected_signatures
+        assert search_budget is not None
+        planner_calls += 1
+        return plan
+
+    with monkeypatch.context() as retry_patch:
+        retry_patch.setattr(
+            visual_causal,
+            "_external_own_composite_hierarchy_plan",
+            return_same_plan,
+        )
+        retry_action = policy.select(reset_observation)
+        assert planner_calls == 1
+        assert retry_action.coordinate == plan.actions[0].coordinate
+        assert policy._active_hierarchy_signature == plan.signature
+
+        second_interruption = replace(
+            reset_environment.step(retry_action),
+            state=GameStateName.GAME_OVER,
+            available_actions=(ActionName.RESET,),
+        )
+        policy.accept_consequence(second_interruption)
+        assert plan.signature in policy._failed_plan_signatures
+        assert policy._failed_external_own_composite_hierarchy_relation_keys == {
+            relation.relation_key
+        }
+        assert policy.snapshot()["hierarchy_external_own_composite_relation_rejected_count"] == 1
+        assert policy.snapshot()["hierarchy_preterminal_retry_count"] == 0
+        assert policy.receipts[-1].residual == (
+            "the same external-own-composite hierarchy plan returned GAME_OVER before its "
+            "terminal action on its one bounded post-RESET retry; that relation is closed "
+            "rather than reopened through an alternate layout"
+        )
+
+        second_reset = policy.select(second_interruption)
+        assert second_reset.name is ActionName.RESET
+        second_reset_environment = _ProjectedWeightedHierarchyEnvironment(scene, hierarchy)
+        second_reset_observation = replace(
+            second_reset_environment.observation(returned_action=second_reset),
+            full_reset=True,
+        )
+        policy.accept_consequence(second_reset_observation)
+        receipt_count = len(policy.receipts)
+        with pytest.raises(
+            PolicyError,
+            match="external-own-composite recombination",
+        ) as exhausted:
+            policy.select(second_reset_observation)
+
+    assert planner_calls == 1
+    assert "rejected or operationally exhausted by official consequences" in str(exhausted.value)
+    assert len(policy.receipts) == receipt_count
+    assert policy.snapshot()["pending_action"] is None
+    assert policy.snapshot()["pending_plan_actions"] == 0
 
 
 def test_external_own_composite_is_equivariant_and_fails_closed(

@@ -9797,8 +9797,9 @@ class VisualCausalPolicy:
                                                         deferred_hierarchy_reason = (
                                                             "all bounded observation-grounded hierarchy "
                                                             "families, including the unique external-own-"
-                                                            "composite recombination, were already "
-                                                            "falsified by official consequences"
+                                                            "composite recombination, were already rejected "
+                                                            "or operationally exhausted by official "
+                                                            "consequences"
                                                         )
                                                     else:
                                                         hierarchy_plan = (
@@ -11001,10 +11002,24 @@ class VisualCausalPolicy:
                     if self._preterminal_hierarchy_retry_signature == self._pending_plan_signature:
                         self._preterminal_hierarchy_retry_signature = None
                         self._failed_plan_signatures.add(self._pending_plan_signature)
-                        residual = (
-                            "the same hierarchy plan returned GAME_OVER before its terminal "
-                            "action on its one bounded post-RESET retry"
-                        )
+                        if (
+                            external_own_composite_hierarchy_action
+                            and hierarchy_relation_key is not None
+                        ):
+                            self._failed_external_own_composite_hierarchy_relation_keys.add(
+                                hierarchy_relation_key
+                            )
+                            residual = (
+                                "the same external-own-composite hierarchy plan returned "
+                                "GAME_OVER before its terminal action on its one bounded "
+                                "post-RESET retry; that relation is closed rather than "
+                                "reopened through an alternate layout"
+                            )
+                        else:
+                            residual = (
+                                "the same hierarchy plan returned GAME_OVER before its terminal "
+                                "action on its one bounded post-RESET retry"
+                            )
                     elif self._preterminal_hierarchy_retry_signature is None:
                         self._preterminal_hierarchy_retry_signature = self._pending_plan_signature
                         residual = (
