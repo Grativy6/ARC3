@@ -4994,11 +4994,11 @@ def test_external_carrier_mask_chain_selects_and_replays_exact_9_plus_9(
     assert win_policy.snapshot()["hierarchy_preterminal_retry_count"] == 0
 
 
-def test_earlier_hierarchy_preterminal_game_over_remains_a_failed_plan() -> None:
+def test_equal_weight_hierarchy_preterminal_game_over_remains_a_failed_plan() -> None:
     _frame_value, scene, hierarchy, _bridge, _mixed, relation, external_plan = (
         _external_residual_chain_fixture()
     )
-    signature = "affine-bridge-hierarchy:compatibility-probe"
+    signature = "affine-hierarchy:compatibility-probe"
     plan = replace(
         external_plan,
         actions=tuple(

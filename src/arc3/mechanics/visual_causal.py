@@ -9902,7 +9902,11 @@ class VisualCausalPolicy:
             and observation.state is GameStateName.GAME_OVER
         )
         hierarchy_preterminal_game_over_observed = bool(
-            external_residual_linked_hierarchy_action
+            (
+                bridge_hierarchy_action
+                or residual_linked_hierarchy_action
+                or external_residual_linked_hierarchy_action
+            )
             and not self._pending_completes_hierarchy
             and observation.state is GameStateName.GAME_OVER
         )
