@@ -1,6 +1,6 @@
 {
   "schema": "arc3.build-003.final-evidence-index.v0.1",
-  "generated_at": "2026-08-26T11:51:29Z",
+  "generated_at": "2026-08-26T14:26:08Z",
   "index_status": "DRAFT_PENDING_EVIDENCE",
   "overall_build_status": "IN_PROGRESS",
   "status": "IN_PROGRESS",
@@ -17,12 +17,12 @@
   },
   "implementation_freeze": {
     "branch": "build/003-bla-clef-mechanical-learner",
-    "prior_commit": "b7d10cd53e7b6138a063d5a2124ab3f0c985e792",
-    "prior_tree": "0fa6b0a3b44a7b0b12a1fb68726f86f98d154816",
-    "commit": "0434b3c95b7c1e3bd98488e9277df5c82f8c5850",
-    "tree": "fb77bc0c752f9b1932f6aa6c7b46e069f1e216da",
-    "status": "CAMPAIGN_31_EXECUTED_AS_FAILED_MECHANISM; CAMPAIGN_32 IMPLEMENTATION REOPENED BY D-003-0034",
-    "later_change_boundary": "only the generic unique external residual-chain mechanism, its tests and receipts, and evidence/documentation may change before the next clean freeze"
+    "prior_commit": "0d0cd86177a6e281bcf5af16b31e91cd32a99e9c",
+    "prior_tree": "ec5cf89eada152dc2e5b81f3d0c6c7562468acf5",
+    "commit": "83dbe5211451f65e45c8a768b92ae7c5ed305b0a",
+    "tree": "71fd0ebdd5def55770e4dbfe3780c7e3241c53fb",
+    "status": "CAMPAIGN_32 IMPLEMENTATION FROZEN; EXACT PRELAUNCH GATES AND FROZEN-HEAD CI PASSED; OFFICIAL CONSEQUENCE PENDING",
+    "later_change_boundary": "only evidence and documentation may change after the 83dbe52 implementation freeze unless an exact gate, CI, or official consequence reopens implementation"
   },
   "documentation_head": {
     "commit": "PENDING_EVIDENCE",
@@ -31,8 +31,8 @@
     "draft_pull_request_number": 7,
     "draft_pull_request_state": "OPEN_DRAFT",
     "draft_pull_request_exact_final_head": "PENDING_EVIDENCE",
-    "current_head_ci": "PASS_AT_0434B3C; FIVE_OF_FIVE_WORKFLOW_RUNS_AND_NINE_OF_NINE_JOBS",
-    "reason": "The Campaign 31 exact play head and CI are fixed; the later Campaign 32 implementation and final documentation commit cannot contain their own final SHA or later CI conclusion."
+    "current_head_ci": "PASS_AT_FROZEN_83DBE52; FIVE_OF_FIVE_WORKFLOW_RUNS_AND_NINE_OF_NINE_JOBS",
+    "reason": "Campaign 32 will run from the replay-certified frozen implementation commit 83dbe52; later documentation-only commits do not alter those play bytes and cannot contain their own final SHA or later CI conclusion."
   },
   "base": {
     "main_commit": "bea1eac99cb0f1b351526b1dc487d132ba1d40ef",
@@ -643,7 +643,7 @@
       "active_trace_sha256": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
       "built_in_trace_and_public_artifact_verification": "PASS: 293 declared artifacts, one run, zero errors; all 293 files were present and independently hash-matched",
       "artifact_integrity_discrepancy": null,
-      "direct_sealed_policy_replay_status": "FAILED_CLOSED_AT_EXPECTED_NO_NEXT_FAMILY_POLICYERROR; no replay receipt emitted; this is not the built-in trace/public-artifact verifier result",
+      "direct_sealed_policy_replay_status": "HISTORICAL_0434B3C_HEAD_FAILED_CLOSED_AT_EXPECTED_NO_NEXT_FAMILY_POLICYERROR; no replay receipt emitted; this is not the later frozen-policy replay or the built-in trace/public-artifact verifier result",
       "recording_path": "C:\\a\\arc3-b003-play\\build003-r11l-mechanical-seed7-0434b3c-campaign31\\official-recordings\\c2120ed7e4beb839e4d0\\1e993a4e-dbe4-43dd-bf3e-69b5b2a084bd\\r11l-495a7899-e354b8bc-0e2b-4e02-9fef-4958df2c6d3b.jsonl",
       "recording_bytes": 6828250,
       "recording_sha256": "sha256:1e2e478ab3d039cd91023dc03bae1b479497bcc1e53b4c2d11ee82de9b609173",
@@ -662,16 +662,40 @@
       "completion_genuinely_observed": false
     },
     "campaign_32_candidate": {
-      "status": "OBSERVATION_GROUNDED_FAMILY_SELECTED; IMPLEMENTATION, GENERIC LIFECYCLE VERIFICATION, EXACT COMMIT GATES, AND OFFICIAL CONSEQUENCE PENDING",
+      "status": "IMPLEMENTED_REPLAY_CERTIFIED_FROZEN_AND_CI_GREEN_AT_83DBE52; OFFICIAL CONSEQUENCE PENDING",
       "decision": "D-003-0034",
       "open_burden": "B-003-0029",
       "hypothesis": "unique external residual-chain family",
       "selection_boundary": "after prior mixed-family rejection, preserve the unique metric-stable child-to-bridge assignment; require exactly one singleton raw target and two carrier-elimination examples; raw color in exactly one source disk; that source carrier-offset mask has exactly one counterpart in the other example; counterpart residual in exactly one additional exact sparse target after every bridge output is excluded; select distinct supports and use the raw target exactly once; fail closed on ambiguity",
       "planner_gate": "certify a target-, static-raster-, connector-, endpoint-, and lineage-safe complete forward and inverse",
-      "family_rejection_gate": "reject only when the exact certified terminal returns official NOT_FINISHED or GAME_OVER; an intermediate mismatch or GAME_OVER rejects only the plan or life and permits only legal bounded reset/retry",
+      "family_rejection_gate": "reject only when the exact certified terminal returns official NOT_FINISHED or GAME_OVER; an intermediate mismatch rejects the plan; bridge, residual-linked, and external late families receive at most one same-level retry after a preterminal GAME_OVER and legal RESET, while equal-weight, weighted, and visible-node families fail immediately",
       "observation_evidence_supports": "(15,15) and (53,28); coordinates and colors are evidence only, never production decision constants",
       "identity_boundary": "no game ID, campaign number, level number, coordinate, color, or target identity constant",
-      "resource_boundary": "the left-edge band suggests only six cells remain before the prior exhaustion boundary; semantics are provisional and generic bounded intermediate-GAME_OVER recovery must pass before play",
+      "resource_boundary": "the left-edge band suggests only six cells remain before the prior exhaustion boundary; semantics remain provisional, while the generic bounded intermediate-GAME_OVER recovery lifecycle has passed prelaunch verification",
+      "implementation_commit": "83dbe5211451f65e45c8a768b92ae7c5ed305b0a",
+      "implementation_tree": "71fd0ebdd5def55770e4dbfe3780c7e3241c53fb",
+      "candidate_plan_signature": "affine-external-residual-linked-hierarchy:95c73601f21a60f8029fa0fd",
+      "lifecycle_verification": "one same-level retry after a preterminal GAME_OVER applies to bridge, residual-linked, and external late hierarchy families; repeated preterminal failure rejects the plan; equal-weight, weighted, and visible-node families preserve immediate failure",
+      "focused_tests": "PASS: five retry-scope, external-family lifecycle, and compatibility regressions",
+      "full_visual_policy_tests": "PASS: 120/120 at exact detached 83dbe52 in 281.13 seconds; Ruff lint/format and strict MyPy passed",
+      "exact_integrity_tests": "PASS: 54 detached candidate-commit integrity, secret, policy, action-semantics-unit, and production-reachability cases",
+      "sealed_replay_status": "PASS_SEALED_TRACE_REPLAY: 176 historic submissions and 176 regenerated mechanics receipts matched; candidate staged and cancelled unsubmitted; zero environment actions",
+      "sealed_replay_receipt": "C:\\a\\arc3-b003-c32-gate-output-83dbe52\\campaign31-sealed-trace-replay-83dbe52.json",
+      "sealed_replay_file_sha256": "sha256:aababa5c9b81d22e685f313e1c298522dad7792249d826afa5816437e9cd10db",
+      "sealed_replay_payload_sha256": "sha256:76febb32d9dd3f8dc16964d3f31ef1abcbad5cc5310fd5f7de1fcae247426093",
+      "sealed_replay_hash": "sha256:67664265b17bd5155f6a846db9c3da460731e0f1277caa0f6cbb2f9829413a7c",
+      "failed_replay_attempt": "79c9f28 failed closed at historic submission 121 and emitted no receipt because retry authority was overbroad",
+      "failed_full_policy_gate": "0d0cd86 passed sealed replay but its exact full policy gate returned 119 passed and one failed because bridge retry authority was removed; 83dbe52 resolved the conflict without changing the legacy equal-weight receipt",
+      "initial_frozen_replay_invocation": "rejected before execution because campaign-audit-only expected-evaluation-id was incompatible with sealed-trace mode; no output, receipt, or mutation; corrected invocation passed",
+      "frozen_head_ci": "PASS: five of five workflows and nine of nine jobs at exact 83dbe52",
+      "frozen_head_ci_runs": [
+        "https://github.com/Grativy6/ARC3/actions/runs/32974081989",
+        "https://github.com/Grativy6/ARC3/actions/runs/32974081979",
+        "https://github.com/Grativy6/ARC3/actions/runs/32974088586",
+        "https://github.com/Grativy6/ARC3/actions/runs/32974088537",
+        "https://github.com/Grativy6/ARC3/actions/runs/32974088510"
+      ],
+      "frozen_head_package_boundary": "four package-only receipts retained BLOCKED_EXTERNAL for the private surface while scoped assertions passed; no public inventory or gameplay attempted",
       "official_environment_state": "NOT_YET_OBSERVED",
       "completion_observed": false
     }
@@ -964,8 +988,6 @@
     "game_source_semantically_inspected": false
   },
   "pending_evidence": [
-    "Campaign 32 generic unique external residual-chain implementation and bounded intermediate-GAME_OVER reset/retry lifecycle verification",
-    "Campaign 32 clean exact-commit integrity, action-semantics, canonical replay, package, and current-head CI gates",
     "Campaign 32 authorized official terminal consequence, exact inverse or legal recovery, and complete recording/evidence receipts",
     "final documentation commit and tree",
     "draft pull request exact final pushed head",
