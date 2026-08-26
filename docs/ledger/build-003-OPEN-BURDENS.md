@@ -358,7 +358,7 @@ Do not delete a burden when later evidence resolves it. Append a resolution with
 
 ## B-003-0024 - Synthetic fallback-anchor collision generated an unsolvable locked-key case
 
-- **Status:** RESOLVED IN WORKTREE; CHECKPOINT AND REPACKAGE REQUIRED
+- **Status:** RESOLVED AT `48bd18d`; CURRENT-HEAD CI REQUIRED; PRODUCTION FREEZE UNCHANGED
 - **Stage:** 10
 - **Opened:** 2026-08-26
 - **Owner:** Codex
@@ -366,4 +366,4 @@ Do not delete a burden when later evidence resolves it. Append a resolution with
 - **Preserved evidence:** Integrated verifier `C:\a\o3f83\release-verification-receipt.json`, file SHA-256 `35e84860f5c167677cfaa1de45fa903e099fff895a73e0ff81de0e366fd72ddb`, remains `FAILED_INFRASTRUCTURE` at its 2,400-second ceiling. Standalone receipt `C:\a\o3f83\package-only-test-guard-recovery.json`, file SHA-256 `a2b21eeb5c4a7ac7448ecfd9abdaf77902cf8ceaba12d0dde462c68d23d31a1a`, remains `FAILED_BOUNDARY`; it records zero guard attempts, exact source projection, 1,022 collected tests, and the genuine property failure.
 - **Smallest repair:** Reject duplicate fallback anchors during deterministic spec generation and lock the exact root seed into a public evaluator-solvability regression. Do not special-case a family, game ID, coordinate, or target result.
 - **Verification:** Exact regression and property file pass; the combined 17-test lab catalog/transition/integration/property suite passes; Ruff lint/format and strict MyPy pass. No official environment, holdout, game source, credential, or submission surface was touched.
-- **Resolution condition:** Met for the implicated generator mechanism. The final release burden remains open until a clean candidate commit is replayed, packaged, statically checked, and covered by current-head CI.
+- **Resolution condition:** Met for the implicated generator mechanism at `48bd18d`. Archive inspection confirms the lab is absent from all 114 executable payload members, so `83df552` remains the production/campaign freeze. The final release burden remains open until the preserved package boundary and current-head CI are reported honestly.
