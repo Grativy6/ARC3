@@ -298,6 +298,7 @@ def _family_state(snapshot: Mapping[str, JSONValue]) -> dict[str, JSONValue]:
         "child_isolation_relation_rejected_count",
         "child_isolation_remaining_strata_count",
         "hierarchy_equal_relation_rejected_count",
+        "hierarchy_bridge_relation_rejected_count",
         "hierarchy_lineage_lost",
         "hierarchy_relation_key",
         "hierarchy_search_deferred_count",

@@ -145,6 +145,9 @@ def test_replay_matches_recorded_policy_then_cancels_the_unsubmitted_candidate(
     assert result["status"] == "PASS_RECORDED_FRAME_REPLAY"
     assert isinstance(result["candidate_selection_snapshot_sha256"], str)
     assert result["candidate_selection_snapshot_sha256"].startswith("sha256:")
+    family_state = receipt["family_state_after_candidate_selection"]
+    assert isinstance(family_state, dict)
+    assert family_state["hierarchy_bridge_relation_rejected_count"] == 0
 
 
 def test_replay_action_mismatch_cancels_the_policy_pending_state(

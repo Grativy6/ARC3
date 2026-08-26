@@ -37,7 +37,7 @@ from arc3.evaluation.mechanical_replay import (  # noqa: E402
     replay_unfinished_mechanical_recording,
 )
 from arc3.integrity import read_bounded_regular_snapshot  # noqa: E402
-from arc3.types import GameStateName, JSONValue  # noqa: E402
+from arc3.types import ActionName, GameStateName, JSONValue  # noqa: E402
 from scripts.check_competition_integrity import (  # noqa: E402
     package_only_candidate_files,
 )
@@ -45,7 +45,12 @@ from scripts.check_competition_integrity import (  # noqa: E402
 SCHEMA = "arc3.build003.mechanical-recording-replay.v0.1"
 POLICY_PROFILE = "build003-mechanical-v0.1"
 MAX_COORDINATE_CANDIDATES = 8
-CAMPAIGN_AUDIT_SCHEMA = "arc3.build003.campaign28-integrity-replay-audit.v0.1"
+LEGACY_CAMPAIGN_AUDIT_SCHEMA = "arc3.build003.campaign28-integrity-replay-audit.v0.1"
+CAMPAIGN_AUDIT_SCHEMA = "arc3.build003.mechanical-campaign-integrity-replay-audit.v0.2"
+_SUPPORTED_CAMPAIGN_AUDIT_SCHEMAS = {
+    LEGACY_CAMPAIGN_AUDIT_SCHEMA,
+    CAMPAIGN_AUDIT_SCHEMA,
+}
 _FULL_OBJECT_ID = re.compile(r"[0-9a-f]{40}")
 _SOURCE_PATHS = (
     "scripts/replay_build003_mechanical_recording.py",
@@ -118,6 +123,21 @@ def _nonnegative_int(value: object, *, field: str) -> int:
     if isinstance(value, bool) or not isinstance(value, int) or value < 0:
         raise ValueError(f"campaign audit field {field} must be a non-negative integer")
     return value
+
+
+def _count_map(
+    value: object,
+    *,
+    field: str,
+    allowed_keys: frozenset[str],
+) -> dict[str, int]:
+    raw = _object(value, field=field)
+    counts: dict[str, int] = {}
+    for key, count in raw.items():
+        if key not in allowed_keys:
+            raise ValueError(f"campaign audit field {field} contains unsupported key {key!r}")
+        counts[key] = _nonnegative_int(count, field=f"{field}.{key}")
+    return counts
 
 
 def _source_snapshot(
@@ -230,8 +250,10 @@ def _campaign_binding(
         expected_object_hash,
         field="expected campaign audit object hash",
     )
-    if audit.get("schema") != CAMPAIGN_AUDIT_SCHEMA:
-        raise ValueError("campaign audit schema is not the pinned Campaign 28 audit schema")
+    audit_schema = audit.get("schema")
+    if not isinstance(audit_schema, str) or audit_schema not in _SUPPORTED_CAMPAIGN_AUDIT_SCHEMAS:
+        raise ValueError("campaign audit schema is not a supported sealed replay-audit schema")
+    reset_aware_v2 = audit_schema == CAMPAIGN_AUDIT_SCHEMA
     if audit.get("audit_receipt_hash") != named_object_hash or not verify_object_hash(
         audit,
         hash_field="audit_receipt_hash",
@@ -277,9 +299,17 @@ def _campaign_binding(
     if scope.get("read_only_campaign_audit") is not True:
         raise ValueError("campaign audit was not declared read-only")
 
-    final_state = _string(
+    authoritative_completion_state = _string(
         completion.get("authoritative_completion_state"),
         field="completion.authoritative_completion_state",
+    )
+    final_state = (
+        _string(
+            completion.get("raw_final_state"),
+            field="completion.raw_final_state",
+        )
+        if reset_aware_v2
+        else authoritative_completion_state
     )
     levels_completed = _nonnegative_int(
         completion.get("levels_completed"),
@@ -293,20 +323,107 @@ def _campaign_binding(
         completion.get("submission_count"),
         field="completion.submission_count",
     )
+    official_run_state = _string(
+        completion.get("official_run_state"),
+        field="completion.official_run_state",
+    )
     if (
         final_state != GameStateName.NOT_FINISHED.value
+        or authoritative_completion_state != final_state
         or conclusion.get("final_environment_state") != final_state
-        or completion.get("official_run_state") != final_state
         or completion.get("raw_final_state") != final_state
         or completion.get("metric_final_state") != final_state
         or completion.get("completion_observed") is not False
         or completion.get("score_completed") is not False
     ):
         raise ValueError("campaign audit does not preserve the authoritative NOT_FINISHED boundary")
-    if (
-        completion.get("official_run_action_count") != submission_count
-        or completion.get("non_reset_environment_action_count") != submission_count
-        or recording.get("consequence_count_excluding_initial_observation") != submission_count
+
+    official_run_action_count = _nonnegative_int(
+        completion.get("official_run_action_count"),
+        field="completion.official_run_action_count",
+    )
+    non_reset_action_count = _nonnegative_int(
+        completion.get("non_reset_environment_action_count"),
+        field="completion.non_reset_environment_action_count",
+    )
+    consequence_count = _nonnegative_int(
+        recording.get("consequence_count_excluding_initial_observation"),
+        field="recording.consequence_count_excluding_initial_observation",
+    )
+    reset_count = (
+        _nonnegative_int(
+            completion.get("reset_count"),
+            field="completion.reset_count",
+        )
+        if reset_aware_v2
+        else 0
+    )
+    if reset_aware_v2:
+        if completion.get("score_boundary_consistent") is not True:
+            raise ValueError("campaign audit score boundary is not declared consistent")
+        if (
+            official_run_action_count != submission_count
+            or consequence_count != submission_count
+            or non_reset_action_count + reset_count != submission_count
+        ):
+            raise ValueError("campaign audit reset-aware action-accounting fields disagree")
+
+        submitted_action_counts = _count_map(
+            recording.get("submitted_action_id_counts"),
+            field="recording.submitted_action_id_counts",
+            allowed_keys=frozenset(action.value for action in ActionName),
+        )
+        if (
+            sum(submitted_action_counts.values()) != submission_count
+            or submitted_action_counts.get(ActionName.RESET.value, 0) != reset_count
+            or sum(
+                count
+                for action, count in submitted_action_counts.items()
+                if action != ActionName.RESET.value
+            )
+            != non_reset_action_count
+        ):
+            raise ValueError("campaign audit submitted-action counts disagree")
+
+        game_over_events = _nonnegative_int(
+            recording.get("game_over_events"),
+            field="recording.game_over_events",
+        )
+        win_events = _nonnegative_int(
+            recording.get("win_events"),
+            field="recording.win_events",
+        )
+        consequence_state_counts = _count_map(
+            recording.get("consequence_state_counts"),
+            field="recording.consequence_state_counts",
+            allowed_keys=frozenset(
+                {
+                    GameStateName.NOT_FINISHED.value,
+                    GameStateName.GAME_OVER.value,
+                    GameStateName.WIN.value,
+                }
+            ),
+        )
+        if (
+            sum(consequence_state_counts.values()) != submission_count
+            or consequence_state_counts.get(GameStateName.GAME_OVER.value, 0) != game_over_events
+            or consequence_state_counts.get(GameStateName.WIN.value, 0) != win_events
+            or consequence_state_counts.get(final_state, 0) == 0
+            or win_events != 0
+        ):
+            raise ValueError("campaign audit consequence-state counts disagree")
+        expected_official_run_state = (
+            GameStateName.GAME_OVER.value if game_over_events else GameStateName.NOT_FINISHED.value
+        )
+        if official_run_state != expected_official_run_state:
+            raise ValueError(
+                "campaign audit official score-boundary state disagrees with recorded consequences"
+            )
+    elif (
+        official_run_state != final_state
+        or official_run_action_count != submission_count
+        or non_reset_action_count != submission_count
+        or consequence_count != submission_count
     ):
         raise ValueError("campaign audit action-accounting fields disagree")
     row_count = _nonnegative_int(
@@ -359,13 +476,17 @@ def _campaign_binding(
         "audit_file_sha256": file_sha256,
         "audit_object_hash": named_object_hash,
         "audit_path": str(audit_path),
-        "audit_schema": CAMPAIGN_AUDIT_SCHEMA,
+        "audit_schema": audit_schema,
         "authoritative_public_verifier": True,
         "evaluation_id": evaluation_id,
         "historical_frozen_commit": _string(
             campaign.get("frozen_git_commit"), field="campaign.frozen_git_commit"
         ),
         "integrity_verified": True,
+        "non_reset_environment_action_count": non_reset_action_count,
+        "official_run_state": official_run_state,
+        "replay_final_state": final_state,
+        "reset_count": reset_count,
         "trace_manifest_object_hash": hashes_and_seals.get("trace_manifest_object_hash"),
         "trace_manifest_object_hash_verified": trace_manifest_verified,
     }

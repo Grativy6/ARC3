@@ -197,6 +197,10 @@ type _ConnectorStateSignature = tuple[int, tuple[tuple[int, int], ...]] | None
 type _NormalizedConnectorStructure = tuple[int, int] | None
 type _RasterStateSignature = tuple[tuple[int, int, int], ...]
 type _ExplorationRootKey = tuple[str, str, int, int]
+type _BridgeProjectedStateKey = tuple[
+    tuple[tuple[str, tuple[int, int]], ...],
+    tuple[tuple[str, int], ...],
+]
 type _ChildStructureSignature = tuple[
     int,
     int,
@@ -315,6 +319,46 @@ class _HierarchyPlan:
     supports: tuple[tuple[int, int], ...]
     support_weights: tuple[int, ...]
     recovery_actions: tuple[PlannedClick, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class _CompositeFilledDisk:
+    """One exact isolated 21-cell two-color disk read from the observation."""
+
+    center: tuple[int, int]
+    cells: tuple[tuple[int, int], ...]
+    palette: frozenset[int]
+    offsets_by_color: tuple[tuple[int, frozenset[tuple[int, int]]], ...]
+
+    def offsets(self, color: int) -> frozenset[tuple[int, int]]:
+        return next(
+            (cells for value, cells in self.offsets_by_color if value == color), frozenset()
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class _CompositeBridgeExample:
+    """Two carrier-sharing disks and their exact residual-color ring."""
+
+    carrier_color: int
+    sources: tuple[_CompositeFilledDisk, _CompositeFilledDisk]
+    residual_colors: tuple[int, int]
+    target: VisualObject
+
+    @property
+    def aggregate_center_twice(self) -> tuple[int, int]:
+        return (
+            self.sources[0].center[0] + self.sources[1].center[0],
+            self.sources[0].center[1] + self.sources[1].center[1],
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class _CompositeBridgeRelation:
+    """A provisional proximity-assigned paired-sink intervention hypothesis."""
+
+    assignments: tuple[tuple[_AffineChildGroup, _CompositeBridgeExample], ...]
+    relation_key: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -490,6 +534,8 @@ _HIERARCHY_PLAN_PREFIXES = (
     "affine-weighted-hierarchy-recovery:",
     "affine-visible-node-hierarchy:",
     "affine-visible-node-hierarchy-recovery:",
+    "affine-bridge-hierarchy:",
+    "affine-bridge-hierarchy-recovery:",
     "affine-child-isolation:",
     "affine-child-recovery:",
 )
@@ -1168,6 +1214,151 @@ def _composite_sparse_targets(
             )
             targets.append((proxy, signature))
     return tuple(targets)
+
+
+def _composite_filled_disks(scene: VisualScene) -> tuple[_CompositeFilledDisk, ...]:
+    """Find isolated exact 21-cell disks carrying exactly two observed colors."""
+
+    disks: list[_CompositeFilledDisk] = []
+    border = frozenset(
+        (dx, dy) for dy in range(-3, 4) for dx in range(-3, 4) if max(abs(dx), abs(dy)) == 3
+    )
+    complete_box = frozenset((dx, dy) for dy in range(-2, 3) for dx in range(-2, 3))
+    for center_y in range(3, scene.height - 3):
+        for center_x in range(3, scene.width - 3):
+            observed = frozenset(
+                (dx, dy)
+                for dx, dy in complete_box
+                if scene.cells[center_y + dy][center_x + dx] != scene.background
+            )
+            if observed != _COMPOSITE_MEDIATOR_OFFSETS or any(
+                scene.cells[center_y + dy][center_x + dx] != scene.background for dx, dy in border
+            ):
+                continue
+            cells = tuple(
+                sorted(
+                    ((center_x + dx, center_y + dy) for dx, dy in _COMPOSITE_MEDIATOR_OFFSETS),
+                    key=lambda cell: (cell[1], cell[0]),
+                )
+            )
+            palette = frozenset(scene.cells[y][x] for x, y in cells)
+            if len(palette) != 2:
+                continue
+            offsets_by_color = tuple(
+                (
+                    color,
+                    frozenset(
+                        (x - center_x, y - center_y) for x, y in cells if scene.cells[y][x] == color
+                    ),
+                )
+                for color in sorted(palette)
+            )
+            disks.append(
+                _CompositeFilledDisk(
+                    center=(center_x, center_y),
+                    cells=cells,
+                    palette=palette,
+                    offsets_by_color=offsets_by_color,
+                )
+            )
+    return tuple(disks)
+
+
+def _bridge_projection_offset(value: int) -> int:
+    """Project one sparse radius-three ring coordinate onto a radius-two disk."""
+
+    magnitude = (2 * abs(value) + 1) // 3
+    return magnitude if value >= 0 else -magnitude
+
+
+def _bridge_target_matches_sources(
+    scene: VisualScene,
+    *,
+    sources: tuple[_CompositeFilledDisk, _CompositeFilledDisk],
+    residual_colors: tuple[int, int],
+    target: VisualObject,
+) -> bool:
+    """Require the ring sectors to be the radial residual projection of the disks."""
+
+    target_center = target.rounded_center
+    for x, y in target.cells:
+        projected = (
+            _bridge_projection_offset(x - target_center[0]),
+            _bridge_projection_offset(y - target_center[1]),
+        )
+        owners = tuple(
+            residual
+            for source, residual in zip(sources, residual_colors, strict=True)
+            if projected in source.offsets(residual)
+        )
+        if len(owners) != 1 or scene.cells[y][x] != owners[0]:
+            return False
+    return True
+
+
+def _composite_bridge_examples(
+    scene: VisualScene,
+    *,
+    carrier_color: int,
+) -> tuple[_CompositeBridgeExample, ...]:
+    """Return exact carrier-elimination examples without inferring a game rule."""
+
+    disks = tuple(disk for disk in _composite_filled_disks(scene) if carrier_color in disk.palette)
+    targets = _composite_sparse_targets(scene)
+    examples: list[_CompositeBridgeExample] = []
+    for left, right in itertools.combinations(disks, 2):
+        if left.palette & right.palette != {carrier_color}:
+            continue
+        left_residuals = left.palette - {carrier_color}
+        right_residuals = right.palette - {carrier_color}
+        if len(left_residuals) != 1 or len(right_residuals) != 1:
+            continue
+        left_residual = next(iter(left_residuals))
+        right_residual = next(iter(right_residuals))
+        if left_residual == right_residual:
+            continue
+        left_carrier = left.offsets(carrier_color)
+        right_carrier = right.offsets(carrier_color)
+        if (
+            left_carrier & right_carrier
+            or left_carrier | right_carrier != _COMPOSITE_MEDIATOR_OFFSETS
+        ):
+            continue
+        ordered_sources = sorted((left, right), key=lambda item: item.center)
+        sources = (ordered_sources[0], ordered_sources[1])
+        residual_colors = (
+            next(iter(sources[0].palette - {carrier_color})),
+            next(iter(sources[1].palette - {carrier_color})),
+        )
+        matching_targets = tuple(
+            target
+            for target, signature in targets
+            if signature == frozenset(residual_colors)
+            and _bridge_target_matches_sources(
+                scene,
+                sources=sources,
+                residual_colors=residual_colors,
+                target=target,
+            )
+        )
+        if len(matching_targets) != 1:
+            continue
+        examples.append(
+            _CompositeBridgeExample(
+                carrier_color=carrier_color,
+                sources=sources,
+                residual_colors=residual_colors,
+                target=matching_targets[0],
+            )
+        )
+    examples.sort(
+        key=lambda item: (
+            item.target.rounded_center,
+            tuple(source.center for source in item.sources),
+            item.residual_colors,
+        )
+    )
+    return tuple(examples)
 
 
 def _embedded_marker_groups(scene: VisualScene) -> tuple[_EmbeddedMarkerGroup, ...]:
@@ -3870,6 +4061,101 @@ def _hierarchy_relation_key(
     )
 
 
+def _composite_bridge_relation(
+    scene: VisualScene,
+    hierarchy: _AffineHierarchy,
+    *,
+    level_index: int,
+) -> _CompositeBridgeRelation | None:
+    """Build a metric-stable proximity assignment to witnessed composite sinks."""
+
+    if len(hierarchy.children) < 2:
+        return None
+    carrier_colors = {child.mediator.color for child in hierarchy.children}
+    if len(carrier_colors) != 1:
+        return None
+    carrier_color = next(iter(carrier_colors))
+    examples = _composite_bridge_examples(scene, carrier_color=carrier_color)
+    eligible_disks = tuple(
+        disk for disk in _composite_filled_disks(scene) if carrier_color in disk.palette
+    )
+    if (
+        len(examples) != len(hierarchy.children)
+        or len(examples) < 2
+        or len(eligible_disks) != 2 * len(examples)
+        or len({example.target.rounded_center for example in examples}) != len(examples)
+        or len({source.center for example in examples for source in example.sources})
+        != len(eligible_disks)
+    ):
+        return None
+
+    permutations = tuple(itertools.permutations(examples))
+    if not permutations:
+        return None
+
+    def metric_score(
+        assignment: tuple[_CompositeBridgeExample, ...],
+        *,
+        metric: str,
+    ) -> float:
+        parts: list[float] = []
+        for child, example in zip(hierarchy.children, assignment, strict=True):
+            aggregate_x, aggregate_y = example.aggregate_center_twice
+            delta_x = abs(2 * child.mediator.rounded_center[0] - aggregate_x)
+            delta_y = abs(2 * child.mediator.rounded_center[1] - aggregate_y)
+            if metric == "euclidean":
+                parts.append(math.hypot(delta_x, delta_y))
+            elif metric == "manhattan":
+                parts.append(float(delta_x + delta_y))
+            else:
+                parts.append(float(delta_x * delta_x + delta_y * delta_y))
+        return math.fsum(parts)
+
+    winners: list[tuple[_CompositeBridgeExample, ...]] = []
+    for metric in ("euclidean", "manhattan", "squared-euclidean"):
+        ranked = sorted(
+            ((metric_score(items, metric=metric), items) for items in permutations),
+            key=lambda item: (
+                item[0],
+                tuple(example.target.rounded_center for example in item[1]),
+            ),
+        )
+        if len(ranked) > 1 and math.isclose(
+            ranked[0][0],
+            ranked[1][0],
+            rel_tol=1e-12,
+            abs_tol=1e-12,
+        ):
+            return None
+        winners.append(ranked[0][1])
+    if any(winner != winners[0] for winner in winners[1:]):
+        return None
+
+    assignments = tuple(zip(hierarchy.children, winners[0], strict=True))
+    identity = (
+        "proximity-assigned-composite-sink-v1",
+        _hierarchy_relation_key(scene, hierarchy, level_index=level_index),
+        tuple(
+            (
+                _child_structure_signature(scene, child),
+                example.carrier_color,
+                tuple(source.center for source in example.sources),
+                example.residual_colors,
+                example.target.rounded_center,
+                tuple(sorted((x, y, scene.cells[y][x]) for x, y in example.target.cells)),
+            )
+            for child, example in assignments
+        ),
+    )
+    return _CompositeBridgeRelation(
+        assignments=assignments,
+        relation_key=(
+            "affine-bridge-relation:"
+            + hashlib.sha256(repr(identity).encode("ascii")).hexdigest()[:24]
+        ),
+    )
+
+
 def _hierarchy_dynamic_footprint(
     scene: VisualScene,
     group: _AffineChildGroup,
@@ -4509,6 +4795,373 @@ def _hierarchy_sequence_is_safe(
     )
 
 
+def _bridge_projected_state_is_safe(
+    scene: VisualScene,
+    hierarchy: _AffineHierarchy,
+    relation: _CompositeBridgeRelation,
+    *,
+    positions: dict[str, tuple[int, int]],
+    colors: dict[str, int],
+    static_cells: frozenset[tuple[int, int]],
+    dynamic_target_regions: _TargetRegions,
+    endpoint_target_regions: _TargetRegions,
+    preserved_target_signature: _TargetSurfaceSignature,
+    search_budget: _HierarchySearchBudget,
+) -> bool:
+    """Certify one bridge state while permitting only sink interiors to fill."""
+
+    assignment_by_mediator = {
+        child.mediator.object_ref: example for child, example in relation.assignments
+    }
+    group_dynamic: list[frozenset[tuple[int, int]]] = []
+    mediator_centers: dict[str, tuple[int, int]] = {}
+    mediator_footprints: list[frozenset[tuple[int, int]]] = []
+    endpoint_footprints: list[tuple[str, frozenset[tuple[int, int]]]] = []
+    for child in hierarchy.children:
+        example = assignment_by_mediator.get(child.mediator.object_ref)
+        if example is None:
+            return False
+        centers = tuple(positions[item.object_ref] for item in child.endpoints)
+        mediator_center = (
+            sum(center[0] for center in centers) // child.arity,
+            sum(center[1] for center in centers) // child.arity,
+        )
+        mediator_centers[child.mediator.object_ref] = mediator_center
+        endpoints = tuple(
+            _translated_object_footprint(endpoint, center=center)
+            for endpoint, center in zip(child.endpoints, centers, strict=True)
+        )
+        if any(
+            not _hierarchy_cells_in_bounds(scene, footprint)
+            or footprint & static_cells
+            or not _hierarchy_avoids_target_regions(footprint, endpoint_target_regions)
+            for footprint in endpoints
+        ) or any(
+            not _footprints_have_gap(left, right, gap=1)
+            for left, right in itertools.combinations(endpoints, 2)
+        ):
+            return False
+        dynamic = _hierarchy_projected_group_footprint(
+            child,
+            endpoint_centers=centers,
+            mediator_center=mediator_center,
+        )
+        if (
+            not _hierarchy_cells_in_bounds(scene, dynamic)
+            or dynamic & static_cells
+            or not _hierarchy_avoids_target_regions(dynamic, dynamic_target_regions)
+        ):
+            return False
+        group_dynamic.append(dynamic)
+        mediator_footprints.append(
+            _translated_object_footprint(child.mediator, center=mediator_center)
+        )
+        endpoint_footprints.extend(
+            (endpoint.object_ref, footprint)
+            for endpoint, footprint in zip(child.endpoints, endpoints, strict=True)
+        )
+        if mediator_center == example.target.rounded_center and any(
+            (x, y) in dynamic for x, y in example.target.cells
+        ):
+            return False
+
+    if any(left & right for left, right in itertools.combinations(group_dynamic, 2)) or any(
+        not _footprints_have_gap(left, right, gap=1)
+        for left, right in itertools.combinations(mediator_footprints, 2)
+    ):
+        return False
+    for (left_ref, left), (right_ref, right) in itertools.combinations(
+        endpoint_footprints,
+        2,
+    ):
+        if colors[left_ref] == colors[right_ref] and not _footprints_have_gap(
+            left,
+            right,
+            gap=1,
+        ):
+            return False
+
+    projected = _hierarchy_projected_scene(
+        scene,
+        hierarchy,
+        positions=positions,
+        colors=colors,
+    )
+    sink_centers = frozenset(
+        example.target.rounded_center for _child, example in relation.assignments
+    )
+    projected_preserved = tuple(
+        item
+        for item in _target_surface_signature(projected)
+        if not (item[0] == "composite" and item[1] in sink_centers)
+    )
+    if projected_preserved != preserved_target_signature:
+        return False
+    projected_composite = _composite_sparse_targets(projected)
+    for child, example in relation.assignments:
+        if any(projected.cells[y][x] != scene.cells[y][x] for x, y in example.target.cells):
+            return False
+        target_still_hollow = any(
+            item.rounded_center == example.target.rounded_center
+            and signature == frozenset(example.residual_colors)
+            for item, signature in projected_composite
+        )
+        if target_still_hollow != (
+            mediator_centers[child.mediator.object_ref] != example.target.rounded_center
+        ):
+            return False
+
+    projected_regions = {
+        item for item in _visible_target_regions(projected) if item[0] not in sink_centers
+    }
+    original_regions = {
+        item for item in _visible_target_regions(scene) if item[0] not in sink_centers
+    }
+    if projected_regions != original_regions:
+        return False
+    parsed = _unique_affine_hierarchy(
+        projected,
+        active_color=hierarchy.active_color,
+        search_budget=search_budget,
+    )
+    active = tuple(item for item in projected.endpoints if item.color == hierarchy.active_color)
+    expected_geometry = tuple(
+        sorted(
+            (
+                mediator_centers[child.mediator.object_ref],
+                tuple(sorted(positions[item.object_ref] for item in child.endpoints)),
+            )
+            for child in hierarchy.children
+        )
+    )
+    observed_geometry = tuple(
+        sorted(
+            (
+                child.mediator.rounded_center,
+                tuple(sorted(item.rounded_center for item in child.endpoints)),
+            )
+            for child in (() if parsed is None else parsed.children)
+        )
+    )
+    return bool(
+        len(projected.endpoints) == len(scene.endpoints)
+        and len(projected.mediators) == len(scene.mediators)
+        and len(active) == 1
+        and parsed is not None
+        and parsed.target.rounded_center == hierarchy.target.rounded_center
+        and parsed.target.color == hierarchy.target.color
+        and observed_geometry == expected_geometry
+    )
+
+
+def _bridge_final_layout_geometry_is_safe(
+    hierarchy: _AffineHierarchy,
+    layouts: tuple[_HierarchyChildLayout, ...],
+) -> bool:
+    """Reject jointly impossible terminal geometry before projected parsing.
+
+    Each child layout has already passed its own static, target, and bounds
+    checks. This filter reproduces only the cross-child and role-dependent
+    terminal constraints from ``_bridge_projected_state_is_safe``; acceptance
+    here never substitutes for the full sequential parser certificate.
+    """
+
+    if tuple(layout.group for layout in layouts) != hierarchy.children or any(
+        mover.rounded_center == point
+        for layout in layouts
+        for mover, point in zip(layout.movers, layout.points, strict=True)
+    ):
+        return False
+    positions = {
+        endpoint.object_ref: endpoint.rounded_center
+        for child in hierarchy.children
+        for endpoint in child.endpoints
+    }
+    colors = {
+        endpoint.object_ref: endpoint.color
+        for child in hierarchy.children
+        for endpoint in child.endpoints
+    }
+    active = tuple(ref for ref, color in colors.items() if color == hierarchy.active_color)
+    if len(active) != 1:
+        return False
+    active_ref = active[0]
+
+    for child_index, layout in enumerate(layouts):
+        if child_index:
+            selected_ref = layout.movers[0].object_ref
+            if selected_ref == active_ref or colors[selected_ref] == hierarchy.active_color:
+                return False
+            colors[active_ref], colors[selected_ref] = colors[selected_ref], colors[active_ref]
+            active_ref = selected_ref
+        if layout.movers[0].object_ref != active_ref:
+            return False
+        for mover_index, (mover, point) in enumerate(
+            zip(layout.movers, layout.points, strict=True)
+        ):
+            if mover.object_ref != active_ref:
+                return False
+            positions[active_ref] = point
+            if mover_index + 1 < len(layout.movers):
+                selected_ref = layout.movers[mover_index + 1].object_ref
+                if selected_ref == active_ref or colors[selected_ref] == hierarchy.active_color:
+                    return False
+                colors[active_ref], colors[selected_ref] = (
+                    colors[selected_ref],
+                    colors[active_ref],
+                )
+                active_ref = selected_ref
+
+    group_dynamic: list[frozenset[tuple[int, int]]] = []
+    mediator_footprints: list[frozenset[tuple[int, int]]] = []
+    endpoint_footprints: list[tuple[str, frozenset[tuple[int, int]]]] = []
+    for layout in layouts:
+        centers = tuple(positions[item.object_ref] for item in layout.group.endpoints)
+        mediator_center = (
+            sum(center[0] for center in centers) // layout.group.arity,
+            sum(center[1] for center in centers) // layout.group.arity,
+        )
+        if mediator_center != layout.support:
+            return False
+        endpoints = tuple(
+            _translated_object_footprint(endpoint, center=center)
+            for endpoint, center in zip(layout.group.endpoints, centers, strict=True)
+        )
+        if any(
+            not _footprints_have_gap(left, right, gap=1)
+            for left, right in itertools.combinations(endpoints, 2)
+        ):
+            return False
+        group_dynamic.append(
+            _hierarchy_projected_group_footprint(
+                layout.group,
+                endpoint_centers=centers,
+                mediator_center=mediator_center,
+            )
+        )
+        mediator_footprints.append(
+            _translated_object_footprint(layout.group.mediator, center=mediator_center)
+        )
+        endpoint_footprints.extend(
+            (endpoint.object_ref, footprint)
+            for endpoint, footprint in zip(layout.group.endpoints, endpoints, strict=True)
+        )
+
+    if any(left & right for left, right in itertools.combinations(group_dynamic, 2)) or any(
+        not _footprints_have_gap(left, right, gap=1)
+        for left, right in itertools.combinations(mediator_footprints, 2)
+    ):
+        return False
+    return all(
+        colors[left_ref] != colors[right_ref] or _footprints_have_gap(left, right, gap=1)
+        for (left_ref, left), (right_ref, right) in itertools.combinations(
+            endpoint_footprints,
+            2,
+        )
+    )
+
+
+def _bridge_hierarchy_sequence_is_safe(
+    scene: VisualScene,
+    hierarchy: _AffineHierarchy,
+    relation: _CompositeBridgeRelation,
+    layouts: tuple[_HierarchyChildLayout, ...],
+    *,
+    static_cells: frozenset[tuple[int, int]],
+    dynamic_target_regions: _TargetRegions,
+    endpoint_target_regions: _TargetRegions,
+    preserved_target_signature: _TargetSurfaceSignature,
+    search_budget: _HierarchySearchBudget,
+    state_cache: dict[_BridgeProjectedStateKey, bool],
+) -> bool:
+    """Validate both bridge placements and every intervening role exchange."""
+
+    if tuple(layout.group for layout in layouts) != hierarchy.children or any(
+        mover.rounded_center == point
+        for layout in layouts
+        for mover, point in zip(layout.movers, layout.points, strict=True)
+    ):
+        return False
+    positions = {
+        endpoint.object_ref: endpoint.rounded_center
+        for child in hierarchy.children
+        for endpoint in child.endpoints
+    }
+    colors = {
+        endpoint.object_ref: endpoint.color
+        for child in hierarchy.children
+        for endpoint in child.endpoints
+    }
+    active = tuple(ref for ref, color in colors.items() if color == hierarchy.active_color)
+    if len(active) != 1:
+        return False
+    active_ref = active[0]
+
+    def state_is_safe() -> bool:
+        key: _BridgeProjectedStateKey = (
+            tuple(sorted(positions.items())),
+            tuple(sorted(colors.items())),
+        )
+        cached = state_cache.get(key)
+        if cached is not None:
+            return cached
+        safe = _bridge_projected_state_is_safe(
+            scene,
+            hierarchy,
+            relation,
+            positions=positions,
+            colors=colors,
+            static_cells=static_cells,
+            dynamic_target_regions=dynamic_target_regions,
+            endpoint_target_regions=endpoint_target_regions,
+            preserved_target_signature=preserved_target_signature,
+            search_budget=search_budget,
+        )
+        state_cache[key] = safe
+        return safe
+
+    if not state_is_safe():
+        return False
+    for child_index, layout in enumerate(layouts):
+        if child_index:
+            selected_ref = layout.movers[0].object_ref
+            if selected_ref == active_ref or colors[selected_ref] == hierarchy.active_color:
+                return False
+            colors[active_ref], colors[selected_ref] = colors[selected_ref], colors[active_ref]
+            active_ref = selected_ref
+            if not state_is_safe():
+                return False
+        if layout.movers[0].object_ref != active_ref:
+            return False
+        for mover_index, (mover, point) in enumerate(
+            zip(layout.movers, layout.points, strict=True)
+        ):
+            if mover.object_ref != active_ref:
+                return False
+            positions[active_ref] = point
+            if not state_is_safe():
+                return False
+            if mover_index + 1 < len(layout.movers):
+                selected_ref = layout.movers[mover_index + 1].object_ref
+                if selected_ref == active_ref or colors[selected_ref] == hierarchy.active_color:
+                    return False
+                colors[active_ref], colors[selected_ref] = (
+                    colors[selected_ref],
+                    colors[active_ref],
+                )
+                active_ref = selected_ref
+                if not state_is_safe():
+                    return False
+        centers = tuple(positions[item.object_ref] for item in layout.group.endpoints)
+        mediator_center = (
+            sum(center[0] for center in centers) // layout.group.arity,
+            sum(center[1] for center in centers) // layout.group.arity,
+        )
+        if mediator_center != layout.support:
+            return False
+    return True
+
+
 def _build_hierarchy_plan(
     hierarchy: _AffineHierarchy,
     layouts: tuple[_HierarchyChildLayout, ...],
@@ -4679,6 +5332,7 @@ def _build_hierarchy_plan(
     recovery_prefix = {
         "affine-weighted-hierarchy": "affine-weighted-hierarchy-recovery",
         "affine-visible-node-hierarchy": "affine-visible-node-hierarchy-recovery",
+        "affine-bridge-hierarchy": "affine-bridge-hierarchy-recovery",
     }.get(signature_prefix, "affine-hierarchy-recovery")
     recovery_signature = (
         recovery_prefix
@@ -4737,6 +5391,121 @@ def _build_hierarchy_plan(
         support_weights=weights,
         recovery_actions=tuple(recovery_actions),
     )
+
+
+def _bridge_hierarchy_plan(
+    scene: VisualScene,
+    hierarchy: _AffineHierarchy,
+    relation: _CompositeBridgeRelation,
+    *,
+    rejected_signatures: set[str],
+    search_budget: _HierarchySearchBudget | None = None,
+) -> _HierarchyPlan | None:
+    """Find one exact route for the provisional paired-sink hypothesis."""
+
+    if search_budget is None:
+        search_budget = _HierarchySearchBudget(_MAX_HIERARCHY_SEARCH_BUDGET)
+    if tuple(child for child, _example in relation.assignments) != hierarchy.children:
+        return None
+    active = tuple(item for item in scene.endpoints if item.color == hierarchy.active_color)
+    if len(active) != 1 or active[0] not in hierarchy.children[0].endpoints:
+        return None
+    initial_dynamic = frozenset(
+        cell for child in hierarchy.children for cell in _hierarchy_dynamic_footprint(scene, child)
+    )
+    occupied = frozenset(
+        (x, y)
+        for y, row in enumerate(scene.cells)
+        for x, value in enumerate(row)
+        if value != scene.background
+    )
+    static_cells = occupied - initial_dynamic
+    endpoint_target_regions = _visible_target_regions(scene)
+    sink_surfaces = {
+        example.target.rounded_center: frozenset(example.target.cells)
+        for _child, example in relation.assignments
+    }
+    dynamic_target_regions = tuple(
+        (center, sink_surfaces.get(center, region)) for center, region in endpoint_target_regions
+    )
+    sink_centers = frozenset(sink_surfaces)
+    preserved_target_signature = tuple(
+        item
+        for item in _target_surface_signature(scene)
+        if not (item[0] == "composite" and item[1] in sink_centers)
+    )
+    ignored_refs = frozenset(
+        item.object_ref
+        for child in hierarchy.children
+        for item in (*child.endpoints, child.mediator)
+    )
+    layout_sets: list[tuple[_HierarchyChildLayout, ...]] = []
+    for child_index, (child, example) in enumerate(relation.assignments):
+        layouts = _hierarchy_child_layouts(
+            scene,
+            hierarchy,
+            child,
+            support=example.target.rounded_center,
+            active_ref=active[0].object_ref if child_index == 0 else None,
+            static_cells=static_cells,
+            target_regions=dynamic_target_regions,
+            endpoint_target_regions=endpoint_target_regions,
+            ignored_refs=ignored_refs,
+            search_budget=search_budget,
+            result_limit=128,
+        )
+        if not layouts:
+            return None
+        layout_sets.append(
+            tuple(
+                sorted(
+                    layouts,
+                    key=lambda item: (
+                        item.radius,
+                        item.movement_cost,
+                        item.points,
+                        tuple(mover.object_ref for mover in item.movers),
+                    ),
+                )
+            )
+        )
+
+    lengths = tuple(len(items) for items in layout_sets)
+    # Bridge search shares the same bounded layout-combination authority as the
+    # other hierarchy planners. State memoization retains fair traversal without
+    # needing a larger family-specific cap.
+    combination_limit = min(math.prod(lengths), _MAX_HIERARCHY_LAYOUT_COMBINATIONS)
+    state_cache: dict[_BridgeProjectedStateKey, bool] = {}
+    for indices in _fair_index_products(lengths, limit=combination_limit):
+        search_budget.consume()
+        layouts = tuple(
+            layout_sets[index][layout_index] for index, layout_index in enumerate(indices)
+        )
+        if not _bridge_final_layout_geometry_is_safe(hierarchy, layouts):
+            continue
+        if not _bridge_hierarchy_sequence_is_safe(
+            scene,
+            hierarchy,
+            relation,
+            layouts,
+            static_cells=static_cells,
+            dynamic_target_regions=dynamic_target_regions,
+            endpoint_target_regions=endpoint_target_regions,
+            preserved_target_signature=preserved_target_signature,
+            search_budget=search_budget,
+            state_cache=state_cache,
+        ):
+            continue
+        plan = _build_hierarchy_plan(
+            hierarchy,
+            layouts,
+            scene=scene,
+            signature_prefix="affine-bridge-hierarchy",
+            terminal_expectation="test the proximity-assigned paired composite-sink hypothesis",
+        )
+        if plan.signature not in rejected_signatures:
+            return plan
+    return None
 
 
 def _hierarchy_joint_layout(
@@ -7004,6 +7773,7 @@ class VisualCausalPolicy:
         self._failed_hierarchy_relation_keys: set[str] = set()
         self._failed_weighted_hierarchy_relation_keys: set[str] = set()
         self._failed_visible_node_hierarchy_relation_keys: set[str] = set()
+        self._failed_bridge_hierarchy_relation_keys: set[str] = set()
         self._hierarchy_lineage_lost: tuple[int, str, str, str] | None = None
         self._failed_hierarchy_lineages: set[tuple[int, str, str, str]] = set()
         self._active_child_isolation_relation_key: str | None = None
@@ -7123,6 +7893,7 @@ class VisualCausalPolicy:
         self._failed_hierarchy_relation_keys.clear()
         self._failed_weighted_hierarchy_relation_keys.clear()
         self._failed_visible_node_hierarchy_relation_keys.clear()
+        self._failed_bridge_hierarchy_relation_keys.clear()
         self._hierarchy_lineage_lost = None
         self._failed_hierarchy_lineages.clear()
         self._clear_child_isolation_execution()
@@ -7752,19 +8523,53 @@ class VisualCausalPolicy:
                                 and weighted_relation_rejected
                                 and visible_node_relation_rejected
                             ):
-                                deferred_hierarchy_reason = (
-                                    "all structurally distinct child-only sufficiency, "
-                                    "equal-weight, arity-weighted, and visible-node-weighted "
-                                    "hierarchy hypotheses were already falsified by exact "
-                                    "official NOT_FINISHED consequences"
-                                    if all_child_hypotheses_rejected
-                                    else (
+                                if all_child_hypotheses_rejected:
+                                    bridge_relation = _composite_bridge_relation(
+                                        scene,
+                                        hierarchy,
+                                        level_index=observation.levels_completed,
+                                    )
+                                    if bridge_relation is None:
+                                        deferred_hierarchy_reason = (
+                                            "all structurally distinct child-only sufficiency, "
+                                            "equal-weight, arity-weighted, and visible-node-weighted "
+                                            "hierarchy hypotheses were already falsified and no "
+                                            "twice-witnessed composite sinks with a unique "
+                                            "proximity assignment are readable"
+                                        )
+                                    elif (
+                                        bridge_relation.relation_key
+                                        in self._failed_bridge_hierarchy_relation_keys
+                                    ):
+                                        deferred_hierarchy_reason = (
+                                            "both child strata and all parent-composition families, "
+                                            "including the proximity-assigned paired composite-sink "
+                                            "hypothesis, "
+                                            "were already falsified by official consequences"
+                                        )
+                                    else:
+                                        hierarchy_plan = _bridge_hierarchy_plan(
+                                            scene,
+                                            hierarchy,
+                                            bridge_relation,
+                                            rejected_signatures=self._failed_plan_signatures,
+                                            search_budget=search_budget,
+                                        )
+                                        if hierarchy_plan is None:
+                                            deferred_hierarchy_reason = (
+                                                "the proximity-assigned paired composite-sink "
+                                                "hypothesis has "
+                                                "no exact target-preserving paired layout"
+                                            )
+                                        else:
+                                            hierarchy_relation_key = bridge_relation.relation_key
+                                else:
+                                    deferred_hierarchy_reason = (
                                         "an unfalsified structural child stratum has no exact "
                                         "target-protected isolation layout and all three bounded "
                                         "joint completion hypotheses were already falsified by "
                                         "official NOT_FINISHED consequences"
                                     )
-                                )
                             elif joint_relation_rejected and weighted_relation_rejected:
                                 hierarchy_plan = _hierarchy_visible_node_layout(
                                     scene,
@@ -8139,6 +8944,10 @@ class VisualCausalPolicy:
             self._pending_plan_signature is not None
             and self._pending_plan_signature.startswith("affine-visible-node-hierarchy:")
         )
+        bridge_hierarchy_action = (
+            self._pending_plan_signature is not None
+            and self._pending_plan_signature.startswith("affine-bridge-hierarchy:")
+        )
         joint_hierarchy_action = (
             self._pending_plan_signature is not None
             and self._pending_plan_signature.startswith(
@@ -8146,6 +8955,7 @@ class VisualCausalPolicy:
                     "affine-hierarchy:",
                     "affine-weighted-hierarchy:",
                     "affine-visible-node-hierarchy:",
+                    "affine-bridge-hierarchy:",
                 )
             )
         )
@@ -8156,6 +8966,7 @@ class VisualCausalPolicy:
                     "affine-hierarchy-recovery:",
                     "affine-weighted-hierarchy-recovery:",
                     "affine-visible-node-hierarchy-recovery:",
+                    "affine-bridge-hierarchy-recovery:",
                 )
             )
         )
@@ -8795,7 +9606,12 @@ class VisualCausalPolicy:
             if self._pending_plan_signature is not None:
                 self._failed_plan_signatures.add(self._pending_plan_signature)
             if hierarchy_terminal_game_over_observed and hierarchy_relation_key is not None:
-                if visible_node_hierarchy_action:
+                if bridge_hierarchy_action:
+                    self._failed_bridge_hierarchy_relation_keys.add(hierarchy_relation_key)
+                    residual = (
+                        "the proximity-assigned paired composite-sink terminal returned GAME_OVER"
+                    )
+                elif visible_node_hierarchy_action:
                     self._failed_visible_node_hierarchy_relation_keys.add(hierarchy_relation_key)
                     residual = (
                         "the exact visible-node-weighted hierarchy terminal returned GAME_OVER"
@@ -8933,7 +9749,9 @@ class VisualCausalPolicy:
             if self._pending_plan_signature is not None:
                 self._failed_plan_signatures.add(self._pending_plan_signature)
             if hierarchy_supports_observed and hierarchy_relation_key is not None:
-                if visible_node_hierarchy_action:
+                if bridge_hierarchy_action:
+                    self._failed_bridge_hierarchy_relation_keys.add(hierarchy_relation_key)
+                elif visible_node_hierarchy_action:
                     self._failed_visible_node_hierarchy_relation_keys.add(hierarchy_relation_key)
                 elif weighted_hierarchy_action:
                     self._failed_weighted_hierarchy_relation_keys.add(hierarchy_relation_key)
@@ -8954,17 +9772,22 @@ class VisualCausalPolicy:
             if hierarchy_supports_observed:
                 residual = (
                     (
-                        "the visible-node-weighted child-mediator centroid reached the "
-                        "parent target but the official environment remained NOT_FINISHED"
+                        "both child mediators reached their proximity-assigned composite sinks "
+                        "but the official environment remained NOT_FINISHED"
                     )
-                    if visible_node_hierarchy_action
+                    if bridge_hierarchy_action
                     else (
-                        "the arity-weighted child-mediator centroid reached the parent "
+                        "the visible-node-weighted child-mediator centroid reached the "
                         "target but the official environment remained NOT_FINISHED"
-                        if weighted_hierarchy_action
+                        if visible_node_hierarchy_action
                         else (
-                            "distinct child mediators reached the predicted parent centroid "
-                            "but the official environment remained NOT_FINISHED"
+                            "the arity-weighted child-mediator centroid reached the parent "
+                            "target but the official environment remained NOT_FINISHED"
+                            if weighted_hierarchy_action
+                            else (
+                                "distinct child mediators reached the predicted parent "
+                                "centroid but the official environment remained NOT_FINISHED"
+                            )
                         )
                     )
                 )
@@ -9143,6 +9966,7 @@ class VisualCausalPolicy:
                         "affine-hierarchy:",
                         "affine-weighted-hierarchy:",
                         "affine-visible-node-hierarchy:",
+                        "affine-bridge-hierarchy:",
                     )
                 )
                 for item in self._failed_plan_signatures
@@ -9152,11 +9976,13 @@ class VisualCausalPolicy:
                 self._failed_hierarchy_relation_keys
                 | self._failed_weighted_hierarchy_relation_keys
                 | self._failed_visible_node_hierarchy_relation_keys
+                | self._failed_bridge_hierarchy_relation_keys
             ),
             "hierarchy_hypothesis_rejected_count": (
                 len(self._failed_hierarchy_relation_keys)
                 + len(self._failed_weighted_hierarchy_relation_keys)
                 + len(self._failed_visible_node_hierarchy_relation_keys)
+                + len(self._failed_bridge_hierarchy_relation_keys)
             ),
             "hierarchy_equal_relation_rejected_count": len(self._failed_hierarchy_relation_keys),
             "hierarchy_weighted_relation_rejected_count": len(
@@ -9164,6 +9990,9 @@ class VisualCausalPolicy:
             ),
             "hierarchy_visible_node_relation_rejected_count": len(
                 self._failed_visible_node_hierarchy_relation_keys
+            ),
+            "hierarchy_bridge_relation_rejected_count": len(
+                self._failed_bridge_hierarchy_relation_keys
             ),
             "hierarchy_lineage_failure": current_lineage_failure,
             "hierarchy_lineage_failures": lineage_failures,
@@ -9181,6 +10010,7 @@ class VisualCausalPolicy:
                         "affine-hierarchy-recovery:",
                         "affine-weighted-hierarchy-recovery:",
                         "affine-visible-node-hierarchy-recovery:",
+                        "affine-bridge-hierarchy-recovery:",
                     )
                 )
             ),
@@ -9192,6 +10022,7 @@ class VisualCausalPolicy:
                         "affine-hierarchy-recovery:",
                         "affine-weighted-hierarchy-recovery:",
                         "affine-visible-node-hierarchy-recovery:",
+                        "affine-bridge-hierarchy-recovery:",
                     )
                 )
                 else None
