@@ -7,7 +7,7 @@
   "build_status": "ACTIVE",
   "status": "IN_PROGRESS",
   "current_stage": "10",
-  "current_task": "preserve Campaign 29, repair only the observation-grounded composite bridge-sink certificate, and execute the next bounded official discriminator toward WIN",
+  "current_task": "preserve Campaign 30's paired-sink failure and recorder defect, implement the residual-linked mixed-support discriminator, and continue exact-commit development play toward observed WIN",
   "implementation_branch": "build/003-bla-clef-mechanical-learner",
   "base": {
     "main_commit": "bea1eac99cb0f1b351526b1dc487d132ba1d40ef",
@@ -469,11 +469,37 @@
     "synthetic_lab_anchor_repair_tree": "93c599f4d28a2d013e82c31292a606c4a5f61c45",
     "synthetic_lab_anchor_repair_status": "PASS_POST_FREEZE_SYNTHETIC_ASSURANCE: fallback anchors are distinct; the exact seed regression and 17-test lab suite pass with Ruff, format, and strict MyPy",
     "implementation_freeze_reopened_by_synthetic_lab_property_failure": true,
-    "production_campaign_freeze_reopened": false,
+    "production_campaign_freeze_reopened": true,
     "synthetic_lab_absent_from_competition_payload": true,
     "competition_payload_member_count": 114,
     "competition_payload_lab_member_count": 0,
     "package_only_ci_status": "PENDING_CURRENT_HEAD",
+      "campaign30_exact_commit": "6c32d2a65e61a7b1160fd1c09e8f991078fc9477",
+      "campaign30_root": "C:\\a\\arc3-b003-play\\build003-r11l-mechanical-seed7-6c32d2a-campaign30",
+      "campaign30_status": "FAILED_MECHANISM; paired proximity-assigned composite sinks officially reached and returned NOT_FINISHED at 4/6; exact inverse restored all x=1..63 gameplay cells; zero WIN",
+      "campaign30_final_raw_state": "NOT_FINISHED",
+      "campaign30_score_boundary_state": "GAME_OVER",
+      "campaign30_levels_completed": 4,
+      "campaign30_win_levels": 6,
+      "campaign30_submission_count": 158,
+      "campaign30_non_reset_action_count": 157,
+      "campaign30_reset_count": 1,
+      "campaign30_game_over_count": 1,
+      "campaign30_win_count": 0,
+      "campaign30_public_verification": "PASS; 267 declared artifacts, one run, zero errors",
+      "campaign30_manifest_file_sha256": "sha256:afc4cc1f056944c2e3ba82ab739e604288f8952924f8cac490d42821ac8f81e0",
+      "campaign30_manifest_hash": "sha256:b952c151c1f05aeb6020cf4cb243f237b6e2bd1bd1d8a70527c7e5b1628d3a67",
+      "campaign30_run_receipt_file_sha256": "sha256:479e105d2bc774454af40e7feb18fcde43a05c16bcce437c8801ace92278f594",
+      "campaign30_run_receipt_hash": "sha256:07ec36034df58ba68189e6db807d3f043075d44ef78d18aa7407888ddc8391a6",
+      "campaign30_completion_receipt_hash": "sha256:0bccac8fd27bc8420fb2f71fb866c56b990ff245b806ab047cd2f1e01ee316b1",
+      "campaign30_trace_manifest_hash": "sha256:14ce2dde4f7b3b3a528c58f619731ea5710b819107da8260691362651b4fb246",
+      "campaign30_trace_chunk_sha256": "sha256:b3e3bc321dd0d8b0e90bb9d6e903deff50cb68172455c7e1e4f23256d229ab0c",
+      "campaign30_trace_tail": "sha256:5f24877c5111bbb5747defe13d16f99e3d43323e09f6cc78a3f004f8c494800e",
+      "campaign30_recording_sha256": "sha256:b572a00f7b451539223fcd2692da3480c542313d362df43228e3de3d9c7c3524",
+      "campaign30_recording_status": "FAILED_INFRASTRUCTURE; 152 rows map to the initial observation plus global submissions 1-87 and 95-158; submissions 88-94 are absent while the 950-event sealed trace is complete",
+      "campaign30_receipt_complete": false,
+      "campaign30_completion_observed": false,
+      "campaign30_exposure_status": "57 valid development events, zero holdout events; tail sha256:ae6045e234ffa04430252aa83e5f57dfa0759c879042af5f79b287d94cb1d7c0; file sha256:559c6d8f90d0bb700df82084e283d1f55bde318d9417d907bda5be32c4b05371",
       "official_environment_interactions_by_replay_profile_or_scan": 0,
       "public_or_holdout_inputs_read_by_profile": false
     }
@@ -489,7 +515,7 @@
     "pull_request_merged": false,
     "external_message_sent_as_owner": false
   },
-  "next_action": "finish the generic reset-aware clean replay gate, commit and push the proximity-assigned composite-sink repair, replay all 140 Campaign 29 submissions from the exact commit, then start Campaign 30 from a fresh exact-commit development session and continue authorized official play until observed WIN or an exact external boundary",
+  "next_action": "implement and verify the generic residual-linked mixed-support family, preserve Campaign 30 evidence in a clean pushed checkpoint, replay the complete sealed Campaign 30 trace from the exact commit without submitting actions, then launch Campaign 31 from a fresh exact-commit development session and continue until observed WIN or an exact external boundary",
   "notes": [
     "Update atomically after each meaningful task and preserve failed attempts.",
     "No synthetic or local result is completion unless the official target environment returns GameState.WIN.",
@@ -522,6 +548,9 @@
     "The first independent audit at C:\\a\\arc3-b003-stage08-v02-final-83df552-01-audit is preserved as FAIL with 1692 findings. It passed 13 of 14 checks and verified the matrix root was unchanged. Independent diagnosis classifies 900 unknown-field findings and 258 row-derivation findings as auditor defects, while 462 action/receipt count mismatches and 72 incomplete-link attestations are genuine matrix evidence failure.",
     "Auditor repair d3d8edd removed only the 1158 verifier-generated findings and passed 11 focused tests plus source-quality checks. A relocated-source audit attempt is preserved with four absolute-path binding failures. The source-projected corrected audit then returned FAIL with exactly the 534 genuine findings, all other checks passed, and the matrix manifest remained sha256:747e4c35b13f68714548b8af196ced026e555f8c33491dff5d942b5baab88389 before and after. The matrix was not rerun or rewritten.",
     "The exact 83df552 release verifier is preserved as FAILED_INFRASTRUCTURE after its guarded suite exceeded 2400 seconds at 84 percent; all other integrated checks passed. A no-deadline exact-source recovery collected 1022 tests and preserved zero guard attempts and exact source projection, but exposed one genuine deterministic synthetic-lab failure: root seed 262795363413301024 aliased a key with its locked door and target. The narrowly reopened generic repair requires distinct fallback anchors; it changes no mechanical learner, official runner, game-specific policy, matrix, or environment interaction.",
-    "Commit 48bd18d is a post-freeze synthetic-assurance repair. Independent archive inspection confirms src/arc3/lab contributes zero of the 114 competition payload members, so the executable package agent and Campaign 29 behavior remain exactly frozen at 83df552. The outer candidate metadata would change if rebuilt from 48bd18d, but that does not justify changing the production/campaign freeze."
+    "Commit 48bd18d is a post-freeze synthetic-assurance repair. Independent archive inspection confirms src/arc3/lab contributes zero of the 114 competition payload members, so the executable package agent and Campaign 29 behavior remain exactly frozen at 83df552. The outer candidate metadata would change if rebuilt from 48bd18d, but that does not justify changing the production/campaign freeze.",
+    "Campaign 30 is sealed FAILED_MECHANISM evidence, not completion: the exact paired composite-sink terminal returned NOT_FINISHED at 4/6, the full inverse restored every gameplay-field cell at x=1..63, and zero WIN was observed. The public verifier passes 267 declared artifacts and the exposure ledger contains 57 development events with zero holdout events.",
+    "Campaign 30 also preserves a distinct recorder infrastructure defect: one official recording omits global submissions 88-94 and therefore remains recording_verified=false and receipt_complete=false, while the hash-linked sealed trace contains all 158 submissions and consequences. Do not reconstruct the immutable recording or smooth that gap into complete evidence.",
+    "The next discriminator is the palette-equivariant residual-linked mixed-support conjunction: place the uniquely raw-target-linked child at the singleton raw target and the other child at its nonmatching composite sink. The inherited proximity assignment and palette containment are provisional; only an exact official terminal consequence can accept or reject the family, and only GameState.WIN completes the target."
   ]
 }
