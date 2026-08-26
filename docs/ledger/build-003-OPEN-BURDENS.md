@@ -454,3 +454,24 @@ Do not delete a burden when later evidence resolves it. Append a resolution with
 - **Preserved evidence:** Root `C:\a\arc3-b003-play\build003-r11l-mechanical-seed7-83dbe52-campaign32`; logical run receipt `sha256:7f36c601284723715e8db17f5c1543da85c767744949c390896c1a9f363928db`; physical run JSON SHA-256 `3c5f15f68c8b9d7e08422f8ed640d706f0514611eff07a6f67931fa2069e9d35`; completion receipt `sha256:b87c019ab67e887bda6103d511578885baa368e8a9a5813c1318258db8402d2f`; trace tail `sha256:65a541dc22ee75c5a9d0111c3680624b6af1d809ecff31fc890b7cc77ee4214e`.
 - **Resource boundary:** The two observed `GAME_OVER` returns remain failure/resource evidence. The next route must be shorter than exhaustive interaction enumeration, retain legal reset handling, and carry a complete inverse. Repeated testing of already rejected terminals is prohibited.
 - **Resolution condition:** A generic repair clears the stale latch with focused regressions; one observation-grounded candidate, if any, passes the complete visual-policy suite, strict source-quality and integrity gates, sealed Campaign 32 replay with zero environment actions, exact frozen-head CI, and then receives an authoritative official consequence. Only official `GameState.WIN` resolves target completion.
+
+## B-003-0031 - Campaigns 33 and 34 exhausted the remaining sparse-sink hierarchy families without WIN
+
+- **Status:** OPEN; FAILED_MECHANISM PRESERVED
+- **Stage:** 10 and target-game continuation
+- **Opened:** 2026-08-26
+- **Owner:** Codex
+- **Burden:** Campaign 33 tested the exact raw-matching composite family and Campaign 34 tested the exact external-own composite recombination. Both official terminals remained `NOT_FINISHED`; both campaigns ended at `4/6` with score-boundary `GAME_OVER`, exact recovery evidence, and zero observed `WIN`. The complete sparse-sink family is therefore exhausted for the recovered observation, but that does not prove that the level has no winning relation.
+- **Evidence:** Campaign 33 root `C:\a\arc3-b003-play\build003-r11l-mechanical-seed7-7df4046-campaign33`; Campaign 34 root `C:\a\arc3-b003-play\build003-r11l-mechanical-seed7-1315a60-campaign34`. Campaign 34 recording SHA-256 `607a4271a58d54fd44a793d4c477221b15b92b8118074ed51388126db12d06fb`; run receipt hash `012aee25314cf5ab8d965e140f47d44718633ab295a71fee88ff38590f88a801`; completion receipt hash `12f3bd06c18fc3333868967b06a115613e2007842c8e9e0fbbe477d75ea00e21`.
+- **Impact:** Build 003 completion remains false. No synthetic, replay, score, or complete-looking mechanic map can close this burden.
+- **Reopening handle:** An exact source-free relation outside the rejected sparse-sink family passes reversible parser certification and official discrimination, or the environment itself reports `GameState.WIN`.
+
+## B-003-0032 - Carrier-source occlusion is uniquely identified but not yet sequentially certified
+
+- **Status:** OPEN; IMPLEMENTATION EXPERIMENT
+- **Stage:** 10 and target-game continuation
+- **Opened:** 2026-08-26
+- **Owner:** Codex
+- **Burden:** The recovered observation uniquely links the singleton raw color to one carrier-sharing source disk and one exact carrier-offset counterpart in the other bridge example. Those source disks are occupied 21-cell evidence surfaces rather than hollow sinks. Final projected layouts exist when only those exact surfaces are assigned for occlusion, but every transient, preserved-cell boundary, recovery step, and official consequence remains unverified.
+- **Impact:** No Campaign 35 action is earned yet. A final parser-readable projection cannot substitute for a complete sequential certificate or an official consequence.
+- **Reopening handle:** A generic implementation with no game, campaign, level, palette, or coordinate decision constants proves the complete forward sequence and inverse against exact projected rasters, passes sealed replay and clean-source CI, and then receives an official `WIN` or a bounded falsifying consequence.

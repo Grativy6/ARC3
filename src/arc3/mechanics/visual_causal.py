@@ -419,6 +419,28 @@ class _ExternalOwnCompositeHierarchyRelation:
 
 
 @dataclass(frozen=True, slots=True)
+class _HierarchySourceSupport:
+    """One child-to-filled-source support derived from a carrier-mask witness."""
+
+    child: _AffineChildGroup
+    example: _CompositeBridgeExample
+    source: _CompositeFilledDisk
+
+
+@dataclass(frozen=True, slots=True)
+class _CarrierSourceOcclusionHierarchyRelation:
+    """Map each child to its uniquely witnessed carrier-matched source disk."""
+
+    bridge_relation_key: str
+    mixed_relation_key: str
+    external_relation_key: str
+    raw_matching_relation_key: str
+    external_own_relation_key: str
+    supports: tuple[_HierarchySourceSupport, ...]
+    relation_key: str
+
+
+@dataclass(frozen=True, slots=True)
 class _HierarchyRasterCertificate:
     """Exact observation-derived board identity for one hierarchy action boundary."""
 
@@ -601,6 +623,8 @@ _HIERARCHY_PLAN_PREFIXES = (
     "affine-raw-matching-composite-hierarchy-recovery:",
     "affine-external-own-composite-hierarchy:",
     "affine-external-own-composite-hierarchy-recovery:",
+    "affine-carrier-source-occlusion-hierarchy:",
+    "affine-carrier-source-occlusion-hierarchy-recovery:",
     "affine-child-isolation:",
     "affine-child-recovery:",
 )
@@ -4877,6 +4901,190 @@ def _external_own_composite_hierarchy_relation(
     )
 
 
+def _carrier_source_occlusion_hierarchy_relation(
+    scene: VisualScene,
+    hierarchy: _AffineHierarchy,
+    *,
+    level_index: int,
+    rejected_bridge_relation_keys: set[str] | frozenset[str],
+    rejected_mixed_relation_keys: set[str] | frozenset[str],
+    rejected_external_relation_keys: set[str] | frozenset[str],
+    rejected_raw_matching_relation_keys: set[str] | frozenset[str],
+    rejected_external_own_relation_keys: set[str] | frozenset[str],
+) -> _CarrierSourceOcclusionHierarchyRelation | None:
+    """Derive the one carrier-matched pair of filled source supports.
+
+    This relation is available only after every target-sink family that supplied
+    its evidence has been rejected.  The singleton raw color identifies exactly
+    one source disk in one bridge example.  Its normalized carrier mask then
+    identifies exactly one source in the other bridge example.  No unobserved
+    source, color, coordinate, or support permutation is introduced.
+    """
+
+    bridge = _composite_bridge_relation(scene, hierarchy, level_index=level_index)
+    mixed = _residual_linked_hierarchy_relation(scene, hierarchy, level_index=level_index)
+    external = _external_residual_linked_hierarchy_relation(
+        scene,
+        hierarchy,
+        level_index=level_index,
+        rejected_mixed_relation_keys=rejected_mixed_relation_keys,
+    )
+    raw_matching = _raw_matching_composite_hierarchy_relation(
+        scene,
+        hierarchy,
+        level_index=level_index,
+        rejected_mixed_relation_keys=rejected_mixed_relation_keys,
+        rejected_external_relation_keys=rejected_external_relation_keys,
+    )
+    external_own = _external_own_composite_hierarchy_relation(
+        scene,
+        hierarchy,
+        level_index=level_index,
+        rejected_bridge_relation_keys=rejected_bridge_relation_keys,
+        rejected_mixed_relation_keys=rejected_mixed_relation_keys,
+        rejected_external_relation_keys=rejected_external_relation_keys,
+        rejected_raw_matching_relation_keys=rejected_raw_matching_relation_keys,
+    )
+    if (
+        bridge is None
+        or mixed is None
+        or external is None
+        or raw_matching is None
+        or external_own is None
+        or len(bridge.assignments) != 2
+        or tuple(child for child, _example in bridge.assignments) != hierarchy.children
+        or bridge.relation_key not in rejected_bridge_relation_keys
+        or mixed.relation_key not in rejected_mixed_relation_keys
+        or external.relation_key not in rejected_external_relation_keys
+        or raw_matching.relation_key not in rejected_raw_matching_relation_keys
+        or external_own.relation_key not in rejected_external_own_relation_keys
+        or mixed.bridge_relation_key != bridge.relation_key
+        or external.bridge_relation_key != bridge.relation_key
+        or external.mixed_relation_key != mixed.relation_key
+        or raw_matching.bridge_relation_key != bridge.relation_key
+        or raw_matching.mixed_relation_key != mixed.relation_key
+        or raw_matching.external_relation_key != external.relation_key
+        or external_own.bridge_relation_key != bridge.relation_key
+        or external_own.mixed_relation_key != mixed.relation_key
+        or external_own.external_relation_key != external.relation_key
+        or external_own.raw_matching_relation_key != raw_matching.relation_key
+    ):
+        return None
+
+    raw_surface_signature = frozenset(scene.cells[y][x] for x, y in hierarchy.target.cells)
+    if raw_surface_signature != frozenset({hierarchy.target.color}):
+        return None
+    raw_supports = tuple(
+        support
+        for support in mixed.supports
+        if support.target.rounded_center == hierarchy.target.rounded_center
+    )
+    if len(raw_supports) != 1:
+        return None
+    raw_child = raw_supports[0].child
+    raw_assignments = tuple(
+        (child, example) for child, example in bridge.assignments if child == raw_child
+    )
+    counterpart_assignments = tuple(
+        (child, example) for child, example in bridge.assignments if child != raw_child
+    )
+    if len(raw_assignments) != 1 or len(counterpart_assignments) != 1:
+        return None
+    _raw_child, raw_example = raw_assignments[0]
+    counterpart_child, counterpart_example = counterpart_assignments[0]
+
+    raw_sources = tuple(
+        source
+        for source in raw_example.sources
+        if source.center == external.raw_source_center
+        and external.raw_color in (source.palette - {raw_example.carrier_color})
+        and source.offsets(raw_example.carrier_color) == external.carrier_offsets
+    )
+    counterpart_sources = tuple(
+        source
+        for source in counterpart_example.sources
+        if source.center == external.counterpart_source_center
+        and source.offsets(counterpart_example.carrier_color) == external.carrier_offsets
+        and source.palette - {counterpart_example.carrier_color}
+        == frozenset({external.external_link_color})
+    )
+    if len(raw_sources) != 1 or len(counterpart_sources) != 1:
+        return None
+    raw_source = raw_sources[0]
+    counterpart_source = counterpart_sources[0]
+
+    supports = tuple(
+        _HierarchySourceSupport(
+            child=child,
+            example=example,
+            source=raw_source if child == raw_child else counterpart_source,
+        )
+        for child, example in bridge.assignments
+    )
+    expected_disk_offsets = _COMPOSITE_MEDIATOR_OFFSETS
+    if (
+        tuple(support.child for support in supports) != hierarchy.children
+        or len({support.source.center for support in supports}) != len(supports)
+        or sum(support.child == raw_child and support.source == raw_source for support in supports)
+        != 1
+        or sum(
+            support.child == counterpart_child and support.source == counterpart_source
+            for support in supports
+        )
+        != 1
+        or any(
+            len(support.source.cells) != len(expected_disk_offsets)
+            or frozenset(support.source.cells)
+            != frozenset(
+                (support.source.center[0] + dx, support.source.center[1] + dy)
+                for dx, dy in expected_disk_offsets
+            )
+            or _translated_object_footprint(
+                support.child.mediator,
+                center=support.source.center,
+            )
+            != frozenset(support.source.cells)
+            for support in supports
+        )
+    ):
+        return None
+
+    identity = (
+        "carrier-source-occlusion-support-v1",
+        bridge.relation_key,
+        mixed.relation_key,
+        external.relation_key,
+        raw_matching.relation_key,
+        external_own.relation_key,
+        external.carrier_offsets,
+        tuple(
+            (
+                _child_structure_signature(scene, support.child),
+                support.example.residual_colors,
+                support.example.target.rounded_center,
+                support.source.center,
+                support.source.palette,
+                support.source.offsets_by_color,
+                tuple(sorted((x, y, scene.cells[y][x]) for x, y in support.source.cells)),
+                support.child == raw_child,
+            )
+            for support in supports
+        ),
+    )
+    return _CarrierSourceOcclusionHierarchyRelation(
+        bridge_relation_key=bridge.relation_key,
+        mixed_relation_key=mixed.relation_key,
+        external_relation_key=external.relation_key,
+        raw_matching_relation_key=raw_matching.relation_key,
+        external_own_relation_key=external_own.relation_key,
+        supports=supports,
+        relation_key=(
+            "affine-carrier-source-occlusion-relation:"
+            + hashlib.sha256(repr(identity).encode("ascii")).hexdigest()[:24]
+        ),
+    )
+
+
 def _hierarchy_dynamic_footprint(
     scene: VisualScene,
     group: _AffineChildGroup,
@@ -5710,6 +5918,155 @@ def _residual_linked_projected_state_is_safe(
     )
 
 
+def _carrier_source_occlusion_projected_state_is_safe(
+    scene: VisualScene,
+    hierarchy: _AffineHierarchy,
+    supports: tuple[_HierarchySourceSupport, ...],
+    *,
+    positions: dict[str, tuple[int, int]],
+    colors: dict[str, int],
+    static_cells: frozenset[tuple[int, int]],
+    target_regions: _TargetRegions,
+    preserved_target_signature: _TargetSurfaceSignature,
+    search_budget: _HierarchySearchBudget,
+) -> bool:
+    """Certify one transient with only exact assigned-source occlusion allowed."""
+
+    support_by_mediator = {item.child.mediator.object_ref: item for item in supports}
+    assigned_surfaces = tuple(frozenset(item.source.cells) for item in supports)
+    assigned_cells = frozenset(cell for surface in assigned_surfaces for cell in surface)
+    if (
+        tuple(item.child for item in supports) != hierarchy.children
+        or len(support_by_mediator) != len(hierarchy.children)
+        or len(assigned_cells) != sum(len(surface) for surface in assigned_surfaces)
+        or any(len(surface) != len(_COMPOSITE_MEDIATOR_OFFSETS) for surface in assigned_surfaces)
+    ):
+        return False
+
+    group_dynamic: list[frozenset[tuple[int, int]]] = []
+    mediator_centers: dict[str, tuple[int, int]] = {}
+    mediator_footprints: list[frozenset[tuple[int, int]]] = []
+    endpoint_footprints: list[tuple[str, frozenset[tuple[int, int]]]] = []
+    for child in hierarchy.children:
+        support = support_by_mediator.get(child.mediator.object_ref)
+        if support is None:
+            return False
+        centers = tuple(positions[item.object_ref] for item in child.endpoints)
+        mediator_center = (
+            sum(center[0] for center in centers) // child.arity,
+            sum(center[1] for center in centers) // child.arity,
+        )
+        mediator_centers[child.mediator.object_ref] = mediator_center
+        endpoints = tuple(
+            _translated_object_footprint(endpoint, center=center)
+            for endpoint, center in zip(child.endpoints, centers, strict=True)
+        )
+        if any(
+            not _hierarchy_cells_in_bounds(scene, footprint)
+            or footprint & static_cells
+            or footprint & assigned_cells
+            or not _hierarchy_avoids_target_regions(footprint, target_regions)
+            for footprint in endpoints
+        ) or any(
+            not _footprints_have_gap(left, right, gap=1)
+            for left, right in itertools.combinations(endpoints, 2)
+        ):
+            return False
+
+        mediator_footprint = _translated_object_footprint(
+            child.mediator,
+            center=mediator_center,
+        )
+        own_surface = frozenset(support.source.cells)
+        dynamic = _hierarchy_projected_group_footprint(
+            child,
+            endpoint_centers=centers,
+            mediator_center=mediator_center,
+        )
+        if (
+            not _hierarchy_cells_in_bounds(scene, dynamic)
+            or dynamic & static_cells
+            or not _hierarchy_avoids_target_regions(dynamic, target_regions)
+            or any(dynamic & surface for surface in assigned_surfaces if surface != own_surface)
+        ):
+            return False
+        own_intersection = dynamic & own_surface
+        if mediator_center == support.source.center:
+            if mediator_footprint != own_surface or own_intersection != own_surface:
+                return False
+        elif own_intersection:
+            return False
+
+        group_dynamic.append(dynamic)
+        mediator_footprints.append(mediator_footprint)
+        endpoint_footprints.extend(
+            (endpoint.object_ref, footprint)
+            for endpoint, footprint in zip(child.endpoints, endpoints, strict=True)
+        )
+
+    if any(left & right for left, right in itertools.combinations(group_dynamic, 2)) or any(
+        not _footprints_have_gap(left, right, gap=1)
+        for left, right in itertools.combinations(mediator_footprints, 2)
+    ):
+        return False
+    for (left_ref, left), (right_ref, right) in itertools.combinations(
+        endpoint_footprints,
+        2,
+    ):
+        if colors[left_ref] == colors[right_ref] and not _footprints_have_gap(
+            left,
+            right,
+            gap=1,
+        ):
+            return False
+
+    projected = _hierarchy_projected_scene(
+        scene,
+        hierarchy,
+        positions=positions,
+        colors=colors,
+    )
+    if (
+        _target_surface_signature(projected) != preserved_target_signature
+        or _visible_target_regions(projected) != target_regions
+    ):
+        return False
+
+    # The renderer may change only the old hierarchy footprint, its projected
+    # footprint, and an assigned source disk currently covered by that child's
+    # exact mediator footprint.  All other static evidence remains byte-exact.
+    initial_dynamic = frozenset(
+        cell for child in hierarchy.children for cell in _hierarchy_dynamic_footprint(scene, child)
+    )
+    allowed_changed = (
+        initial_dynamic
+        | assigned_cells
+        | frozenset(cell for dynamic in group_dynamic for cell in dynamic)
+    )
+    if any(
+        projected.cells[y][x] != value and (x, y) not in allowed_changed
+        for y, row in enumerate(scene.cells)
+        for x, value in enumerate(row)
+    ):
+        return False
+    for support in supports:
+        mediator_center = mediator_centers[support.child.mediator.object_ref]
+        if mediator_center != support.source.center and any(
+            projected.cells[y][x] != scene.cells[y][x] for x, y in support.source.cells
+        ):
+            return False
+
+    search_budget.consume()
+    return _projected_hierarchy_lineages_match(
+        scene,
+        projected,
+        hierarchy,
+        positions=positions,
+        colors=colors,
+        mediator_centers=mediator_centers,
+    )
+
+
 def _bridge_projected_state_is_safe(
     scene: VisualScene,
     hierarchy: _AffineHierarchy,
@@ -6077,6 +6434,140 @@ def _residual_linked_hierarchy_sequence_is_safe(
     return True
 
 
+def _carrier_source_occlusion_hierarchy_sequence_is_safe(
+    scene: VisualScene,
+    hierarchy: _AffineHierarchy,
+    supports: tuple[_HierarchySourceSupport, ...],
+    layouts: tuple[_HierarchyChildLayout, ...],
+    *,
+    static_cells: frozenset[tuple[int, int]],
+    target_regions: _TargetRegions,
+    preserved_target_signature: _TargetSurfaceSignature,
+    search_budget: _HierarchySearchBudget,
+    state_cache: dict[_BridgeProjectedStateKey, bool],
+) -> bool:
+    """Certify every forward and exact-inverse source-occlusion transient."""
+
+    if tuple(layout.group for layout in layouts) != hierarchy.children or any(
+        mover.rounded_center == point
+        for layout in layouts
+        for mover, point in zip(layout.movers, layout.points, strict=True)
+    ):
+        return False
+    positions = {
+        endpoint.object_ref: endpoint.rounded_center
+        for child in hierarchy.children
+        for endpoint in child.endpoints
+    }
+    colors = {
+        endpoint.object_ref: endpoint.color
+        for child in hierarchy.children
+        for endpoint in child.endpoints
+    }
+    active = tuple(ref for ref, color in colors.items() if color == hierarchy.active_color)
+    if len(active) != 1:
+        return False
+    active_ref = active[0]
+
+    def state_is_safe(*, use_cache: bool = True) -> bool:
+        key: _BridgeProjectedStateKey = (
+            tuple(sorted(positions.items())),
+            tuple(sorted(colors.items())),
+        )
+        if use_cache:
+            cached = state_cache.get(key)
+            if cached is not None:
+                return cached
+        safe = _carrier_source_occlusion_projected_state_is_safe(
+            scene,
+            hierarchy,
+            supports,
+            positions=positions,
+            colors=colors,
+            static_cells=static_cells,
+            target_regions=target_regions,
+            preserved_target_signature=preserved_target_signature,
+            search_budget=search_budget,
+        )
+        if use_cache:
+            state_cache[key] = safe
+        return safe
+
+    if not state_is_safe():
+        return False
+    initial_positions = dict(positions)
+    initial_colors = dict(colors)
+    transitions: list[tuple[str, str, str | None, tuple[int, int] | None]] = []
+    for child_index, layout in enumerate(layouts):
+        if child_index:
+            selected_ref = layout.movers[0].object_ref
+            if selected_ref == active_ref or colors[selected_ref] == hierarchy.active_color:
+                return False
+            previous_active_ref = active_ref
+            colors[active_ref], colors[selected_ref] = colors[selected_ref], colors[active_ref]
+            active_ref = selected_ref
+            transitions.append(("switch", previous_active_ref, selected_ref, None))
+            if not state_is_safe():
+                return False
+        if layout.movers[0].object_ref != active_ref:
+            return False
+        for mover_index, (mover, point) in enumerate(
+            zip(layout.movers, layout.points, strict=True)
+        ):
+            if mover.object_ref != active_ref:
+                return False
+            before_position = positions[active_ref]
+            positions[active_ref] = point
+            transitions.append(("move", active_ref, None, before_position))
+            if not state_is_safe():
+                return False
+            if mover_index + 1 < len(layout.movers):
+                selected_ref = layout.movers[mover_index + 1].object_ref
+                if selected_ref == active_ref or colors[selected_ref] == hierarchy.active_color:
+                    return False
+                previous_active_ref = active_ref
+                colors[active_ref], colors[selected_ref] = (
+                    colors[selected_ref],
+                    colors[active_ref],
+                )
+                active_ref = selected_ref
+                transitions.append(("switch", previous_active_ref, selected_ref, None))
+                if not state_is_safe():
+                    return False
+        centers = tuple(positions[item.object_ref] for item in layout.group.endpoints)
+        mediator_center = (
+            sum(center[0] for center in centers) // layout.group.arity,
+            sum(center[1] for center in centers) // layout.group.arity,
+        )
+        if mediator_center != layout.support:
+            return False
+
+    # Simulate the complete recovery sequence independently of the plan
+    # builder.  Clearing the cache forces every reverse transient through the
+    # source-restoration and lineage certificate again.
+    for (
+        transition,
+        previous_ref,
+        inverse_selected_ref,
+        previous_position,
+    ) in reversed(transitions):
+        if transition == "move":
+            if active_ref != previous_ref or previous_position is None:
+                return False
+            positions[active_ref] = previous_position
+        else:
+            if inverse_selected_ref is None or active_ref != inverse_selected_ref:
+                return False
+            colors[inverse_selected_ref], colors[previous_ref] = (
+                colors[previous_ref],
+                colors[inverse_selected_ref],
+            )
+            active_ref = previous_ref
+        if not state_is_safe(use_cache=False):
+            return False
+    return positions == initial_positions and colors == initial_colors
+
+
 def _bridge_hierarchy_sequence_is_safe(
     scene: VisualScene,
     hierarchy: _AffineHierarchy,
@@ -6358,6 +6849,9 @@ def _build_hierarchy_plan(
         ),
         "affine-external-own-composite-hierarchy": (
             "affine-external-own-composite-hierarchy-recovery"
+        ),
+        "affine-carrier-source-occlusion-hierarchy": (
+            "affine-carrier-source-occlusion-hierarchy-recovery"
         ),
     }.get(signature_prefix, "affine-hierarchy-recovery")
     recovery_signature = (
@@ -6658,6 +7152,147 @@ def _external_own_composite_hierarchy_plan(
         ),
         search_budget=search_budget,
     )
+
+
+def _carrier_source_occlusion_hierarchy_plan(
+    scene: VisualScene,
+    hierarchy: _AffineHierarchy,
+    relation: _CarrierSourceOcclusionHierarchyRelation,
+    *,
+    rejected_signatures: set[str],
+    search_budget: _HierarchySearchBudget | None = None,
+) -> _HierarchyPlan | None:
+    """Find one exact reversible route onto the carrier-matched source disks."""
+
+    if search_budget is None:
+        search_budget = _HierarchySearchBudget(_MAX_HIERARCHY_SEARCH_BUDGET)
+    supports = relation.supports
+    if tuple(item.child for item in supports) != hierarchy.children:
+        return None
+    active = tuple(item for item in scene.endpoints if item.color == hierarchy.active_color)
+    if len(active) != 1 or active[0] not in hierarchy.children[0].endpoints:
+        return None
+
+    initial_dynamic = frozenset(
+        cell for child in hierarchy.children for cell in _hierarchy_dynamic_footprint(scene, child)
+    )
+    assigned_surfaces = tuple(frozenset(item.source.cells) for item in supports)
+    assigned_cells = frozenset(cell for surface in assigned_surfaces for cell in surface)
+    if (
+        len(assigned_cells) != sum(len(surface) for surface in assigned_surfaces)
+        or initial_dynamic & assigned_cells
+        or any(
+            _translated_object_footprint(
+                support.child.mediator,
+                center=support.source.center,
+            )
+            != frozenset(support.source.cells)
+            for support in supports
+        )
+    ):
+        return None
+    occupied = frozenset(
+        (x, y)
+        for y, row in enumerate(scene.cells)
+        for x, value in enumerate(row)
+        if value != scene.background
+    )
+    static_cells = occupied - initial_dynamic - assigned_cells
+    target_regions = _visible_target_regions(scene)
+    preserved_target_signature = _target_surface_signature(scene)
+    ignored_refs = frozenset(
+        item.object_ref
+        for child in hierarchy.children
+        for item in (*child.endpoints, child.mediator)
+    )
+
+    layout_sets: list[tuple[_HierarchyChildLayout, ...]] = []
+    for child_index, support in enumerate(supports):
+        candidates = _hierarchy_child_layouts(
+            scene,
+            hierarchy,
+            support.child,
+            support=support.source.center,
+            active_ref=active[0].object_ref if child_index == 0 else None,
+            static_cells=static_cells,
+            target_regions=target_regions,
+            endpoint_target_regions=target_regions,
+            ignored_refs=ignored_refs,
+            search_budget=search_budget,
+            result_limit=128,
+        )
+        own_surface = frozenset(support.source.cells)
+        safe_candidates = tuple(
+            layout
+            for layout in candidates
+            if all(
+                not (_translated_object_footprint(mover, center=point) & assigned_cells)
+                for mover, point in zip(layout.movers, layout.points, strict=True)
+            )
+            and layout.dynamic_footprint & assigned_cells == own_surface
+            and _translated_object_footprint(
+                support.child.mediator,
+                center=support.source.center,
+            )
+            == own_surface
+        )
+        if not safe_candidates:
+            return None
+        # Retain the standard bounded active-child alternatives, but do not
+        # truncate the counterpart alternatives before joint transient
+        # certification.  The latter's mover order determines whether its
+        # intermediate centroids remain parser-readable around the occluded
+        # disk, so an early geometric prefix is not an evidence-based filter.
+        layout_sets.append(
+            safe_candidates[:_MAX_HIERARCHY_CHILD_LAYOUTS] if child_index == 0 else safe_candidates
+        )
+
+    lengths = tuple(len(items) for items in layout_sets)
+    combination_limit = min(math.prod(lengths), _MAX_HIERARCHY_LAYOUT_COMBINATIONS)
+    state_cache: dict[_BridgeProjectedStateKey, bool] = {}
+    index_products: tuple[tuple[int, ...], ...]
+    if len(lengths) == 2:
+        # Round-robin the complete bounded counterpart set across every
+        # retained active-child layout.  This preserves mover-order diversity
+        # under the same global 512-combination ceiling.
+        index_products = tuple(
+            (first_index, counterpart_index)
+            for counterpart_index in range(lengths[1])
+            for first_index in range(lengths[0])
+        )[:combination_limit]
+    else:
+        index_products = _fair_index_products(lengths, limit=combination_limit)
+    for indices in index_products:
+        search_budget.consume()
+        layouts = tuple(
+            layout_sets[index][layout_index] for index, layout_index in enumerate(indices)
+        )
+        if not _bridge_final_layout_geometry_is_safe(hierarchy, layouts):
+            continue
+        if not _carrier_source_occlusion_hierarchy_sequence_is_safe(
+            scene,
+            hierarchy,
+            supports,
+            layouts,
+            static_cells=static_cells,
+            target_regions=target_regions,
+            preserved_target_signature=preserved_target_signature,
+            search_budget=search_budget,
+            state_cache=state_cache,
+        ):
+            continue
+        plan = _build_hierarchy_plan(
+            hierarchy,
+            layouts,
+            scene=scene,
+            signature_prefix="affine-carrier-source-occlusion-hierarchy",
+            terminal_expectation=(
+                "test the unique carrier-matched source-occlusion support hypothesis"
+            ),
+        )
+        if plan.signature not in rejected_signatures:
+            return plan
+    return None
 
 
 def _hierarchy_joint_layout(
@@ -8931,6 +9566,7 @@ class VisualCausalPolicy:
         self._failed_external_residual_linked_hierarchy_relation_keys: set[str] = set()
         self._failed_raw_matching_composite_hierarchy_relation_keys: set[str] = set()
         self._failed_external_own_composite_hierarchy_relation_keys: set[str] = set()
+        self._failed_carrier_source_occlusion_hierarchy_relation_keys: set[str] = set()
         self._hierarchy_lineage_lost: tuple[int, str, str, str] | None = None
         self._failed_hierarchy_lineages: set[tuple[int, str, str, str]] = set()
         self._active_child_isolation_relation_key: str | None = None
@@ -9056,6 +9692,7 @@ class VisualCausalPolicy:
         self._failed_external_residual_linked_hierarchy_relation_keys.clear()
         self._failed_raw_matching_composite_hierarchy_relation_keys.clear()
         self._failed_external_own_composite_hierarchy_relation_keys.clear()
+        self._failed_carrier_source_occlusion_hierarchy_relation_keys.clear()
         self._hierarchy_lineage_lost = None
         self._failed_hierarchy_lineages.clear()
         self._clear_child_isolation_execution()
@@ -9794,13 +10431,65 @@ class VisualCausalPolicy:
                                                         external_own_composite_relation.relation_key
                                                         in self._failed_external_own_composite_hierarchy_relation_keys
                                                     ):
-                                                        deferred_hierarchy_reason = (
-                                                            "all bounded observation-grounded hierarchy "
-                                                            "families, including the unique external-own-"
-                                                            "composite recombination, were already rejected "
-                                                            "or operationally exhausted by official "
-                                                            "consequences"
+                                                        carrier_source_relation = _carrier_source_occlusion_hierarchy_relation(
+                                                            scene,
+                                                            hierarchy,
+                                                            level_index=(
+                                                                observation.levels_completed
+                                                            ),
+                                                            rejected_bridge_relation_keys=(
+                                                                self._failed_bridge_hierarchy_relation_keys
+                                                            ),
+                                                            rejected_mixed_relation_keys=(
+                                                                self._failed_residual_linked_hierarchy_relation_keys
+                                                            ),
+                                                            rejected_external_relation_keys=(
+                                                                self._failed_external_residual_linked_hierarchy_relation_keys
+                                                            ),
+                                                            rejected_raw_matching_relation_keys=(
+                                                                self._failed_raw_matching_composite_hierarchy_relation_keys
+                                                            ),
+                                                            rejected_external_own_relation_keys=(
+                                                                self._failed_external_own_composite_hierarchy_relation_keys
+                                                            ),
                                                         )
+                                                        if carrier_source_relation is None:
+                                                            deferred_hierarchy_reason = (
+                                                                "the bridge, mixed, external, raw-matching, "
+                                                                "and external-own hierarchy relations were "
+                                                                "falsified, but their evidence does not "
+                                                                "identify one unique raw source and exact "
+                                                                "carrier-mask counterpart source pair"
+                                                            )
+                                                        elif (
+                                                            carrier_source_relation.relation_key
+                                                            in self._failed_carrier_source_occlusion_hierarchy_relation_keys
+                                                        ):
+                                                            deferred_hierarchy_reason = (
+                                                                "all bounded observation-grounded hierarchy "
+                                                                "families, including the one-shot carrier-"
+                                                                "source occlusion discriminator, were already "
+                                                                "rejected or operationally exhausted by "
+                                                                "official consequences"
+                                                            )
+                                                        else:
+                                                            hierarchy_plan = _carrier_source_occlusion_hierarchy_plan(
+                                                                scene,
+                                                                hierarchy,
+                                                                carrier_source_relation,
+                                                                rejected_signatures=(
+                                                                    self._failed_plan_signatures
+                                                                ),
+                                                                search_budget=search_budget,
+                                                            )
+                                                            if hierarchy_plan is None:
+                                                                deferred_hierarchy_reason = (
+                                                                    "the unique carrier-matched source pair "
+                                                                    "has no exact parser-safe reversible "
+                                                                    "occlusion layout"
+                                                                )
+                                                            else:
+                                                                hierarchy_relation_key = carrier_source_relation.relation_key
                                                     else:
                                                         hierarchy_plan = (
                                                             _external_own_composite_hierarchy_plan(
@@ -10297,6 +10986,12 @@ class VisualCausalPolicy:
             self._pending_plan_signature is not None
             and self._pending_plan_signature.startswith("affine-external-own-composite-hierarchy:")
         )
+        carrier_source_occlusion_hierarchy_action = (
+            self._pending_plan_signature is not None
+            and self._pending_plan_signature.startswith(
+                "affine-carrier-source-occlusion-hierarchy:"
+            )
+        )
         joint_hierarchy_action = (
             self._pending_plan_signature is not None
             and self._pending_plan_signature.startswith(
@@ -10309,6 +11004,7 @@ class VisualCausalPolicy:
                     "affine-external-residual-linked-hierarchy:",
                     "affine-raw-matching-composite-hierarchy:",
                     "affine-external-own-composite-hierarchy:",
+                    "affine-carrier-source-occlusion-hierarchy:",
                 )
             )
         )
@@ -10336,6 +11032,12 @@ class VisualCausalPolicy:
                 "affine-external-own-composite-hierarchy-recovery:"
             )
         )
+        carrier_source_occlusion_hierarchy_recovery_action = (
+            self._pending_plan_signature is not None
+            and self._pending_plan_signature.startswith(
+                "affine-carrier-source-occlusion-hierarchy-recovery:"
+            )
+        )
         hierarchy_recovery_action = (
             self._pending_plan_signature is not None
             and self._pending_plan_signature.startswith(
@@ -10348,6 +11050,7 @@ class VisualCausalPolicy:
                     "affine-external-residual-linked-hierarchy-recovery:",
                     "affine-raw-matching-composite-hierarchy-recovery:",
                     "affine-external-own-composite-hierarchy-recovery:",
+                    "affine-carrier-source-occlusion-hierarchy-recovery:",
                 )
             )
         )
@@ -10465,6 +11168,7 @@ class VisualCausalPolicy:
                 or external_residual_linked_hierarchy_action
                 or raw_matching_composite_hierarchy_action
                 or external_own_composite_hierarchy_action
+                or carrier_source_occlusion_hierarchy_action
             )
             and not self._pending_completes_hierarchy
             and observation.state is GameStateName.GAME_OVER
@@ -11003,6 +11707,19 @@ class VisualCausalPolicy:
                         self._preterminal_hierarchy_retry_signature = None
                         self._failed_plan_signatures.add(self._pending_plan_signature)
                         if (
+                            carrier_source_occlusion_hierarchy_action
+                            and hierarchy_relation_key is not None
+                        ):
+                            self._failed_carrier_source_occlusion_hierarchy_relation_keys.add(
+                                hierarchy_relation_key
+                            )
+                            residual = (
+                                "the same carrier-source occlusion hierarchy plan returned "
+                                "GAME_OVER before its terminal action on its one bounded "
+                                "post-RESET retry; that relation is closed rather than "
+                                "reopened through an alternate layout"
+                            )
+                        elif (
                             external_own_composite_hierarchy_action
                             and hierarchy_relation_key is not None
                         ):
@@ -11041,7 +11758,15 @@ class VisualCausalPolicy:
                         self._preterminal_hierarchy_retry_signature = None
                     self._failed_plan_signatures.add(self._pending_plan_signature)
             if hierarchy_terminal_game_over_observed and hierarchy_relation_key is not None:
-                if external_own_composite_hierarchy_action:
+                if carrier_source_occlusion_hierarchy_action:
+                    self._failed_carrier_source_occlusion_hierarchy_relation_keys.add(
+                        hierarchy_relation_key
+                    )
+                    residual = (
+                        "the exact carrier-source occlusion discriminator terminal returned "
+                        "GAME_OVER"
+                    )
+                elif external_own_composite_hierarchy_action:
                     self._failed_external_own_composite_hierarchy_relation_keys.add(
                         hierarchy_relation_key
                     )
@@ -11210,24 +11935,29 @@ class VisualCausalPolicy:
             self._active_hierarchy_recovery_actions = ()
             self._last_probe_failed = False
             residual = (
-                "exact pre-hypothesis hierarchy restored after external-own-composite "
-                "recombination sufficiency failed"
-                if external_own_composite_hierarchy_recovery_action
+                "exact pre-hypothesis hierarchy and both filled source disks restored after "
+                "carrier-source occlusion sufficiency failed"
+                if carrier_source_occlusion_hierarchy_recovery_action
                 else (
-                    "exact pre-hypothesis hierarchy restored after raw-matching "
-                    "containing-composite sufficiency failed"
-                    if raw_matching_composite_hierarchy_recovery_action
+                    "exact pre-hypothesis hierarchy restored after external-own-composite "
+                    "recombination sufficiency failed"
+                    if external_own_composite_hierarchy_recovery_action
                     else (
-                        "exact pre-hypothesis hierarchy restored after external carrier-mask "
-                        "residual-chain sufficiency failed"
-                        if external_residual_linked_hierarchy_recovery_action
+                        "exact pre-hypothesis hierarchy restored after raw-matching "
+                        "containing-composite sufficiency failed"
+                        if raw_matching_composite_hierarchy_recovery_action
                         else (
-                            "exact pre-hypothesis hierarchy restored after residual-linked "
-                            "mixed-support sufficiency failed"
-                            if residual_linked_hierarchy_recovery_action
+                            "exact pre-hypothesis hierarchy restored after external carrier-mask "
+                            "residual-chain sufficiency failed"
+                            if external_residual_linked_hierarchy_recovery_action
                             else (
-                                "exact pre-hypothesis hierarchy restored after joint "
-                                "sufficiency failed"
+                                "exact pre-hypothesis hierarchy restored after residual-linked "
+                                "mixed-support sufficiency failed"
+                                if residual_linked_hierarchy_recovery_action
+                                else (
+                                    "exact pre-hypothesis hierarchy restored after joint "
+                                    "sufficiency failed"
+                                )
                             )
                         )
                     )
@@ -11238,7 +11968,11 @@ class VisualCausalPolicy:
             if self._pending_plan_signature is not None:
                 self._failed_plan_signatures.add(self._pending_plan_signature)
             if hierarchy_supports_observed and hierarchy_relation_key is not None:
-                if external_own_composite_hierarchy_action:
+                if carrier_source_occlusion_hierarchy_action:
+                    self._failed_carrier_source_occlusion_hierarchy_relation_keys.add(
+                        hierarchy_relation_key
+                    )
+                elif external_own_composite_hierarchy_action:
                     self._failed_external_own_composite_hierarchy_relation_keys.add(
                         hierarchy_relation_key
                     )
@@ -11275,6 +12009,12 @@ class VisualCausalPolicy:
             if hierarchy_supports_observed:
                 residual = (
                     (
+                        "the raw-linked child and its exact carrier-mask counterpart each "
+                        "occluded only their assigned filled source disk, but the official "
+                        "environment remained NOT_FINISHED"
+                    )
+                    if carrier_source_occlusion_hierarchy_action
+                    else (
                         "the carrier-mask counterpart reached its unique external sink while "
                         "the raw-linked child reached its own bridge composite sink, but the "
                         "official environment remained NOT_FINISHED"
@@ -11505,6 +12245,7 @@ class VisualCausalPolicy:
                         "affine-external-residual-linked-hierarchy:",
                         "affine-raw-matching-composite-hierarchy:",
                         "affine-external-own-composite-hierarchy:",
+                        "affine-carrier-source-occlusion-hierarchy:",
                     )
                 )
                 for item in self._failed_plan_signatures
@@ -11519,6 +12260,7 @@ class VisualCausalPolicy:
                 | self._failed_external_residual_linked_hierarchy_relation_keys
                 | self._failed_raw_matching_composite_hierarchy_relation_keys
                 | self._failed_external_own_composite_hierarchy_relation_keys
+                | self._failed_carrier_source_occlusion_hierarchy_relation_keys
             ),
             "hierarchy_hypothesis_rejected_count": (
                 len(self._failed_hierarchy_relation_keys)
@@ -11529,6 +12271,7 @@ class VisualCausalPolicy:
                 + len(self._failed_external_residual_linked_hierarchy_relation_keys)
                 + len(self._failed_raw_matching_composite_hierarchy_relation_keys)
                 + len(self._failed_external_own_composite_hierarchy_relation_keys)
+                + len(self._failed_carrier_source_occlusion_hierarchy_relation_keys)
             ),
             "hierarchy_equal_relation_rejected_count": len(self._failed_hierarchy_relation_keys),
             "hierarchy_weighted_relation_rejected_count": len(
@@ -11552,6 +12295,9 @@ class VisualCausalPolicy:
             "hierarchy_external_own_composite_relation_rejected_count": len(
                 self._failed_external_own_composite_hierarchy_relation_keys
             ),
+            "hierarchy_carrier_source_occlusion_relation_rejected_count": len(
+                self._failed_carrier_source_occlusion_hierarchy_relation_keys
+            ),
             "hierarchy_lineage_failure": current_lineage_failure,
             "hierarchy_lineage_failures": lineage_failures,
             "hierarchy_lineage_lost": self._hierarchy_lineage_lost is not None,
@@ -11573,6 +12319,7 @@ class VisualCausalPolicy:
                         "affine-external-residual-linked-hierarchy-recovery:",
                         "affine-raw-matching-composite-hierarchy-recovery:",
                         "affine-external-own-composite-hierarchy-recovery:",
+                        "affine-carrier-source-occlusion-hierarchy-recovery:",
                     )
                 )
             ),
@@ -11589,6 +12336,7 @@ class VisualCausalPolicy:
                         "affine-external-residual-linked-hierarchy-recovery:",
                         "affine-raw-matching-composite-hierarchy-recovery:",
                         "affine-external-own-composite-hierarchy-recovery:",
+                        "affine-carrier-source-occlusion-hierarchy-recovery:",
                     )
                 )
                 else None

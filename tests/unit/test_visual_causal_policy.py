@@ -12,6 +12,7 @@ import pytest
 import arc3.mechanics.visual_causal as visual_causal
 from arc3.adapters import GridFrame, Observation
 from arc3.errors import PolicyError
+from arc3.evaluation.mechanical_replay import _family_state
 from arc3.exploration.causal_events import RiskLevel
 from arc3.mechanics.visual_causal import (
     VisualActionPurpose,
@@ -3836,6 +3837,64 @@ def _external_own_composite_fixture() -> tuple[
     )
 
 
+@lru_cache(maxsize=1)
+def _carrier_source_occlusion_fixture() -> tuple[
+    GridFrame,
+    VisualScene,
+    visual_causal._AffineHierarchy,
+    visual_causal._CompositeBridgeRelation,
+    visual_causal._ResidualLinkedHierarchyRelation,
+    visual_causal._ExternalResidualLinkedHierarchyRelation,
+    visual_causal._RawMatchingCompositeHierarchyRelation,
+    visual_causal._ExternalOwnCompositeHierarchyRelation,
+    visual_causal._CarrierSourceOcclusionHierarchyRelation,
+    visual_causal._HierarchyPlan,
+]:
+    """Return the final one-shot carrier-source discriminator and exact plan."""
+
+    (
+        frame,
+        scene,
+        hierarchy,
+        bridge,
+        mixed,
+        external,
+        raw_matching,
+        external_own,
+        _external_own_plan,
+    ) = _external_own_composite_fixture()
+    relation = visual_causal._carrier_source_occlusion_hierarchy_relation(
+        scene,
+        hierarchy,
+        level_index=4,
+        rejected_bridge_relation_keys={bridge.relation_key},
+        rejected_mixed_relation_keys={mixed.relation_key},
+        rejected_external_relation_keys={external.relation_key},
+        rejected_raw_matching_relation_keys={raw_matching.relation_key},
+        rejected_external_own_relation_keys={external_own.relation_key},
+    )
+    assert relation is not None
+    plan = visual_causal._carrier_source_occlusion_hierarchy_plan(
+        scene,
+        hierarchy,
+        relation,
+        rejected_signatures=set(),
+    )
+    assert plan is not None
+    return (
+        frame,
+        scene,
+        hierarchy,
+        bridge,
+        mixed,
+        external,
+        raw_matching,
+        external_own,
+        relation,
+        plan,
+    )
+
+
 def _seed_external_chain_prerequisites(
     policy: VisualCausalPolicy,
     scene: VisualScene,
@@ -3904,6 +3963,31 @@ def _seed_external_own_composite_prerequisites(
     )
     policy._failed_raw_matching_composite_hierarchy_relation_keys.add(raw_matching.relation_key)
     policy._failed_external_own_composite_hierarchy_relation_keys.clear()
+
+
+def _seed_carrier_source_occlusion_prerequisites(
+    policy: VisualCausalPolicy,
+    scene: VisualScene,
+    hierarchy: visual_causal._AffineHierarchy,
+    bridge: visual_causal._CompositeBridgeRelation,
+    mixed: visual_causal._ResidualLinkedHierarchyRelation,
+    external: visual_causal._ExternalResidualLinkedHierarchyRelation,
+    raw_matching: visual_causal._RawMatchingCompositeHierarchyRelation,
+    external_own: visual_causal._ExternalOwnCompositeHierarchyRelation,
+) -> None:
+    """Record exactly the five prior failures needed by the one-shot family."""
+
+    _seed_external_own_composite_prerequisites(
+        policy,
+        scene,
+        hierarchy,
+        bridge,
+        mixed,
+        external,
+        raw_matching,
+    )
+    policy._failed_external_own_composite_hierarchy_relation_keys.add(external_own.relation_key)
+    policy._failed_carrier_source_occlusion_hierarchy_relation_keys.clear()
 
 
 def test_two_layer_affine_hierarchy_is_an_exact_disjoint_cover() -> None:
@@ -5761,17 +5845,17 @@ def test_external_own_composite_preterminal_game_over_closes_after_one_retry(
         )
         policy.accept_consequence(second_reset_observation)
         receipt_count = len(policy.receipts)
-        with pytest.raises(
-            PolicyError,
-            match="external-own-composite recombination",
-        ) as exhausted:
-            policy.select(second_reset_observation)
+        next_family_action = policy.select(second_reset_observation)
 
     assert planner_calls == 1
-    assert "rejected or operationally exhausted by official consequences" in str(exhausted.value)
+    assert next_family_action.coordinate == Coordinate(8, 38)
+    assert policy._active_hierarchy_signature is not None
+    assert policy._active_hierarchy_signature.startswith(
+        "affine-carrier-source-occlusion-hierarchy:"
+    )
     assert len(policy.receipts) == receipt_count
-    assert policy.snapshot()["pending_action"] is None
-    assert policy.snapshot()["pending_plan_actions"] == 0
+    assert policy.snapshot()["pending_action"] is not None
+    assert policy.snapshot()["pending_plan_actions"] == 8
 
 
 def test_external_own_composite_is_equivariant_and_fails_closed(
@@ -5960,6 +6044,560 @@ def test_external_own_composite_is_equivariant_and_fails_closed(
             )
             is None
         )
+
+
+def test_carrier_source_occlusion_selects_replays_and_restores_exact_sources() -> None:
+    (
+        frame,
+        scene,
+        hierarchy,
+        bridge,
+        mixed,
+        external,
+        raw_matching,
+        external_own,
+        relation,
+        plan,
+    ) = _carrier_source_occlusion_fixture()
+
+    assert relation.bridge_relation_key == bridge.relation_key
+    assert relation.mixed_relation_key == mixed.relation_key
+    assert relation.external_relation_key == external.relation_key
+    assert relation.raw_matching_relation_key == raw_matching.relation_key
+    assert relation.external_own_relation_key == external_own.relation_key
+    assert tuple(support.child for support in relation.supports) == hierarchy.children
+    assert tuple(support.source.center for support in relation.supports) == ((14, 40), (20, 53))
+    assert all(len(support.source.cells) == 21 for support in relation.supports)
+    assert plan.signature.startswith("affine-carrier-source-occlusion-hierarchy:")
+    assert plan.supports == ((14, 40), (20, 53))
+    assert tuple((item.coordinate.x, item.coordinate.y) for item in plan.actions) == (
+        (8, 38),
+        (43, 34),
+        (20, 42),
+        (52, 55),
+        (23, 48),
+        (41, 47),
+        (23, 58),
+        (34, 55),
+        (14, 53),
+    )
+    assert tuple((item.coordinate.x, item.coordinate.y) for item in plan.recovery_actions) == (
+        (34, 55),
+        (23, 58),
+        (41, 47),
+        (23, 48),
+        (52, 55),
+        (20, 42),
+        (43, 34),
+        (8, 38),
+        (25, 35),
+    )
+
+    # The frozen frame must retain a plan under the production cap and global
+    # search ceiling; this guards the counterpart mover-order round robin.
+    assert visual_causal._MAX_HIERARCHY_CHILD_LAYOUTS == 8
+    budget = visual_causal._HierarchySearchBudget(visual_causal._MAX_HIERARCHY_SEARCH_BUDGET)
+    capped_plan = visual_causal._carrier_source_occlusion_hierarchy_plan(
+        scene,
+        hierarchy,
+        relation,
+        rejected_signatures=set(),
+        search_budget=budget,
+    )
+    assert capped_plan == plan
+    assert budget.remaining > 0
+
+    environment = _ProjectedWeightedHierarchyEnvironment(scene, hierarchy)
+    observation = environment.observation()
+    policy = VisualCausalPolicy(max_coordinate_candidates=8)
+    policy._level_index = 4
+    policy._last_active_color = hierarchy.active_color
+    policy._ensure_learner(observation)
+    _seed_carrier_source_occlusion_prerequisites(
+        policy,
+        scene,
+        hierarchy,
+        bridge,
+        mixed,
+        external,
+        raw_matching,
+        external_own,
+    )
+    policy._install_hierarchy_plan(plan, relation_key=relation.relation_key)
+    for expected in plan.actions:
+        action = policy.select(observation)
+        assert action.coordinate == expected.coordinate
+        observation = environment.step(action)
+        policy.accept_consequence(observation)
+
+    assert policy._failed_carrier_source_occlusion_hierarchy_relation_keys == {
+        relation.relation_key
+    }
+    terminal_snapshot = policy.snapshot()
+    assert terminal_snapshot["hierarchy_carrier_source_occlusion_relation_rejected_count"] == 1
+    assert (
+        _family_state(terminal_snapshot)[
+            "hierarchy_carrier_source_occlusion_relation_rejected_count"
+        ]
+        == 1
+    )
+    assert terminal_snapshot["hierarchy_recovery_active"] is True
+    assert policy.receipts[-1].residual == (
+        "the raw-linked child and its exact carrier-mask counterpart each occluded only their "
+        "assigned filled source disk, but the official environment remained NOT_FINISHED"
+    )
+
+    for expected in plan.recovery_actions:
+        action = policy.select(observation)
+        assert action.coordinate == expected.coordinate
+        observation = environment.step(action)
+        policy.accept_consequence(observation)
+    assert observation.frames[-1].cells == frame.cells
+    assert policy.snapshot()["hierarchy_recovery_active"] is False
+    assert policy.receipts[-1].residual == (
+        "exact pre-hypothesis hierarchy and both filled source disks restored after "
+        "carrier-source occlusion sufficiency failed"
+    )
+
+    _seed_carrier_source_occlusion_prerequisites(
+        policy,
+        scene,
+        hierarchy,
+        bridge,
+        mixed,
+        external,
+        raw_matching,
+        external_own,
+    )
+    policy._failed_plan_signatures.clear()
+    selected = policy.select(observation)
+    assert selected.coordinate == plan.actions[0].coordinate
+    assert policy._active_hierarchy_signature == plan.signature
+    assert policy._active_hierarchy_relation_key == relation.relation_key
+
+
+def test_carrier_source_occlusion_requires_all_gates_and_is_equivariant(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    (
+        frame,
+        scene,
+        hierarchy,
+        bridge,
+        mixed,
+        external,
+        raw_matching,
+        external_own,
+        relation,
+        _plan,
+    ) = _carrier_source_occlusion_fixture()
+    complete_gates = {
+        "rejected_bridge_relation_keys": {bridge.relation_key},
+        "rejected_mixed_relation_keys": {mixed.relation_key},
+        "rejected_external_relation_keys": {external.relation_key},
+        "rejected_raw_matching_relation_keys": {raw_matching.relation_key},
+        "rejected_external_own_relation_keys": {external_own.relation_key},
+    }
+    for missing_gate in complete_gates:
+        gates = {name: set(keys) for name, keys in complete_gates.items()}
+        gates[missing_gate].clear()
+        assert (
+            visual_causal._carrier_source_occlusion_hierarchy_relation(
+                scene,
+                hierarchy,
+                level_index=4,
+                **gates,
+            )
+            is None
+        )
+
+    def derive(
+        candidate_scene: VisualScene,
+        candidate_hierarchy: visual_causal._AffineHierarchy,
+    ) -> visual_causal._CarrierSourceOcclusionHierarchyRelation:
+        candidate_bridge = visual_causal._composite_bridge_relation(
+            candidate_scene,
+            candidate_hierarchy,
+            level_index=4,
+        )
+        candidate_mixed = visual_causal._residual_linked_hierarchy_relation(
+            candidate_scene,
+            candidate_hierarchy,
+            level_index=4,
+        )
+        assert candidate_bridge is not None
+        assert candidate_mixed is not None
+        candidate_external = visual_causal._external_residual_linked_hierarchy_relation(
+            candidate_scene,
+            candidate_hierarchy,
+            level_index=4,
+            rejected_mixed_relation_keys={candidate_mixed.relation_key},
+        )
+        assert candidate_external is not None
+        candidate_raw_matching = visual_causal._raw_matching_composite_hierarchy_relation(
+            candidate_scene,
+            candidate_hierarchy,
+            level_index=4,
+            rejected_mixed_relation_keys={candidate_mixed.relation_key},
+            rejected_external_relation_keys={candidate_external.relation_key},
+        )
+        assert candidate_raw_matching is not None
+        candidate_external_own = visual_causal._external_own_composite_hierarchy_relation(
+            candidate_scene,
+            candidate_hierarchy,
+            level_index=4,
+            rejected_bridge_relation_keys={candidate_bridge.relation_key},
+            rejected_mixed_relation_keys={candidate_mixed.relation_key},
+            rejected_external_relation_keys={candidate_external.relation_key},
+            rejected_raw_matching_relation_keys={candidate_raw_matching.relation_key},
+        )
+        assert candidate_external_own is not None
+        candidate_relation = visual_causal._carrier_source_occlusion_hierarchy_relation(
+            candidate_scene,
+            candidate_hierarchy,
+            level_index=4,
+            rejected_bridge_relation_keys={candidate_bridge.relation_key},
+            rejected_mixed_relation_keys={candidate_mixed.relation_key},
+            rejected_external_relation_keys={candidate_external.relation_key},
+            rejected_raw_matching_relation_keys={candidate_raw_matching.relation_key},
+            rejected_external_own_relation_keys={candidate_external_own.relation_key},
+        )
+        assert candidate_relation is not None
+        return candidate_relation
+
+    palette_swap = {8: 9, 9: 8, 11: 14, 14: 11}
+    swapped_scene = extract_visual_scene(
+        GridFrame.from_rows(
+            tuple(tuple(palette_swap.get(value, value) for value in row) for row in frame.cells)
+        )
+    )
+    swapped_hierarchy = visual_causal._unique_affine_hierarchy(
+        swapped_scene,
+        active_color=0,
+    )
+    assert swapped_hierarchy is not None
+    swapped_relation = derive(swapped_scene, swapped_hierarchy)
+    assert tuple(support.source.center for support in swapped_relation.supports) == tuple(
+        support.source.center for support in relation.supports
+    )
+    assert tuple(support.source.palette for support in swapped_relation.supports) == tuple(
+        frozenset(palette_swap.get(value, value) for value in support.source.palette)
+        for support in relation.supports
+    )
+
+    relevant_cells = set(hierarchy.target.cells)
+    for child in hierarchy.children:
+        relevant_cells.update(visual_causal._hierarchy_dynamic_footprint(scene, child))
+    for _child, example in bridge.assignments:
+        relevant_cells.update(example.target.cells)
+        for source in example.sources:
+            relevant_cells.update(source.cells)
+    for target, _surface in visual_causal._composite_sparse_targets(scene):
+        relevant_cells.update(target.cells)
+    delta_x, delta_y = 2, 2
+    translated_rows = [[scene.background] * scene.width for _row in range(scene.height)]
+    for x, y in relevant_cells:
+        translated_rows[y + delta_y][x + delta_x] = scene.cells[y][x]
+    translated_scene = extract_visual_scene(GridFrame.from_rows(translated_rows))
+    translated_hierarchy = visual_causal._unique_affine_hierarchy(
+        translated_scene,
+        active_color=0,
+    )
+    assert translated_hierarchy is not None
+    translated_relation = derive(translated_scene, translated_hierarchy)
+    assert tuple(support.source.center for support in translated_relation.supports) == tuple(
+        (support.source.center[0] + delta_x, support.source.center[1] + delta_y)
+        for support in relation.supports
+    )
+
+    counterpart_assignment = next(
+        (child, example)
+        for child, example in bridge.assignments
+        if any(source.center == external.counterpart_source_center for source in example.sources)
+    )
+    ambiguous_example = replace(
+        counterpart_assignment[1],
+        sources=(
+            *counterpart_assignment[1].sources,
+            next(
+                source
+                for source in counterpart_assignment[1].sources
+                if source.center == external.counterpart_source_center
+            ),
+        ),
+    )
+    ambiguous_bridge = replace(
+        bridge,
+        assignments=tuple(
+            (child, ambiguous_example if child == counterpart_assignment[0] else example)
+            for child, example in bridge.assignments
+        ),
+    )
+    with monkeypatch.context() as ambiguity_patch:
+        ambiguity_patch.setattr(
+            visual_causal,
+            "_composite_bridge_relation",
+            lambda *_args, **_kwargs: ambiguous_bridge,
+        )
+        ambiguity_patch.setattr(
+            visual_causal,
+            "_residual_linked_hierarchy_relation",
+            lambda *_args, **_kwargs: mixed,
+        )
+        ambiguity_patch.setattr(
+            visual_causal,
+            "_external_residual_linked_hierarchy_relation",
+            lambda *_args, **_kwargs: external,
+        )
+        ambiguity_patch.setattr(
+            visual_causal,
+            "_raw_matching_composite_hierarchy_relation",
+            lambda *_args, **_kwargs: raw_matching,
+        )
+        ambiguity_patch.setattr(
+            visual_causal,
+            "_external_own_composite_hierarchy_relation",
+            lambda *_args, **_kwargs: external_own,
+        )
+        assert (
+            visual_causal._carrier_source_occlusion_hierarchy_relation(
+                scene,
+                hierarchy,
+                level_index=4,
+                **complete_gates,
+            )
+            is None
+        )
+
+
+def test_carrier_source_occlusion_rejects_cross_source_and_unsafe_inverse(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    (
+        _frame_value,
+        scene,
+        hierarchy,
+        _bridge,
+        _mixed,
+        _external,
+        _raw_matching,
+        _external_own,
+        relation,
+        _plan,
+    ) = _carrier_source_occlusion_fixture()
+    first, second = hierarchy.children
+    first_movers = tuple(
+        next(endpoint for endpoint in first.endpoints if endpoint.rounded_center == center)
+        for center in ((25, 35), (43, 34))
+    )
+    second_movers = tuple(
+        next(endpoint for endpoint in second.endpoints if endpoint.rounded_center == center)
+        for center in ((52, 55), (41, 47), (34, 55))
+    )
+    first_points = ((8, 38), (20, 42))
+    second_points = ((23, 48), (23, 58), (14, 53))
+    layouts = (
+        visual_causal._HierarchyChildLayout(
+            group=first,
+            support=relation.supports[0].source.center,
+            movers=first_movers,
+            points=first_points,
+            dynamic_footprint=visual_causal._hierarchy_projected_group_footprint(
+                first,
+                endpoint_centers=first_points,
+                mediator_center=relation.supports[0].source.center,
+                endpoints=first_movers,
+            ),
+            radius=6,
+            movement_cost=0.0,
+        ),
+        visual_causal._HierarchyChildLayout(
+            group=second,
+            support=relation.supports[1].source.center,
+            movers=second_movers,
+            points=second_points,
+            dynamic_footprint=visual_causal._hierarchy_projected_group_footprint(
+                second,
+                endpoint_centers=second_points,
+                mediator_center=relation.supports[1].source.center,
+                endpoints=second_movers,
+            ),
+            radius=6,
+            movement_cost=0.0,
+        ),
+    )
+    initial_dynamic = frozenset(
+        cell
+        for child in hierarchy.children
+        for cell in visual_causal._hierarchy_dynamic_footprint(scene, child)
+    )
+    assigned_cells = frozenset(
+        cell for support in relation.supports for cell in support.source.cells
+    )
+    occupied = frozenset(
+        (x, y)
+        for y, row in enumerate(scene.cells)
+        for x, value in enumerate(row)
+        if value != scene.background
+    )
+    static_cells = occupied - initial_dynamic - assigned_cells
+    target_regions = visual_causal._visible_target_regions(scene)
+    target_signature = visual_causal._target_surface_signature(scene)
+
+    def sequence_is_safe(
+        supports: tuple[visual_causal._HierarchySourceSupport, ...],
+    ) -> bool:
+        return visual_causal._carrier_source_occlusion_hierarchy_sequence_is_safe(
+            scene,
+            hierarchy,
+            supports,
+            layouts,
+            static_cells=static_cells,
+            target_regions=target_regions,
+            preserved_target_signature=target_signature,
+            search_budget=visual_causal._HierarchySearchBudget(32_768),
+            state_cache={},
+        )
+
+    assert sequence_is_safe(relation.supports)
+    wrong_owner_supports = tuple(
+        replace(support, source=relation.supports[1 - index].source)
+        for index, support in enumerate(relation.supports)
+    )
+    assert not sequence_is_safe(wrong_owner_supports)
+
+    initial_positions = {
+        endpoint.object_ref: endpoint.rounded_center
+        for child in hierarchy.children
+        for endpoint in child.endpoints
+    }
+    initial_colors = {
+        endpoint.object_ref: endpoint.color
+        for child in hierarchy.children
+        for endpoint in child.endpoints
+    }
+    original_checker = visual_causal._carrier_source_occlusion_projected_state_is_safe
+    origin_checks = 0
+
+    def reject_inverse_origin(
+        candidate_scene: VisualScene,
+        candidate_hierarchy: visual_causal._AffineHierarchy,
+        candidate_supports: tuple[visual_causal._HierarchySourceSupport, ...],
+        **kwargs: object,
+    ) -> bool:
+        nonlocal origin_checks
+        result = original_checker(
+            candidate_scene,
+            candidate_hierarchy,
+            candidate_supports,
+            **kwargs,
+        )
+        if kwargs["positions"] == initial_positions and kwargs["colors"] == initial_colors:
+            origin_checks += 1
+            return result and origin_checks == 1
+        return result
+
+    monkeypatch.setattr(
+        visual_causal,
+        "_carrier_source_occlusion_projected_state_is_safe",
+        reject_inverse_origin,
+    )
+    assert not sequence_is_safe(relation.supports)
+    assert origin_checks == 2
+
+
+def test_carrier_source_occlusion_game_over_lifecycle() -> None:
+    (
+        _frame_value,
+        scene,
+        hierarchy,
+        bridge,
+        mixed,
+        external,
+        raw_matching,
+        external_own,
+        relation,
+        plan,
+    ) = _carrier_source_occlusion_fixture()
+
+    def prepared() -> tuple[
+        _ProjectedWeightedHierarchyEnvironment,
+        Observation,
+        VisualCausalPolicy,
+    ]:
+        environment = _ProjectedWeightedHierarchyEnvironment(scene, hierarchy)
+        observation = environment.observation()
+        policy = VisualCausalPolicy(max_coordinate_candidates=8)
+        policy._level_index = 4
+        policy._last_active_color = hierarchy.active_color
+        policy._ensure_learner(observation)
+        _seed_carrier_source_occlusion_prerequisites(
+            policy,
+            scene,
+            hierarchy,
+            bridge,
+            mixed,
+            external,
+            raw_matching,
+            external_own,
+        )
+        policy._install_hierarchy_plan(plan, relation_key=relation.relation_key)
+        return environment, observation, policy
+
+    terminal_environment, terminal_observation, terminal_policy = prepared()
+    for action_index in range(len(plan.actions)):
+        action = terminal_policy.select(terminal_observation)
+        terminal_observation = terminal_environment.step(action)
+        if action_index + 1 == len(plan.actions):
+            terminal_observation = replace(
+                terminal_observation,
+                state=GameStateName.GAME_OVER,
+                available_actions=(ActionName.RESET,),
+            )
+        terminal_policy.accept_consequence(terminal_observation)
+    assert terminal_policy._failed_carrier_source_occlusion_hierarchy_relation_keys == {
+        relation.relation_key
+    }
+    assert terminal_policy.receipts[-1].residual == (
+        "the exact carrier-source occlusion discriminator terminal returned GAME_OVER"
+    )
+
+    retry_environment, retry_observation, retry_policy = prepared()
+    first_action = retry_policy.select(retry_observation)
+    first_game_over = replace(
+        retry_environment.step(first_action),
+        state=GameStateName.GAME_OVER,
+        available_actions=(ActionName.RESET,),
+    )
+    retry_policy.accept_consequence(first_game_over)
+    assert retry_policy.snapshot()["hierarchy_preterminal_retry_count"] == 1
+    assert not retry_policy._failed_carrier_source_occlusion_hierarchy_relation_keys
+
+    reset_action = retry_policy.select(first_game_over)
+    assert reset_action.name is ActionName.RESET
+    reset_environment = _ProjectedWeightedHierarchyEnvironment(scene, hierarchy)
+    reset_observation = replace(
+        reset_environment.observation(returned_action=reset_action),
+        full_reset=True,
+    )
+    retry_policy.accept_consequence(reset_observation)
+    retry_policy._install_hierarchy_plan(plan, relation_key=relation.relation_key)
+    retry_action = retry_policy.select(reset_observation)
+    second_game_over = replace(
+        reset_environment.step(retry_action),
+        state=GameStateName.GAME_OVER,
+        available_actions=(ActionName.RESET,),
+    )
+    retry_policy.accept_consequence(second_game_over)
+    assert retry_policy._failed_carrier_source_occlusion_hierarchy_relation_keys == {
+        relation.relation_key
+    }
+    assert retry_policy.snapshot()["hierarchy_preterminal_retry_count"] == 0
+    assert retry_policy.receipts[-1].residual == (
+        "the same carrier-source occlusion hierarchy plan returned GAME_OVER before its "
+        "terminal action on its one bounded post-RESET retry; that relation is closed rather "
+        "than reopened through an alternate layout"
+    )
 
 
 def test_equal_weight_hierarchy_preterminal_game_over_remains_a_failed_plan() -> None:
