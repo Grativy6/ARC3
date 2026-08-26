@@ -61,6 +61,18 @@ BUILD001_BOUNDARY_EXCLUSIONS: tuple[tuple[str, str], ...] = (
         "partition manifest",
     ),
     (
+        "tests/evaluation/test_build003_curriculum.py",
+        "the Build 003 curriculum contract intentionally reads a protected frozen seed manifest",
+    ),
+    (
+        "tests/evaluation/test_build003_protocol_v02.py",
+        "the Build 003 protocol contract intentionally reads the protected final seed manifest",
+    ),
+    (
+        "tests/evaluation/test_build003_results.py",
+        "the Build 003 result contract intentionally reads a protected evaluation protocol",
+    ),
+    (
         "tests/integration/test_evaluation_cli.py",
         "evaluation orchestration is outside the package-only verification boundary",
     ),

@@ -35,6 +35,18 @@ BUILD002_COMMIT = PROTOCOL_V0_1.baseline.commit
 BUILD002_TREE = PROTOCOL_V0_1.baseline.tree
 
 
+def _runtime_os_name() -> str:
+    """Return the runtime OS name without mypy's host-platform constant folding."""
+
+    return os.name
+
+
+def _runtime_platform() -> str:
+    """Return the runtime platform without mypy's target-platform constant folding."""
+
+    return sys.platform
+
+
 @dataclass(frozen=True, slots=True)
 class SequenceBudgets:
     max_environment_actions: int = 1500
@@ -236,7 +248,7 @@ class FrozenBuild002Process:
 def _rss_bytes(process_id: int | None) -> int:
     if process_id is None:
         return 0
-    if sys.platform.startswith("linux"):
+    if _runtime_platform().startswith("linux"):
         try:
             for line in Path(f"/proc/{process_id}/status").read_text(encoding="utf-8").splitlines():
                 if line.startswith("VmRSS:"):
@@ -244,7 +256,10 @@ def _rss_bytes(process_id: int | None) -> int:
         except (OSError, ValueError, IndexError):
             return 0
         return 0
-    if os.name != "nt":
+    if _runtime_os_name() != "nt":
+        return 0
+    windll = getattr(ctypes, "windll", None)
+    if windll is None:
         return 0
 
     class _Counters(ctypes.Structure):
@@ -262,16 +277,16 @@ def _rss_bytes(process_id: int | None) -> int:
         ]
 
     query_information = 0x0400
-    process = ctypes.windll.kernel32.OpenProcess(query_information, False, process_id)
+    process = windll.kernel32.OpenProcess(query_information, False, process_id)
     if not process:
         return 0
     counters = _Counters()
     counters.cb = ctypes.sizeof(_Counters)
     try:
-        ok = ctypes.windll.psapi.GetProcessMemoryInfo(process, ctypes.byref(counters), counters.cb)
+        ok = windll.psapi.GetProcessMemoryInfo(process, ctypes.byref(counters), counters.cb)
         return int(counters.PeakWorkingSetSize) if ok else 0
     finally:
-        ctypes.windll.kernel32.CloseHandle(process)
+        windll.kernel32.CloseHandle(process)
 
 
 def _action_value(action: ActionRequest) -> dict[str, object]:

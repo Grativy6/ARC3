@@ -153,6 +153,9 @@ def test_package_only_test_selection_is_exact_and_full_ci_retains_excluded_cover
     assert tuple(sorted(reasons)) == tuple(path for path, _ in selection.boundary_exclusion_reasons)
     assert all(reason.strip() for reason in reasons.values())
     assert {
+        "tests/evaluation/test_build003_curriculum.py",
+        "tests/evaluation/test_build003_protocol_v02.py",
+        "tests/evaluation/test_build003_results.py",
         "tests/integration/test_pinned_agents_framework.py",
         "tests/integrity/test_dependencies.py",
         "tests/integrity/test_first_party_license.py",
