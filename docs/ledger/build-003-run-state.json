@@ -7,7 +7,7 @@
   "build_status": "ACTIVE",
   "status": "IN_PROGRESS",
   "current_stage": "10",
-  "current_task": "preserve Campaign 30's paired-sink failure and recorder defect, implement the residual-linked mixed-support discriminator, and continue exact-commit development play toward observed WIN",
+  "current_task": "freeze the verified residual-linked mixed-support discriminator and sealed-trace replay, complete clean exact-commit gates, and continue Campaign 31 development play toward observed WIN",
   "implementation_branch": "build/003-bla-clef-mechanical-learner",
   "base": {
     "main_commit": "bea1eac99cb0f1b351526b1dc487d132ba1d40ef",
@@ -201,12 +201,27 @@
     "campaign29_post_run_exposure_ledger_sha256": "sha256:cd4403af34ff13ac70ac97aa1416fbfe35f11e2330280424879895572b48eb13",
     "campaign30_candidate_hypothesis": "two exact static carrier-mask elimination examples delimit two composite-sink candidates; unique agreement among Euclidean, Manhattan, and squared-distance rankings provisionally assigns the two dynamic child groups to those sinks, without claiming that the child groups instantiate the static carrier operator; test only the exact paired placement and preserve the raw parent target",
     "campaign30_candidate_route_evidence": "recorded-frame generic layout search found a complete nine-action paired route and exact nine-action inverse; the selected forward evidence coordinates are (13,34), (43,34), (13,22), (34,55), (44,15), (52,55), (55,9), (41,47), (45,3), and remain evidence only rather than production constants",
-    "campaign30_implementation_boundary": "IMPLEMENTED_UNCOMMITTED: standalone composite-sink target certificates, per-action projected-raster checks, exact inverse recovery, prior-family gating, and terminal-only rejection are present; the child-to-sink mapping remains explicitly provisional because proximity, not observed structural equivalence, assigns it",
+    "campaign30_implementation_boundary": "IMPLEMENTED_COMMITTED: exact Campaign 30 commit 6c32d2a65e61a7b1160fd1c09e8f991078fc9477 contains standalone composite-sink target certificates, per-action projected-raster checks, exact inverse recovery, prior-family gating, and terminal-only rejection; the child-to-sink mapping remained explicitly provisional because proximity, not observed structural equivalence, assigned it",
     "campaign30_worktree_recording_replay_status": "PASS_RECORDED_FRAME_REPLAY: matched all 140 Campaign 29 submissions and consequences including one GAME_OVER and one RESET, derived ACTION6 (13,34), cancelled it unsubmitted, and issued no environment action",
     "campaign30_reset_aware_audit": "C:\\a\\arc3-b003-play\\campaign29-83df552-reset-aware-audit.json",
     "campaign30_reset_aware_audit_file_sha256": "sha256:5dcc6c84dffd18c17f8abb53503c067d335945e98799624655c750bc6f1b789c",
     "campaign30_reset_aware_audit_object_hash": "sha256:a1527d537784b77dccc71f1c031dc23fcdd844ff82348690c60781dce11dfb20",
     "campaign30_candidate_verification": "111 visual-causal policy tests passed; 62 combined replay and child-isolation tests passed; 13 reset-aware replay-CLI contract tests passed; affected Ruff, format, strict MyPy, compile, production-reachability, action-semantics, stable-snapshot integrity, and direct secret checks passed; the live OneDrive scan preserved one FAILED_INFRASTRUCTURE candidate-bytes-changed race while 36 sibling cases passed; planner time narrowed from 14-17 seconds and 111 projected parses to about five seconds and 41 unique parses while preserving the same nine-action plan",
+    "campaign31_candidate_hypothesis": "after the paired composite-sink family is officially rejected and exactly recovered, require a unique singleton raw target contained in exactly one witnessed composite residual palette and a child-to-example assignment stable under Euclidean, Manhattan, and squared-Euclidean costs; send the linked child to the raw target and every other child to its nonmatching composite sink",
+    "campaign31_candidate_implementation_status": "IMPLEMENTED_AND_WORKTREE_VERIFIED; clean exact-commit trace receipt and official consequence pending",
+    "campaign31_candidate_route_evidence": "the recovered Campaign 30 observation derives a collision-safe nine-action forward and nine-action exact inverse; replay evidence supports are (13,28) and (53,28), but no game ID, campaign number, coordinate, palette value, or level number is a production decision constant",
+    "campaign31_candidate_plan_identity": "affine-residual-linked-hierarchy:22e0f6df83e485277c91b9da",
+    "campaign31_candidate_verification": "113 full visual-policy tests and a stable 154-test combined learner, replay, and CLI suite passed; focused sealed-trace replay and CLI hardening passed 41 tests; Ruff lint and format, strict MyPy, compilation, diff checks, and independent review passed",
+    "campaign31_worktree_trace_replay_status": "PASS_SEALED_TRACE_DIAGNOSTIC: immutable-copy replay validated 950 events, all 158 historic action cycles, all 158 regenerated durable mechanics receipts, 493 frames, and one reset; derived ACTION6 (13,34), cancelled it unsubmitted, restored zero pending learner actions, and issued no environment action",
+    "campaign31_worktree_trace_source_projection": "259 files, 5273785 bytes, sha256:9bde106e5040b76c619212370dcf33eaf68f388afeac4d13fd9d0bee667f4fb6",
+    "campaign31_worktree_candidate_snapshot_sha256": "sha256:9e6d69cb7a0909c1a387dd216d215ce6377d4c253c456c32dd5c04c6acac8e91",
+    "campaign31_worktree_trace_receipt": null,
+    "campaign31_worktree_trace_receipt_status": "NOT_EMITTED_BY_DIRECT_DIAGNOSTIC; exact-commit CLI receipt required before official play",
+    "campaign31_action_semantics_status": "PASS; zero findings",
+    "campaign31_action_semantics_receipt": "C:\\a\\b003-action-semantics-mixed-precommit-rerun.json",
+    "campaign31_action_semantics_file_sha256": "sha256:4615ff438676d992f09e6cbbfdda78bf72443806939c1fe31bf6929d3a2c965d",
+    "campaign31_action_semantics_receipt_hash": "sha256:7b7ca339652c2a124f52c2f80c9f67fd7bee69352d4f3574ce1ad6df4f51c557",
+    "campaign31_live_worktree_integrity_status": "FAILED_INFRASTRUCTURE: 53 focused integrity/security tests passed and one repository-integrity case observed OneDrive candidate bytes changing during a bounded read; exact clean-clone integrity remains required",
     "campaign28_pre_run_exposure_ledger": "C:\\a\\arc3-b003-play\\public-exposure.jsonl",
     "campaign28_pre_run_exposure_events": 51,
     "campaign28_pre_run_exposure_development_events": 51,
@@ -500,6 +515,12 @@
       "campaign30_receipt_complete": false,
       "campaign30_completion_observed": false,
       "campaign30_exposure_status": "57 valid development events, zero holdout events; tail sha256:ae6045e234ffa04430252aa83e5f57dfa0759c879042af5f79b287d94cb1d7c0; file sha256:559c6d8f90d0bb700df82084e283d1f55bde318d9417d907bda5be32c4b05371",
+      "campaign30_sealed_trace_replay_status": "PASS_WORKTREE_DIAGNOSTIC_ONLY; 950 events, 158 actions, 158 mechanics receipts, 493 frames, one reset, source projection unchanged, zero environment actions; exact-commit CLI receipt pending",
+      "campaign30_sealed_trace_source_projection_sha256": "sha256:9bde106e5040b76c619212370dcf33eaf68f388afeac4d13fd9d0bee667f4fb6",
+      "campaign30_sealed_trace_candidate_snapshot_sha256": "sha256:9e6d69cb7a0909c1a387dd216d215ce6377d4c253c456c32dd5c04c6acac8e91",
+      "campaign30_sealed_trace_recording_verified": false,
+      "campaign30_sealed_trace_run_evidence_complete": false,
+      "campaign30_sealed_trace_receipt_complete": false,
       "official_environment_interactions_by_replay_profile_or_scan": 0,
       "public_or_holdout_inputs_read_by_profile": false
     }
@@ -515,7 +536,7 @@
     "pull_request_merged": false,
     "external_message_sent_as_owner": false
   },
-  "next_action": "implement and verify the generic residual-linked mixed-support family, preserve Campaign 30 evidence in a clean pushed checkpoint, replay the complete sealed Campaign 30 trace from the exact commit without submitting actions, then launch Campaign 31 from a fresh exact-commit development session and continue until observed WIN or an exact external boundary",
+  "next_action": "commit and push the verified residual-linked mixed-support and sealed-trace replay checkpoint, emit a clean exact-commit Campaign 30 trace receipt and pass exact-clone integrity gates, then launch Campaign 31 from that fresh exact commit and continue official development play until observed WIN or an exact external boundary",
   "notes": [
     "Update atomically after each meaningful task and preserve failed attempts.",
     "No synthetic or local result is completion unless the official target environment returns GameState.WIN.",
@@ -551,6 +572,9 @@
     "Commit 48bd18d is a post-freeze synthetic-assurance repair. Independent archive inspection confirms src/arc3/lab contributes zero of the 114 competition payload members, so the executable package agent and Campaign 29 behavior remain exactly frozen at 83df552. The outer candidate metadata would change if rebuilt from 48bd18d, but that does not justify changing the production/campaign freeze.",
     "Campaign 30 is sealed FAILED_MECHANISM evidence, not completion: the exact paired composite-sink terminal returned NOT_FINISHED at 4/6, the full inverse restored every gameplay-field cell at x=1..63, and zero WIN was observed. The public verifier passes 267 declared artifacts and the exposure ledger contains 57 development events with zero holdout events.",
     "Campaign 30 also preserves a distinct recorder infrastructure defect: one official recording omits global submissions 88-94 and therefore remains recording_verified=false and receipt_complete=false, while the hash-linked sealed trace contains all 158 submissions and consequences. Do not reconstruct the immutable recording or smooth that gap into complete evidence.",
-    "The next discriminator is the palette-equivariant residual-linked mixed-support conjunction: place the uniquely raw-target-linked child at the singleton raw target and the other child at its nonmatching composite sink. The inherited proximity assignment and palette containment are provisional; only an exact official terminal consequence can accept or reject the family, and only GameState.WIN completes the target."
+    "The next discriminator is the palette-equivariant residual-linked mixed-support conjunction: place the uniquely raw-target-linked child at the singleton raw target and the other child at its nonmatching composite sink. The inherited proximity assignment and palette containment are provisional; only an exact official terminal consequence can accept or reject the family, and only GameState.WIN completes the target.",
+    "The mixed-support implementation is worktree-verified by 113 visual-policy tests, a stable combined 154-test learner/replay/CLI suite, and source-quality gates. Its exact-commit identity and official consequence remain pending.",
+    "The sealed Campaign 30 trace replay validates all 950 events, 158 action cycles, 158 regenerated mechanics receipts, 493 frames, and one reset from an immutable temporary copy while preserving the original 259-file projection. It never reconstructs the incomplete SDK recording and does not upgrade recording_verified, run_evidence_complete, or receipt_complete.",
+    "The first mixed-support live-worktree integrity attempt is preserved as FAILED_INFRASTRUCTURE: 53 focused tests passed and one repository-integrity case observed changing OneDrive candidate bytes. A fresh exact-commit clone must provide the authoritative pre-Campaign 31 integrity result."
   ]
 }

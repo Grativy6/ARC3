@@ -362,6 +362,25 @@ class _CompositeBridgeRelation:
 
 
 @dataclass(frozen=True, slots=True)
+class _HierarchyTargetSupport:
+    """One child-to-target support derived from an observed bridge example."""
+
+    child: _AffineChildGroup
+    example: _CompositeBridgeExample
+    target: VisualObject
+    surface_signature: frozenset[int]
+
+
+@dataclass(frozen=True, slots=True)
+class _ResidualLinkedHierarchyRelation:
+    """A unique residual-color link from one bridge child to the raw parent."""
+
+    bridge_relation_key: str
+    supports: tuple[_HierarchyTargetSupport, ...]
+    relation_key: str
+
+
+@dataclass(frozen=True, slots=True)
 class _HierarchyRasterCertificate:
     """Exact observation-derived board identity for one hierarchy action boundary."""
 
@@ -536,6 +555,8 @@ _HIERARCHY_PLAN_PREFIXES = (
     "affine-visible-node-hierarchy-recovery:",
     "affine-bridge-hierarchy:",
     "affine-bridge-hierarchy-recovery:",
+    "affine-residual-linked-hierarchy:",
+    "affine-residual-linked-hierarchy-recovery:",
     "affine-child-isolation:",
     "affine-child-recovery:",
 )
@@ -4156,6 +4177,120 @@ def _composite_bridge_relation(
     )
 
 
+def _bridge_target_supports(
+    relation: _CompositeBridgeRelation,
+) -> tuple[_HierarchyTargetSupport, ...]:
+    """Project the original bridge relation into explicit per-child supports."""
+
+    return tuple(
+        _HierarchyTargetSupport(
+            child=child,
+            example=example,
+            target=example.target,
+            surface_signature=frozenset(example.residual_colors),
+        )
+        for child, example in relation.assignments
+    )
+
+
+def _residual_linked_hierarchy_relation(
+    scene: VisualScene,
+    hierarchy: _AffineHierarchy,
+    *,
+    level_index: int,
+) -> _ResidualLinkedHierarchyRelation | None:
+    """Link exactly one metric-stable bridge child to a singleton raw target.
+
+    The bridge relation is recomputed here rather than accepted from a caller so
+    this family cannot reuse an arbitrary or ambiguous child-to-example pairing.
+    Palette values and coordinates participate only through observed equality
+    and structural identity; no game or campaign identifier is consulted.
+    """
+
+    bridge = _composite_bridge_relation(
+        scene,
+        hierarchy,
+        level_index=level_index,
+    )
+    if bridge is None or len(bridge.assignments) < 2:
+        return None
+    raw_surface_signature = frozenset(scene.cells[y][x] for x, y in hierarchy.target.cells)
+    if (
+        len(raw_surface_signature) != 1
+        or raw_surface_signature != frozenset({hierarchy.target.color})
+        or any(
+            _normalized_connector_structure(scene, child) is None for child in hierarchy.children
+        )
+    ):
+        return None
+    raw_color = next(iter(raw_surface_signature))
+    linked = tuple(
+        (child, example)
+        for child, example in bridge.assignments
+        if raw_color in example.residual_colors
+    )
+    if len(linked) != 1 or linked[0][1].target.rounded_center == hierarchy.target.rounded_center:
+        return None
+    linked_mediator_ref = linked[0][0].mediator.object_ref
+    supports = tuple(
+        _HierarchyTargetSupport(
+            child=child,
+            example=example,
+            target=(
+                hierarchy.target
+                if child.mediator.object_ref == linked_mediator_ref
+                else example.target
+            ),
+            surface_signature=(
+                raw_surface_signature
+                if child.mediator.object_ref == linked_mediator_ref
+                else frozenset(example.residual_colors)
+            ),
+        )
+        for child, example in bridge.assignments
+    )
+    support_centers = tuple(item.target.rounded_center for item in supports)
+    if (
+        tuple(item.child for item in supports) != hierarchy.children
+        or len(set(support_centers)) != len(supports)
+        or hierarchy.target.rounded_center
+        in {
+            item.example.target.rounded_center
+            for item in supports
+            if item.child.mediator.object_ref != linked_mediator_ref
+        }
+    ):
+        return None
+    identity = (
+        "residual-linked-mixed-support-v1",
+        bridge.relation_key,
+        (
+            hierarchy.target.color,
+            hierarchy.target.rounded_center,
+            _normalized_visual_shape(hierarchy.target),
+            tuple(sorted((x, y, scene.cells[y][x]) for x, y in hierarchy.target.cells)),
+        ),
+        tuple(
+            (
+                _child_structure_signature(scene, item.child),
+                item.example.residual_colors,
+                item.example.target.rounded_center,
+                item.target.rounded_center,
+                item.child.mediator.object_ref == linked_mediator_ref,
+            )
+            for item in supports
+        ),
+    )
+    return _ResidualLinkedHierarchyRelation(
+        bridge_relation_key=bridge.relation_key,
+        supports=supports,
+        relation_key=(
+            "affine-residual-linked-relation:"
+            + hashlib.sha256(repr(identity).encode("ascii")).hexdigest()[:24]
+        ),
+    )
+
+
 def _hierarchy_dynamic_footprint(
     scene: VisualScene,
     group: _AffineChildGroup,
@@ -4795,6 +4930,200 @@ def _hierarchy_sequence_is_safe(
     )
 
 
+def _projected_hierarchy_lineages_match(
+    scene: VisualScene,
+    projected: VisualScene,
+    hierarchy: _AffineHierarchy,
+    *,
+    positions: dict[str, tuple[int, int]],
+    colors: dict[str, int],
+    mediator_centers: dict[str, tuple[int, int]],
+) -> bool:
+    """Require every projected endpoint, mediator, and connector lineage exactly."""
+
+    expected_endpoint_signatures = {
+        endpoint.object_ref: _visual_object_state_signature(
+            endpoint,
+            position=positions[endpoint.object_ref],
+            color=colors[endpoint.object_ref],
+        )
+        for child in hierarchy.children
+        for endpoint in child.endpoints
+    }
+    observed_endpoints = {
+        _visual_object_state_signature(endpoint): endpoint for endpoint in projected.endpoints
+    }
+    expected_mediator_signatures = {
+        child.mediator.object_ref: _visual_object_state_signature(
+            child.mediator,
+            position=mediator_centers[child.mediator.object_ref],
+        )
+        for child in hierarchy.children
+    }
+    observed_mediators = {
+        _visual_object_state_signature(mediator): mediator for mediator in projected.mediators
+    }
+    if (
+        len(expected_endpoint_signatures) != len(projected.endpoints)
+        or len(observed_endpoints) != len(projected.endpoints)
+        or set(expected_endpoint_signatures.values()) != set(observed_endpoints)
+        or len(expected_mediator_signatures) != len(projected.mediators)
+        or len(observed_mediators) != len(projected.mediators)
+        or set(expected_mediator_signatures.values()) != set(observed_mediators)
+    ):
+        return False
+    active = tuple(item for item in projected.endpoints if item.color == hierarchy.active_color)
+    if len(active) != 1:
+        return False
+    for child in hierarchy.children:
+        projected_group = _AffineChildGroup(
+            mediator=observed_mediators[expected_mediator_signatures[child.mediator.object_ref]],
+            endpoints=tuple(
+                observed_endpoints[expected_endpoint_signatures[endpoint.object_ref]]
+                for endpoint in child.endpoints
+            ),
+        )
+        if _hierarchy_connector_color(projected, projected_group) != _hierarchy_connector_color(
+            scene,
+            child,
+        ):
+            return False
+    return True
+
+
+def _residual_linked_projected_state_is_safe(
+    scene: VisualScene,
+    hierarchy: _AffineHierarchy,
+    supports: tuple[_HierarchyTargetSupport, ...],
+    *,
+    positions: dict[str, tuple[int, int]],
+    colors: dict[str, int],
+    static_cells: frozenset[tuple[int, int]],
+    dynamic_target_regions: _TargetRegions,
+    endpoint_target_regions: _TargetRegions,
+    preserved_target_signature: _TargetSurfaceSignature,
+    search_budget: _HierarchySearchBudget,
+) -> bool:
+    """Certify one target-support state while permitting only assigned interiors."""
+
+    support_by_mediator = {item.child.mediator.object_ref: item for item in supports}
+    if tuple(item.child for item in supports) != hierarchy.children or len(
+        support_by_mediator
+    ) != len(hierarchy.children):
+        return False
+    group_dynamic: list[frozenset[tuple[int, int]]] = []
+    mediator_centers: dict[str, tuple[int, int]] = {}
+    mediator_footprints: list[frozenset[tuple[int, int]]] = []
+    endpoint_footprints: list[tuple[str, frozenset[tuple[int, int]]]] = []
+    for child in hierarchy.children:
+        support = support_by_mediator.get(child.mediator.object_ref)
+        if support is None:
+            return False
+        centers = tuple(positions[item.object_ref] for item in child.endpoints)
+        mediator_center = (
+            sum(center[0] for center in centers) // child.arity,
+            sum(center[1] for center in centers) // child.arity,
+        )
+        mediator_centers[child.mediator.object_ref] = mediator_center
+        endpoints = tuple(
+            _translated_object_footprint(endpoint, center=center)
+            for endpoint, center in zip(child.endpoints, centers, strict=True)
+        )
+        if any(
+            not _hierarchy_cells_in_bounds(scene, footprint)
+            or footprint & static_cells
+            or not _hierarchy_avoids_target_regions(footprint, endpoint_target_regions)
+            for footprint in endpoints
+        ) or any(
+            not _footprints_have_gap(left, right, gap=1)
+            for left, right in itertools.combinations(endpoints, 2)
+        ):
+            return False
+        dynamic = _hierarchy_projected_group_footprint(
+            child,
+            endpoint_centers=centers,
+            mediator_center=mediator_center,
+        )
+        if (
+            not _hierarchy_cells_in_bounds(scene, dynamic)
+            or dynamic & static_cells
+            or not _hierarchy_avoids_target_regions(dynamic, dynamic_target_regions)
+        ):
+            return False
+        group_dynamic.append(dynamic)
+        mediator_footprints.append(
+            _translated_object_footprint(child.mediator, center=mediator_center)
+        )
+        endpoint_footprints.extend(
+            (endpoint.object_ref, footprint)
+            for endpoint, footprint in zip(child.endpoints, endpoints, strict=True)
+        )
+        if mediator_center == support.target.rounded_center and any(
+            (x, y) in dynamic for x, y in support.target.cells
+        ):
+            return False
+
+    if any(left & right for left, right in itertools.combinations(group_dynamic, 2)) or any(
+        not _footprints_have_gap(left, right, gap=1)
+        for left, right in itertools.combinations(mediator_footprints, 2)
+    ):
+        return False
+    for (left_ref, left), (right_ref, right) in itertools.combinations(
+        endpoint_footprints,
+        2,
+    ):
+        if colors[left_ref] == colors[right_ref] and not _footprints_have_gap(
+            left,
+            right,
+            gap=1,
+        ):
+            return False
+
+    projected = _hierarchy_projected_scene(
+        scene,
+        hierarchy,
+        positions=positions,
+        colors=colors,
+    )
+    sink_centers = frozenset(item.target.rounded_center for item in supports)
+    projected_preserved = tuple(
+        item for item in _target_surface_signature(projected) if item[1] not in sink_centers
+    )
+    if projected_preserved != preserved_target_signature:
+        return False
+    projected_composite = _composite_sparse_targets(projected)
+    for support in supports:
+        if any(projected.cells[y][x] != scene.cells[y][x] for x, y in support.target.cells):
+            return False
+        target_still_hollow = any(
+            item.rounded_center == support.target.rounded_center
+            and signature == support.surface_signature
+            for item, signature in projected_composite
+        )
+        if target_still_hollow != (
+            mediator_centers[support.child.mediator.object_ref] != support.target.rounded_center
+        ):
+            return False
+
+    projected_regions = {
+        item for item in _visible_target_regions(projected) if item[0] not in sink_centers
+    }
+    original_regions = {
+        item for item in _visible_target_regions(scene) if item[0] not in sink_centers
+    }
+    if projected_regions != original_regions:
+        return False
+    search_budget.consume()
+    return _projected_hierarchy_lineages_match(
+        scene,
+        projected,
+        hierarchy,
+        positions=positions,
+        colors=colors,
+        mediator_centers=mediator_centers,
+    )
+
+
 def _bridge_projected_state_is_safe(
     scene: VisualScene,
     hierarchy: _AffineHierarchy,
@@ -5059,6 +5388,107 @@ def _bridge_final_layout_geometry_is_safe(
             2,
         )
     )
+
+
+def _residual_linked_hierarchy_sequence_is_safe(
+    scene: VisualScene,
+    hierarchy: _AffineHierarchy,
+    supports: tuple[_HierarchyTargetSupport, ...],
+    layouts: tuple[_HierarchyChildLayout, ...],
+    *,
+    static_cells: frozenset[tuple[int, int]],
+    dynamic_target_regions: _TargetRegions,
+    endpoint_target_regions: _TargetRegions,
+    preserved_target_signature: _TargetSurfaceSignature,
+    search_budget: _HierarchySearchBudget,
+    state_cache: dict[_BridgeProjectedStateKey, bool],
+) -> bool:
+    """Validate all target-support placements and intervening role exchanges."""
+
+    if tuple(layout.group for layout in layouts) != hierarchy.children or any(
+        mover.rounded_center == point
+        for layout in layouts
+        for mover, point in zip(layout.movers, layout.points, strict=True)
+    ):
+        return False
+    positions = {
+        endpoint.object_ref: endpoint.rounded_center
+        for child in hierarchy.children
+        for endpoint in child.endpoints
+    }
+    colors = {
+        endpoint.object_ref: endpoint.color
+        for child in hierarchy.children
+        for endpoint in child.endpoints
+    }
+    active = tuple(ref for ref, color in colors.items() if color == hierarchy.active_color)
+    if len(active) != 1:
+        return False
+    active_ref = active[0]
+
+    def state_is_safe() -> bool:
+        key: _BridgeProjectedStateKey = (
+            tuple(sorted(positions.items())),
+            tuple(sorted(colors.items())),
+        )
+        cached = state_cache.get(key)
+        if cached is not None:
+            return cached
+        safe = _residual_linked_projected_state_is_safe(
+            scene,
+            hierarchy,
+            supports,
+            positions=positions,
+            colors=colors,
+            static_cells=static_cells,
+            dynamic_target_regions=dynamic_target_regions,
+            endpoint_target_regions=endpoint_target_regions,
+            preserved_target_signature=preserved_target_signature,
+            search_budget=search_budget,
+        )
+        state_cache[key] = safe
+        return safe
+
+    if not state_is_safe():
+        return False
+    for child_index, layout in enumerate(layouts):
+        if child_index:
+            selected_ref = layout.movers[0].object_ref
+            if selected_ref == active_ref or colors[selected_ref] == hierarchy.active_color:
+                return False
+            colors[active_ref], colors[selected_ref] = colors[selected_ref], colors[active_ref]
+            active_ref = selected_ref
+            if not state_is_safe():
+                return False
+        if layout.movers[0].object_ref != active_ref:
+            return False
+        for mover_index, (mover, point) in enumerate(
+            zip(layout.movers, layout.points, strict=True)
+        ):
+            if mover.object_ref != active_ref:
+                return False
+            positions[active_ref] = point
+            if not state_is_safe():
+                return False
+            if mover_index + 1 < len(layout.movers):
+                selected_ref = layout.movers[mover_index + 1].object_ref
+                if selected_ref == active_ref or colors[selected_ref] == hierarchy.active_color:
+                    return False
+                colors[active_ref], colors[selected_ref] = (
+                    colors[selected_ref],
+                    colors[active_ref],
+                )
+                active_ref = selected_ref
+                if not state_is_safe():
+                    return False
+        centers = tuple(positions[item.object_ref] for item in layout.group.endpoints)
+        mediator_center = (
+            sum(center[0] for center in centers) // layout.group.arity,
+            sum(center[1] for center in centers) // layout.group.arity,
+        )
+        if mediator_center != layout.support:
+            return False
+    return True
 
 
 def _bridge_hierarchy_sequence_is_safe(
@@ -5333,6 +5763,7 @@ def _build_hierarchy_plan(
         "affine-weighted-hierarchy": "affine-weighted-hierarchy-recovery",
         "affine-visible-node-hierarchy": "affine-visible-node-hierarchy-recovery",
         "affine-bridge-hierarchy": "affine-bridge-hierarchy-recovery",
+        "affine-residual-linked-hierarchy": ("affine-residual-linked-hierarchy-recovery"),
     }.get(signature_prefix, "affine-hierarchy-recovery")
     recovery_signature = (
         recovery_prefix
@@ -5393,19 +5824,22 @@ def _build_hierarchy_plan(
     )
 
 
-def _bridge_hierarchy_plan(
+def _target_support_hierarchy_plan(
     scene: VisualScene,
     hierarchy: _AffineHierarchy,
-    relation: _CompositeBridgeRelation,
+    supports: tuple[_HierarchyTargetSupport, ...],
     *,
+    bridge_relation: _CompositeBridgeRelation | None,
     rejected_signatures: set[str],
+    signature_prefix: str,
+    terminal_expectation: str,
     search_budget: _HierarchySearchBudget | None = None,
 ) -> _HierarchyPlan | None:
-    """Find one exact route for the provisional paired-sink hypothesis."""
+    """Find one exact route to an observation-derived per-child support tuple."""
 
     if search_budget is None:
         search_budget = _HierarchySearchBudget(_MAX_HIERARCHY_SEARCH_BUDGET)
-    if tuple(child for child, _example in relation.assignments) != hierarchy.children:
+    if tuple(item.child for item in supports) != hierarchy.children:
         return None
     active = tuple(item for item in scene.endpoints if item.color == hierarchy.active_color)
     if len(active) != 1 or active[0] not in hierarchy.children[0].endpoints:
@@ -5421,18 +5855,13 @@ def _bridge_hierarchy_plan(
     )
     static_cells = occupied - initial_dynamic
     endpoint_target_regions = _visible_target_regions(scene)
-    sink_surfaces = {
-        example.target.rounded_center: frozenset(example.target.cells)
-        for _child, example in relation.assignments
-    }
+    sink_surfaces = {item.target.rounded_center: frozenset(item.target.cells) for item in supports}
     dynamic_target_regions = tuple(
         (center, sink_surfaces.get(center, region)) for center, region in endpoint_target_regions
     )
     sink_centers = frozenset(sink_surfaces)
     preserved_target_signature = tuple(
-        item
-        for item in _target_surface_signature(scene)
-        if not (item[0] == "composite" and item[1] in sink_centers)
+        item for item in _target_surface_signature(scene) if item[1] not in sink_centers
     )
     ignored_refs = frozenset(
         item.object_ref
@@ -5440,12 +5869,13 @@ def _bridge_hierarchy_plan(
         for item in (*child.endpoints, child.mediator)
     )
     layout_sets: list[tuple[_HierarchyChildLayout, ...]] = []
-    for child_index, (child, example) in enumerate(relation.assignments):
+    for child_index, support in enumerate(supports):
+        child = support.child
         layouts = _hierarchy_child_layouts(
             scene,
             hierarchy,
             child,
-            support=example.target.rounded_center,
+            support=support.target.rounded_center,
             active_ref=active[0].object_ref if child_index == 0 else None,
             static_cells=static_cells,
             target_regions=dynamic_target_regions,
@@ -5483,29 +5913,88 @@ def _bridge_hierarchy_plan(
         )
         if not _bridge_final_layout_geometry_is_safe(hierarchy, layouts):
             continue
-        if not _bridge_hierarchy_sequence_is_safe(
-            scene,
-            hierarchy,
-            relation,
-            layouts,
-            static_cells=static_cells,
-            dynamic_target_regions=dynamic_target_regions,
-            endpoint_target_regions=endpoint_target_regions,
-            preserved_target_signature=preserved_target_signature,
-            search_budget=search_budget,
-            state_cache=state_cache,
-        ):
+        if bridge_relation is not None:
+            sequence_is_safe = _bridge_hierarchy_sequence_is_safe(
+                scene,
+                hierarchy,
+                bridge_relation,
+                layouts,
+                static_cells=static_cells,
+                dynamic_target_regions=dynamic_target_regions,
+                endpoint_target_regions=endpoint_target_regions,
+                preserved_target_signature=preserved_target_signature,
+                search_budget=search_budget,
+                state_cache=state_cache,
+            )
+        else:
+            sequence_is_safe = _residual_linked_hierarchy_sequence_is_safe(
+                scene,
+                hierarchy,
+                supports,
+                layouts,
+                static_cells=static_cells,
+                dynamic_target_regions=dynamic_target_regions,
+                endpoint_target_regions=endpoint_target_regions,
+                preserved_target_signature=preserved_target_signature,
+                search_budget=search_budget,
+                state_cache=state_cache,
+            )
+        if not sequence_is_safe:
             continue
         plan = _build_hierarchy_plan(
             hierarchy,
             layouts,
             scene=scene,
-            signature_prefix="affine-bridge-hierarchy",
-            terminal_expectation="test the proximity-assigned paired composite-sink hypothesis",
+            signature_prefix=signature_prefix,
+            terminal_expectation=terminal_expectation,
         )
         if plan.signature not in rejected_signatures:
             return plan
     return None
+
+
+def _bridge_hierarchy_plan(
+    scene: VisualScene,
+    hierarchy: _AffineHierarchy,
+    relation: _CompositeBridgeRelation,
+    *,
+    rejected_signatures: set[str],
+    search_budget: _HierarchySearchBudget | None = None,
+) -> _HierarchyPlan | None:
+    """Find one exact route for the provisional paired-sink hypothesis."""
+
+    return _target_support_hierarchy_plan(
+        scene,
+        hierarchy,
+        _bridge_target_supports(relation),
+        bridge_relation=relation,
+        rejected_signatures=rejected_signatures,
+        signature_prefix="affine-bridge-hierarchy",
+        terminal_expectation="test the proximity-assigned paired composite-sink hypothesis",
+        search_budget=search_budget,
+    )
+
+
+def _residual_linked_hierarchy_plan(
+    scene: VisualScene,
+    hierarchy: _AffineHierarchy,
+    relation: _ResidualLinkedHierarchyRelation,
+    *,
+    rejected_signatures: set[str],
+    search_budget: _HierarchySearchBudget | None = None,
+) -> _HierarchyPlan | None:
+    """Find one exact route for the residual-linked mixed-support hypothesis."""
+
+    return _target_support_hierarchy_plan(
+        scene,
+        hierarchy,
+        relation.supports,
+        bridge_relation=None,
+        rejected_signatures=rejected_signatures,
+        signature_prefix="affine-residual-linked-hierarchy",
+        terminal_expectation="test the residual-linked mixed-support hypothesis",
+        search_budget=search_budget,
+    )
 
 
 def _hierarchy_joint_layout(
@@ -7774,6 +8263,7 @@ class VisualCausalPolicy:
         self._failed_weighted_hierarchy_relation_keys: set[str] = set()
         self._failed_visible_node_hierarchy_relation_keys: set[str] = set()
         self._failed_bridge_hierarchy_relation_keys: set[str] = set()
+        self._failed_residual_linked_hierarchy_relation_keys: set[str] = set()
         self._hierarchy_lineage_lost: tuple[int, str, str, str] | None = None
         self._failed_hierarchy_lineages: set[tuple[int, str, str, str]] = set()
         self._active_child_isolation_relation_key: str | None = None
@@ -7894,6 +8384,7 @@ class VisualCausalPolicy:
         self._failed_weighted_hierarchy_relation_keys.clear()
         self._failed_visible_node_hierarchy_relation_keys.clear()
         self._failed_bridge_hierarchy_relation_keys.clear()
+        self._failed_residual_linked_hierarchy_relation_keys.clear()
         self._hierarchy_lineage_lost = None
         self._failed_hierarchy_lineages.clear()
         self._clear_child_isolation_execution()
@@ -8541,12 +9032,48 @@ class VisualCausalPolicy:
                                         bridge_relation.relation_key
                                         in self._failed_bridge_hierarchy_relation_keys
                                     ):
-                                        deferred_hierarchy_reason = (
-                                            "both child strata and all parent-composition families, "
-                                            "including the proximity-assigned paired composite-sink "
-                                            "hypothesis, "
-                                            "were already falsified by official consequences"
+                                        residual_linked_relation = (
+                                            _residual_linked_hierarchy_relation(
+                                                scene,
+                                                hierarchy,
+                                                level_index=observation.levels_completed,
+                                            )
                                         )
+                                        if residual_linked_relation is None:
+                                            deferred_hierarchy_reason = (
+                                                "the proximity-assigned paired composite-sink "
+                                                "hypothesis was falsified and no unique singleton "
+                                                "raw-target color belongs to exactly one witnessed "
+                                                "composite residual palette"
+                                            )
+                                        elif (
+                                            residual_linked_relation.relation_key
+                                            in self._failed_residual_linked_hierarchy_relation_keys
+                                        ):
+                                            deferred_hierarchy_reason = (
+                                                "both child strata, all parent-composition families, "
+                                                "the proximity-assigned paired composite-sink "
+                                                "hypothesis, and the residual-linked mixed-support "
+                                                "hypothesis were already falsified by official "
+                                                "consequences"
+                                            )
+                                        else:
+                                            hierarchy_plan = _residual_linked_hierarchy_plan(
+                                                scene,
+                                                hierarchy,
+                                                residual_linked_relation,
+                                                rejected_signatures=(self._failed_plan_signatures),
+                                                search_budget=search_budget,
+                                            )
+                                            if hierarchy_plan is None:
+                                                deferred_hierarchy_reason = (
+                                                    "the residual-linked mixed-support hypothesis "
+                                                    "has no exact target-surface-preserving layout"
+                                                )
+                                            else:
+                                                hierarchy_relation_key = (
+                                                    residual_linked_relation.relation_key
+                                                )
                                     else:
                                         hierarchy_plan = _bridge_hierarchy_plan(
                                             scene,
@@ -8948,6 +9475,10 @@ class VisualCausalPolicy:
             self._pending_plan_signature is not None
             and self._pending_plan_signature.startswith("affine-bridge-hierarchy:")
         )
+        residual_linked_hierarchy_action = (
+            self._pending_plan_signature is not None
+            and self._pending_plan_signature.startswith("affine-residual-linked-hierarchy:")
+        )
         joint_hierarchy_action = (
             self._pending_plan_signature is not None
             and self._pending_plan_signature.startswith(
@@ -8956,7 +9487,14 @@ class VisualCausalPolicy:
                     "affine-weighted-hierarchy:",
                     "affine-visible-node-hierarchy:",
                     "affine-bridge-hierarchy:",
+                    "affine-residual-linked-hierarchy:",
                 )
+            )
+        )
+        residual_linked_hierarchy_recovery_action = (
+            self._pending_plan_signature is not None
+            and self._pending_plan_signature.startswith(
+                "affine-residual-linked-hierarchy-recovery:"
             )
         )
         hierarchy_recovery_action = (
@@ -8967,6 +9505,7 @@ class VisualCausalPolicy:
                     "affine-weighted-hierarchy-recovery:",
                     "affine-visible-node-hierarchy-recovery:",
                     "affine-bridge-hierarchy-recovery:",
+                    "affine-residual-linked-hierarchy-recovery:",
                 )
             )
         )
@@ -9606,7 +10145,10 @@ class VisualCausalPolicy:
             if self._pending_plan_signature is not None:
                 self._failed_plan_signatures.add(self._pending_plan_signature)
             if hierarchy_terminal_game_over_observed and hierarchy_relation_key is not None:
-                if bridge_hierarchy_action:
+                if residual_linked_hierarchy_action:
+                    self._failed_residual_linked_hierarchy_relation_keys.add(hierarchy_relation_key)
+                    residual = "the exact residual-linked mixed-support terminal returned GAME_OVER"
+                elif bridge_hierarchy_action:
                     self._failed_bridge_hierarchy_relation_keys.add(hierarchy_relation_key)
                     residual = (
                         "the proximity-assigned paired composite-sink terminal returned GAME_OVER"
@@ -9744,12 +10286,19 @@ class VisualCausalPolicy:
             self._active_hierarchy_support_weights = ()
             self._active_hierarchy_recovery_actions = ()
             self._last_probe_failed = False
-            residual = "exact pre-hypothesis hierarchy restored after joint sufficiency failed"
+            residual = (
+                "exact pre-hypothesis hierarchy restored after residual-linked "
+                "mixed-support sufficiency failed"
+                if residual_linked_hierarchy_recovery_action
+                else "exact pre-hypothesis hierarchy restored after joint sufficiency failed"
+            )
         elif self._pending_completes_hierarchy and observation.state is GameStateName.NOT_FINISHED:
             if self._pending_plan_signature is not None:
                 self._failed_plan_signatures.add(self._pending_plan_signature)
             if hierarchy_supports_observed and hierarchy_relation_key is not None:
-                if bridge_hierarchy_action:
+                if residual_linked_hierarchy_action:
+                    self._failed_residual_linked_hierarchy_relation_keys.add(hierarchy_relation_key)
+                elif bridge_hierarchy_action:
                     self._failed_bridge_hierarchy_relation_keys.add(hierarchy_relation_key)
                 elif visible_node_hierarchy_action:
                     self._failed_visible_node_hierarchy_relation_keys.add(hierarchy_relation_key)
@@ -9772,6 +10321,12 @@ class VisualCausalPolicy:
             if hierarchy_supports_observed:
                 residual = (
                     (
+                        "the residual-linked child reached the raw parent while every "
+                        "other child reached its nonmatching composite sink, but the "
+                        "official environment remained NOT_FINISHED"
+                    )
+                    if residual_linked_hierarchy_action
+                    else (
                         "both child mediators reached their proximity-assigned composite sinks "
                         "but the official environment remained NOT_FINISHED"
                     )
@@ -9967,6 +10522,7 @@ class VisualCausalPolicy:
                         "affine-weighted-hierarchy:",
                         "affine-visible-node-hierarchy:",
                         "affine-bridge-hierarchy:",
+                        "affine-residual-linked-hierarchy:",
                     )
                 )
                 for item in self._failed_plan_signatures
@@ -9977,12 +10533,14 @@ class VisualCausalPolicy:
                 | self._failed_weighted_hierarchy_relation_keys
                 | self._failed_visible_node_hierarchy_relation_keys
                 | self._failed_bridge_hierarchy_relation_keys
+                | self._failed_residual_linked_hierarchy_relation_keys
             ),
             "hierarchy_hypothesis_rejected_count": (
                 len(self._failed_hierarchy_relation_keys)
                 + len(self._failed_weighted_hierarchy_relation_keys)
                 + len(self._failed_visible_node_hierarchy_relation_keys)
                 + len(self._failed_bridge_hierarchy_relation_keys)
+                + len(self._failed_residual_linked_hierarchy_relation_keys)
             ),
             "hierarchy_equal_relation_rejected_count": len(self._failed_hierarchy_relation_keys),
             "hierarchy_weighted_relation_rejected_count": len(
@@ -9993,6 +10551,9 @@ class VisualCausalPolicy:
             ),
             "hierarchy_bridge_relation_rejected_count": len(
                 self._failed_bridge_hierarchy_relation_keys
+            ),
+            "hierarchy_residual_linked_relation_rejected_count": len(
+                self._failed_residual_linked_hierarchy_relation_keys
             ),
             "hierarchy_lineage_failure": current_lineage_failure,
             "hierarchy_lineage_failures": lineage_failures,
@@ -10011,6 +10572,7 @@ class VisualCausalPolicy:
                         "affine-weighted-hierarchy-recovery:",
                         "affine-visible-node-hierarchy-recovery:",
                         "affine-bridge-hierarchy-recovery:",
+                        "affine-residual-linked-hierarchy-recovery:",
                     )
                 )
             ),
@@ -10023,6 +10585,7 @@ class VisualCausalPolicy:
                         "affine-weighted-hierarchy-recovery:",
                         "affine-visible-node-hierarchy-recovery:",
                         "affine-bridge-hierarchy-recovery:",
+                        "affine-residual-linked-hierarchy-recovery:",
                     )
                 )
                 else None

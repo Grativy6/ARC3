@@ -4061,6 +4061,7 @@ def test_composite_bridge_relation_and_plan_replay_exactly(
         policy._failed_visible_node_hierarchy_relation_keys.clear()
         policy._failed_visible_node_hierarchy_relation_keys.add(raw_relation_key)
         policy._failed_bridge_hierarchy_relation_keys.clear()
+        policy._failed_residual_linked_hierarchy_relation_keys.clear()
         policy._failed_plan_signatures.clear()
 
     class EarlierHierarchyFamilySelected(Exception):
@@ -4102,12 +4103,29 @@ def test_composite_bridge_relation_and_plan_replay_exactly(
 
     restore_prior_family_failures()
     policy._failed_bridge_hierarchy_relation_keys.add(relation.relation_key)
+
+    class ResidualLinkedFamilySelected(Exception):
+        pass
+
+    def select_residual_linked_family(
+        candidate_scene: VisualScene,
+        candidate_hierarchy: visual_causal._AffineHierarchy,
+        candidate_relation: visual_causal._ResidualLinkedHierarchyRelation,
+        **_kwargs: object,
+    ) -> None:
+        assert candidate_scene == scene
+        assert candidate_hierarchy == hierarchy
+        assert candidate_relation.bridge_relation_key == relation.relation_key
+        raise ResidualLinkedFamilySelected
+
     with monkeypatch.context() as rejected_patch:
         rejected_patch.setattr(visual_causal, "_bridge_hierarchy_plan", reject_early_bridge)
-        with pytest.raises(
-            PolicyError,
-            match="proximity-assigned paired composite-sink hypothesis",
-        ):
+        rejected_patch.setattr(
+            visual_causal,
+            "_residual_linked_hierarchy_plan",
+            select_residual_linked_family,
+        )
+        with pytest.raises(ResidualLinkedFamilySelected):
             policy.select(policy_observation)
     assert policy.snapshot()["pending_action"] is None
 
@@ -4256,6 +4274,441 @@ def test_composite_bridge_relation_and_plan_replay_exactly(
     assert terminal_policy._failed_bridge_hierarchy_relation_keys == {relation.relation_key}
     terminal_policy._begin_level(replace(reset_observation, levels_completed=5))
     assert not terminal_policy._failed_bridge_hierarchy_relation_keys
+
+
+def test_residual_linked_mixed_support_plan_replay_and_terminal_lifecycle() -> None:
+    frame = _campaign26_weighted_origin_frame()
+    scene = extract_visual_scene(frame)
+    hierarchy = visual_causal._unique_affine_hierarchy(scene, active_color=0)
+    assert hierarchy is not None
+    bridge = visual_causal._composite_bridge_relation(scene, hierarchy, level_index=4)
+    relation = visual_causal._residual_linked_hierarchy_relation(
+        scene,
+        hierarchy,
+        level_index=4,
+    )
+    assert bridge is not None
+    assert relation is not None
+    assert relation.bridge_relation_key == bridge.relation_key
+    assert tuple(support.child for support in relation.supports) == hierarchy.children
+    assert tuple(support.target.rounded_center for support in relation.supports) == (
+        (13, 28),
+        (53, 28),
+    )
+    linked_supports = tuple(
+        support for support in relation.supports if support.target == hierarchy.target
+    )
+    assert len(linked_supports) == 1
+    linked_support = linked_supports[0]
+    assert hierarchy.target.color in linked_support.example.residual_colors
+    nonlinked_supports = tuple(
+        support for support in relation.supports if support.target != hierarchy.target
+    )
+    assert len(nonlinked_supports) == len(relation.supports) - 1
+    assert all(
+        support.target == support.example.target
+        and hierarchy.target.color not in support.example.residual_colors
+        for support in nonlinked_supports
+    )
+
+    plan = visual_causal._residual_linked_hierarchy_plan(
+        scene,
+        hierarchy,
+        relation,
+        rejected_signatures=set(),
+    )
+    assert plan is not None
+    assert plan.signature.startswith("affine-residual-linked-hierarchy:")
+    assert plan.supports == ((13, 28), (53, 28))
+    assert len(plan.actions) == len(plan.recovery_actions) == 9
+    assert plan.recovery_actions[-1].expected_child_protected_raster_hash == (
+        visual_causal._child_isolation_protected_raster_hash(scene)
+    )
+    protected_target_cells = {
+        (x, y): scene.cells[y][x] for support in relation.supports for x, y in support.target.cells
+    }
+
+    environment = _ProjectedWeightedHierarchyEnvironment(scene, hierarchy)
+    observation = environment.observation()
+    for planned in plan.actions:
+        current_scene = extract_visual_scene(observation.frames[-1])
+        assert visual_causal._hierarchy_planned_click_is_safe(
+            current_scene,
+            planned,
+            active_color=hierarchy.active_color,
+        )
+        observation = environment.step(ActionRequest(ActionName.ACTION6, planned.coordinate))
+        returned_scene = extract_visual_scene(observation.frames[-1])
+        assert visual_causal._child_isolation_protected_raster_hash(returned_scene) == (
+            planned.expected_child_protected_raster_hash
+        )
+        assert all(
+            returned_scene.cells[y][x] == value for (x, y), value in protected_target_cells.items()
+        )
+    terminal_scene = extract_visual_scene(observation.frames[-1])
+    terminal_composite_centers = {
+        target.rounded_center
+        for target, _signature in visual_causal._composite_sparse_targets(terminal_scene)
+    }
+    assert hierarchy.target.rounded_center in {
+        target.rounded_center for target in terminal_scene.targets
+    }
+    assert all(
+        support.target.rounded_center not in terminal_composite_centers
+        for support in nonlinked_supports
+    )
+    assert linked_support.example.target.rounded_center in terminal_composite_centers
+    mediator_centers = {
+        child.mediator.object_ref: (
+            sum(environment.positions[item.object_ref][0] for item in child.endpoints)
+            // child.arity,
+            sum(environment.positions[item.object_ref][1] for item in child.endpoints)
+            // child.arity,
+        )
+        for child in hierarchy.children
+    }
+    assert visual_causal._projected_hierarchy_lineages_match(
+        scene,
+        terminal_scene,
+        hierarchy,
+        positions=environment.positions,
+        colors=environment.colors,
+        mediator_centers=mediator_centers,
+    )
+
+    for planned in plan.recovery_actions:
+        current_scene = extract_visual_scene(observation.frames[-1])
+        assert visual_causal._hierarchy_planned_click_is_safe(
+            current_scene,
+            planned,
+            active_color=hierarchy.active_color,
+        )
+        observation = environment.step(ActionRequest(ActionName.ACTION6, planned.coordinate))
+        returned_scene = extract_visual_scene(observation.frames[-1])
+        assert visual_causal._child_isolation_protected_raster_hash(returned_scene) == (
+            planned.expected_child_protected_raster_hash
+        )
+    assert observation.frames[-1].cells == frame.cells
+
+    policy_environment = _ProjectedWeightedHierarchyEnvironment(scene, hierarchy)
+    policy_observation = policy_environment.observation()
+    policy = VisualCausalPolicy(max_coordinate_candidates=8)
+    policy._level_index = 4
+    policy._last_active_color = hierarchy.active_color
+    policy._ensure_learner(policy_observation)
+    policy._install_hierarchy_plan(plan, relation_key=relation.relation_key)
+    for action_index, expected in enumerate(plan.actions):
+        action = policy.select(policy_observation)
+        assert action.coordinate == expected.coordinate
+        policy_observation = policy_environment.step(action)
+        policy.accept_consequence(policy_observation)
+        if action_index + 1 < len(plan.actions):
+            assert relation.relation_key not in (
+                policy._failed_residual_linked_hierarchy_relation_keys
+            )
+    assert policy._failed_residual_linked_hierarchy_relation_keys == {relation.relation_key}
+    assert len(policy._plan) == len(plan.recovery_actions)
+    for expected in plan.recovery_actions:
+        action = policy.select(policy_observation)
+        assert action.coordinate == expected.coordinate
+        policy_observation = policy_environment.step(action)
+        policy.accept_consequence(policy_observation)
+    assert policy_observation.frames[-1].cells == frame.cells
+    snapshot = policy.snapshot()
+    assert snapshot["hierarchy_residual_linked_relation_rejected_count"] == 1
+    assert snapshot["hierarchy_recovery_active"] is False
+    assert policy.receipts[-1].residual == (
+        "exact pre-hypothesis hierarchy restored after residual-linked "
+        "mixed-support sufficiency failed"
+    )
+
+    mismatch_environment = _ProjectedWeightedHierarchyEnvironment(scene, hierarchy)
+    mismatch_observation = mismatch_environment.observation()
+    mismatch_policy = VisualCausalPolicy(max_coordinate_candidates=8)
+    mismatch_policy._level_index = 4
+    mismatch_policy._last_active_color = hierarchy.active_color
+    mismatch_policy._ensure_learner(mismatch_observation)
+    mismatch_policy._install_hierarchy_plan(plan, relation_key=relation.relation_key)
+    mismatch_action = mismatch_policy.select(mismatch_observation)
+    mismatch_return = mismatch_environment.step(mismatch_action)
+    mismatch_return = _replace_observation_cell(
+        mismatch_return,
+        coordinate=(1, 1),
+        value=6 if mismatch_return.frames[-1].cells[1][1] != 6 else 7,
+    )
+    mismatch_policy.accept_consequence(mismatch_return)
+    assert not mismatch_policy._failed_residual_linked_hierarchy_relation_keys
+    assert plan.signature in mismatch_policy._failed_plan_signatures
+    assert mismatch_policy.snapshot()["hierarchy_lineage_lost"] is True
+    assert mismatch_policy.snapshot()["pending_plan_actions"] == 0
+
+    interrupted_environment = _ProjectedWeightedHierarchyEnvironment(scene, hierarchy)
+    interrupted_observation = interrupted_environment.observation()
+    interrupted_policy = VisualCausalPolicy(max_coordinate_candidates=8)
+    interrupted_policy._level_index = 4
+    interrupted_policy._last_active_color = hierarchy.active_color
+    interrupted_policy._ensure_learner(interrupted_observation)
+    interrupted_policy._install_hierarchy_plan(plan, relation_key=relation.relation_key)
+    interrupted_action = interrupted_policy.select(interrupted_observation)
+    interrupted_return = replace(
+        interrupted_environment.step(interrupted_action),
+        state=GameStateName.GAME_OVER,
+        available_actions=(ActionName.RESET,),
+    )
+    interrupted_policy.accept_consequence(interrupted_return)
+    assert not interrupted_policy._failed_residual_linked_hierarchy_relation_keys
+    interrupted_reset = interrupted_policy.select(interrupted_return)
+    assert interrupted_reset.name is ActionName.RESET
+    interrupted_reset_environment = _ProjectedWeightedHierarchyEnvironment(scene, hierarchy)
+    interrupted_recovered = replace(
+        interrupted_reset_environment.observation(returned_action=interrupted_reset),
+        full_reset=True,
+    )
+    interrupted_policy.accept_consequence(interrupted_recovered)
+    assert not interrupted_policy._failed_residual_linked_hierarchy_relation_keys
+
+    for corrupt_terminal_state in (
+        GameStateName.NOT_FINISHED,
+        GameStateName.GAME_OVER,
+    ):
+        corrupt_environment = _ProjectedWeightedHierarchyEnvironment(scene, hierarchy)
+        corrupt_observation = corrupt_environment.observation()
+        corrupt_policy = VisualCausalPolicy(max_coordinate_candidates=8)
+        corrupt_policy._level_index = 4
+        corrupt_policy._last_active_color = hierarchy.active_color
+        corrupt_policy._ensure_learner(corrupt_observation)
+        corrupt_policy._install_hierarchy_plan(plan, relation_key=relation.relation_key)
+        for _expected in plan.actions[:-1]:
+            corrupt_action = corrupt_policy.select(corrupt_observation)
+            corrupt_observation = corrupt_environment.step(corrupt_action)
+            corrupt_policy.accept_consequence(corrupt_observation)
+        corrupt_action = corrupt_policy.select(corrupt_observation)
+        corrupt_return = corrupt_environment.step(corrupt_action)
+        corrupt_return = _replace_observation_cell(
+            corrupt_return,
+            coordinate=(1, 1),
+            value=6 if corrupt_return.frames[-1].cells[1][1] != 6 else 7,
+        )
+        if corrupt_terminal_state is GameStateName.GAME_OVER:
+            corrupt_return = replace(
+                corrupt_return,
+                state=GameStateName.GAME_OVER,
+                available_actions=(ActionName.RESET,),
+            )
+        corrupt_policy.accept_consequence(corrupt_return)
+        assert not corrupt_policy._failed_residual_linked_hierarchy_relation_keys
+        assert corrupt_policy.snapshot()["pending_plan_actions"] == 0
+
+    terminal_environment = _ProjectedWeightedHierarchyEnvironment(scene, hierarchy)
+    terminal_observation = terminal_environment.observation()
+    terminal_policy = VisualCausalPolicy(max_coordinate_candidates=8)
+    terminal_policy._level_index = 4
+    terminal_policy._last_active_color = hierarchy.active_color
+    terminal_policy._ensure_learner(terminal_observation)
+    terminal_policy._install_hierarchy_plan(plan, relation_key=relation.relation_key)
+    for action_index in range(len(plan.actions)):
+        terminal_action = terminal_policy.select(terminal_observation)
+        terminal_observation = terminal_environment.step(terminal_action)
+        if action_index + 1 == len(plan.actions):
+            terminal_observation = replace(
+                terminal_observation,
+                state=GameStateName.GAME_OVER,
+                available_actions=(ActionName.RESET,),
+            )
+        terminal_policy.accept_consequence(terminal_observation)
+    assert terminal_policy._failed_residual_linked_hierarchy_relation_keys == {
+        relation.relation_key
+    }
+    terminal_reset = terminal_policy.select(terminal_observation)
+    assert terminal_reset.name is ActionName.RESET
+    reset_environment = _ProjectedWeightedHierarchyEnvironment(scene, hierarchy)
+    reset_observation = replace(
+        reset_environment.observation(returned_action=terminal_reset),
+        full_reset=True,
+    )
+    terminal_policy.accept_consequence(reset_observation)
+    assert terminal_policy._failed_residual_linked_hierarchy_relation_keys == {
+        relation.relation_key
+    }
+    terminal_policy._begin_level(replace(reset_observation, levels_completed=5))
+    assert not terminal_policy._failed_residual_linked_hierarchy_relation_keys
+
+    progress_environment = _ProjectedWeightedHierarchyEnvironment(scene, hierarchy)
+    progress_observation = progress_environment.observation()
+    progress_policy = VisualCausalPolicy(max_coordinate_candidates=8)
+    progress_policy._level_index = 4
+    progress_policy._last_active_color = hierarchy.active_color
+    progress_policy._ensure_learner(progress_observation)
+    progress_policy._failed_residual_linked_hierarchy_relation_keys.add(relation.relation_key)
+    progress_policy._install_hierarchy_plan(plan, relation_key=relation.relation_key)
+    for action_index in range(len(plan.actions)):
+        progress_action = progress_policy.select(progress_observation)
+        progress_observation = progress_environment.step(progress_action)
+        if action_index + 1 == len(plan.actions):
+            progress_observation = replace(progress_observation, levels_completed=5)
+        progress_policy.accept_consequence(progress_observation)
+    progress_snapshot = progress_policy.snapshot()
+    assert progress_snapshot["active_level_index"] == 5
+    assert progress_snapshot["hierarchy_residual_linked_relation_rejected_count"] == 0
+    assert progress_snapshot["hierarchy_active"] is False
+
+
+def test_residual_linked_detector_is_equivariant_and_fails_closed_on_ambiguity(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    frame = _campaign26_weighted_origin_frame()
+    scene = extract_visual_scene(frame)
+    hierarchy = visual_causal._unique_affine_hierarchy(scene, active_color=0)
+    assert hierarchy is not None
+    bridge = visual_causal._composite_bridge_relation(scene, hierarchy, level_index=4)
+    relation = visual_causal._residual_linked_hierarchy_relation(
+        scene,
+        hierarchy,
+        level_index=4,
+    )
+    assert bridge is not None
+    assert relation is not None
+
+    palette_swap = {8: 9, 9: 8, 11: 14, 14: 11}
+    swapped_frame = GridFrame.from_rows(
+        tuple(tuple(palette_swap.get(value, value) for value in row) for row in frame.cells)
+    )
+    swapped_scene = extract_visual_scene(swapped_frame)
+    swapped_hierarchy = visual_causal._unique_affine_hierarchy(swapped_scene, active_color=0)
+    assert swapped_hierarchy is not None
+    swapped_relation = visual_causal._residual_linked_hierarchy_relation(
+        swapped_scene,
+        swapped_hierarchy,
+        level_index=4,
+    )
+    assert swapped_relation is not None
+    assert tuple(item.target.rounded_center for item in swapped_relation.supports) == tuple(
+        item.target.rounded_center for item in relation.supports
+    )
+    assert (
+        len(
+            tuple(
+                item
+                for item in swapped_relation.supports
+                if item.target == swapped_hierarchy.target
+            )
+        )
+        == 1
+    )
+
+    relevant_cells = set(hierarchy.target.cells)
+    for child in hierarchy.children:
+        relevant_cells.update(visual_causal._hierarchy_dynamic_footprint(scene, child))
+    for _child, example in bridge.assignments:
+        relevant_cells.update(example.target.cells)
+        for source in example.sources:
+            relevant_cells.update(source.cells)
+    delta_x, delta_y = 2, 2
+    translated_rows = [[scene.background] * scene.width for _row in range(scene.height)]
+    for x, y in relevant_cells:
+        translated_rows[y + delta_y][x + delta_x] = scene.cells[y][x]
+    translated_scene = extract_visual_scene(GridFrame.from_rows(translated_rows))
+    translated_hierarchy = visual_causal._unique_affine_hierarchy(
+        translated_scene,
+        active_color=0,
+    )
+    assert translated_hierarchy is not None
+    translated_relation = visual_causal._residual_linked_hierarchy_relation(
+        translated_scene,
+        translated_hierarchy,
+        level_index=4,
+    )
+    assert translated_relation is not None
+    assert tuple(item.target.rounded_center for item in translated_relation.supports) == tuple(
+        (item.target.rounded_center[0] + delta_x, item.target.rounded_center[1] + delta_y)
+        for item in relation.supports
+    )
+
+    for candidate_scene, candidate_hierarchy, candidate_bridge in (
+        (scene, hierarchy, bridge),
+        (
+            translated_scene,
+            translated_hierarchy,
+            visual_causal._composite_bridge_relation(
+                translated_scene,
+                translated_hierarchy,
+                level_index=4,
+            ),
+        ),
+    ):
+        assert candidate_bridge is not None
+        aliased_bridge = replace(
+            candidate_bridge,
+            assignments=tuple(
+                (
+                    child,
+                    replace(example, target=candidate_hierarchy.target)
+                    if candidate_hierarchy.target.color in example.residual_colors
+                    else example,
+                )
+                for child, example in candidate_bridge.assignments
+            ),
+        )
+        assert tuple(
+            example.target.rounded_center
+            for _child, example in aliased_bridge.assignments
+            if candidate_hierarchy.target.color in example.residual_colors
+        ) == (candidate_hierarchy.target.rounded_center,)
+        with monkeypatch.context() as alias_patch:
+            alias_patch.setattr(
+                visual_causal,
+                "_composite_bridge_relation",
+                lambda *_args, relation=aliased_bridge, **_kwargs: relation,
+            )
+            assert (
+                visual_causal._residual_linked_hierarchy_relation(
+                    candidate_scene,
+                    candidate_hierarchy,
+                    level_index=4,
+                )
+                is None
+            )
+
+    ambiguous_rows = [list(row) for row in frame.cells]
+    nonlinked = next(
+        (child, example)
+        for child, example in bridge.assignments
+        if hierarchy.target.color not in example.residual_colors
+    )
+    ambiguous_color = nonlinked[1].residual_colors[1]
+    ambiguous_cells = set(nonlinked[1].target.cells)
+    for source in nonlinked[1].sources:
+        ambiguous_cells.update(source.cells)
+    for x, y in ambiguous_cells:
+        if ambiguous_rows[y][x] == ambiguous_color:
+            ambiguous_rows[y][x] = hierarchy.target.color
+    ambiguous_scene = extract_visual_scene(GridFrame.from_rows(ambiguous_rows))
+    ambiguous_hierarchy = visual_causal._unique_affine_hierarchy(
+        ambiguous_scene,
+        active_color=0,
+    )
+    assert ambiguous_hierarchy is not None
+    ambiguous_bridge = visual_causal._composite_bridge_relation(
+        ambiguous_scene,
+        ambiguous_hierarchy,
+        level_index=4,
+    )
+    assert ambiguous_bridge is not None
+    assert (
+        sum(
+            ambiguous_hierarchy.target.color in example.residual_colors
+            for _child, example in ambiguous_bridge.assignments
+        )
+        == 2
+    )
+    assert (
+        visual_causal._residual_linked_hierarchy_relation(
+            ambiguous_scene,
+            ambiguous_hierarchy,
+            level_index=4,
+        )
+        is None
+    )
 
 
 def test_composite_bridge_detector_fails_closed_on_corruption_and_duplicate_sink() -> None:

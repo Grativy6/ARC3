@@ -9,6 +9,7 @@ import platform
 import re
 import subprocess
 import sys
+from collections.abc import Mapping
 from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath
 from typing import Any, cast
@@ -35,6 +36,7 @@ from arc3.evaluation.artifacts import (  # noqa: E402
 )
 from arc3.evaluation.mechanical_replay import (  # noqa: E402
     replay_unfinished_mechanical_recording,
+    replay_unfinished_mechanical_trace,
 )
 from arc3.integrity import read_bounded_regular_snapshot  # noqa: E402
 from arc3.types import ActionName, GameStateName, JSONValue  # noqa: E402
@@ -43,6 +45,7 @@ from scripts.check_competition_integrity import (  # noqa: E402
 )
 
 SCHEMA = "arc3.build003.mechanical-recording-replay.v0.1"
+TRACE_SCHEMA = "arc3.build003.mechanical-sealed-trace-replay.v0.1"
 POLICY_PROFILE = "build003-mechanical-v0.1"
 MAX_COORDINATE_CANDIDATES = 8
 LEGACY_CAMPAIGN_AUDIT_SCHEMA = "arc3.build003.campaign28-integrity-replay-audit.v0.1"
@@ -147,6 +150,11 @@ def _source_snapshot(
     tree = _full_object_id(expected_tree, field="expected tree")
     if Path(_git_text("rev-parse", "--show-toplevel")).resolve() != ROOT:
         raise RuntimeError("replay script is not located at the exact Git top level")
+    actual_commit = _git_text("rev-parse", "HEAD")
+    if actual_commit != commit:
+        raise RuntimeError(f"source commit {actual_commit} != expected commit {commit}")
+    if _git_text("status", "--porcelain=v1", "--untracked-files=all"):
+        raise RuntimeError("replay source repository is not clean")
     actual_tree = _git_text("rev-parse", "HEAD^{tree}")
     if actual_tree != tree:
         raise RuntimeError(f"source tree {actual_tree} != expected tree {tree}")
@@ -514,17 +522,93 @@ def _write_exclusive(path: Path, value: object) -> None:
         os.fsync(stream.fileno())
 
 
+def _sealed_trace_binding(
+    replay: Mapping[str, object],
+    *,
+    generator_commit: str,
+) -> dict[str, JSONValue]:
+    trace_summary = _object(replay.get("trace"), field="trace")
+    game_id = trace_summary.get("game_id")
+    if not isinstance(game_id, str) or not game_id:
+        raise ValueError("sealed trace replay result omits its validated game identity")
+    return {
+        "event_count": trace_summary.get("event_count"),
+        "game_id": game_id,
+        "generator_commit": generator_commit,
+        "manifest_hash": trace_summary.get("manifest_hash"),
+        "mode": "sealed-trace",
+        "recording_reconstructed": False,
+        "root": trace_summary.get("path"),
+        "run_id": trace_summary.get("run_id"),
+        "submission_count": trace_summary.get("submission_count"),
+        "tail_event_hash": trace_summary.get("tail_event_hash"),
+    }
+
+
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--campaign-audit", type=Path, required=True)
-    parser.add_argument("--expected-campaign-audit-file-sha256", required=True)
-    parser.add_argument("--expected-campaign-audit-object-hash", required=True)
-    parser.add_argument("--expected-evaluation-id", required=True)
+    evidence = parser.add_mutually_exclusive_group(required=True)
+    evidence.add_argument("--campaign-audit", type=Path)
+    evidence.add_argument("--sealed-trace-root", type=Path)
+    parser.add_argument("--expected-campaign-audit-file-sha256")
+    parser.add_argument("--expected-campaign-audit-object-hash")
+    parser.add_argument("--expected-evaluation-id")
+    parser.add_argument("--expected-trace-run-id")
+    parser.add_argument("--expected-trace-game-id")
+    parser.add_argument("--expected-trace-generator-commit")
+    parser.add_argument("--expected-trace-manifest-hash")
+    parser.add_argument("--expected-trace-tail-event-hash")
+    parser.add_argument("--expected-trace-event-count", type=int)
+    parser.add_argument("--expected-trace-submission-count", type=int)
+    parser.add_argument(
+        "--expected-trace-final-state",
+        choices=(GameStateName.NOT_FINISHED.value,),
+    )
+    parser.add_argument("--expected-trace-levels-completed", type=int)
+    parser.add_argument("--expected-trace-win-levels", type=int)
     parser.add_argument("--expected-commit", required=True)
     parser.add_argument("--expected-tree", required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--policy-profile", choices=(POLICY_PROFILE,), required=True)
     return parser
+
+
+_CAMPAIGN_MODE_ARGUMENTS = (
+    ("expected_campaign_audit_file_sha256", "--expected-campaign-audit-file-sha256"),
+    ("expected_campaign_audit_object_hash", "--expected-campaign-audit-object-hash"),
+    ("expected_evaluation_id", "--expected-evaluation-id"),
+)
+_TRACE_MODE_ARGUMENTS = (
+    ("expected_trace_run_id", "--expected-trace-run-id"),
+    ("expected_trace_game_id", "--expected-trace-game-id"),
+    ("expected_trace_generator_commit", "--expected-trace-generator-commit"),
+    ("expected_trace_manifest_hash", "--expected-trace-manifest-hash"),
+    ("expected_trace_tail_event_hash", "--expected-trace-tail-event-hash"),
+    ("expected_trace_event_count", "--expected-trace-event-count"),
+    ("expected_trace_submission_count", "--expected-trace-submission-count"),
+    ("expected_trace_final_state", "--expected-trace-final-state"),
+    ("expected_trace_levels_completed", "--expected-trace-levels-completed"),
+    ("expected_trace_win_levels", "--expected-trace-win-levels"),
+)
+
+
+def _replay_mode(args: argparse.Namespace) -> str:
+    campaign_mode = args.campaign_audit is not None
+    required = _CAMPAIGN_MODE_ARGUMENTS if campaign_mode else _TRACE_MODE_ARGUMENTS
+    forbidden = _TRACE_MODE_ARGUMENTS if campaign_mode else _CAMPAIGN_MODE_ARGUMENTS
+    missing = [option for attribute, option in required if getattr(args, attribute) is None]
+    if missing:
+        raise ValueError(
+            f"selected replay mode is missing required arguments: {', '.join(missing)}"
+        )
+    supplied_forbidden = [
+        option for attribute, option in forbidden if getattr(args, attribute) is not None
+    ]
+    if supplied_forbidden:
+        raise ValueError(
+            "selected replay mode received incompatible arguments: " + ", ".join(supplied_forbidden)
+        )
+    return "campaign-recording" if campaign_mode else "sealed-trace"
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -539,31 +623,64 @@ def main(argv: list[str] | None = None) -> int:
     if output.is_relative_to(ROOT):
         raise SystemExit("replay receipt output must remain outside the source repository")
     try:
+        replay_mode = _replay_mode(args)
         repository_before = _repository_file_projection()
         source_binding, source_before = _source_snapshot(
             expected_commit=args.expected_commit,
             expected_tree=args.expected_tree,
         )
-        campaign_binding, recording_path, expected = _campaign_binding(
-            campaign_audit=args.campaign_audit,
-            expected_file_sha256=args.expected_campaign_audit_file_sha256,
-            expected_object_hash=args.expected_campaign_audit_object_hash,
-            expected_evaluation_id=args.expected_evaluation_id,
-        )
-        replay = replay_unfinished_mechanical_recording(
-            recording_path,
-            expected_game_id=cast(str, expected["game_id"]),
-            expected_recording_sha256=cast(str, expected["recording_sha256"]),
-            expected_byte_length=cast(int, expected["byte_length"]),
-            expected_row_count=cast(int, expected["row_count"]),
-            expected_final_state=GameStateName(cast(str, expected["final_state"])),
-            expected_levels_completed=cast(int, expected["levels_completed"]),
-            expected_win_levels=cast(int, expected["win_levels"]),
-            max_coordinate_candidates=MAX_COORDINATE_CANDIDATES,
-        )
+        campaign_binding: dict[str, JSONValue] | None = None
+        trace_binding: dict[str, JSONValue] | None = None
+        if replay_mode == "campaign-recording":
+            campaign_binding, recording_path, expected = _campaign_binding(
+                campaign_audit=args.campaign_audit,
+                expected_file_sha256=args.expected_campaign_audit_file_sha256,
+                expected_object_hash=args.expected_campaign_audit_object_hash,
+                expected_evaluation_id=args.expected_evaluation_id,
+            )
+            replay = replay_unfinished_mechanical_recording(
+                recording_path,
+                expected_game_id=cast(str, expected["game_id"]),
+                expected_recording_sha256=cast(str, expected["recording_sha256"]),
+                expected_byte_length=cast(int, expected["byte_length"]),
+                expected_row_count=cast(int, expected["row_count"]),
+                expected_final_state=GameStateName(cast(str, expected["final_state"])),
+                expected_levels_completed=cast(int, expected["levels_completed"]),
+                expected_win_levels=cast(int, expected["win_levels"]),
+                max_coordinate_candidates=MAX_COORDINATE_CANDIDATES,
+            )
+            expected_submission_count = cast(int, expected["submission_count"])
+            receipt_status = "PASS_RECORDED_FRAME_REPLAY"
+            receipt_schema = SCHEMA
+        else:
+            trace_generator_commit = _full_object_id(
+                args.expected_trace_generator_commit,
+                field="expected trace generator commit",
+            )
+            replay = replay_unfinished_mechanical_trace(
+                args.sealed_trace_root,
+                expected_run_id=args.expected_trace_run_id,
+                expected_game_id=args.expected_trace_game_id,
+                expected_git_commit=trace_generator_commit,
+                expected_trace_manifest_hash=args.expected_trace_manifest_hash,
+                expected_tail_event_hash=args.expected_trace_tail_event_hash,
+                expected_event_count=args.expected_trace_event_count,
+                expected_submission_count=args.expected_trace_submission_count,
+                expected_final_state=GameStateName(args.expected_trace_final_state),
+                expected_levels_completed=args.expected_trace_levels_completed,
+                expected_win_levels=args.expected_trace_win_levels,
+                max_coordinate_candidates=MAX_COORDINATE_CANDIDATES,
+            )
+            expected_submission_count = args.expected_trace_submission_count
+            trace_binding = _sealed_trace_binding(
+                replay,
+                generator_commit=trace_generator_commit,
+            )
+            receipt_status = "PASS_SEALED_TRACE_REPLAY"
+            receipt_schema = TRACE_SCHEMA
         replay_result = _object(replay.get("replay_result"), field="replay_result")
-        if replay_result.get("matched_submission_count") != expected["submission_count"]:
-            raise ValueError("canonical replay count disagrees with the campaign audit")
+        if replay_result.get("matched_submission_count") != expected_submission_count:
+            raise ValueError("canonical replay count disagrees with the selected evidence")
         source_after_binding, source_after = _source_snapshot(
             expected_commit=args.expected_commit,
             expected_tree=args.expected_tree,
@@ -585,14 +702,14 @@ def main(argv: list[str] | None = None) -> int:
         boundaries["repository_files_modified_by_replay"] = False
         payload: dict[str, JSONValue] = {
             **replay,
-            "campaign_audit_binding": campaign_binding,
             "generated_at": datetime.now(UTC).isoformat(),
             "policy_binding": {
                 "class": "arc3.mechanics.visual_causal.VisualCausalPolicy",
                 "max_coordinate_candidates": MAX_COORDINATE_CANDIDATES,
                 "profile": args.policy_profile,
             },
-            "receipt_status": "PASS_RECORDED_FRAME_REPLAY",
+            "receipt_status": receipt_status,
+            "replay_evidence_mode": replay_mode,
             "runtime": {
                 "bytecode_writes_disabled_at_startup": _BYTECODE_DISABLED_AT_STARTUP,
                 "direct_script_invocation": _DIRECT_SCRIPT_INVOCATION,
@@ -601,11 +718,15 @@ def main(argv: list[str] | None = None) -> int:
             },
             "source_binding": source_binding,
         }
+        if campaign_binding is not None:
+            payload["campaign_audit_binding"] = campaign_binding
+        if trace_binding is not None:
+            payload["sealed_trace_binding"] = trace_binding
         document: dict[str, JSONValue] = seal_object(
             {
                 "payload": payload,
                 "payload_sha256": sha256_bytes(canonical_json_bytes(payload)),
-                "schema": SCHEMA,
+                "schema": receipt_schema,
             },
             hash_field="replay_receipt_hash",
         )
@@ -616,8 +737,7 @@ def main(argv: list[str] | None = None) -> int:
         raise SystemExit(f"mechanical recording replay failed: {error}") from error
 
     sys.stdout.write(
-        f"PASS_RECORDED_FRAME_REPLAY {output} {sha256_file(output)} "
-        f"{document['replay_receipt_hash']}\n"
+        f"{receipt_status} {output} {sha256_file(output)} {document['replay_receipt_hash']}\n"
     )
     return 0
 

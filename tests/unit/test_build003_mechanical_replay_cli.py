@@ -9,6 +9,7 @@ from typing import Any
 import pytest
 from scripts import replay_build003_mechanical_recording as replay_cli
 
+import arc3.evaluation.mechanical_replay as mechanical_replay_module
 from arc3.evaluation.artifacts import canonical_json_bytes, seal_object, sha256_bytes
 
 
@@ -362,9 +363,11 @@ def test_receipt_write_is_exclusive(tmp_path: Path) -> None:
 
 
 def test_replay_sources_do_not_import_official_execution_surfaces() -> None:
+    replay_module_path = mechanical_replay_module.__file__
+    assert replay_module_path is not None
     paths = (
         Path(replay_cli.__file__),
-        Path(replay_cli.replay_module.__file__),
+        Path(replay_module_path),
     )
     forbidden = {"arc_agi", "arcengine"}
 
@@ -383,3 +386,146 @@ def test_replay_sources_do_not_import_official_execution_surfaces() -> None:
             for alias in node.names
         )
         assert imported.isdisjoint(forbidden)
+
+
+def test_cli_accepts_an_explicit_sealed_trace_contract(tmp_path: Path) -> None:
+    trace_root = tmp_path / "trace"
+    output = tmp_path / "receipt.json"
+    args = replay_cli._parser().parse_args(
+        [
+            "--sealed-trace-root",
+            str(trace_root),
+            "--expected-trace-run-id",
+            "synthetic-run",
+            "--expected-trace-game-id",
+            "synthetic-game",
+            "--expected-trace-generator-commit",
+            "c" * 40,
+            "--expected-trace-manifest-hash",
+            "1" * 64,
+            "--expected-trace-tail-event-hash",
+            "2" * 64,
+            "--expected-trace-event-count",
+            "950",
+            "--expected-trace-submission-count",
+            "158",
+            "--expected-trace-final-state",
+            "NOT_FINISHED",
+            "--expected-trace-levels-completed",
+            "4",
+            "--expected-trace-win-levels",
+            "6",
+            "--expected-commit",
+            "a" * 40,
+            "--expected-tree",
+            "b" * 40,
+            "--output",
+            str(output),
+            "--policy-profile",
+            replay_cli.POLICY_PROFILE,
+        ]
+    )
+
+    assert replay_cli._replay_mode(args) == "sealed-trace"
+    assert args.campaign_audit is None
+    assert args.sealed_trace_root == trace_root
+    assert args.expected_trace_event_count == 950
+    assert args.expected_trace_submission_count == 158
+    assert args.expected_trace_generator_commit == "c" * 40
+    assert replay_cli.TRACE_SCHEMA == "arc3.build003.mechanical-sealed-trace-replay.v0.1"
+
+
+def test_cli_trace_mode_rejects_missing_or_campaign_only_arguments(tmp_path: Path) -> None:
+    common = [
+        "--sealed-trace-root",
+        str(tmp_path / "trace"),
+        "--expected-trace-run-id",
+        "synthetic-run",
+        "--expected-trace-game-id",
+        "synthetic-game",
+        "--expected-trace-generator-commit",
+        "c" * 40,
+        "--expected-trace-manifest-hash",
+        "1" * 64,
+        "--expected-trace-event-count",
+        "8",
+        "--expected-trace-submission-count",
+        "1",
+        "--expected-trace-final-state",
+        "NOT_FINISHED",
+        "--expected-trace-levels-completed",
+        "0",
+        "--expected-trace-win-levels",
+        "2",
+        "--expected-commit",
+        "a" * 40,
+        "--expected-tree",
+        "b" * 40,
+        "--output",
+        str(tmp_path / "receipt.json"),
+        "--policy-profile",
+        replay_cli.POLICY_PROFILE,
+    ]
+    missing_tail = replay_cli._parser().parse_args(common)
+
+    with pytest.raises(ValueError, match="--expected-trace-tail-event-hash"):
+        replay_cli._replay_mode(missing_tail)
+
+    mixed = replay_cli._parser().parse_args(
+        [
+            *common,
+            "--expected-trace-tail-event-hash",
+            "2" * 64,
+            "--expected-evaluation-id",
+            "incompatible-campaign-value",
+        ]
+    )
+    with pytest.raises(ValueError, match="incompatible arguments: --expected-evaluation-id"):
+        replay_cli._replay_mode(mixed)
+
+
+def test_cli_preserves_the_campaign_recording_contract(tmp_path: Path) -> None:
+    args = replay_cli._parser().parse_args(
+        [
+            "--campaign-audit",
+            str(tmp_path / "campaign-audit.json"),
+            "--expected-campaign-audit-file-sha256",
+            "1" * 64,
+            "--expected-campaign-audit-object-hash",
+            "2" * 64,
+            "--expected-evaluation-id",
+            "synthetic-campaign",
+            "--expected-commit",
+            "a" * 40,
+            "--expected-tree",
+            "b" * 40,
+            "--output",
+            str(tmp_path / "receipt.json"),
+            "--policy-profile",
+            replay_cli.POLICY_PROFILE,
+        ]
+    )
+
+    assert replay_cli._replay_mode(args) == "campaign-recording"
+    assert args.sealed_trace_root is None
+
+
+def test_cli_sealed_trace_binding_preserves_validated_game_and_generator_identity() -> None:
+    binding = replay_cli._sealed_trace_binding(
+        {
+            "trace": {
+                "event_count": 950,
+                "game_id": "synthetic-game",
+                "manifest_hash": "sha256:" + ("1" * 64),
+                "path": "C:/synthetic-trace",
+                "run_id": "synthetic-run",
+                "submission_count": 158,
+                "tail_event_hash": "sha256:" + ("2" * 64),
+            }
+        },
+        generator_commit="c" * 40,
+    )
+
+    assert binding["game_id"] == "synthetic-game"
+    assert binding["generator_commit"] == "c" * 40
+    assert binding["recording_reconstructed"] is False
