@@ -6,8 +6,8 @@
   "owner": "Christopher D. Pang",
   "build_status": "ACTIVE",
   "status": "IN_PROGRESS",
-  "current_stage": "08",
-  "current_task": "preserve the final v0.2 FAILED_MECHANISM and first audit FAIL, repair only the independent auditor's schema and per-level reconstruction, then re-audit the immutable matrix before package and Campaign 29 gates",
+  "current_stage": "10",
+  "current_task": "finish exact-freeze package, integrity, CI, final documentation, and Campaign 29 gates after preserving the final v0.2 FAILED_MECHANISM and corrected audit FAIL",
   "implementation_branch": "build/003-bla-clef-mechanical-learner",
   "base": {
     "main_commit": "bea1eac99cb0f1b351526b1dc487d132ba1d40ef",
@@ -181,7 +181,7 @@
     "campaign29_candidate_noncanonical_replay_sha256": "sha256:c63ee384e093a7bd12aa91ea79417a6b6ce4170c9309632e3d2eacbf32ec0b57",
     "campaign29_candidate_noncanonical_replay_payload_sha256": "sha256:a18baf0096b2fcd36b4d6cc613e83eb18c4f2083b97d6182d522225d6f4c1c30",
     "campaign29_candidate_verification": "PASS implementation-freeze checkpoint: the canonical replay matched all 115 recorded submissions; the production action-semantics scan had zero findings; the matched MyAgent profile reached the mechanical route in every cycle and passed time/memory gates; focused replay, lint, format, strict typing, and clean-source checks passed",
-    "campaign29_launch_gate": "PAUSED: the final v0.2 matrix and first audit are preserved as failed evidence; an assurance-only auditor repair and immutable-matrix re-audit plus package, integrity, CI, and documentation gates remain before further official play",
+    "campaign29_launch_gate": "PAUSED: the final v0.2 matrix and corrected independent audit are preserved as failed evidence; exact-freeze package, integrity, CI, and documentation gates remain before further official play",
     "campaign28_pre_run_exposure_ledger": "C:\\a\\arc3-b003-play\\public-exposure.jsonl",
     "campaign28_pre_run_exposure_events": 51,
     "campaign28_pre_run_exposure_development_events": 51,
@@ -352,8 +352,21 @@
       "v02_independent_audit_payload_sha256": "sha256:7af34ca1e851bfd46a3e643e687d58b780c667de9a6965447219d69e71486bdc",
       "v02_independent_audit_matrix_manifest_before_after": "sha256:747e4c35b13f68714548b8af196ced026e555f8c33491dff5d942b5baab88389",
       "v02_independent_audit_errors": "1692 total: 900 auditor unknown-field schema defects for resource_discrimination_actions and restoration_ambiguities_resolved, 258 auditor row-reconstruction defects caused by applying an aggregate incomplete-link flag to valid per-level rows, 462 genuine action/receipt count mismatches, and 72 genuine incomplete-link attestations",
-      "v02_independent_audit_passed_checks": "12 of 13 checks passed; exact identities, coverage, assets, hashes, literal decisions, canonical reconstruction, and read-only source-matrix integrity passed; sequence replay links and counters failed",
-      "v02_independent_audit_repair_status": "AUTHORIZED_ASSURANCE_ONLY: preserve first audit, repair the 1158 auditor defects with regressions, and re-audit the same immutable matrix into a new empty root; do not rerun or alter the matrix",
+      "v02_independent_audit_passed_checks": "13 of 14 checks passed; exact identities, coverage, assets, hashes, literal decisions, canonical reconstruction, and read-only source-matrix integrity passed; sequence replay links and counters failed",
+      "v02_independent_audit_repair_commit": "d3d8eddb85549550ddc6629de4aa32e202ef897a",
+      "v02_independent_audit_repair_status": "RESOLVED_ASSURANCE_ONLY: 11 focused tests, Ruff, format, strict MyPy, and independent review passed; learner, runner, and immutable matrix were unchanged",
+      "v02_relocated_source_audit_attempt": "FAIL preserved at C:\\a\\arc3-b003-stage08-v02-final-83df552-01-audit-v2-d3d8edd with 538 findings: the 534 genuine findings plus four absolute-path binding failures; source matrix unchanged",
+      "v02_relocated_source_audit_receipt_file_sha256": "sha256:7b4c5d27405fe42b88c28580e69d940a9c196de321565db88fe5c22d43a98519",
+      "v02_relocated_source_audit_report_file_sha256": "sha256:143dc751c4dc819a19c483be31cacb721763366c74f3f303c51fae78c962984f",
+      "v02_relocated_source_audit_payload_sha256": "sha256:1536d54df42d8b3c8e54b4d17d00dc3eaca9b9fa79a694f35cf73464628a7f78",
+      "v02_corrected_audit_root": "C:\\a\\arc3-b003-stage08-v02-final-83df552-01-audit-v3-d3d8edd-source-projected",
+      "v02_corrected_audit_status": "FAIL: exactly 534 genuine evidence-completeness findings; 13 of 14 checks passed and only sequence replay links and counters failed",
+      "v02_corrected_audit_receipt_file_sha256": "sha256:518cc61bdf981a2c6537bda321c27d46d66deb95974f0bedc922db040e0a0c89",
+      "v02_corrected_audit_report_file_sha256": "sha256:86f1a33c0b6ca8cbdb122619d6a9d5554d430651c3c6160865a2d5889994d046",
+      "v02_corrected_audit_payload_sha256": "sha256:fda2cc01f12746abbb98b44d8d3513161366e0b8b3c4be8876d65eccb564dde3",
+      "v02_corrected_audit_errors": "462 per-level action/receipt count mismatches and 72 truthful aggregate incomplete-link attestations; zero schema, row-cascade, source-mutation, infrastructure, or policy errors",
+      "v02_corrected_audit_matrix_manifest_before_after": "sha256:747e4c35b13f68714548b8af196ced026e555f8c33491dff5d942b5baab88389",
+      "v02_corrected_audit_source_projection": "the clean d3d8edd head differed from matrix-source 0ad2011 only in the three Build 003 ledger files, the auditor, and its test; the injected probe independently returned the exact recorded 0ad2011 commit/tree while every matrix-bound source path and hash passed",
       "public_or_holdout_environment_opened": false
     },
     "09": {
@@ -418,7 +431,7 @@
     "pull_request_merged": false,
     "external_message_sent_as_owner": false
   },
-  "next_action": "repair only the independent auditor's known-field schema and per-level reconstruction with regressions, re-audit the unchanged one-shot matrix into a new empty root, then finish current-head package, integrity, CI, documentation, and Campaign 29 gates",
+  "next_action": "finish the exact 83df552 package-only, cold-start, static integrity, secret, CI, final report, handoff, and evidence-index gates; then start Campaign 29 and continue authorized official public-development play until observed WIN or an exact external boundary",
   "notes": [
     "Update atomically after each meaningful task and preserve failed attempts.",
     "No synthetic or local result is completion unless the official target environment returns GameState.WIN.",
@@ -448,6 +461,7 @@
     "Implementation commit 83df5520478cc209c06d9ce4e658c90786914544 is frozen after a clean canonical replay matched all 115 Campaign 28 selections and consequences, a production action-semantics scan returned zero findings, and the matched MyAgent profile passed every route, determinism, synthetic terminal, wall-time, and memory check. The profile records higher peak RSS than Build 002 and makes no gameplay or RHAE claim.",
     "The prior 91c5f26 Linux package-only receipt is preserved as FAILED_MECHANISM at the release-wrapper level and FAILED_BOUNDARY at the guard level even though 1012 tests passed: the selected Build 003 development-performance test transitively launched a policy child and produced exactly 725 denied child-RSS reads, equal to 721 actions plus four resets. Commit 83df552 explicitly excludes that process-backed test from the no-child-process profile; ordinary CI still covers it.",
     "The exact one-shot final v0.2 matrix at C:\\a\\arc3-b003-stage08-v02-final-83df552-01 is preserved as FAILED_MECHANISM: all 1200 rows and 120 sequence receipts exist, but H1 and H3 failed, H2 is NOT_MEASURED, and receipt completeness is 0.615. It produced 47 synthetic WIN sequences, 43 action-budget exits, and 30 wall-clock exits. No public, target holdout, or official environment was opened.",
-    "The first independent audit at C:\\a\\arc3-b003-stage08-v02-final-83df552-01-audit is preserved as FAIL with 1692 findings. It passed 12 of 13 checks and verified the matrix root was unchanged. Independent diagnosis classifies 900 unknown-field findings and 258 row-derivation findings as auditor defects, while 462 action/receipt count mismatches and 72 incomplete-link attestations are genuine matrix evidence failure. The matrix will not be rerun or rewritten; only the assurance tool will be repaired before re-auditing the same immutable root."
+    "The first independent audit at C:\\a\\arc3-b003-stage08-v02-final-83df552-01-audit is preserved as FAIL with 1692 findings. It passed 13 of 14 checks and verified the matrix root was unchanged. Independent diagnosis classifies 900 unknown-field findings and 258 row-derivation findings as auditor defects, while 462 action/receipt count mismatches and 72 incomplete-link attestations are genuine matrix evidence failure.",
+    "Auditor repair d3d8edd removed only the 1158 verifier-generated findings and passed 11 focused tests plus source-quality checks. A relocated-source audit attempt is preserved with four absolute-path binding failures. The source-projected corrected audit then returned FAIL with exactly the 534 genuine findings, all other checks passed, and the matrix manifest remained sha256:747e4c35b13f68714548b8af196ced026e555f8c33491dff5d942b5baab88389 before and after. The matrix was not rerun or rewritten."
   ]
 }
