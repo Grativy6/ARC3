@@ -355,3 +355,15 @@ Do not delete a burden when later evidence resolves it. Append a resolution with
 - **Decision boundary:** Do not rerun or modify the final matrix. Repair only the auditor's two independently diagnosed defects, with regressions, then use only the existing immutable matrix as input and write to a new empty audit root. Preserve the first failed audit and make no stronger mechanism or completion claim; the 534 genuine findings must remain.
 - **Resolution evidence:** Auditor commit `d3d8edd` recognizes both declared counters and reconstructs valid per-level rows independently of an aggregate incomplete-link flag. The corrected source-projected audit removed exactly 1,158 verifier-generated findings and retained exactly 534 genuine findings. Its thirteen passing checks bind exact identities, coverage, hashes, canonical reconstruction, literal decisions, absence of infrastructure/policy rows, and an unchanged source matrix; only sequence replay links and counters fail.
 - **Resolution condition:** A later source-independent auditor recognizes every declared level-summary field and cleanly distinguishes schema compatibility from the already-sealed missing-link evidence, without changing the matrix root or its literal `FAILED_MECHANISM` result.
+
+## B-003-0024 - Synthetic fallback-anchor collision generated an unsolvable locked-key case
+
+- **Status:** RESOLVED IN WORKTREE; CHECKPOINT AND REPACKAGE REQUIRED
+- **Stage:** 10
+- **Opened:** 2026-08-26
+- **Owner:** Codex
+- **Burden:** The exact `83df552` package-safe recovery collected 1,022 tests and found one deterministic failure. Development root seed `262795363413301024` generated `synthetic-lab-v1-0005-3d5e218b550b3d1b` with `key == door == target`, so the key was placed on its own locked door and the exact evaluator could not reach `WIN` at any search depth tested.
+- **Preserved evidence:** Integrated verifier `C:\a\o3f83\release-verification-receipt.json`, file SHA-256 `35e84860f5c167677cfaa1de45fa903e099fff895a73e0ff81de0e366fd72ddb`, remains `FAILED_INFRASTRUCTURE` at its 2,400-second ceiling. Standalone receipt `C:\a\o3f83\package-only-test-guard-recovery.json`, file SHA-256 `a2b21eeb5c4a7ac7448ecfd9abdaf77902cf8ceaba12d0dde462c68d23d31a1a`, remains `FAILED_BOUNDARY`; it records zero guard attempts, exact source projection, 1,022 collected tests, and the genuine property failure.
+- **Smallest repair:** Reject duplicate fallback anchors during deterministic spec generation and lock the exact root seed into a public evaluator-solvability regression. Do not special-case a family, game ID, coordinate, or target result.
+- **Verification:** Exact regression and property file pass; the combined 17-test lab catalog/transition/integration/property suite passes; Ruff lint/format and strict MyPy pass. No official environment, holdout, game source, credential, or submission surface was touched.
+- **Resolution condition:** Met for the implicated generator mechanism. The final release burden remains open until a clean candidate commit is replayed, packaged, statically checked, and covered by current-head CI.

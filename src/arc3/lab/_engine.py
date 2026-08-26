@@ -135,7 +135,9 @@ def _generate_spec(case: LabCase, family: RuleFamily) -> _EpisodeSpec:
     anchors = [(x, y) for y in range(1, size - 2, 2) for x in range(1, size - 2, 2)]
     rng.shuffle(anchors)
     while len(anchors) < 6:
-        anchors.append((rng.randrange(1, size - 1), rng.randrange(1, size - 1)))
+        candidate = (rng.randrange(1, size - 1), rng.randrange(1, size - 1))
+        if candidate not in anchors:
+            anchors.append(candidate)
     start, target, secondary, switch, key, door = anchors[:6]
     if family in {
         RuleFamily.CYCLIC_TIMING,
