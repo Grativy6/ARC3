@@ -160,6 +160,8 @@ _LEVEL_COUNTER_FIELDS = {
     "redundant_probes",
     "movement_prediction_errors",
     "resource_prediction_errors",
+    "resource_discrimination_actions",
+    "restoration_ambiguities_resolved",
     "access_prediction_errors",
     "hazard_prediction_errors",
     "residuals_observed",
@@ -467,7 +469,6 @@ def _validate_links(
 
     if receipt.get("receipt_links_complete") is not True:
         errors.append(f"{label} does not attest complete action/receipt links")
-        return tuple(False for _ in FAMILIES)
 
     raw_links = summary.get("action_links")
     if variant == "BUILD002_FROZEN":

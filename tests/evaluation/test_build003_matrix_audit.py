@@ -15,6 +15,9 @@ from arc3.evaluation.build003_matrix_audit import (
     BUILD002_COMMIT,
     BUILD002_TREE,
     EXPECTED_BUDGETS,
+    _expected_row,
+    _validate_level_metric,
+    _validate_links,
     audit_build003_matrix,
 )
 from arc3.evaluation.build003_results import (
@@ -62,6 +65,8 @@ def _metric(variant: str) -> dict[str, object]:
         "actions_to_stable": exploratory,
         "movement_prediction_errors": 0,
         "resource_prediction_errors": 0,
+        "resource_discrimination_actions": 0,
+        "restoration_ambiguities_resolved": 0,
         "access_prediction_errors": 0,
         "hazard_prediction_errors": 0,
         "prediction_errors_by_channel": {channel.value: 0 for channel in CHANNEL_ORDER},
@@ -428,6 +433,120 @@ def test_valid_fabricated_complete_matrix_is_independently_sealed(tmp_path: Path
     assert all(receipt["checks"].values())
     seal = receipt.pop("seal")
     assert seal["payload_sha256"] == _digest(receipt)
+
+
+@pytest.mark.parametrize(
+    "field",
+    ("resource_discrimination_actions", "restoration_ambiguities_resolved"),
+)
+def test_resource_discrimination_level_counters_are_known_and_nonnegative(field: str) -> None:
+    metric = _metric("BLA_CLEF_FULL")
+    errors: list[str] = []
+
+    _validate_level_metric(metric, "level", errors)
+
+    assert errors == []
+
+    metric[field] = -1
+    _validate_level_metric(metric, "level", errors)
+
+    assert errors == [f"level.{field} is not a non-negative integer"]
+
+
+def test_final_matrix_incomplete_links_retain_level_evidence_without_row_cascade() -> None:
+    # This fabricated topology reproduces the immutable matrix's 72 incomplete
+    # sequences without reading or replacing its frozen held-out artifacts.
+    played_level_histogram = ((1, 14), (2, 29), (5, 4), (6, 13), (7, 10), (9, 2))
+    errors: list[str] = []
+    row_mismatches = 0
+    sequence_index = 0
+
+    for played_levels, sequence_count in played_level_histogram:
+        for _ in range(sequence_count):
+            sequence_index += 1
+            metrics = [_metric("BLA_CLEF_FULL") for _ in FAMILIES]
+            for level_index, metric in enumerate(metrics):
+                if level_index < played_levels:
+                    metric["completed"] = level_index < played_levels - 1
+                    continue
+                metric.update(
+                    {
+                        "environment_actions": 0,
+                        "resets": 0,
+                        "receipt_count": 0,
+                        "complete_receipt_count": 0,
+                        "completed": False,
+                    }
+                )
+            summary = {
+                "action_links": [
+                    _action_link(level_index + 1, level_index)
+                    for level_index in range(played_levels)
+                ]
+            }
+            receipt: dict[str, object] = {
+                "case_id": f"fabricated-incomplete-{sequence_index:02d}",
+                "seed": sequence_index,
+                "variant": "BLA_CLEF_FULL",
+                "run_status": "ACTION_BUDGET",
+                "failure_reason": "fabricated action-budget evidence",
+                "final_state": "NOT_FINISHED",
+                "levels_completed": played_levels - 1,
+                "environment_actions": played_levels,
+                "resets": 0,
+                "wall_time_seconds": 0.1,
+                "peak_memory_bytes": 1024,
+                "replay_digest": _digest({"sequence": sequence_index}),
+                "receipt_links_complete": False,
+                "sequence_counts_reconciled": True,
+                "_audit_metrics": metrics,
+            }
+            runner_level_links = tuple(
+                level_index < played_levels for level_index in range(len(FAMILIES))
+            )
+            recorded_rows = tuple(
+                _expected_row(
+                    receipt=receipt,
+                    metric=metric,
+                    index=level_index,
+                    link_valid=runner_level_links[level_index],
+                )
+                for level_index, metric in enumerate(metrics)
+            )
+
+            observed_level_links = _validate_links(
+                summary,
+                "BLA_CLEF_FULL",
+                metrics,
+                receipt,
+                f"sequence_receipts[{sequence_index - 1}]",
+                errors,
+            )
+            reconstructed_rows = tuple(
+                _expected_row(
+                    receipt=receipt,
+                    metric=metric,
+                    index=level_index,
+                    link_valid=observed_level_links[level_index],
+                )
+                for level_index, metric in enumerate(metrics)
+            )
+            row_mismatches += sum(
+                recorded != reconstructed
+                for recorded, reconstructed in zip(recorded_rows, reconstructed_rows, strict=True)
+            )
+
+    count_mismatches = sum("action/receipt counts do not reconcile" in error for error in errors)
+    aggregate_incomplete = sum(
+        "does not attest complete action/receipt links" in error for error in errors
+    )
+
+    assert sequence_index == 72
+    assert count_mismatches == 462
+    assert aggregate_incomplete == 72
+    assert len(errors) == 534
+    assert not any("unknown fields" in error for error in errors)
+    assert row_mismatches == 0
 
 
 @pytest.mark.parametrize(
