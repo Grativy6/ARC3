@@ -310,6 +310,7 @@ def _family_state(snapshot: Mapping[str, JSONValue]) -> dict[str, JSONValue]:
         "hierarchy_residual_linked_relation_rejected_count",
         "hierarchy_external_residual_linked_relation_rejected_count",
         "hierarchy_raw_matching_composite_relation_rejected_count",
+        "hierarchy_external_own_composite_relation_rejected_count",
         "hierarchy_preterminal_retry_count",
         "hierarchy_lineage_lost",
         "hierarchy_relation_key",

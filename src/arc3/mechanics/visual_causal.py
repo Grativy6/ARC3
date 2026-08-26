@@ -407,6 +407,18 @@ class _RawMatchingCompositeHierarchyRelation:
 
 
 @dataclass(frozen=True, slots=True)
+class _ExternalOwnCompositeHierarchyRelation:
+    """Use the external counterpart sink and the raw child's own bridge sink."""
+
+    bridge_relation_key: str
+    mixed_relation_key: str
+    external_relation_key: str
+    raw_matching_relation_key: str
+    supports: tuple[_HierarchyTargetSupport, ...]
+    relation_key: str
+
+
+@dataclass(frozen=True, slots=True)
 class _HierarchyRasterCertificate:
     """Exact observation-derived board identity for one hierarchy action boundary."""
 
@@ -587,6 +599,8 @@ _HIERARCHY_PLAN_PREFIXES = (
     "affine-external-residual-linked-hierarchy-recovery:",
     "affine-raw-matching-composite-hierarchy:",
     "affine-raw-matching-composite-hierarchy-recovery:",
+    "affine-external-own-composite-hierarchy:",
+    "affine-external-own-composite-hierarchy-recovery:",
     "affine-child-isolation:",
     "affine-child-recovery:",
 )
@@ -4663,6 +4677,206 @@ def _raw_matching_composite_hierarchy_relation(
     )
 
 
+def _external_own_composite_hierarchy_relation(
+    scene: VisualScene,
+    hierarchy: _AffineHierarchy,
+    *,
+    level_index: int,
+    rejected_bridge_relation_keys: set[str] | frozenset[str],
+    rejected_mixed_relation_keys: set[str] | frozenset[str],
+    rejected_external_relation_keys: set[str] | frozenset[str],
+    rejected_raw_matching_relation_keys: set[str] | frozenset[str],
+) -> _ExternalOwnCompositeHierarchyRelation | None:
+    """Recombine the two uniquely witnessed non-raw sinks after four failures.
+
+    The external relation identifies the counterpart's carrier-mask sink.  The
+    raw-matching relation identifies the unique raw-linked child while proving
+    that child's own bridge sink is the sole observed containing composite.
+    Only after the bridge, mixed, external, and raw-matching relations have all
+    been falsified may those two independently witnessed sinks be combined.
+    """
+
+    bridge = _composite_bridge_relation(
+        scene,
+        hierarchy,
+        level_index=level_index,
+    )
+    mixed = _residual_linked_hierarchy_relation(
+        scene,
+        hierarchy,
+        level_index=level_index,
+    )
+    external = _external_residual_linked_hierarchy_relation(
+        scene,
+        hierarchy,
+        level_index=level_index,
+        rejected_mixed_relation_keys=rejected_mixed_relation_keys,
+    )
+    raw_matching = _raw_matching_composite_hierarchy_relation(
+        scene,
+        hierarchy,
+        level_index=level_index,
+        rejected_mixed_relation_keys=rejected_mixed_relation_keys,
+        rejected_external_relation_keys=rejected_external_relation_keys,
+    )
+    if (
+        bridge is None
+        or mixed is None
+        or external is None
+        or raw_matching is None
+        or len(bridge.assignments) != 2
+        or tuple(child for child, _example in bridge.assignments) != hierarchy.children
+        or bridge.relation_key not in rejected_bridge_relation_keys
+        or mixed.relation_key not in rejected_mixed_relation_keys
+        or external.relation_key not in rejected_external_relation_keys
+        or raw_matching.relation_key not in rejected_raw_matching_relation_keys
+        or mixed.bridge_relation_key != bridge.relation_key
+        or external.bridge_relation_key != bridge.relation_key
+        or external.mixed_relation_key != mixed.relation_key
+        or raw_matching.bridge_relation_key != bridge.relation_key
+        or raw_matching.mixed_relation_key != mixed.relation_key
+        or raw_matching.external_relation_key != external.relation_key
+        or any(
+            _normalized_connector_structure(scene, child) is None for child in hierarchy.children
+        )
+    ):
+        return None
+
+    raw_surface_signature = frozenset(scene.cells[y][x] for x, y in hierarchy.target.cells)
+    if len(raw_surface_signature) != 1 or raw_surface_signature != frozenset(
+        {hierarchy.target.color}
+    ):
+        return None
+    raw_center = hierarchy.target.rounded_center
+    mixed_raw_supports = tuple(
+        support for support in mixed.supports if support.target.rounded_center == raw_center
+    )
+    external_raw_supports = tuple(
+        support for support in external.supports if support.target.rounded_center == raw_center
+    )
+    raw_matching_raw_supports = tuple(
+        support for support in raw_matching.supports if support.target.rounded_center == raw_center
+    )
+    if (
+        len(mixed_raw_supports) != 1
+        or len(external_raw_supports) != 1
+        or len(raw_matching_raw_supports) != 1
+        or mixed_raw_supports[0].child != external_raw_supports[0].child
+        or mixed_raw_supports[0].child != raw_matching_raw_supports[0].child
+    ):
+        return None
+    raw_child = mixed_raw_supports[0].child
+
+    raw_assignments = tuple(
+        (child, example) for child, example in bridge.assignments if child == raw_child
+    )
+    counterpart_assignments = tuple(
+        (child, example) for child, example in bridge.assignments if child != raw_child
+    )
+    external_counterpart_supports = tuple(
+        support for support in external.supports if support.child != raw_child
+    )
+    raw_matching_counterpart_supports = tuple(
+        support for support in raw_matching.supports if support.child != raw_child
+    )
+    if (
+        len(raw_assignments) != 1
+        or len(counterpart_assignments) != 1
+        or len(external_counterpart_supports) != 1
+        or len(raw_matching_counterpart_supports) != 1
+    ):
+        return None
+    _raw_child, raw_example = raw_assignments[0]
+    counterpart_child, counterpart_example = counterpart_assignments[0]
+    external_support = external_counterpart_supports[0]
+    raw_matching_counterpart_support = raw_matching_counterpart_supports[0]
+    if (
+        external_support.child != counterpart_child
+        or external_support.example != counterpart_example
+        or raw_matching_counterpart_support.child != counterpart_child
+        or raw_matching_counterpart_support.target.cells != raw_example.target.cells
+        or raw_matching_counterpart_support.surface_signature
+        != frozenset(raw_example.residual_colors)
+    ):
+        return None
+
+    supports = tuple(
+        _HierarchyTargetSupport(
+            child=child,
+            example=example,
+            target=(raw_example.target if child == raw_child else external_support.target),
+            surface_signature=(
+                frozenset(raw_example.residual_colors)
+                if child == raw_child
+                else external_support.surface_signature
+            ),
+        )
+        for child, example in bridge.assignments
+    )
+    selected_centers = tuple(support.target.rounded_center for support in supports)
+    existing_support_tuples = {
+        tuple(example.target.rounded_center for _child, example in bridge.assignments),
+        tuple(support.target.rounded_center for support in mixed.supports),
+        tuple(support.target.rounded_center for support in external.supports),
+        tuple(support.target.rounded_center for support in raw_matching.supports),
+    }
+    raw_support = next((support for support in supports if support.child == raw_child), None)
+    counterpart_support = next(
+        (support for support in supports if support.child == counterpart_child),
+        None,
+    )
+    if (
+        tuple(support.child for support in supports) != hierarchy.children
+        or len(existing_support_tuples) != 4
+        or len(set(selected_centers)) != len(supports)
+        or raw_center in selected_centers
+        or selected_centers in existing_support_tuples
+        or raw_support is None
+        or counterpart_support is None
+        or raw_support.target.cells != raw_example.target.cells
+        or raw_support.surface_signature != frozenset(raw_example.residual_colors)
+        or counterpart_support.target.cells != external_support.target.cells
+        or counterpart_support.surface_signature != external_support.surface_signature
+    ):
+        return None
+
+    identity = (
+        "external-own-composite-support-v1",
+        bridge.relation_key,
+        mixed.relation_key,
+        external.relation_key,
+        raw_matching.relation_key,
+        (
+            hierarchy.target.color,
+            _normalized_visual_shape(hierarchy.target),
+            tuple(sorted((x, y, scene.cells[y][x]) for x, y in hierarchy.target.cells)),
+        ),
+        tuple(
+            (
+                _child_structure_signature(scene, support.child),
+                support.example.residual_colors,
+                support.example.target.rounded_center,
+                support.target.rounded_center,
+                support.surface_signature,
+                tuple(sorted((x, y, scene.cells[y][x]) for x, y in support.target.cells)),
+                support.child == raw_child,
+            )
+            for support in supports
+        ),
+    )
+    return _ExternalOwnCompositeHierarchyRelation(
+        bridge_relation_key=bridge.relation_key,
+        mixed_relation_key=mixed.relation_key,
+        external_relation_key=external.relation_key,
+        raw_matching_relation_key=raw_matching.relation_key,
+        supports=supports,
+        relation_key=(
+            "affine-external-own-composite-relation:"
+            + hashlib.sha256(repr(identity).encode("ascii")).hexdigest()[:24]
+        ),
+    )
+
+
 def _hierarchy_dynamic_footprint(
     scene: VisualScene,
     group: _AffineChildGroup,
@@ -6142,6 +6356,9 @@ def _build_hierarchy_plan(
         "affine-raw-matching-composite-hierarchy": (
             "affine-raw-matching-composite-hierarchy-recovery"
         ),
+        "affine-external-own-composite-hierarchy": (
+            "affine-external-own-composite-hierarchy-recovery"
+        ),
     }.get(signature_prefix, "affine-hierarchy-recovery")
     recovery_signature = (
         recovery_prefix
@@ -6415,6 +6632,30 @@ def _raw_matching_composite_hierarchy_plan(
         rejected_signatures=rejected_signatures,
         signature_prefix="affine-raw-matching-composite-hierarchy",
         terminal_expectation="test the raw-matching containing-composite support hypothesis",
+        search_budget=search_budget,
+    )
+
+
+def _external_own_composite_hierarchy_plan(
+    scene: VisualScene,
+    hierarchy: _AffineHierarchy,
+    relation: _ExternalOwnCompositeHierarchyRelation,
+    *,
+    rejected_signatures: set[str],
+    search_budget: _HierarchySearchBudget | None = None,
+) -> _HierarchyPlan | None:
+    """Find one exact route for the external-own-composite hypothesis."""
+
+    return _target_support_hierarchy_plan(
+        scene,
+        hierarchy,
+        relation.supports,
+        bridge_relation=None,
+        rejected_signatures=rejected_signatures,
+        signature_prefix="affine-external-own-composite-hierarchy",
+        terminal_expectation=(
+            "test the unique external-counterpart and own-composite support hypothesis"
+        ),
         search_budget=search_budget,
     )
 
@@ -8689,6 +8930,7 @@ class VisualCausalPolicy:
         self._failed_residual_linked_hierarchy_relation_keys: set[str] = set()
         self._failed_external_residual_linked_hierarchy_relation_keys: set[str] = set()
         self._failed_raw_matching_composite_hierarchy_relation_keys: set[str] = set()
+        self._failed_external_own_composite_hierarchy_relation_keys: set[str] = set()
         self._hierarchy_lineage_lost: tuple[int, str, str, str] | None = None
         self._failed_hierarchy_lineages: set[tuple[int, str, str, str]] = set()
         self._active_child_isolation_relation_key: str | None = None
@@ -8813,6 +9055,7 @@ class VisualCausalPolicy:
         self._failed_residual_linked_hierarchy_relation_keys.clear()
         self._failed_external_residual_linked_hierarchy_relation_keys.clear()
         self._failed_raw_matching_composite_hierarchy_relation_keys.clear()
+        self._failed_external_own_composite_hierarchy_relation_keys.clear()
         self._hierarchy_lineage_lost = None
         self._failed_hierarchy_lineages.clear()
         self._clear_child_isolation_execution()
@@ -9522,11 +9765,61 @@ class VisualCausalPolicy:
                                                     raw_matching_composite_relation.relation_key
                                                     in self._failed_raw_matching_composite_hierarchy_relation_keys
                                                 ):
-                                                    deferred_hierarchy_reason = (
-                                                        "all earlier hierarchy families and the bounded "
-                                                        "raw-matching containing-composite hypothesis were "
-                                                        "already falsified by official consequences"
+                                                    external_own_composite_relation = _external_own_composite_hierarchy_relation(
+                                                        scene,
+                                                        hierarchy,
+                                                        level_index=(observation.levels_completed),
+                                                        rejected_bridge_relation_keys=(
+                                                            self._failed_bridge_hierarchy_relation_keys
+                                                        ),
+                                                        rejected_mixed_relation_keys=(
+                                                            self._failed_residual_linked_hierarchy_relation_keys
+                                                        ),
+                                                        rejected_external_relation_keys=(
+                                                            self._failed_external_residual_linked_hierarchy_relation_keys
+                                                        ),
+                                                        rejected_raw_matching_relation_keys=(
+                                                            self._failed_raw_matching_composite_hierarchy_relation_keys
+                                                        ),
                                                     )
+                                                    if external_own_composite_relation is None:
+                                                        deferred_hierarchy_reason = (
+                                                            "the bridge, mixed, external, and "
+                                                            "raw-matching hierarchy relations were "
+                                                            "falsified, but their evidence does not "
+                                                            "identify one unique external-counterpart "
+                                                            "and own-composite support tuple"
+                                                        )
+                                                    elif (
+                                                        external_own_composite_relation.relation_key
+                                                        in self._failed_external_own_composite_hierarchy_relation_keys
+                                                    ):
+                                                        deferred_hierarchy_reason = (
+                                                            "all bounded observation-grounded hierarchy "
+                                                            "families, including the unique external-own-"
+                                                            "composite recombination, were already "
+                                                            "falsified by official consequences"
+                                                        )
+                                                    else:
+                                                        hierarchy_plan = (
+                                                            _external_own_composite_hierarchy_plan(
+                                                                scene,
+                                                                hierarchy,
+                                                                external_own_composite_relation,
+                                                                rejected_signatures=(
+                                                                    self._failed_plan_signatures
+                                                                ),
+                                                                search_budget=search_budget,
+                                                            )
+                                                        )
+                                                        if hierarchy_plan is None:
+                                                            deferred_hierarchy_reason = (
+                                                                "the unique external-own-composite "
+                                                                "hypothesis has no exact target-surface-"
+                                                                "preserving layout"
+                                                            )
+                                                        else:
+                                                            hierarchy_relation_key = external_own_composite_relation.relation_key
                                                 else:
                                                     hierarchy_plan = (
                                                         _raw_matching_composite_hierarchy_plan(
@@ -9999,6 +10292,10 @@ class VisualCausalPolicy:
             self._pending_plan_signature is not None
             and self._pending_plan_signature.startswith("affine-raw-matching-composite-hierarchy:")
         )
+        external_own_composite_hierarchy_action = (
+            self._pending_plan_signature is not None
+            and self._pending_plan_signature.startswith("affine-external-own-composite-hierarchy:")
+        )
         joint_hierarchy_action = (
             self._pending_plan_signature is not None
             and self._pending_plan_signature.startswith(
@@ -10010,6 +10307,7 @@ class VisualCausalPolicy:
                     "affine-residual-linked-hierarchy:",
                     "affine-external-residual-linked-hierarchy:",
                     "affine-raw-matching-composite-hierarchy:",
+                    "affine-external-own-composite-hierarchy:",
                 )
             )
         )
@@ -10031,6 +10329,12 @@ class VisualCausalPolicy:
                 "affine-raw-matching-composite-hierarchy-recovery:"
             )
         )
+        external_own_composite_hierarchy_recovery_action = (
+            self._pending_plan_signature is not None
+            and self._pending_plan_signature.startswith(
+                "affine-external-own-composite-hierarchy-recovery:"
+            )
+        )
         hierarchy_recovery_action = (
             self._pending_plan_signature is not None
             and self._pending_plan_signature.startswith(
@@ -10042,6 +10346,7 @@ class VisualCausalPolicy:
                     "affine-residual-linked-hierarchy-recovery:",
                     "affine-external-residual-linked-hierarchy-recovery:",
                     "affine-raw-matching-composite-hierarchy-recovery:",
+                    "affine-external-own-composite-hierarchy-recovery:",
                 )
             )
         )
@@ -10158,6 +10463,7 @@ class VisualCausalPolicy:
                 or residual_linked_hierarchy_action
                 or external_residual_linked_hierarchy_action
                 or raw_matching_composite_hierarchy_action
+                or external_own_composite_hierarchy_action
             )
             and not self._pending_completes_hierarchy
             and observation.state is GameStateName.GAME_OVER
@@ -10720,7 +11026,14 @@ class VisualCausalPolicy:
                         self._preterminal_hierarchy_retry_signature = None
                     self._failed_plan_signatures.add(self._pending_plan_signature)
             if hierarchy_terminal_game_over_observed and hierarchy_relation_key is not None:
-                if raw_matching_composite_hierarchy_action:
+                if external_own_composite_hierarchy_action:
+                    self._failed_external_own_composite_hierarchy_relation_keys.add(
+                        hierarchy_relation_key
+                    )
+                    residual = (
+                        "the exact external-own-composite recombination terminal returned GAME_OVER"
+                    )
+                elif raw_matching_composite_hierarchy_action:
                     self._failed_raw_matching_composite_hierarchy_relation_keys.add(
                         hierarchy_relation_key
                     )
@@ -10882,19 +11195,25 @@ class VisualCausalPolicy:
             self._active_hierarchy_recovery_actions = ()
             self._last_probe_failed = False
             residual = (
-                "exact pre-hypothesis hierarchy restored after raw-matching "
-                "containing-composite sufficiency failed"
-                if raw_matching_composite_hierarchy_recovery_action
+                "exact pre-hypothesis hierarchy restored after external-own-composite "
+                "recombination sufficiency failed"
+                if external_own_composite_hierarchy_recovery_action
                 else (
-                    "exact pre-hypothesis hierarchy restored after external carrier-mask "
-                    "residual-chain sufficiency failed"
-                    if external_residual_linked_hierarchy_recovery_action
+                    "exact pre-hypothesis hierarchy restored after raw-matching "
+                    "containing-composite sufficiency failed"
+                    if raw_matching_composite_hierarchy_recovery_action
                     else (
-                        "exact pre-hypothesis hierarchy restored after residual-linked "
-                        "mixed-support sufficiency failed"
-                        if residual_linked_hierarchy_recovery_action
+                        "exact pre-hypothesis hierarchy restored after external carrier-mask "
+                        "residual-chain sufficiency failed"
+                        if external_residual_linked_hierarchy_recovery_action
                         else (
-                            "exact pre-hypothesis hierarchy restored after joint sufficiency failed"
+                            "exact pre-hypothesis hierarchy restored after residual-linked "
+                            "mixed-support sufficiency failed"
+                            if residual_linked_hierarchy_recovery_action
+                            else (
+                                "exact pre-hypothesis hierarchy restored after joint "
+                                "sufficiency failed"
+                            )
                         )
                     )
                 )
@@ -10904,7 +11223,11 @@ class VisualCausalPolicy:
             if self._pending_plan_signature is not None:
                 self._failed_plan_signatures.add(self._pending_plan_signature)
             if hierarchy_supports_observed and hierarchy_relation_key is not None:
-                if raw_matching_composite_hierarchy_action:
+                if external_own_composite_hierarchy_action:
+                    self._failed_external_own_composite_hierarchy_relation_keys.add(
+                        hierarchy_relation_key
+                    )
+                elif raw_matching_composite_hierarchy_action:
                     self._failed_raw_matching_composite_hierarchy_relation_keys.add(
                         hierarchy_relation_key
                     )
@@ -10937,6 +11260,12 @@ class VisualCausalPolicy:
             if hierarchy_supports_observed:
                 residual = (
                     (
+                        "the carrier-mask counterpart reached its unique external sink while "
+                        "the raw-linked child reached its own bridge composite sink, but the "
+                        "official environment remained NOT_FINISHED"
+                    )
+                    if external_own_composite_hierarchy_action
+                    else (
                         "the raw-linked child retained the singleton raw support while "
                         "its counterpart reached the unique containing composite sink, "
                         "but the official environment remained NOT_FINISHED"
@@ -10960,8 +11289,8 @@ class VisualCausalPolicy:
                     )
                     if bridge_hierarchy_action
                     else (
-                        "the visible-node-weighted child-mediator centroid reached the "
-                        "target but the official environment remained NOT_FINISHED"
+                        "the visible-node-weighted child-mediator centroid reached the target "
+                        "but the official environment remained NOT_FINISHED"
                         if visible_node_hierarchy_action
                         else (
                             "the arity-weighted child-mediator centroid reached the parent "
@@ -11160,6 +11489,7 @@ class VisualCausalPolicy:
                         "affine-residual-linked-hierarchy:",
                         "affine-external-residual-linked-hierarchy:",
                         "affine-raw-matching-composite-hierarchy:",
+                        "affine-external-own-composite-hierarchy:",
                     )
                 )
                 for item in self._failed_plan_signatures
@@ -11173,6 +11503,7 @@ class VisualCausalPolicy:
                 | self._failed_residual_linked_hierarchy_relation_keys
                 | self._failed_external_residual_linked_hierarchy_relation_keys
                 | self._failed_raw_matching_composite_hierarchy_relation_keys
+                | self._failed_external_own_composite_hierarchy_relation_keys
             ),
             "hierarchy_hypothesis_rejected_count": (
                 len(self._failed_hierarchy_relation_keys)
@@ -11182,6 +11513,7 @@ class VisualCausalPolicy:
                 + len(self._failed_residual_linked_hierarchy_relation_keys)
                 + len(self._failed_external_residual_linked_hierarchy_relation_keys)
                 + len(self._failed_raw_matching_composite_hierarchy_relation_keys)
+                + len(self._failed_external_own_composite_hierarchy_relation_keys)
             ),
             "hierarchy_equal_relation_rejected_count": len(self._failed_hierarchy_relation_keys),
             "hierarchy_weighted_relation_rejected_count": len(
@@ -11201,6 +11533,9 @@ class VisualCausalPolicy:
             ),
             "hierarchy_raw_matching_composite_relation_rejected_count": len(
                 self._failed_raw_matching_composite_hierarchy_relation_keys
+            ),
+            "hierarchy_external_own_composite_relation_rejected_count": len(
+                self._failed_external_own_composite_hierarchy_relation_keys
             ),
             "hierarchy_lineage_failure": current_lineage_failure,
             "hierarchy_lineage_failures": lineage_failures,
@@ -11222,6 +11557,7 @@ class VisualCausalPolicy:
                         "affine-residual-linked-hierarchy-recovery:",
                         "affine-external-residual-linked-hierarchy-recovery:",
                         "affine-raw-matching-composite-hierarchy-recovery:",
+                        "affine-external-own-composite-hierarchy-recovery:",
                     )
                 )
             ),
@@ -11237,6 +11573,7 @@ class VisualCausalPolicy:
                         "affine-residual-linked-hierarchy-recovery:",
                         "affine-external-residual-linked-hierarchy-recovery:",
                         "affine-raw-matching-composite-hierarchy-recovery:",
+                        "affine-external-own-composite-hierarchy-recovery:",
                     )
                 )
                 else None

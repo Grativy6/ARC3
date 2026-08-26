@@ -3777,6 +3777,65 @@ def _raw_matching_composite_fixture() -> tuple[
     return frame, scene, hierarchy, bridge, mixed, external, relation, plan
 
 
+@lru_cache(maxsize=1)
+def _external_own_composite_fixture() -> tuple[
+    GridFrame,
+    VisualScene,
+    visual_causal._AffineHierarchy,
+    visual_causal._CompositeBridgeRelation,
+    visual_causal._ResidualLinkedHierarchyRelation,
+    visual_causal._ExternalResidualLinkedHierarchyRelation,
+    visual_causal._RawMatchingCompositeHierarchyRelation,
+    visual_causal._ExternalOwnCompositeHierarchyRelation,
+    visual_causal._HierarchyPlan,
+]:
+    """Return the sole bounded post-raw-matching recombination and exact plan."""
+
+    frame, scene, hierarchy, bridge, mixed, external, raw_matching, _raw_plan = (
+        _raw_matching_composite_fixture()
+    )
+    assert (
+        visual_causal._external_own_composite_hierarchy_relation(
+            scene,
+            hierarchy,
+            level_index=4,
+            rejected_bridge_relation_keys={bridge.relation_key},
+            rejected_mixed_relation_keys={mixed.relation_key},
+            rejected_external_relation_keys={external.relation_key},
+            rejected_raw_matching_relation_keys=set(),
+        )
+        is None
+    )
+    relation = visual_causal._external_own_composite_hierarchy_relation(
+        scene,
+        hierarchy,
+        level_index=4,
+        rejected_bridge_relation_keys={bridge.relation_key},
+        rejected_mixed_relation_keys={mixed.relation_key},
+        rejected_external_relation_keys={external.relation_key},
+        rejected_raw_matching_relation_keys={raw_matching.relation_key},
+    )
+    assert relation is not None
+    plan = visual_causal._external_own_composite_hierarchy_plan(
+        scene,
+        hierarchy,
+        relation,
+        rejected_signatures=set(),
+    )
+    assert plan is not None
+    return (
+        frame,
+        scene,
+        hierarchy,
+        bridge,
+        mixed,
+        external,
+        raw_matching,
+        relation,
+        plan,
+    )
+
+
 def _seed_external_chain_prerequisites(
     policy: VisualCausalPolicy,
     scene: VisualScene,
@@ -3822,6 +3881,29 @@ def _seed_raw_matching_composite_prerequisites(
     _seed_external_chain_prerequisites(policy, scene, hierarchy, bridge, mixed)
     policy._failed_external_residual_linked_hierarchy_relation_keys.add(external.relation_key)
     policy._failed_raw_matching_composite_hierarchy_relation_keys.clear()
+
+
+def _seed_external_own_composite_prerequisites(
+    policy: VisualCausalPolicy,
+    scene: VisualScene,
+    hierarchy: visual_causal._AffineHierarchy,
+    bridge: visual_causal._CompositeBridgeRelation,
+    mixed: visual_causal._ResidualLinkedHierarchyRelation,
+    external: visual_causal._ExternalResidualLinkedHierarchyRelation,
+    raw_matching: visual_causal._RawMatchingCompositeHierarchyRelation,
+) -> None:
+    """Record exactly the four prior relation failures needed by this family."""
+
+    _seed_raw_matching_composite_prerequisites(
+        policy,
+        scene,
+        hierarchy,
+        bridge,
+        mixed,
+        external,
+    )
+    policy._failed_raw_matching_composite_hierarchy_relation_keys.add(raw_matching.relation_key)
+    policy._failed_external_own_composite_hierarchy_relation_keys.clear()
 
 
 def test_two_layer_affine_hierarchy_is_an_exact_disjoint_cover() -> None:
@@ -5368,6 +5450,430 @@ def test_raw_matching_composite_is_equivariant_and_fails_closed_on_ambiguity(
                 level_index=4,
                 rejected_mixed_relation_keys={mixed.relation_key},
                 rejected_external_relation_keys={external.relation_key},
+            )
+            is None
+        )
+
+
+def test_external_own_composite_selects_and_replays_exact_9_plus_9(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    (
+        frame,
+        scene,
+        hierarchy,
+        bridge,
+        mixed,
+        external,
+        raw_matching,
+        relation,
+        plan,
+    ) = _external_own_composite_fixture()
+
+    assert relation.bridge_relation_key == bridge.relation_key
+    assert relation.mixed_relation_key == mixed.relation_key
+    assert relation.external_relation_key == external.relation_key
+    assert relation.raw_matching_relation_key == raw_matching.relation_key
+    assert tuple(support.child for support in relation.supports) == hierarchy.children
+    assert tuple(support.target.rounded_center for support in relation.supports) == (
+        (15, 15),
+        (48, 9),
+    )
+    assert all(support.target != hierarchy.target for support in relation.supports)
+    assert plan.signature.startswith("affine-external-own-composite-hierarchy:")
+    assert plan.supports == ((15, 15), (48, 9))
+    assert plan.support_weights == (1, 1)
+    assert tuple((item.coordinate.x, item.coordinate.y) for item in plan.actions) == (
+        (15, 21),
+        (43, 34),
+        (15, 9),
+        (34, 55),
+        (44, 15),
+        (52, 55),
+        (55, 9),
+        (41, 47),
+        (45, 3),
+    )
+    assert tuple((item.coordinate.x, item.coordinate.y) for item in plan.recovery_actions) == (
+        (41, 47),
+        (55, 9),
+        (52, 55),
+        (44, 15),
+        (34, 55),
+        (15, 9),
+        (43, 34),
+        (15, 21),
+        (25, 35),
+    )
+
+    environment = _ProjectedWeightedHierarchyEnvironment(scene, hierarchy)
+    observation = environment.observation()
+    policy = VisualCausalPolicy(max_coordinate_candidates=8)
+    policy._level_index = 4
+    policy._last_active_color = hierarchy.active_color
+    policy._ensure_learner(observation)
+    _seed_external_own_composite_prerequisites(
+        policy,
+        scene,
+        hierarchy,
+        bridge,
+        mixed,
+        external,
+        raw_matching,
+    )
+    policy._install_hierarchy_plan(plan, relation_key=relation.relation_key)
+    for expected in plan.actions:
+        action = policy.select(observation)
+        assert action.coordinate == expected.coordinate
+        observation = environment.step(action)
+        policy.accept_consequence(observation)
+
+    assert policy._failed_external_own_composite_hierarchy_relation_keys == {relation.relation_key}
+    assert len(policy._plan) == 9
+    assert policy.receipts[-1].residual == (
+        "the carrier-mask counterpart reached its unique external sink while the raw-linked "
+        "child reached its own bridge composite sink, but the official environment remained "
+        "NOT_FINISHED"
+    )
+    terminal_snapshot = policy.snapshot()
+    assert terminal_snapshot["hierarchy_external_own_composite_relation_rejected_count"] == 1
+    assert terminal_snapshot["hierarchy_preterminal_retry_count"] == 0
+    assert terminal_snapshot["hierarchy_recovery_active"] is True
+
+    for expected in plan.recovery_actions:
+        action = policy.select(observation)
+        assert action.coordinate == expected.coordinate
+        observation = environment.step(action)
+        policy.accept_consequence(observation)
+    assert observation.frames[-1].cells == frame.cells
+    assert policy.snapshot()["hierarchy_recovery_active"] is False
+    assert policy.receipts[-1].residual == (
+        "exact pre-hypothesis hierarchy restored after external-own-composite recombination "
+        "sufficiency failed"
+    )
+
+    _seed_external_own_composite_prerequisites(
+        policy,
+        scene,
+        hierarchy,
+        bridge,
+        mixed,
+        external,
+        raw_matching,
+    )
+    policy._failed_plan_signatures.clear()
+
+    class ExternalOwnCompositeSelected(Exception):
+        pass
+
+    def select_external_own_composite(
+        candidate_scene: VisualScene,
+        candidate_hierarchy: visual_causal._AffineHierarchy,
+        candidate_relation: visual_causal._ExternalOwnCompositeHierarchyRelation,
+        *,
+        rejected_signatures: set[str],
+        search_budget: visual_causal._HierarchySearchBudget | None = None,
+    ) -> None:
+        assert candidate_scene == scene
+        assert candidate_hierarchy == hierarchy
+        assert candidate_relation == relation
+        assert rejected_signatures is policy._failed_plan_signatures
+        assert search_budget is not None
+        raise ExternalOwnCompositeSelected
+
+    with monkeypatch.context() as selection_patch:
+        selection_patch.setattr(
+            visual_causal,
+            "_external_own_composite_hierarchy_plan",
+            select_external_own_composite,
+        )
+        with pytest.raises(ExternalOwnCompositeSelected):
+            policy.select(observation)
+    assert policy.snapshot()["pending_action"] is None
+
+    game_over_environment = _ProjectedWeightedHierarchyEnvironment(scene, hierarchy)
+    game_over_observation = game_over_environment.observation()
+    game_over_policy = VisualCausalPolicy(max_coordinate_candidates=8)
+    game_over_policy._level_index = 4
+    game_over_policy._last_active_color = hierarchy.active_color
+    game_over_policy._ensure_learner(game_over_observation)
+    _seed_external_own_composite_prerequisites(
+        game_over_policy,
+        scene,
+        hierarchy,
+        bridge,
+        mixed,
+        external,
+        raw_matching,
+    )
+    game_over_policy._install_hierarchy_plan(plan, relation_key=relation.relation_key)
+    for action_index in range(len(plan.actions)):
+        action = game_over_policy.select(game_over_observation)
+        game_over_observation = game_over_environment.step(action)
+        if action_index + 1 == len(plan.actions):
+            game_over_observation = replace(
+                game_over_observation,
+                state=GameStateName.GAME_OVER,
+                available_actions=(ActionName.RESET,),
+            )
+        game_over_policy.accept_consequence(game_over_observation)
+    assert game_over_policy._failed_external_own_composite_hierarchy_relation_keys == {
+        relation.relation_key
+    }
+    assert game_over_policy.snapshot()["hierarchy_preterminal_retry_count"] == 0
+    assert game_over_policy.receipts[-1].residual == (
+        "the exact external-own-composite recombination terminal returned GAME_OVER"
+    )
+
+    reset_action = game_over_policy.select(game_over_observation)
+    assert reset_action.name is ActionName.RESET
+    reset_observation = _ProjectedWeightedHierarchyEnvironment(scene, hierarchy).observation(
+        returned_action=reset_action
+    )
+    game_over_policy.accept_consequence(reset_observation)
+    assert (
+        game_over_policy.snapshot()["hierarchy_external_own_composite_relation_rejected_count"] == 1
+    )
+    assert game_over_policy.snapshot()["hierarchy_preterminal_retry_count"] == 0
+
+
+def test_external_own_composite_preterminal_game_over_retains_one_retry() -> None:
+    (
+        _frame_value,
+        scene,
+        hierarchy,
+        bridge,
+        mixed,
+        external,
+        raw_matching,
+        relation,
+        plan,
+    ) = _external_own_composite_fixture()
+    environment = _ProjectedWeightedHierarchyEnvironment(scene, hierarchy)
+    observation = environment.observation()
+    policy = VisualCausalPolicy(max_coordinate_candidates=8)
+    policy._level_index = 4
+    policy._last_active_color = hierarchy.active_color
+    policy._ensure_learner(observation)
+    _seed_external_own_composite_prerequisites(
+        policy,
+        scene,
+        hierarchy,
+        bridge,
+        mixed,
+        external,
+        raw_matching,
+    )
+    policy._install_hierarchy_plan(plan, relation_key=relation.relation_key)
+
+    action = policy.select(observation)
+    interrupted = replace(
+        environment.step(action),
+        state=GameStateName.GAME_OVER,
+        available_actions=(ActionName.RESET,),
+    )
+    policy.accept_consequence(interrupted)
+
+    assert plan.signature not in policy._failed_plan_signatures
+    assert not policy._failed_external_own_composite_hierarchy_relation_keys
+    assert policy.snapshot()["hierarchy_preterminal_retry_count"] == 1
+    assert policy.receipts[-1].residual == (
+        "the hierarchy plan returned GAME_OVER before its terminal action; one same-level retry "
+        "is retained after legal RESET"
+    )
+
+    reset_action = policy.select(interrupted)
+    reset_environment = _ProjectedWeightedHierarchyEnvironment(scene, hierarchy)
+    reset_observation = reset_environment.observation(returned_action=reset_action)
+    policy.accept_consequence(reset_observation)
+    assert policy.snapshot()["hierarchy_preterminal_retry_count"] == 1
+    assert not policy._failed_external_own_composite_hierarchy_relation_keys
+    assert policy.snapshot()["pending_action"] is None
+
+
+def test_external_own_composite_is_equivariant_and_fails_closed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    (
+        frame,
+        scene,
+        hierarchy,
+        bridge,
+        mixed,
+        external,
+        raw_matching,
+        relation,
+        _plan,
+    ) = _external_own_composite_fixture()
+
+    complete_gates = {
+        "rejected_bridge_relation_keys": {bridge.relation_key},
+        "rejected_mixed_relation_keys": {mixed.relation_key},
+        "rejected_external_relation_keys": {external.relation_key},
+        "rejected_raw_matching_relation_keys": {raw_matching.relation_key},
+    }
+    for missing_gate in complete_gates:
+        gates = {name: set(keys) for name, keys in complete_gates.items()}
+        gates[missing_gate].clear()
+        assert (
+            visual_causal._external_own_composite_hierarchy_relation(
+                scene,
+                hierarchy,
+                level_index=4,
+                **gates,
+            )
+            is None
+        )
+
+    palette_swap = {8: 9, 9: 8, 11: 14, 14: 11}
+    swapped_frame = GridFrame.from_rows(
+        tuple(tuple(palette_swap.get(value, value) for value in row) for row in frame.cells)
+    )
+    swapped_scene = extract_visual_scene(swapped_frame)
+    swapped_hierarchy = visual_causal._unique_affine_hierarchy(swapped_scene, active_color=0)
+    assert swapped_hierarchy is not None
+    swapped_bridge = visual_causal._composite_bridge_relation(
+        swapped_scene,
+        swapped_hierarchy,
+        level_index=4,
+    )
+    swapped_mixed = visual_causal._residual_linked_hierarchy_relation(
+        swapped_scene,
+        swapped_hierarchy,
+        level_index=4,
+    )
+    assert swapped_bridge is not None
+    assert swapped_mixed is not None
+    swapped_external = visual_causal._external_residual_linked_hierarchy_relation(
+        swapped_scene,
+        swapped_hierarchy,
+        level_index=4,
+        rejected_mixed_relation_keys={swapped_mixed.relation_key},
+    )
+    assert swapped_external is not None
+    swapped_raw_matching = visual_causal._raw_matching_composite_hierarchy_relation(
+        swapped_scene,
+        swapped_hierarchy,
+        level_index=4,
+        rejected_mixed_relation_keys={swapped_mixed.relation_key},
+        rejected_external_relation_keys={swapped_external.relation_key},
+    )
+    assert swapped_raw_matching is not None
+    swapped_relation = visual_causal._external_own_composite_hierarchy_relation(
+        swapped_scene,
+        swapped_hierarchy,
+        level_index=4,
+        rejected_bridge_relation_keys={swapped_bridge.relation_key},
+        rejected_mixed_relation_keys={swapped_mixed.relation_key},
+        rejected_external_relation_keys={swapped_external.relation_key},
+        rejected_raw_matching_relation_keys={swapped_raw_matching.relation_key},
+    )
+    assert swapped_relation is not None
+    assert tuple(support.target.rounded_center for support in swapped_relation.supports) == tuple(
+        support.target.rounded_center for support in relation.supports
+    )
+    assert tuple(support.surface_signature for support in swapped_relation.supports) == tuple(
+        frozenset(palette_swap.get(value, value) for value in support.surface_signature)
+        for support in relation.supports
+    )
+
+    relevant_cells = set(hierarchy.target.cells)
+    for child in hierarchy.children:
+        relevant_cells.update(visual_causal._hierarchy_dynamic_footprint(scene, child))
+    for _child, example in bridge.assignments:
+        relevant_cells.update(example.target.cells)
+        for source in example.sources:
+            relevant_cells.update(source.cells)
+    for target, _surface in visual_causal._composite_sparse_targets(scene):
+        relevant_cells.update(target.cells)
+    delta_x, delta_y = 2, 2
+    translated_rows = [[scene.background] * scene.width for _row in range(scene.height)]
+    for x, y in relevant_cells:
+        translated_rows[y + delta_y][x + delta_x] = scene.cells[y][x]
+    translated_scene = extract_visual_scene(GridFrame.from_rows(translated_rows))
+    translated_hierarchy = visual_causal._unique_affine_hierarchy(
+        translated_scene,
+        active_color=0,
+    )
+    assert translated_hierarchy is not None
+    translated_bridge = visual_causal._composite_bridge_relation(
+        translated_scene,
+        translated_hierarchy,
+        level_index=4,
+    )
+    translated_mixed = visual_causal._residual_linked_hierarchy_relation(
+        translated_scene,
+        translated_hierarchy,
+        level_index=4,
+    )
+    assert translated_bridge is not None
+    assert translated_mixed is not None
+    translated_external = visual_causal._external_residual_linked_hierarchy_relation(
+        translated_scene,
+        translated_hierarchy,
+        level_index=4,
+        rejected_mixed_relation_keys={translated_mixed.relation_key},
+    )
+    assert translated_external is not None
+    translated_raw_matching = visual_causal._raw_matching_composite_hierarchy_relation(
+        translated_scene,
+        translated_hierarchy,
+        level_index=4,
+        rejected_mixed_relation_keys={translated_mixed.relation_key},
+        rejected_external_relation_keys={translated_external.relation_key},
+    )
+    assert translated_raw_matching is not None
+    translated_relation = visual_causal._external_own_composite_hierarchy_relation(
+        translated_scene,
+        translated_hierarchy,
+        level_index=4,
+        rejected_bridge_relation_keys={translated_bridge.relation_key},
+        rejected_mixed_relation_keys={translated_mixed.relation_key},
+        rejected_external_relation_keys={translated_external.relation_key},
+        rejected_raw_matching_relation_keys={translated_raw_matching.relation_key},
+    )
+    assert translated_relation is not None
+    assert tuple(
+        support.target.rounded_center for support in translated_relation.supports
+    ) == tuple(
+        (
+            support.target.rounded_center[0] + delta_x,
+            support.target.rounded_center[1] + delta_y,
+        )
+        for support in relation.supports
+    )
+
+    ambiguous_external = replace(
+        external,
+        supports=(*external.supports, external.supports[0]),
+    )
+    with monkeypatch.context() as ambiguity_patch:
+        ambiguity_patch.setattr(
+            visual_causal,
+            "_composite_bridge_relation",
+            lambda *_args, **_kwargs: bridge,
+        )
+        ambiguity_patch.setattr(
+            visual_causal,
+            "_residual_linked_hierarchy_relation",
+            lambda *_args, **_kwargs: mixed,
+        )
+        ambiguity_patch.setattr(
+            visual_causal,
+            "_external_residual_linked_hierarchy_relation",
+            lambda *_args, **_kwargs: ambiguous_external,
+        )
+        ambiguity_patch.setattr(
+            visual_causal,
+            "_raw_matching_composite_hierarchy_relation",
+            lambda *_args, **_kwargs: raw_matching,
+        )
+        assert (
+            visual_causal._external_own_composite_hierarchy_relation(
+                scene,
+                hierarchy,
+                level_index=4,
+                **complete_gates,
             )
             is None
         )
