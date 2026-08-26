@@ -1,0 +1,505 @@
+"""Emit a clean-source, read-only Build 003 mechanical recording replay receipt."""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import platform
+import re
+import subprocess
+import sys
+from datetime import UTC, datetime
+from pathlib import Path, PurePosixPath
+from typing import Any, cast
+
+_BYTECODE_DISABLED_AT_STARTUP = sys.dont_write_bytecode
+_DIRECT_SCRIPT_INVOCATION = __spec__ is None
+sys.dont_write_bytecode = True
+
+ROOT = Path(__file__).resolve().parents[1]
+SOURCE_ROOT = ROOT / "src"
+for import_root in (ROOT, SOURCE_ROOT):
+    if str(import_root) not in sys.path:
+        sys.path.insert(0, str(import_root))
+
+import arc3  # noqa: E402
+import arc3.evaluation.mechanical_replay as replay_module  # noqa: E402
+from arc3.errors import ARC3Error  # noqa: E402
+from arc3.evaluation.artifacts import (  # noqa: E402
+    canonical_json_bytes,
+    seal_object,
+    sha256_bytes,
+    sha256_file,
+    verify_object_hash,
+)
+from arc3.evaluation.mechanical_replay import (  # noqa: E402
+    replay_unfinished_mechanical_recording,
+)
+from arc3.integrity import read_bounded_regular_snapshot  # noqa: E402
+from arc3.types import GameStateName, JSONValue  # noqa: E402
+from scripts.check_competition_integrity import (  # noqa: E402
+    package_only_candidate_files,
+)
+
+SCHEMA = "arc3.build003.mechanical-recording-replay.v0.1"
+POLICY_PROFILE = "build003-mechanical-v0.1"
+MAX_COORDINATE_CANDIDATES = 8
+CAMPAIGN_AUDIT_SCHEMA = "arc3.build003.campaign28-integrity-replay-audit.v0.1"
+_FULL_OBJECT_ID = re.compile(r"[0-9a-f]{40}")
+_SOURCE_PATHS = (
+    "scripts/replay_build003_mechanical_recording.py",
+    "src/arc3/adapters/__init__.py",
+    "src/arc3/evaluation/artifacts.py",
+    "src/arc3/evaluation/mechanical_replay.py",
+    "src/arc3/mechanics/visual_causal.py",
+    "src/arc3/types.py",
+    "upstream.lock.json",
+    "uv.lock",
+)
+
+
+def _git_environment() -> dict[str, str]:
+    environment = {
+        key: value for key, value in os.environ.items() if not key.upper().startswith("GIT_")
+    }
+    environment["GIT_NO_REPLACE_OBJECTS"] = "1"
+    return environment
+
+
+def _git_text(*arguments: str) -> str:
+    completed = subprocess.run(
+        ("git", "--no-replace-objects", "-C", str(ROOT), *arguments),
+        check=False,
+        capture_output=True,
+        env=_git_environment(),
+        text=True,
+        encoding="utf-8",
+        timeout=30,
+    )
+    if completed.returncode != 0:
+        raise RuntimeError(
+            f"git {' '.join(arguments)} failed with exit {completed.returncode}: "
+            f"{completed.stderr.strip()}"
+        )
+    return completed.stdout.strip()
+
+
+def _full_object_id(value: str, *, field: str) -> str:
+    normalized = value.lower()
+    if _FULL_OBJECT_ID.fullmatch(normalized) is None:
+        raise ValueError(f"{field} must be a full 40-character lowercase Git object ID")
+    return normalized
+
+
+def _normalized_sha256(value: str, *, field: str) -> str:
+    normalized = value.lower()
+    if not normalized.startswith("sha256:"):
+        normalized = f"sha256:{normalized}"
+    digest = normalized.removeprefix("sha256:")
+    if len(digest) != 64 or any(character not in "0123456789abcdef" for character in digest):
+        raise ValueError(f"{field} must be a full SHA-256 digest")
+    return normalized
+
+
+def _object(value: object, *, field: str) -> dict[str, Any]:
+    if not isinstance(value, dict):
+        raise ValueError(f"campaign audit field {field} must be an object")
+    return cast(dict[str, Any], value)
+
+
+def _string(value: object, *, field: str) -> str:
+    if not isinstance(value, str) or not value:
+        raise ValueError(f"campaign audit field {field} must be a non-empty string")
+    return value
+
+
+def _nonnegative_int(value: object, *, field: str) -> int:
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        raise ValueError(f"campaign audit field {field} must be a non-negative integer")
+    return value
+
+
+def _source_snapshot(
+    *, expected_commit: str, expected_tree: str
+) -> tuple[dict[str, JSONValue], dict[str, bytes]]:
+    commit = _full_object_id(expected_commit, field="expected commit")
+    tree = _full_object_id(expected_tree, field="expected tree")
+    if Path(_git_text("rev-parse", "--show-toplevel")).resolve() != ROOT:
+        raise RuntimeError("replay script is not located at the exact Git top level")
+    actual_tree = _git_text("rev-parse", "HEAD^{tree}")
+    if actual_tree != tree:
+        raise RuntimeError(f"source tree {actual_tree} != expected tree {tree}")
+
+    snapshots: dict[str, bytes] = {}
+    selected = package_only_candidate_files(
+        ROOT,
+        commit,
+        candidate_snapshots=snapshots,
+    )
+    imported_arc3 = Path(arc3.__file__).resolve()
+    imported_replay = Path(replay_module.__file__).resolve()
+    if not imported_arc3.is_relative_to((SOURCE_ROOT / "arc3").resolve()):
+        raise RuntimeError("replay imported arc3 outside the named source root")
+    if imported_replay != (SOURCE_ROOT / "arc3/evaluation/mechanical_replay.py").resolve():
+        raise RuntimeError("replay imported its engine outside the named source root")
+    missing = sorted(set(_SOURCE_PATHS) - set(snapshots))
+    if missing:
+        raise RuntimeError(f"source projection omits required replay files: {missing!r}")
+    projection: list[JSONValue] = [
+        {"path": relative, "sha256": sha256_bytes(snapshots[relative])}
+        for relative in sorted(snapshots)
+    ]
+    return (
+        {
+            "clean": True,
+            "commit": commit,
+            "detached_head": _git_text("branch", "--show-current") == "",
+            "imported_arc3": str(imported_arc3),
+            "imported_replay_engine": str(imported_replay),
+            "package_source_file_count": len(selected),
+            "package_source_projection_sha256": sha256_bytes(canonical_json_bytes(projection)),
+            "repository_path": str(ROOT),
+            "source_hashes": {
+                relative: sha256_bytes(snapshots[relative]) for relative in _SOURCE_PATHS
+            },
+            "tree": actual_tree,
+        },
+        snapshots,
+    )
+
+
+def _repository_file_projection() -> dict[str, str]:
+    """Hash every non-Git file so the no-repository-write claim is measured."""
+
+    projection: dict[str, str] = {}
+    for path in sorted(ROOT.rglob("*")):
+        relative = path.relative_to(ROOT)
+        if relative.parts and relative.parts[0] == ".git":
+            continue
+        if path.is_symlink() or path.is_junction():
+            raise RuntimeError(
+                f"repository projection found an alias or junction: {relative.as_posix()}"
+            )
+        if path.is_dir():
+            continue
+        label = relative.as_posix()
+        if not path.is_file():
+            raise RuntimeError(f"repository projection found a non-regular path: {label}")
+        raw = read_bounded_regular_snapshot(
+            root=ROOT,
+            path=path,
+            max_bytes=128 * 1024 * 1024,
+            path_label=label,
+        )
+        projection[label] = sha256_bytes(raw)
+    if not projection or len(projection) > 20_000:
+        raise RuntimeError("repository file projection is empty or exceeds its bound")
+    return projection
+
+
+def _campaign_binding(
+    *,
+    campaign_audit: Path,
+    expected_file_sha256: str,
+    expected_object_hash: str,
+    expected_evaluation_id: str,
+) -> tuple[dict[str, JSONValue], Path, dict[str, object]]:
+    audit_path = campaign_audit.resolve(strict=True)
+    raw = read_bounded_regular_snapshot(
+        root=audit_path.parent,
+        path=campaign_audit,
+        max_bytes=1024 * 1024,
+        path_label=audit_path.name,
+    )
+    file_sha256 = sha256_bytes(raw)
+    named_file_sha256 = _normalized_sha256(
+        expected_file_sha256,
+        field="expected campaign audit file SHA-256",
+    )
+    if file_sha256 != named_file_sha256:
+        raise ValueError(
+            f"campaign audit file SHA-256 {file_sha256} != expected {named_file_sha256}"
+        )
+    try:
+        value: object = json.loads(raw.decode("utf-8", errors="strict"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as error:
+        raise ValueError("campaign audit is not UTF-8 JSON") from error
+    audit = _object(value, field="root")
+    named_object_hash = _normalized_sha256(
+        expected_object_hash,
+        field="expected campaign audit object hash",
+    )
+    if audit.get("schema") != CAMPAIGN_AUDIT_SCHEMA:
+        raise ValueError("campaign audit schema is not the pinned Campaign 28 audit schema")
+    if audit.get("audit_receipt_hash") != named_object_hash or not verify_object_hash(
+        audit,
+        hash_field="audit_receipt_hash",
+    ):
+        raise ValueError("campaign audit object hash is absent, mismatched, or invalid")
+
+    campaign = _object(audit.get("campaign"), field="campaign")
+    completion = _object(audit.get("completion"), field="completion")
+    conclusion = _object(audit.get("audit_conclusion"), field="audit_conclusion")
+    recording = _object(audit.get("recording"), field="recording")
+    scope = _object(audit.get("scope"), field="scope")
+    verification = _object(audit.get("verification"), field="verification")
+    public_verifier = _object(
+        verification.get("authoritative_public_evaluation_verifier"),
+        field="verification.authoritative_public_evaluation_verifier",
+    )
+    hashes_and_seals = _object(audit.get("hashes_and_seals"), field="hashes_and_seals")
+
+    evaluation_id = _string(campaign.get("evaluation_id"), field="campaign.evaluation_id")
+    if (
+        evaluation_id != expected_evaluation_id
+        or public_verifier.get("evaluation_id") != evaluation_id
+    ):
+        raise ValueError("campaign audit evaluation identity does not match the named campaign")
+    if public_verifier.get("verified") is not True or public_verifier.get("errors") != []:
+        raise ValueError("campaign audit authoritative public verifier did not pass")
+    if conclusion.get("integrity_verified") is not True:
+        raise ValueError("campaign audit does not claim verified integrity")
+    if conclusion.get("completion_genuinely_observed") is not False:
+        raise ValueError("campaign audit completion boundary is inconsistent")
+    if campaign.get("partition") != "development" or campaign.get("surface") != "local-public":
+        raise ValueError("campaign audit is not authorized local-public development evidence")
+    if (
+        campaign.get("holdout_consumed") is not False
+        or campaign.get("source_semantically_inspected") is not False
+    ):
+        raise ValueError("campaign audit crossed a holdout or source-inspection boundary")
+    if (
+        scope.get("holdout_accessed") is not False
+        or scope.get("target_game_source_inspected") is not False
+    ):
+        raise ValueError("campaign audit scope crossed a protected boundary")
+    if scope.get("read_only_campaign_audit") is not True:
+        raise ValueError("campaign audit was not declared read-only")
+
+    final_state = _string(
+        completion.get("authoritative_completion_state"),
+        field="completion.authoritative_completion_state",
+    )
+    levels_completed = _nonnegative_int(
+        completion.get("levels_completed"),
+        field="completion.levels_completed",
+    )
+    win_levels = _nonnegative_int(
+        completion.get("win_levels"),
+        field="completion.win_levels",
+    )
+    submission_count = _nonnegative_int(
+        completion.get("submission_count"),
+        field="completion.submission_count",
+    )
+    if (
+        final_state != GameStateName.NOT_FINISHED.value
+        or conclusion.get("final_environment_state") != final_state
+        or completion.get("official_run_state") != final_state
+        or completion.get("raw_final_state") != final_state
+        or completion.get("metric_final_state") != final_state
+        or completion.get("completion_observed") is not False
+        or completion.get("score_completed") is not False
+    ):
+        raise ValueError("campaign audit does not preserve the authoritative NOT_FINISHED boundary")
+    if (
+        completion.get("official_run_action_count") != submission_count
+        or completion.get("non_reset_environment_action_count") != submission_count
+        or recording.get("consequence_count_excluding_initial_observation") != submission_count
+    ):
+        raise ValueError("campaign audit action-accounting fields disagree")
+    row_count = _nonnegative_int(
+        recording.get("event_count_including_initial_reset_observation"),
+        field="recording.event_count_including_initial_reset_observation",
+    )
+    if row_count != submission_count + 1 or recording.get("initial_action") != "RESET":
+        raise ValueError("campaign audit recording cardinality is inconsistent")
+    final_observation = _object(
+        recording.get("final_observation"),
+        field="recording.final_observation",
+    )
+    if final_observation != {
+        "levels_completed": levels_completed,
+        "state": final_state,
+        "win_levels": win_levels,
+    }:
+        raise ValueError("campaign audit final recording observation disagrees with completion")
+
+    evaluation_root = Path(
+        _string(scope.get("evaluation_root"), field="scope.evaluation_root")
+    ).resolve(strict=True)
+    relative_text = _string(recording.get("path"), field="recording.path")
+    relative = PurePosixPath(relative_text)
+    if (
+        relative.is_absolute()
+        or "\\" in relative_text
+        or any(part in {"", ".", ".."} for part in relative.parts)
+    ):
+        raise ValueError("campaign audit recording path is unsafe")
+    recording_path = evaluation_root.joinpath(*relative.parts).resolve(strict=True)
+    try:
+        recording_path.relative_to(evaluation_root)
+    except ValueError as error:
+        raise ValueError("campaign audit recording path escapes the evaluation root") from error
+
+    recording_sha256 = _normalized_sha256(
+        _string(recording.get("sha256"), field="recording.sha256"),
+        field="recording SHA-256",
+    )
+    byte_length = _nonnegative_int(
+        recording.get("byte_length"),
+        field="recording.byte_length",
+    )
+    trace_manifest_verified = hashes_and_seals.get("trace_manifest_object_hash_verified")
+    if not isinstance(trace_manifest_verified, bool):
+        raise ValueError("campaign audit trace-manifest verification flag is not boolean")
+    game_id = _string(campaign.get("game_id"), field="campaign.game_id")
+    binding: dict[str, JSONValue] = {
+        "audit_file_sha256": file_sha256,
+        "audit_object_hash": named_object_hash,
+        "audit_path": str(audit_path),
+        "audit_schema": CAMPAIGN_AUDIT_SCHEMA,
+        "authoritative_public_verifier": True,
+        "evaluation_id": evaluation_id,
+        "historical_frozen_commit": _string(
+            campaign.get("frozen_git_commit"), field="campaign.frozen_git_commit"
+        ),
+        "integrity_verified": True,
+        "trace_manifest_object_hash": hashes_and_seals.get("trace_manifest_object_hash"),
+        "trace_manifest_object_hash_verified": trace_manifest_verified,
+    }
+    derived: dict[str, object] = {
+        "byte_length": byte_length,
+        "final_state": final_state,
+        "game_id": game_id,
+        "levels_completed": levels_completed,
+        "recording_sha256": recording_sha256,
+        "row_count": row_count,
+        "submission_count": submission_count,
+        "win_levels": win_levels,
+    }
+    return binding, recording_path, derived
+
+
+def _write_exclusive(path: Path, value: object) -> None:
+    if path.is_symlink() or path.exists():
+        raise RuntimeError("replay receipt output already exists and cannot be overwritten")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    encoded = canonical_json_bytes(value)
+    with path.open("xb") as stream:
+        stream.write(encoded)
+        stream.flush()
+        os.fsync(stream.fileno())
+
+
+def _parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--campaign-audit", type=Path, required=True)
+    parser.add_argument("--expected-campaign-audit-file-sha256", required=True)
+    parser.add_argument("--expected-campaign-audit-object-hash", required=True)
+    parser.add_argument("--expected-evaluation-id", required=True)
+    parser.add_argument("--expected-commit", required=True)
+    parser.add_argument("--expected-tree", required=True)
+    parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--policy-profile", choices=(POLICY_PROFILE,), required=True)
+    return parser
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = _parser().parse_args(argv)
+    if not _BYTECODE_DISABLED_AT_STARTUP:
+        raise SystemExit("invoke the replay verifier with Python -B to prohibit bytecode writes")
+    if not _DIRECT_SCRIPT_INVOCATION:
+        raise SystemExit("invoke the replay verifier by its script path, not as an imported module")
+    output = args.output.resolve()
+    if output.is_symlink() or output.exists():
+        raise SystemExit("replay receipt output already exists and cannot be overwritten")
+    if output.is_relative_to(ROOT):
+        raise SystemExit("replay receipt output must remain outside the source repository")
+    try:
+        repository_before = _repository_file_projection()
+        source_binding, source_before = _source_snapshot(
+            expected_commit=args.expected_commit,
+            expected_tree=args.expected_tree,
+        )
+        campaign_binding, recording_path, expected = _campaign_binding(
+            campaign_audit=args.campaign_audit,
+            expected_file_sha256=args.expected_campaign_audit_file_sha256,
+            expected_object_hash=args.expected_campaign_audit_object_hash,
+            expected_evaluation_id=args.expected_evaluation_id,
+        )
+        replay = replay_unfinished_mechanical_recording(
+            recording_path,
+            expected_game_id=cast(str, expected["game_id"]),
+            expected_recording_sha256=cast(str, expected["recording_sha256"]),
+            expected_byte_length=cast(int, expected["byte_length"]),
+            expected_row_count=cast(int, expected["row_count"]),
+            expected_final_state=GameStateName(cast(str, expected["final_state"])),
+            expected_levels_completed=cast(int, expected["levels_completed"]),
+            expected_win_levels=cast(int, expected["win_levels"]),
+            max_coordinate_candidates=MAX_COORDINATE_CANDIDATES,
+        )
+        replay_result = _object(replay.get("replay_result"), field="replay_result")
+        if replay_result.get("matched_submission_count") != expected["submission_count"]:
+            raise ValueError("canonical replay count disagrees with the campaign audit")
+        source_after_binding, source_after = _source_snapshot(
+            expected_commit=args.expected_commit,
+            expected_tree=args.expected_tree,
+        )
+        if source_before != source_after or source_binding != source_after_binding:
+            raise RuntimeError("source projection changed during replay")
+        repository_after = _repository_file_projection()
+        if repository_before != repository_after:
+            raise RuntimeError("repository file projection changed during replay")
+        source_binding["post_replay_projection_verified"] = True
+        source_binding["repository_file_count"] = len(repository_after)
+        source_binding["repository_file_projection_sha256"] = sha256_bytes(
+            canonical_json_bytes(repository_after)
+        )
+        source_binding["repository_projection_scope"] = (
+            "all regular non-.git files from direct Python -B startup through receipt assembly"
+        )
+        boundaries = _object(replay.get("boundaries"), field="boundaries")
+        boundaries["repository_files_modified_by_replay"] = False
+        payload: dict[str, JSONValue] = {
+            **replay,
+            "campaign_audit_binding": campaign_binding,
+            "generated_at": datetime.now(UTC).isoformat(),
+            "policy_binding": {
+                "class": "arc3.mechanics.visual_causal.VisualCausalPolicy",
+                "max_coordinate_candidates": MAX_COORDINATE_CANDIDATES,
+                "profile": args.policy_profile,
+            },
+            "receipt_status": "PASS_RECORDED_FRAME_REPLAY",
+            "runtime": {
+                "bytecode_writes_disabled_at_startup": _BYTECODE_DISABLED_AT_STARTUP,
+                "direct_script_invocation": _DIRECT_SCRIPT_INVOCATION,
+                "platform": platform.platform(),
+                "python": platform.python_version(),
+            },
+            "source_binding": source_binding,
+        }
+        document: dict[str, JSONValue] = seal_object(
+            {
+                "payload": payload,
+                "payload_sha256": sha256_bytes(canonical_json_bytes(payload)),
+                "schema": SCHEMA,
+            },
+            hash_field="replay_receipt_hash",
+        )
+        if not verify_object_hash(document, hash_field="replay_receipt_hash"):
+            raise RuntimeError("replay receipt self-seal could not be verified")
+        _write_exclusive(output, document)
+    except (OSError, RuntimeError, ValueError, ARC3Error) as error:
+        raise SystemExit(f"mechanical recording replay failed: {error}") from error
+
+    sys.stdout.write(
+        f"PASS_RECORDED_FRAME_REPLAY {output} {sha256_file(output)} "
+        f"{document['replay_receipt_hash']}\n"
+    )
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
