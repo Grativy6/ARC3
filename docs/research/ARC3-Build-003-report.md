@@ -279,19 +279,24 @@ contains 31 pinned Linux CPython 3.12 wheels.
 
 The package cold-start check passed in 3.0803145 seconds with 73,826,304 sampled peak RSS. Its
 embedded startup path took 2.8182920 seconds, including a 2.5552326-second import and a
-0.0001277-second agent instantiation, with zero network and zero process attempts. Package-only
-integrity passed at `C:\a\o3f83\integrity-receipt.json`, SHA-256
-`5ff2932b4cd5de6868652ec4b4d87f668207a53f8be4aaa12cb0ba4d513effd2`. The generated-log secret
-scan covered 22 logs and returned zero findings or redactions. The additional full static lock-only
-scan at `C:\a\i3f83.json`, SHA-256
-`6d83a04b1a2e652f60ad8dbb8cf401c6baa24f3bfb12b961a848cd39d5c33ffa`, passed source identity,
-policy, archive, and secret checks; supply-chain evaluation is explicitly `NOT_EVALUATED` under
-that lock-only scope.
+0.0001277-second agent instantiation, with zero network and zero process attempts. The package-only
+integrity receipt at `C:\a\o3f83\integrity-receipt.json`, SHA-256
+`5ff2932b4cd5de6868652ec4b4d87f668207a53f8be4aaa12cb0ba4d513effd2`, reports
+`package_only_passed=true`; its top-level `passed=false` only because public-identifier semantics
+are intentionally `NOT_EVALUATED` in package-only mode. The generated-log scan covered the 22
+persisted redacted stdout/stderr logs and returned zero findings or redactions; it does not claim
+every raw sealed byte was scanned. The additional full static lock-only scan at `C:\a\i3f83.json`,
+SHA-256 `6d83a04b1a2e652f60ad8dbb8cf401c6baa24f3bfb12b961a848cd39d5c33ffa`, passed source identity,
+policy, archive, and secret sub-checks but has top-level `passed=false`: supply-chain evaluation is
+explicitly `NOT_EVALUATED` under that lock-only scope, with 60 nonblocking
+`dependency-license-not-evaluated` warnings.
 
 The integrated exact-freeze verifier is nevertheless preserved as `FAILED_INFRASTRUCTURE`: its
 guarded test phase exceeded the fixed 2,400-second limit at 84 percent. Receipt:
 `C:\a\o3f83\release-verification-receipt.json`, SHA-256
-`35e84860f5c167677cfaa1de45fa903e099fff895a73e0ff81de0e366fd72ddb`. A separate no-deadline
+`35e84860f5c167677cfaa1de45fa903e099fff895a73e0ff81de0e366fd72ddb`. All 45 hashes declared by
+that receipt still match with zero missing or mismatched files, but the historical sealed artifact
+set remains explicitly incomplete because the verifier failed. A separate no-deadline
 exact-source recovery collected 1,022 tests and found one genuine synthetic-lab generator defect,
 with 1,018 inferred passes, three skips, and zero guard attempts. Its raw wrapper disposition is
 `FAILED_BOUNDARY`, classified here as `FAILED_MECHANISM` because the failure was an unsolvable
@@ -312,8 +317,9 @@ Current terminal verification status is:
 |---|---|
 | exact `83df552` offline package candidate and hashes | `PASS`; deterministic A/B package |
 | exact-freeze cold start | `PASS`; zero network/process attempts |
-| exact-freeze package-only integrity and generated-log secret scan | `PASS`; zero secret findings |
-| exact-freeze full static lock-only scan | `PASS` except supply chain `NOT_EVALUATED` by scope |
+| exact-freeze package-only integrity | `package_only_passed=true`; top-level `passed=false` because public identifiers are `NOT_EVALUATED` by scope |
+| exact-freeze generated-log secret scan | `PASS` for 22 persisted redacted logs; zero findings/redactions |
+| exact-freeze full static lock-only scan | top-level `passed=false`; four sub-checks `PASS`, supply chain `NOT_EVALUATED` by scope |
 | integrated exact-freeze verifier | `FAILED_INFRASTRUCTURE`; test timeout preserved |
 | standalone exact-freeze guarded test recovery | `FAILED_MECHANISM`; synthetic generator defect preserved and repaired post-freeze |
 | current documentation-head Linux package-only CI | `PENDING_EVIDENCE` |

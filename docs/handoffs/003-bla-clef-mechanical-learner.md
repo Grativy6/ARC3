@@ -158,14 +158,19 @@ manifest, SBOM, and build-receipt hashes are respectively
 `c2cc69ece59767a0999b1b4c9e3bd03103c41341ca08236943ebb6b7bf322423`.
 
 Cold start passed in 3.0803145 seconds with 73,826,304 sampled peak RSS and zero network or process
-attempts. Package-only integrity passed; generated-log secret scanning covered 22 logs with zero
-findings or redactions. The full static lock-only scan passed source, policy, archive, and secret
-checks while leaving supply chain explicitly `NOT_EVALUATED` by scope.
+attempts. Package-only integrity reports `package_only_passed=true`; its top-level `passed=false`
+only because public-identifier semantics are intentionally `NOT_EVALUATED` in that mode. The
+generated-log scan covered 22 persisted redacted stdout/stderr logs with zero findings or
+redactions; it is not a claim about every raw sealed byte. The full static lock-only receipt also
+has top-level `passed=false`: source, policy, archive, and secret sub-checks pass, while supply chain
+is explicitly `NOT_EVALUATED` by scope with 60 nonblocking warnings.
 
 Two failures remain preserved. The integrated verifier receipt at
 `C:\a\o3f83\release-verification-receipt.json`, SHA-256
 `35e84860f5c167677cfaa1de45fa903e099fff895a73e0ff81de0e366fd72ddb`, is
 `FAILED_INFRASTRUCTURE` because its guarded tests exceeded the fixed 2,400-second limit. The
+receipt's 45 declared artifact hashes currently match with no missing or mismatched file, but its
+sealed artifact set remains explicitly incomplete. The
 no-deadline recovery receipt at `C:\a\o3f83\package-only-test-guard-recovery.json`, SHA-256
 `a2b21eeb5c4a7ac7448ecfd9abdaf77902cf8ceaba12d0dde462c68d23d31a1a`, is classified
 `FAILED_MECHANISM`: one unsolvable procedural synthetic-lab case failed, 1,018 tests inferred

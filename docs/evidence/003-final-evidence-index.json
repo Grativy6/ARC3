@@ -1,6 +1,6 @@
 {
   "schema": "arc3.build-003.final-evidence-index.v0.1",
-  "generated_at": "2026-08-26T05:07:28Z",
+  "generated_at": "2026-08-26T05:14:10Z",
   "index_status": "DRAFT_PENDING_EVIDENCE",
   "overall_build_status": "IN_PROGRESS",
   "status": "IN_PROGRESS",
@@ -609,21 +609,31 @@
       "tournament_mode_configured": true
     },
     "exact_freeze_integrity_and_secret": {
-      "status": "PASS_WITH_EXPLICIT_STATIC_LOCK_ONLY_LIMIT",
+      "status": "SCOPED_SUBCHECKS_PASS_TOP_LEVEL_FALSE",
       "package_only_integrity_receipt_path": "C:\\a\\o3f83\\integrity-receipt.json",
       "package_only_integrity_receipt_sha256": "sha256:5ff2932b4cd5de6868652ec4b4d87f668207a53f8be4aaa12cb0ba4d513effd2",
+      "package_only_integrity_embedded_receipt_hash": "sha256:3bd7f4a233ce1bae7f18cebb5ef6238148417a343b012cc85a553fcba8da43d4",
       "package_only_integrity_duration_seconds": 10.85707589998492,
+      "package_only_passed": true,
+      "package_only_top_level_passed": false,
+      "package_only_public_identifier_semantics": "NOT_EVALUATED",
       "full_static_lock_only_receipt_path": "C:\\a\\i3f83.json",
       "full_static_lock_only_receipt_sha256": "sha256:6d83a04b1a2e652f60ad8dbb8cf401c6baa24f3bfb12b961a848cd39d5c33ffa",
+      "full_static_lock_only_embedded_receipt_hash": "sha256:63f26a1ae2efba2969a6e0c6e1f7caaad7c5a75a697a2dd0a850b014bbd56ca7",
+      "full_static_lock_only_top_level_passed": false,
       "source_identity": "PASS",
       "policy": "PASS",
       "archive": "PASS",
       "secret": "PASS",
       "supply_chain": "NOT_EVALUATED",
       "supply_chain_reason": "full static receipt used explicit lock-only scope",
+      "supply_chain_nonblocking_warnings": 60,
+      "supply_chain_warning_type": "dependency-license-not-evaluated",
+      "blocking_findings": 0,
       "generated_log_count": 22,
       "generated_log_secret_findings": 0,
-      "generated_log_redactions": 0
+      "generated_log_redactions": 0,
+      "generated_log_scope": "persisted redacted stdout and stderr logs only; not every raw sealed byte"
     },
     "integrated_exact_freeze_verifier": {
       "status": "FAILED_INFRASTRUCTURE",
@@ -637,6 +647,10 @@
       "progress_at_timeout": "84%",
       "test_stdout_sha256": "sha256:6d8a5b6a012a0d56cb2166b5897477fe6460937236151ea3bea90b88b49a613f",
       "all_other_required_checks_passed": true,
+      "declared_artifact_hashes": 45,
+      "matching_declared_artifact_hashes": 45,
+      "missing_declared_artifacts": 0,
+      "mismatched_declared_artifacts": 0,
       "sealed_artifact_set_complete": false
     },
     "standalone_exact_freeze_guard_recovery": {
@@ -707,26 +721,26 @@
     },
     {
       "path": "docs/ledger/build-003-run-state.json",
-      "sha256": "sha256:5b9451a724ac3b9654c596d4e0fb95bf1bddd0728439a69141547261ff63b321",
+      "sha256": "sha256:3910a34fe8126e5f94325e3142766bb16192a499d1cb8c1f08c4fa35f519ce98",
       "status": "CURRENT_AT_INDEX_DRAFT"
     },
     {
       "path": "docs/ledger/build-003-DECISIONS.md",
-      "sha256": "sha256:b61b8167f62d5b126d2c887f12871b205a6712d62171573eed958949ea6f0def",
+      "sha256": "sha256:8d0eacf980310742b9040a1f34f61d8a2458527ea5cf23ca5761d5390e67c496",
       "status": "CURRENT_AT_INDEX_DRAFT"
     },
     {
       "path": "docs/ledger/build-003-OPEN-BURDENS.md",
-      "sha256": "sha256:5bd6a32ea656029857a80e0fb841417ebec02b696c34a9250e99b01fc3a8cbd0",
+      "sha256": "sha256:26afb6a82c873275a909aa21d7441bbf38974e6f133c4b26ee3e6c09e032a1cd",
       "status": "CURRENT_AT_INDEX_DRAFT"
     },
     {
       "path": "docs/research/ARC3-Build-003-report.md",
-      "sha256": "sha256:f652006fccfda14e4f74bc7a55046d6d9d29dec53b32f4a64e4fe522731485b0"
+      "sha256": "sha256:ed424ad5198d5309e55a83328774e118ff220ea39e22e3059b5432ad3b4617ba"
     },
     {
       "path": "docs/handoffs/003-bla-clef-mechanical-learner.md",
-      "sha256": "sha256:96f991ed41510c57179352f0559bc7538ca55dba32817703d7048b304fa8ad2e"
+      "sha256": "sha256:3029b9d82ab3916abadab40659e983dd0773a538ae0e20f87b1bd92d5906f5d9"
     }
   ],
   "self_identity": {
