@@ -17,9 +17,11 @@
   },
   "implementation_freeze": {
     "branch": "build/003-bla-clef-mechanical-learner",
-    "commit": "83df5520478cc209c06d9ce4e658c90786914544",
-    "tree": "3d1a45995b004947900de3114449a7e42bd80a87",
-    "status": "FROZEN",
+    "prior_commit": "83df5520478cc209c06d9ce4e658c90786914544",
+    "prior_tree": "3d1a45995b004947900de3114449a7e42bd80a87",
+    "commit": "b7d10cd53e7b6138a063d5a2124ab3f0c985e792",
+    "tree": "0fa6b0a3b44a7b0b12a1fb68726f86f98d154816",
+    "status": "REOPENED_BY_CAMPAIGN_30_FAILED_MECHANISM_AND_REFROZEN_AS_CAMPAIGN_31_CANDIDATE",
     "later_change_boundary": "evidence, assurance, and documentation only unless a ledgered defect explicitly reopens implementation"
   },
   "documentation_head": {
@@ -503,25 +505,85 @@
       "tail_event_hash": "sha256:3c3e851f18a81451079beebe7b2233690b4011495a9fb2b876f14909400c5695",
       "sha256": "sha256:b3feda3d24756cb279ac7a9fbbeed1b301fd19c6953ea997a20535d20c20233a"
     },
+    "exposure_ledger_after_campaign_30": {
+      "path": "C:\\a\\arc3-b003-play\\public-exposure.jsonl",
+      "events": 57,
+      "development_events": 57,
+      "holdout_events": 0,
+      "last_sequence": 56,
+      "tail_event_hash": "sha256:ae6045e234ffa04430252aa83e5f57dfa0759c879042af5f79b287d94cb1d7c0",
+      "sha256": "sha256:559c6d8f90d0bb700df82084e283d1f55bde318d9417d907bda5be32c4b05371"
+    },
     "campaign_29": {
-      "status": "PENDING_EVIDENCE",
+      "status": "FAILED_MECHANISM",
       "game_id": "r11l-495a7899",
-      "evaluation_id": "PENDING_EVIDENCE",
-      "final_environment_state": "PENDING_EVIDENCE",
-      "levels_completed": "PENDING_EVIDENCE",
-      "win_levels": "PENDING_EVIDENCE",
-      "submitted_action_count": "PENDING_EVIDENCE",
-      "non_reset_environment_action_count": "PENDING_EVIDENCE",
-      "reset_count": "PENDING_EVIDENCE",
-      "game_over_events": "PENDING_EVIDENCE",
-      "win_events": "PENDING_EVIDENCE",
-      "recording_path": "PENDING_EVIDENCE",
-      "replay_or_evidence_path": "PENDING_EVIDENCE",
-      "recording_verified": "PENDING_EVIDENCE",
-      "receipt_complete": "PENDING_EVIDENCE",
-      "completion_observed": "PENDING_EVIDENCE",
-      "completion_genuinely_observed": "PENDING_EVIDENCE",
+      "evaluation_id": "build003-r11l-mechanical-seed7-83df552-campaign29",
+      "final_environment_state": "NOT_FINISHED",
+      "official_score_boundary_state": "GAME_OVER",
+      "levels_completed": 4,
+      "win_levels": 6,
+      "submitted_action_count": 140,
+      "non_reset_environment_action_count": 139,
+      "reset_count": 1,
+      "game_over_events": 1,
+      "win_events": 0,
+      "recording_path": "C:\\a\\arc3-b003-play\\build003-r11l-mechanical-seed7-83df552-campaign29\\official-recordings\\c2120ed7e4beb839e4d0\\c76a9061-2b76-4a7a-ab17-484b110da2b4\\r11l-495a7899-2323d762-6add-476b-bbfa-5f0b73d3fca7.jsonl",
+      "replay_or_evidence_path": "C:\\a\\arc3-b003-play\\campaign29-6c32d2a-c9f7422d-canonical-replay-receipt.json",
+      "recording_verified": true,
+      "run_evidence_complete": true,
+      "receipt_complete": false,
+      "completion_observed": false,
+      "completion_genuinely_observed": false,
       "inherit_campaign_28_values_permitted": false
+    },
+    "campaign_30": {
+      "status": "FAILED_MECHANISM_WITH_DISTINCT_FAILED_INFRASTRUCTURE_RECORDING_GAP",
+      "game_id": "r11l-495a7899",
+      "evaluation_id": "build003-r11l-mechanical-seed7-6c32d2a-campaign30",
+      "frozen_commit": "6c32d2a65e61a7b1160fd1c09e8f991078fc9477",
+      "final_environment_state": "NOT_FINISHED",
+      "official_score_boundary_state": "GAME_OVER",
+      "levels_completed": 4,
+      "win_levels": 6,
+      "submitted_action_count": 158,
+      "non_reset_environment_action_count": 157,
+      "reset_count": 1,
+      "game_over_events": 1,
+      "win_events": 0,
+      "root": "C:\\a\\arc3-b003-play\\build003-r11l-mechanical-seed7-6c32d2a-campaign30",
+      "recording_path": "C:\\a\\arc3-b003-play\\build003-r11l-mechanical-seed7-6c32d2a-campaign30\\official-recordings\\c2120ed7e4beb839e4d0\\72c4cad8-2722-4bde-a245-4e17105d8a4f\\r11l-495a7899-16aabf55-3bf2-4940-bc15-d1f0a623f32c.jsonl",
+      "recording_sha256": "sha256:b572a00f7b451539223fcd2692da3480c542313d362df43228e3de3d9c7c3524",
+      "recording_rows": 152,
+      "recording_verified": false,
+      "run_evidence_complete": false,
+      "receipt_complete": false,
+      "sealed_trace_path": "C:\\a\\arc3-b003-play\\build003-r11l-mechanical-seed7-6c32d2a-campaign30\\t\\c2120ed7e4beb839e4d0",
+      "sealed_trace_events": 950,
+      "sealed_trace_submissions": 158,
+      "sealed_trace_manifest_hash": "sha256:14ce2dde4f7b3b3a528c58f619731ea5710b819107da8260691362651b4fb246",
+      "sealed_trace_tail": "sha256:5f24877c5111bbb5747defe13d16f99e3d43323e09f6cc78a3f004f8c494800e",
+      "clean_exact_commit_trace_replay": "C:\\a\\arc3-b003-play\\build003-r11l-mechanical-seed7-6c32d2a-campaign30-sealed-trace-replay-b7d10cd.json",
+      "clean_exact_commit_trace_replay_sha256": "sha256:a563e7467f93125aa62dc2f1f9b0c679c4fd888fc462d8ec0b9249278d6977af",
+      "clean_exact_commit_trace_replay_payload_sha256": "sha256:885b7c8217cfcbd41180411850b3bdc15cd1a68fbb628c964b1719ee1efad3a5",
+      "clean_exact_commit_trace_replay_receipt_hash": "sha256:44131fce61ee820fca2eb4381afa965af29aeae2588e68afd5879a7c95d699f1",
+      "clean_exact_commit_trace_replay_status": "PASS_SEALED_TRACE_REPLAY; zero environment actions; incomplete SDK recording unchanged",
+      "completion_observed": false,
+      "completion_genuinely_observed": false,
+      "failed_hypothesis": "proximity-assigned paired composite-sink sufficiency",
+      "exact_inverse_non_edge_recovery_observed": true
+    },
+    "campaign_31_candidate": {
+      "status": "IMPLEMENTED_AND_PUSHED; EXACT INTEGRITY, ACTION-SEMANTICS, AND TRACE GATES PASS; OFFICIAL CONSEQUENCE PENDING",
+      "commit": "b7d10cd53e7b6138a063d5a2124ab3f0c985e792",
+      "tree": "0fa6b0a3b44a7b0b12a1fb68726f86f98d154816",
+      "hypothesis": "residual-linked mixed support",
+      "exact_clone_integrity": "PASS: 54 focused cases",
+      "exact_clone_action_semantics": "PASS: zero findings",
+      "exact_clone_trace_replay": "PASS: 950 events, 158 action cycles, candidate cancelled, zero environment actions",
+      "exact_clone_trace_replay_receipt": "C:\\a\\arc3-b003-play\\build003-r11l-mechanical-seed7-6c32d2a-campaign30-sealed-trace-replay-b7d10cd.json",
+      "worktree_trace_replay": "PASS diagnostic only; 950 events and 158 action cycles, candidate cancelled, zero environment actions",
+      "official_environment_state": "NOT_YET_OBSERVED",
+      "completion_observed": false
     }
   },
   "implementation_freeze_verification": {
@@ -680,16 +742,22 @@
       "mypy_strict": "PASS",
       "competition_payload_members": 114,
       "competition_payload_lab_members": 0,
-      "production_freeze_reopened": false,
-      "campaign_29_policy_commit": "83df5520478cc209c06d9ce4e658c90786914544"
+      "production_freeze_reopened": true,
+      "campaign_29_policy_commit": "83df5520478cc209c06d9ce4e658c90786914544",
+      "campaign_30_policy_commit": "6c32d2a65e61a7b1160fd1c09e8f991078fc9477",
+      "campaign_31_candidate_commit": "b7d10cd53e7b6138a063d5a2124ab3f0c985e792"
     },
     "current_head_ci": {
-      "status": "PENDING_EVIDENCE",
-      "head_commit": "PENDING_EVIDENCE",
-      "ubuntu": "PENDING_EVIDENCE",
-      "windows": "PENDING_EVIDENCE",
-      "package_only": "PENDING_EVIDENCE",
-      "run_urls": "PENDING_EVIDENCE"
+      "status": "B7D10CD_MIXED_WITH_PRESERVED_WINDOWS_TIMEOUT; TIMEOUT_REPAIR_PENDING_COMMIT_AND_CI",
+      "head_commit": "b7d10cd53e7b6138a063d5a2124ab3f0c985e792",
+      "ubuntu": "PASS for b7d10cd package-only and ordinary CI jobs observed so far; timeout-repair head pending",
+      "windows": "b7d10cd package-only push PASS, package-only PR FAILED_INFRASTRUCTURE at the exact 2400-second internal ceiling, ordinary CI runs still in progress at the evidence snapshot; timeout-repair head pending",
+      "package_only": "paired exact-source diagnosis: PR run 32953824616 failed infrastructure at 2400.0343565 seconds near 95 percent; push run 32953819904 completed 1053 passed and 3 skipped in 2382.0408983 seconds and returned expected BLOCKED_EXTERNAL; only package-safe-test-suite ceiling raised to 2700 seconds, current-head result pending",
+      "failed_receipt": "C:\\a\\arc3-ci-b7d10cd-package-win-pr-fail\\release-verification-receipt.json",
+      "failed_receipt_file_sha256": "sha256:04daa6ab6d9c6537add994312594c9a7708b38d7d0fb77673e613ee64b8bccc8",
+      "passing_receipt": "C:\\a\\arc3-ci-b7d10cd-package-win-push-pass\\release-verification-receipt.json",
+      "passing_receipt_file_sha256": "sha256:a4d290383734a0a306de34f14546fb359b166790a10824c7a074452ca1e7569a",
+      "run_urls": "https://github.com/Grativy6/ARC3/actions/runs/32953824616 ; https://github.com/Grativy6/ARC3/actions/runs/32953819904"
     }
   },
   "stage_disposition": {
@@ -704,7 +772,7 @@
     "08": "FAILED_MECHANISM",
     "09": "PASS",
     "10": "IN_PROGRESS",
-    "11": "IN_PROGRESS"
+    "11": "PENDING"
   },
   "tracked_evidence": [
     {
@@ -721,17 +789,17 @@
     },
     {
       "path": "docs/ledger/build-003-run-state.json",
-      "sha256": "sha256:3910a34fe8126e5f94325e3142766bb16192a499d1cb8c1f08c4fa35f519ce98",
+      "sha256": "sha256:a60a824b2b89189ee5cb80de4ac35aa716569d7cbd72f8f9eaa23e6735e927dd",
       "status": "CURRENT_AT_INDEX_DRAFT"
     },
     {
       "path": "docs/ledger/build-003-DECISIONS.md",
-      "sha256": "sha256:8d0eacf980310742b9040a1f34f61d8a2458527ea5cf23ca5761d5390e67c496",
+      "sha256": "sha256:3412202eb7f1b02184efc6de519e7a051caa69e1f20eeda5dd455b637a3ee241",
       "status": "CURRENT_AT_INDEX_DRAFT"
     },
     {
       "path": "docs/ledger/build-003-OPEN-BURDENS.md",
-      "sha256": "sha256:26afb6a82c873275a909aa21d7441bbf38974e6f133c4b26ee3e6c09e032a1cd",
+      "sha256": "sha256:61531b229ffb6867c39bf88919bc0541d51e9f908bb5ea57b4ab269e23206566",
       "status": "CURRENT_AT_INDEX_DRAFT"
     },
     {
@@ -762,14 +830,12 @@
     "game_source_semantically_inspected": false
   },
   "pending_evidence": [
-    "current documentation-head Ubuntu, Windows, and package-only CI",
+    "current timeout-repair-head Ubuntu, Windows, and package-only CI",
     "final documentation commit and tree",
     "draft pull request exact final pushed head",
-    "Campaign 29 final environment state",
-    "Campaign 29 levels_completed and win_levels",
-    "Campaign 29 submitted, non-reset, and reset action counts",
-    "Campaign 29 replay and evidence paths",
-    "Campaign 29 recording and receipt verification",
-    "Campaign 29 genuinely observed completion"
+    "Campaign 31 official final environment state, levels_completed, win_levels, and action count",
+    "Campaign 31 replay and evidence paths",
+    "Campaign 31 recording and receipt verification",
+    "genuinely observed official GameState.WIN"
   ]
 }

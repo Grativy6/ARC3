@@ -61,6 +61,7 @@ def test_package_only_plan_has_no_public_inventory_or_gameplay(tmp_path: Path) -
     assert "scripts.package_only_pytest" in by_id["package-safe-test-suite"].argv
     assert "--select-in-process-tests" in by_id["package-safe-test-suite"].argv
     assert "--build001-boundary-policy" in by_id["package-safe-test-suite"].argv
+    assert by_id["package-safe-test-suite"].timeout_seconds == 2700.0
     assert (
         by_id["package-safe-test-suite"].argv[
             by_id["package-safe-test-suite"].argv.index("--expected-commit") + 1
