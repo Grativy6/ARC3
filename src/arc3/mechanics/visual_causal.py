@@ -274,6 +274,13 @@ class PlannedClick:
     expected_occluded_endpoint_cells: tuple[tuple[int, int], ...] = ()
     expected_visible_endpoint_count: int | None = None
     expected_visible_mediator_count: int | None = None
+    carrier_source_recovery_alternative: PlannedClick | None = None
+    carrier_source_recovery_candidates: tuple[PlannedClick, ...] = ()
+    required_carried_source_support_indexes: tuple[int, ...] = ()
+    expected_carried_source_support_indexes: tuple[int, ...] = ()
+    carrier_source_delivery_actions: tuple[PlannedClick, ...] = ()
+    carrier_source_delivery_step: bool = False
+    completes_carrier_source_delivery: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -5360,6 +5367,89 @@ def _carrier_source_residual_foreground_projected_scene(
     )
 
 
+def _carrier_source_carried_projected_scene(
+    scene: VisualScene,
+    hierarchy: _AffineHierarchy,
+    supports: tuple[_HierarchySourceSupport, ...],
+    *,
+    positions: dict[str, tuple[int, int]],
+    colors: dict[str, int],
+    carried_support_indexes: frozenset[int],
+) -> VisualScene:
+    """Project an exact, observation-certified subset of carried sources.
+
+    A carried source is removed before hierarchy rendering so unrelated dynamic
+    cells rendered through its old footprint are preserved.  Its complete observed
+    cell/color pattern is then translated over its own recomputed child mediator.
+    Sources outside the certified subset retain the static residual-overlay model.
+    """
+
+    if tuple(item.child for item in supports) != hierarchy.children:
+        raise ValueError("carrier-source supports must retain hierarchy child order")
+    if any(index < 0 or index >= len(supports) for index in carried_support_indexes):
+        raise ValueError("carried-source subset contains an unknown support")
+    source_surfaces = tuple(frozenset(support.source.cells) for support in supports)
+    if len(frozenset(cell for surface in source_surfaces for cell in surface)) != sum(
+        len(surface) for surface in source_surfaces
+    ):
+        raise ValueError("carrier-source carried projection requires disjoint sources")
+
+    base_rows = [list(row) for row in scene.cells]
+    for index in carried_support_indexes:
+        for x, y in source_surfaces[index]:
+            base_rows[y][x] = scene.background
+    source_stripped_scene = extract_visual_scene(GridFrame.from_rows(base_rows))
+    projected = _hierarchy_projected_scene(
+        source_stripped_scene,
+        hierarchy,
+        positions=positions,
+        colors=colors,
+    )
+    rows = [list(row) for row in projected.cells]
+    for index, support in enumerate(supports):
+        if index in carried_support_indexes:
+            continue
+        endpoint_centers = tuple(
+            positions[endpoint.object_ref] for endpoint in support.child.endpoints
+        )
+        mediator_center = (
+            sum(center[0] for center in endpoint_centers) // support.child.arity,
+            sum(center[1] for center in endpoint_centers) // support.child.arity,
+        )
+        if mediator_center == support.source.center:
+            residual_color, residual_cells = _carrier_source_residual_foreground(support)
+            for x, y in residual_cells:
+                rows[y][x] = residual_color
+
+    translated_surfaces: list[frozenset[tuple[int, int]]] = []
+    for index in sorted(carried_support_indexes):
+        support = supports[index]
+        endpoint_centers = tuple(
+            positions[endpoint.object_ref] for endpoint in support.child.endpoints
+        )
+        mediator_center = (
+            sum(center[0] for center in endpoint_centers) // support.child.arity,
+            sum(center[1] for center in endpoint_centers) // support.child.arity,
+        )
+        source_x, source_y = support.source.center
+        translated = frozenset(
+            (mediator_center[0] + x - source_x, mediator_center[1] + y - source_y)
+            for x, y in support.source.cells
+        )
+        if (
+            len(translated) != len(support.source.cells)
+            or not _hierarchy_cells_in_bounds(scene, translated)
+            or any(translated & prior for prior in translated_surfaces)
+        ):
+            raise ValueError("carrier-source carried projection is not a unique safe translation")
+        translated_surfaces.append(translated)
+        for x, y in support.source.cells:
+            translated_x = mediator_center[0] + x - source_x
+            translated_y = mediator_center[1] + y - source_y
+            rows[translated_y][translated_x] = scene.cells[y][x]
+    return extract_visual_scene(GridFrame.from_rows(rows))
+
+
 def _hierarchy_cells_in_bounds(scene: VisualScene, cells: frozenset[tuple[int, int]]) -> bool:
     return all(0 < x < scene.width - 1 and 0 < y < scene.height - 1 for x, y in cells)
 
@@ -6774,6 +6864,288 @@ def _bridge_hierarchy_sequence_is_safe(
     return True
 
 
+def _carrier_source_raw_target_child_route(
+    scene: VisualScene,
+    hierarchy: _AffineHierarchy,
+    supports: tuple[_HierarchySourceSupport, ...],
+) -> tuple[int, tuple[tuple[str, tuple[int, int]], ...]] | None:
+    """Reuse the unique raw-linked child's earlier target-isolation layout.
+
+    The carrier relation is permitted to add a destination only when exactly one
+    source's non-carrier palette equals exactly one observed monochrome target
+    surface.  The endpoint destinations themselves come from the existing
+    child-isolation planner; only their endpoint identities are retained so role
+    exchanges can later be rebased through the post-carry positions.
+    """
+
+    if tuple(item.child for item in supports) != hierarchy.children:
+        return None
+    target_palette = frozenset(scene.cells[y][x] for x, y in hierarchy.target.cells)
+    matching_targets = tuple(
+        target
+        for target in scene.targets
+        if frozenset(scene.cells[y][x] for x, y in target.cells) == target_palette
+    )
+    if (
+        len(target_palette) != 1
+        or hierarchy.target.color not in target_palette
+        or matching_targets != (hierarchy.target,)
+    ):
+        return None
+    joined = tuple(
+        (index, support)
+        for index, support in enumerate(supports)
+        if support.source.palette - {support.example.carrier_color} == target_palette
+        and target_palette <= frozenset(support.example.residual_colors)
+    )
+    if len(joined) != 1:
+        return None
+    support_index, support = joined[0]
+
+    # Level zero is used only as a deterministic namespace for this structural
+    # layout lookup.  No level-specific evidence or coordinate enters the route.
+    relation_key = _hierarchy_relation_key(scene, hierarchy, level_index=0)
+    hypothesis_keys = tuple(
+        (
+            child,
+            _child_isolation_hypothesis_key(
+                scene,
+                child,
+                relation_key=relation_key,
+            ),
+        )
+        for child in hierarchy.children
+    )
+    selected_keys = tuple(key for child, key in hypothesis_keys if child == support.child)
+    if len(selected_keys) != 1:
+        return None
+    selected_key = selected_keys[0]
+    if any(child != support.child and key == selected_key for child, key in hypothesis_keys):
+        return None
+    child_plan = _child_isolation_plan(
+        scene,
+        hierarchy,
+        level_index=0,
+        rejected_signatures=set(),
+        rejected_hypothesis_keys={key for child, key in hypothesis_keys if child != support.child},
+    )
+    if (
+        child_plan is None
+        or child_plan.hypothesis_key != selected_key
+        or not child_plan.actions
+        or not child_plan.actions[-1].completes_child_isolation
+        or child_plan.actions[-1].arity != support.child.arity
+        or child_plan.actions[-1].mediator_color != support.child.mediator.color
+    ):
+        return None
+
+    endpoint_by_center: dict[tuple[int, int], str] = {}
+    for endpoint in support.child.endpoints:
+        if endpoint.rounded_center in endpoint_by_center:
+            return None
+        endpoint_by_center[endpoint.rounded_center] = endpoint.object_ref
+    active_refs = tuple(
+        endpoint.object_ref
+        for endpoint in support.child.endpoints
+        if endpoint.color == hierarchy.active_color
+    )
+    actions = list(child_plan.actions)
+    if actions[0].purpose is VisualActionPurpose.PROBE:
+        activation = actions.pop(0)
+        active_ref = endpoint_by_center.get((activation.coordinate.x, activation.coordinate.y))
+        if active_ref is None:
+            return None
+    elif len(active_refs) == 1:
+        active_ref = active_refs[0]
+    else:
+        return None
+
+    route: list[tuple[str, tuple[int, int]]] = []
+    for mover_index in range(support.child.arity):
+        if not actions:
+            return None
+        movement = actions.pop(0)
+        if movement.purpose is not VisualActionPurpose.PROGRESS:
+            return None
+        route.append((active_ref, (movement.coordinate.x, movement.coordinate.y)))
+        if mover_index + 1 == support.child.arity:
+            continue
+        if not actions:
+            return None
+        role_exchange = actions.pop(0)
+        if role_exchange.purpose is not VisualActionPurpose.PROBE:
+            return None
+        selected_ref = endpoint_by_center.get(
+            (role_exchange.coordinate.x, role_exchange.coordinate.y)
+        )
+        if selected_ref is None or selected_ref == active_ref:
+            return None
+        active_ref = selected_ref
+    points = tuple(point for _ref, point in route)
+    return (
+        (support_index, tuple(route))
+        if not actions
+        and len({ref for ref, _point in route}) == support.child.arity
+        and {ref for ref, _point in route}
+        == {endpoint.object_ref for endpoint in support.child.endpoints}
+        and sum(point[0] for point in points)
+        == support.child.arity * hierarchy.target.rounded_center[0]
+        and sum(point[1] for point in points)
+        == support.child.arity * hierarchy.target.rounded_center[1]
+        else None
+    )
+
+
+def _carrier_source_target_delivery_projected_state_is_safe(
+    scene: VisualScene,
+    baseline_scene: VisualScene,
+    hierarchy: _AffineHierarchy,
+    supports: tuple[_HierarchySourceSupport, ...],
+    *,
+    support_index: int,
+    baseline_positions: dict[str, tuple[int, int]],
+    positions: dict[str, tuple[int, int]],
+    colors: dict[str, int],
+    completes_delivery: bool,
+) -> VisualScene | None:
+    """Return one exact carried-source state only when unrelated cells survive."""
+
+    if (
+        tuple(item.child for item in supports) != hierarchy.children
+        or support_index < 0
+        or support_index >= len(supports)
+    ):
+        return None
+    support = supports[support_index]
+    endpoint_centers = tuple(positions[endpoint.object_ref] for endpoint in support.child.endpoints)
+    mediator_center = (
+        sum(center[0] for center in endpoint_centers) // support.child.arity,
+        sum(center[1] for center in endpoint_centers) // support.child.arity,
+    )
+    source_x, source_y = support.source.center
+    translated_source = frozenset(
+        (mediator_center[0] + x - source_x, mediator_center[1] + y - source_y)
+        for x, y in support.source.cells
+    )
+    endpoint_footprints = tuple(
+        _translated_object_footprint(endpoint, center=positions[endpoint.object_ref])
+        for endpoint in support.child.endpoints
+    )
+    if (
+        len(translated_source) != len(support.source.cells)
+        or not _hierarchy_cells_in_bounds(scene, translated_source)
+        or any(translated_source & footprint for footprint in endpoint_footprints)
+    ):
+        return None
+    selected_dynamic = _hierarchy_projected_group_footprint(
+        support.child,
+        endpoint_centers=endpoint_centers,
+        mediator_center=mediator_center,
+    )
+    target_regions = _visible_target_regions(baseline_scene)
+    if completes_delivery:
+        if (
+            mediator_center != hierarchy.target.rounded_center
+            or bool(frozenset(hierarchy.target.cells) & translated_source)
+            or not _hierarchy_avoids_target_regions(
+                selected_dynamic | translated_source,
+                tuple(
+                    (center, region)
+                    for center, region in target_regions
+                    if center != hierarchy.target.rounded_center
+                ),
+            )
+        ):
+            return None
+    elif mediator_center == hierarchy.target.rounded_center or not _hierarchy_avoids_target_regions(
+        selected_dynamic | translated_source,
+        target_regions,
+    ):
+        return None
+
+    try:
+        projected = _carrier_source_carried_projected_scene(
+            scene,
+            hierarchy,
+            supports,
+            positions=positions,
+            colors=colors,
+            carried_support_indexes=frozenset({support_index}),
+        )
+    except ValueError:
+        return None
+    for x, y in support.source.cells:
+        translated = (mediator_center[0] + x - source_x, mediator_center[1] + y - source_y)
+        if projected.cells[translated[1]][translated[0]] != scene.cells[y][x]:
+            return None
+
+    frozen_dynamic = frozenset(
+        cell
+        for child in hierarchy.children
+        if child != support.child
+        for cell in _hierarchy_projected_group_footprint(
+            child,
+            endpoint_centers=tuple(
+                baseline_positions[endpoint.object_ref] for endpoint in child.endpoints
+            ),
+            mediator_center=(
+                sum(baseline_positions[endpoint.object_ref][0] for endpoint in child.endpoints)
+                // child.arity,
+                sum(baseline_positions[endpoint.object_ref][1] for endpoint in child.endpoints)
+                // child.arity,
+            ),
+        )
+    )
+    protected_cells = set(frozen_dynamic)
+    for index, other_support in enumerate(supports):
+        if index != support_index:
+            protected_cells.update(other_support.source.cells)
+    for target in scene.targets:
+        protected_cells.update(target.cells)
+    if any(projected.cells[y][x] != baseline_scene.cells[y][x] for x, y in protected_cells):
+        return None
+
+    baseline_endpoint_centers = tuple(
+        baseline_positions[endpoint.object_ref] for endpoint in support.child.endpoints
+    )
+    baseline_mediator_center = (
+        sum(center[0] for center in baseline_endpoint_centers) // support.child.arity,
+        sum(center[1] for center in baseline_endpoint_centers) // support.child.arity,
+    )
+    initial_selected_dynamic = _hierarchy_projected_group_footprint(
+        support.child,
+        endpoint_centers=baseline_endpoint_centers,
+        mediator_center=baseline_mediator_center,
+    )
+    baseline_translated_source = frozenset(
+        (
+            baseline_mediator_center[0] + x - source_x,
+            baseline_mediator_center[1] + y - source_y,
+        )
+        for x, y in support.source.cells
+    )
+    baseline_occupied = frozenset(
+        (x, y)
+        for y, row in enumerate(baseline_scene.cells)
+        for x, value in enumerate(row)
+        if value != baseline_scene.background
+    )
+    stationary_occupied = baseline_occupied - initial_selected_dynamic - baseline_translated_source
+    if (selected_dynamic | translated_source) & stationary_occupied:
+        return None
+    mutable_cells = (
+        initial_selected_dynamic | selected_dynamic | baseline_translated_source | translated_source
+    )
+    if any(
+        projected.cells[y][x] != baseline_scene.cells[y][x]
+        for y in range(scene.height)
+        for x in range(scene.width)
+        if (x, y) not in mutable_cells
+    ):
+        return None
+    return projected
+
+
 def _build_hierarchy_plan(
     hierarchy: _AffineHierarchy,
     layouts: tuple[_HierarchyChildLayout, ...],
@@ -7016,6 +7388,10 @@ def _build_hierarchy_plan(
         + hashlib.sha256(f"{signature}:recovery".encode("ascii")).hexdigest()[:24]
     )
     recovery_plan_id = "visual-hierarchy-recovery:" + signature.rsplit(":", 1)[-1]
+    terminal_positions = dict(positions)
+    terminal_colors = dict(colors)
+    terminal_active_ref = active_ref
+    terminal_certificate = required
     recovery_actions: list[PlannedClick] = []
     for purpose, endpoint_ref, inverse_coordinate, group in reversed(inverse_specs):
         required_scene = projected_scene() if carrier_source_supports else None
@@ -7063,6 +7439,395 @@ def _build_hierarchy_plan(
         or required != initial_certificate
     ):
         raise ValueError("hierarchy recovery did not return to its exact observed origin")
+
+    if carrier_source_supports:
+        positions.clear()
+        positions.update(terminal_positions)
+        colors.clear()
+        colors.update(terminal_colors)
+        active_ref = terminal_active_ref
+
+        def source_subset_projected_scene(
+            carried_support_indexes: frozenset[int],
+            *,
+            projected_positions: dict[str, tuple[int, int]],
+            projected_colors: dict[str, int],
+        ) -> VisualScene:
+            return _carrier_source_carried_projected_scene(
+                scene,
+                hierarchy,
+                carrier_source_supports,
+                positions=projected_positions,
+                colors=projected_colors,
+                carried_support_indexes=carried_support_indexes,
+            )
+
+        def source_subset_certificate(projected: VisualScene) -> _HierarchyRasterCertificate:
+            return _HierarchyRasterCertificate(
+                protected_raster_hash=_child_isolation_protected_raster_hash(projected),
+                visible_endpoint_count=len(projected.endpoints),
+                visible_mediator_count=len(projected.mediators),
+            )
+
+        empty_terminal_scene = source_subset_projected_scene(
+            frozenset(),
+            projected_positions=positions,
+            projected_colors=colors,
+        )
+        if source_subset_certificate(empty_terminal_scene) != terminal_certificate:
+            raise ValueError(
+                "carrier-source recovery lattice must share the observed terminal boundary"
+            )
+
+        raw_target_route = _carrier_source_raw_target_child_route(
+            scene,
+            hierarchy,
+            carrier_source_supports,
+        )
+
+        def target_delivery_actions(
+            *,
+            support_index: int,
+            carried_subset: frozenset[int],
+        ) -> tuple[PlannedClick, ...]:
+            if (
+                raw_target_route is None
+                or raw_target_route[0] != support_index
+                or carried_subset != frozenset({support_index})
+            ):
+                return ()
+            support = carrier_source_supports[support_index]
+            route = raw_target_route[1]
+            delivery_positions = dict(positions)
+            delivery_colors = dict(colors)
+            delivery_active_refs = tuple(
+                ref for ref, color in delivery_colors.items() if color == hierarchy.active_color
+            )
+            if len(delivery_active_refs) != 1 or delivery_active_refs[0] != route[0][0]:
+                return ()
+            delivery_active_ref = delivery_active_refs[0]
+            baseline_positions = dict(delivery_positions)
+            baseline_scene = source_subset_projected_scene(
+                carried_subset,
+                projected_positions=delivery_positions,
+                projected_colors=delivery_colors,
+            )
+            if (
+                _carrier_source_target_delivery_projected_state_is_safe(
+                    scene,
+                    baseline_scene,
+                    hierarchy,
+                    carrier_source_supports,
+                    support_index=support_index,
+                    baseline_positions=baseline_positions,
+                    positions=delivery_positions,
+                    colors=delivery_colors,
+                    completes_delivery=False,
+                )
+                is None
+            ):
+                return ()
+            delivery_plan_id = (
+                "visual-carrier-source-delivery:"
+                + hashlib.sha256(
+                    (
+                        f"{recovery_signature}|{support.child.mediator.object_ref}|"
+                        + ";".join(f"{ref}>{point[0]},{point[1]}" for ref, point in route)
+                    ).encode("ascii")
+                ).hexdigest()[:24]
+            )
+            subset_indexes = tuple(sorted(carried_subset))
+            required_scene = baseline_scene
+            required_certificate = source_subset_certificate(required_scene)
+            planned_actions: list[PlannedClick] = []
+            for mover_index, (mover_ref, point) in enumerate(route):
+                if mover_ref != delivery_active_ref:
+                    if delivery_colors[mover_ref] == hierarchy.active_color:
+                        return ()
+                    selected_at = delivery_positions[mover_ref]
+                    if sum(center == selected_at for center in delivery_positions.values()) != 1:
+                        return ()
+                    delivery_colors[delivery_active_ref], delivery_colors[mover_ref] = (
+                        delivery_colors[mover_ref],
+                        delivery_colors[delivery_active_ref],
+                    )
+                    delivery_active_ref = mover_ref
+                    expected_scene = _carrier_source_target_delivery_projected_state_is_safe(
+                        scene,
+                        baseline_scene,
+                        hierarchy,
+                        carrier_source_supports,
+                        support_index=support_index,
+                        baseline_positions=baseline_positions,
+                        positions=delivery_positions,
+                        colors=delivery_colors,
+                        completes_delivery=False,
+                    )
+                    if expected_scene is None:
+                        return ()
+                    expected_certificate = source_subset_certificate(expected_scene)
+                    planned_actions.append(
+                        require_masked_lineage_only_if_needed(
+                            PlannedClick(
+                                coordinate=Coordinate(*selected_at),
+                                purpose=VisualActionPurpose.PROBE,
+                                expectation=(
+                                    "exchange roles within the uniquely raw-linked carried "
+                                    "child while preserving exact source attachment"
+                                ),
+                                mechanic_ref=hierarchy.mechanic_ref,
+                                plan_id=delivery_plan_id,
+                                plan_signature=recovery_signature,
+                                target_center=hierarchy.target.rounded_center,
+                                mediator_color=support.child.mediator.color,
+                                arity=support.child.arity,
+                                expected_active_center=selected_at,
+                                required_child_protected_raster_hash=(
+                                    required_certificate.protected_raster_hash
+                                ),
+                                expected_child_protected_raster_hash=(
+                                    expected_certificate.protected_raster_hash
+                                ),
+                                expected_visible_endpoint_count=(
+                                    expected_certificate.visible_endpoint_count
+                                ),
+                                expected_visible_mediator_count=(
+                                    expected_certificate.visible_mediator_count
+                                ),
+                                required_carried_source_support_indexes=subset_indexes,
+                                expected_carried_source_support_indexes=subset_indexes,
+                                carrier_source_delivery_step=True,
+                            ),
+                            required_scene,
+                        )
+                    )
+                    required_scene = expected_scene
+                    required_certificate = expected_certificate
+
+                if mover_ref != delivery_active_ref or delivery_positions[mover_ref] == point:
+                    return ()
+                delivery_positions[mover_ref] = point
+                completes_delivery = mover_index + 1 == len(route)
+                expected_scene = _carrier_source_target_delivery_projected_state_is_safe(
+                    scene,
+                    baseline_scene,
+                    hierarchy,
+                    carrier_source_supports,
+                    support_index=support_index,
+                    baseline_positions=baseline_positions,
+                    positions=delivery_positions,
+                    colors=delivery_colors,
+                    completes_delivery=completes_delivery,
+                )
+                if expected_scene is None:
+                    return ()
+                expected_certificate = source_subset_certificate(expected_scene)
+                planned_actions.append(
+                    require_masked_lineage_only_if_needed(
+                        PlannedClick(
+                            coordinate=Coordinate(*point),
+                            purpose=VisualActionPurpose.PROGRESS,
+                            expectation=(
+                                "deliver the exact carried source to its unique observed raw "
+                                "target; only official progress or WIN establishes completion"
+                                if completes_delivery
+                                else (
+                                    "move the exact carried source along its previously "
+                                    "certified target-centered child layout"
+                                )
+                            ),
+                            mechanic_ref=hierarchy.mechanic_ref,
+                            plan_id=delivery_plan_id,
+                            plan_signature=recovery_signature,
+                            target_center=hierarchy.target.rounded_center,
+                            mediator_color=support.child.mediator.color,
+                            arity=support.child.arity,
+                            expected_active_center=point,
+                            required_child_protected_raster_hash=(
+                                required_certificate.protected_raster_hash
+                            ),
+                            expected_child_protected_raster_hash=(
+                                expected_certificate.protected_raster_hash
+                            ),
+                            expected_visible_endpoint_count=(
+                                expected_certificate.visible_endpoint_count
+                            ),
+                            expected_visible_mediator_count=(
+                                expected_certificate.visible_mediator_count
+                            ),
+                            required_carried_source_support_indexes=subset_indexes,
+                            expected_carried_source_support_indexes=subset_indexes,
+                            carrier_source_delivery_step=True,
+                            completes_carrier_source_delivery=completes_delivery,
+                        ),
+                        required_scene,
+                    )
+                )
+                required_scene = expected_scene
+                required_certificate = expected_certificate
+            return (
+                tuple(planned_actions)
+                if len(planned_actions) == 2 * support.child.arity - 1
+                and planned_actions[-1].completes_carrier_source_delivery
+                else ()
+            )
+
+        reachable_subsets: set[frozenset[int]] = {frozenset()}
+        for action_index, (purpose, endpoint_ref, inverse_coordinate, group) in enumerate(
+            reversed(inverse_specs)
+        ):
+            before_positions = dict(positions)
+            before_colors = dict(colors)
+            if purpose is VisualActionPurpose.PROBE:
+                if endpoint_ref == active_ref or colors[endpoint_ref] == hierarchy.active_color:
+                    raise ValueError("carrier-source recovery role exchange is not reversible")
+                colors[active_ref], colors[endpoint_ref] = (
+                    colors[endpoint_ref],
+                    colors[active_ref],
+                )
+                active_ref = endpoint_ref
+                expectation = "reverse one certified hierarchy active-role exchange"
+            else:
+                if endpoint_ref != active_ref:
+                    raise ValueError(
+                        "carrier-source recovery movement lost active-endpoint lineage"
+                    )
+                positions[active_ref] = inverse_coordinate
+                expectation = "restore one endpoint to its exact pre-hypothesis position"
+
+            moved_support_index: int | None = None
+            if purpose is VisualActionPurpose.PROGRESS:
+                support_index = next(
+                    index
+                    for index, support in enumerate(carrier_source_supports)
+                    if support.child.mediator.object_ref == group.mediator.object_ref
+                )
+                support = carrier_source_supports[support_index]
+                before_endpoint_centers = tuple(
+                    before_positions[endpoint.object_ref] for endpoint in support.child.endpoints
+                )
+                after_endpoint_centers = tuple(
+                    positions[endpoint.object_ref] for endpoint in support.child.endpoints
+                )
+                before_support_center = (
+                    sum(center[0] for center in before_endpoint_centers) // support.child.arity,
+                    sum(center[1] for center in before_endpoint_centers) // support.child.arity,
+                )
+                after_support_center = (
+                    sum(center[0] for center in after_endpoint_centers) // support.child.arity,
+                    sum(center[1] for center in after_endpoint_centers) // support.child.arity,
+                )
+                if before_support_center != after_support_center:
+                    moved_support_index = support_index
+
+            state_candidates: list[tuple[frozenset[int], PlannedClick]] = []
+            next_reachable_subsets: set[frozenset[int]] = set()
+            for carried_subset in sorted(reachable_subsets, key=lambda item: tuple(sorted(item))):
+                required_scene = source_subset_projected_scene(
+                    carried_subset,
+                    projected_positions=before_positions,
+                    projected_colors=before_colors,
+                )
+                required_certificate = source_subset_certificate(required_scene)
+                expected_scene = source_subset_projected_scene(
+                    carried_subset,
+                    projected_positions=positions,
+                    projected_colors=colors,
+                )
+                expected_certificate = source_subset_certificate(expected_scene)
+                candidate = require_masked_lineage_only_if_needed(
+                    PlannedClick(
+                        coordinate=Coordinate(*inverse_coordinate),
+                        purpose=purpose,
+                        expectation=expectation,
+                        mechanic_ref=hierarchy.mechanic_ref,
+                        plan_id=recovery_plan_id,
+                        plan_signature=recovery_signature,
+                        target_center=hierarchy.target.rounded_center,
+                        mediator_color=group.mediator.color,
+                        arity=group.arity,
+                        expected_active_center=positions[active_ref],
+                        required_child_protected_raster_hash=(
+                            required_certificate.protected_raster_hash
+                        ),
+                        expected_child_protected_raster_hash=(
+                            expected_certificate.protected_raster_hash
+                        ),
+                        expected_visible_endpoint_count=(
+                            expected_certificate.visible_endpoint_count
+                        ),
+                        expected_visible_mediator_count=(
+                            expected_certificate.visible_mediator_count
+                        ),
+                        required_carried_source_support_indexes=tuple(sorted(carried_subset)),
+                        expected_carried_source_support_indexes=tuple(sorted(carried_subset)),
+                    ),
+                    required_scene,
+                )
+                next_reachable_subsets.add(carried_subset)
+                if moved_support_index is not None and moved_support_index not in carried_subset:
+                    newly_carried_subset = carried_subset | {moved_support_index}
+                    carried_expected_scene = source_subset_projected_scene(
+                        newly_carried_subset,
+                        projected_positions=positions,
+                        projected_colors=colors,
+                    )
+                    carried_expected_certificate = source_subset_certificate(carried_expected_scene)
+                    alternative = require_masked_lineage_only_if_needed(
+                        replace(
+                            candidate,
+                            expected_child_protected_raster_hash=(
+                                carried_expected_certificate.protected_raster_hash
+                            ),
+                            expected_visible_endpoint_count=(
+                                carried_expected_certificate.visible_endpoint_count
+                            ),
+                            expected_visible_mediator_count=(
+                                carried_expected_certificate.visible_mediator_count
+                            ),
+                            expected_carried_source_support_indexes=tuple(
+                                sorted(newly_carried_subset)
+                            ),
+                        ),
+                        required_scene,
+                    )
+                    delivery_actions = target_delivery_actions(
+                        support_index=moved_support_index,
+                        carried_subset=frozenset(newly_carried_subset),
+                    )
+                    if delivery_actions:
+                        alternative = replace(
+                            alternative,
+                            carrier_source_delivery_actions=delivery_actions,
+                        )
+                    candidate = replace(
+                        candidate,
+                        carrier_source_recovery_alternative=alternative,
+                    )
+                    next_reachable_subsets.add(frozenset(newly_carried_subset))
+                state_candidates.append((carried_subset, candidate))
+
+            primary = next(candidate for subset, candidate in state_candidates if not subset)
+            if (
+                replace(
+                    primary,
+                    carrier_source_recovery_alternative=None,
+                )
+                != recovery_actions[action_index]
+            ):
+                raise ValueError("carrier-source recovery changed its static certificate")
+            recovery_actions[action_index] = replace(
+                primary,
+                carrier_source_recovery_candidates=tuple(
+                    candidate for subset, candidate in state_candidates if subset
+                ),
+            )
+            reachable_subsets = next_reachable_subsets
+
+        if positions != initial_positions or colors != initial_colors:
+            raise ValueError(
+                "carrier-source recovery lattice did not restore endpoint state exactly"
+            )
 
     return _HierarchyPlan(
         actions=tuple(actions),
@@ -9367,7 +10132,7 @@ def _child_isolation_was_observed(
     )
 
 
-def _hierarchy_planned_click_is_safe(
+def _single_hierarchy_planned_click_is_safe(
     scene: VisualScene,
     planned: PlannedClick,
     *,
@@ -9455,6 +10220,235 @@ def _hierarchy_planned_click_is_safe(
     ) and _hierarchy_avoids_target_regions(
         prospective,
         target_regions,
+    )
+
+
+def _carrier_source_recovery_action_signature(planned: PlannedClick) -> tuple[object, ...]:
+    """Fields that no carrier-source recovery branch is permitted to change."""
+
+    return (
+        planned.coordinate,
+        planned.purpose,
+        planned.expectation,
+        planned.mechanic_ref,
+        planned.plan_id,
+        planned.plan_signature,
+        planned.target_center,
+        planned.mediator_color,
+        planned.arity,
+        planned.completes_local_target,
+        planned.completes_hierarchy,
+        planned.completes_child_isolation,
+        planned.completes_child_recovery,
+        planned.stages_for_switch,
+        planned.expected_child_mediator_center,
+        planned.expected_child_mediator_signature,
+        planned.expected_child_endpoint_centers,
+        planned.expected_child_endpoint_signature,
+        planned.expected_child_connector_signature,
+        planned.expected_active_center,
+        planned.expected_child_raster_signature,
+        planned.expected_occluded_endpoint_centers,
+        planned.expected_occluded_endpoint_cells,
+        planned.carrier_source_delivery_step,
+        planned.completes_carrier_source_delivery,
+    )
+
+
+def _carrier_source_delivery_step_is_compatible(planned: PlannedClick) -> bool:
+    """Reject a destination step without one closed carried-source boundary."""
+
+    required_indexes = planned.required_carried_source_support_indexes
+    return bool(
+        planned.carrier_source_delivery_step
+        and planned.plan_signature.startswith("affine-carrier-source-occlusion-hierarchy-recovery:")
+        and planned.carrier_source_recovery_alternative is None
+        and not planned.carrier_source_recovery_candidates
+        and not planned.carrier_source_delivery_actions
+        and len(required_indexes) == 1
+        and planned.expected_carried_source_support_indexes == required_indexes
+        and planned.required_child_protected_raster_hash is not None
+        and planned.expected_child_protected_raster_hash is not None
+        and planned.expected_visible_endpoint_count is not None
+        and planned.expected_visible_mediator_count is not None
+        and planned.expected_active_center == (planned.coordinate.x, planned.coordinate.y)
+        and (
+            not planned.completes_carrier_source_delivery
+            or planned.purpose is VisualActionPurpose.PROGRESS
+        )
+        and not planned.completes_hierarchy
+        and not planned.completes_child_isolation
+        and not planned.completes_child_recovery
+        and not planned.completes_local_target
+        and not planned.stages_for_switch
+    )
+
+
+def _carrier_source_delivery_actions_are_compatible(alternative: PlannedClick) -> bool:
+    """Validate the target route attached to one exact carried consequence."""
+
+    actions = alternative.carrier_source_delivery_actions
+    expected_indexes = alternative.expected_carried_source_support_indexes
+    if (
+        not actions
+        or len(expected_indexes) != 1
+        or len(actions) != 2 * alternative.arity - 1
+        or not actions[0].plan_id.startswith("visual-carrier-source-delivery:")
+        or actions[0].required_child_protected_raster_hash
+        != alternative.expected_child_protected_raster_hash
+    ):
+        return False
+    for index, action in enumerate(actions):
+        expected_purpose = (
+            VisualActionPurpose.PROGRESS if index % 2 == 0 else VisualActionPurpose.PROBE
+        )
+        if (
+            not _carrier_source_delivery_step_is_compatible(action)
+            or action.plan_signature != alternative.plan_signature
+            or action.mechanic_ref != alternative.mechanic_ref
+            or action.plan_id != actions[0].plan_id
+            or action.target_center != alternative.target_center
+            or action.mediator_color != alternative.mediator_color
+            or action.arity != alternative.arity
+            or action.required_carried_source_support_indexes != expected_indexes
+            or action.expected_carried_source_support_indexes != expected_indexes
+            or action.purpose is not expected_purpose
+            or action.completes_carrier_source_delivery != (index + 1 == len(actions))
+        ):
+            return False
+        if index and (
+            actions[index - 1].expected_child_protected_raster_hash
+            != action.required_child_protected_raster_hash
+        ):
+            return False
+    return True
+
+
+def _carrier_source_recovery_consequence_alternative_is_compatible(
+    planned: PlannedClick,
+    alternative: PlannedClick,
+) -> bool:
+    """Allow only one newly carried support to differ in an exact consequence."""
+
+    required_indexes = frozenset(planned.required_carried_source_support_indexes)
+    expected_indexes = frozenset(planned.expected_carried_source_support_indexes)
+    alternative_required_indexes = frozenset(alternative.required_carried_source_support_indexes)
+    alternative_expected_indexes = frozenset(alternative.expected_carried_source_support_indexes)
+    return bool(
+        planned.plan_signature.startswith("affine-carrier-source-occlusion-hierarchy-recovery:")
+        and alternative.carrier_source_recovery_alternative is None
+        and not alternative.carrier_source_recovery_candidates
+        and _carrier_source_recovery_action_signature(alternative)
+        == _carrier_source_recovery_action_signature(planned)
+        and alternative.required_child_protected_raster_hash
+        == planned.required_child_protected_raster_hash
+        and alternative.required_child_raster_signature == planned.required_child_raster_signature
+        and alternative.required_visible_active_endpoint_count
+        == planned.required_visible_active_endpoint_count
+        and alternative_required_indexes == required_indexes == expected_indexes
+        and len(alternative_expected_indexes - expected_indexes) == 1
+        and expected_indexes < alternative_expected_indexes
+        and alternative.expected_child_protected_raster_hash is not None
+        and alternative.expected_visible_endpoint_count is not None
+        and alternative.expected_visible_mediator_count is not None
+        and (
+            not alternative.carrier_source_delivery_actions
+            or _carrier_source_delivery_actions_are_compatible(alternative)
+        )
+    )
+
+
+def _carrier_source_recovery_state_candidate_is_compatible(
+    planned: PlannedClick,
+    candidate: PlannedClick,
+) -> bool:
+    """Validate a precomputed carried-subset state candidate before raster matching."""
+
+    required_indexes = candidate.required_carried_source_support_indexes
+    return bool(
+        not candidate.carrier_source_recovery_candidates
+        and not candidate.carrier_source_delivery_actions
+        and not candidate.carrier_source_delivery_step
+        and not candidate.completes_carrier_source_delivery
+        and _carrier_source_recovery_action_signature(candidate)
+        == _carrier_source_recovery_action_signature(planned)
+        and candidate.required_child_protected_raster_hash is not None
+        and candidate.expected_child_protected_raster_hash is not None
+        and candidate.expected_visible_endpoint_count is not None
+        and candidate.expected_visible_mediator_count is not None
+        and len(required_indexes) == len(set(required_indexes))
+        and tuple(sorted(required_indexes)) == required_indexes
+        and candidate.expected_carried_source_support_indexes == required_indexes
+        and (
+            candidate.carrier_source_recovery_alternative is None
+            or _carrier_source_recovery_consequence_alternative_is_compatible(
+                candidate,
+                candidate.carrier_source_recovery_alternative,
+            )
+        )
+    )
+
+
+def _hierarchy_planned_click_matching_candidate(
+    scene: VisualScene,
+    planned: PlannedClick,
+    *,
+    active_color: int,
+    required_carried_source_support_indexes: tuple[int, ...] | None = None,
+) -> PlannedClick | None:
+    """Return the exact queued raster lineage certified by the current frame."""
+
+    if planned.carrier_source_delivery_step and not _carrier_source_delivery_step_is_compatible(
+        planned
+    ):
+        return None
+    candidates = (planned, *planned.carrier_source_recovery_candidates)
+    for candidate in candidates:
+        if candidate is not planned and not _carrier_source_recovery_state_candidate_is_compatible(
+            planned, candidate
+        ):
+            return None
+        if (
+            candidate is planned
+            and candidate.carrier_source_recovery_alternative is not None
+            and not _carrier_source_recovery_consequence_alternative_is_compatible(
+                candidate,
+                candidate.carrier_source_recovery_alternative,
+            )
+        ):
+            return None
+        if (
+            required_carried_source_support_indexes is not None
+            and candidate.required_carried_source_support_indexes
+            != required_carried_source_support_indexes
+        ):
+            continue
+        if _single_hierarchy_planned_click_is_safe(
+            scene,
+            candidate,
+            active_color=active_color,
+        ):
+            return candidate
+    return None
+
+
+def _hierarchy_planned_click_is_safe(
+    scene: VisualScene,
+    planned: PlannedClick,
+    *,
+    active_color: int,
+    required_carried_source_support_indexes: tuple[int, ...] | None = None,
+) -> bool:
+    """Revalidate either the primary or exact carrier-source recovery lineage."""
+
+    return (
+        _hierarchy_planned_click_matching_candidate(
+            scene,
+            planned,
+            active_color=active_color,
+            required_carried_source_support_indexes=(required_carried_source_support_indexes),
+        )
+        is not None
     )
 
 
@@ -9739,6 +10733,7 @@ class VisualCausalPolicy:
         self._pending_expected_occluded_endpoint_cells: tuple[tuple[int, int], ...] = ()
         self._pending_expected_visible_endpoint_count: int | None = None
         self._pending_expected_visible_mediator_count: int | None = None
+        self._pending_carrier_source_recovery_candidate: PlannedClick | None = None
         self._pending_clef_prediction = EffectVector.unknown()
         self._pending_mechanic_prediction: MechanicPredictionReceipt | None = None
         self._plan: deque[PlannedClick] = deque()
@@ -9761,6 +10756,7 @@ class VisualCausalPolicy:
         self._active_hierarchy_supports: tuple[tuple[int, int], ...] = ()
         self._active_hierarchy_support_weights: tuple[int, ...] = ()
         self._active_hierarchy_recovery_actions: tuple[PlannedClick, ...] = ()
+        self._active_carried_source_recovery_support_indexes: tuple[int, ...] = ()
         self._failed_hierarchy_relation_keys: set[str] = set()
         self._failed_weighted_hierarchy_relation_keys: set[str] = set()
         self._failed_visible_node_hierarchy_relation_keys: set[str] = set()
@@ -9887,6 +10883,7 @@ class VisualCausalPolicy:
         self._active_hierarchy_supports = ()
         self._active_hierarchy_support_weights = ()
         self._active_hierarchy_recovery_actions = ()
+        self._active_carried_source_recovery_support_indexes = ()
         self._failed_hierarchy_relation_keys.clear()
         self._failed_weighted_hierarchy_relation_keys.clear()
         self._failed_visible_node_hierarchy_relation_keys.clear()
@@ -9927,6 +10924,7 @@ class VisualCausalPolicy:
         self._active_hierarchy_supports = ()
         self._active_hierarchy_support_weights = ()
         self._active_hierarchy_recovery_actions = ()
+        self._active_carried_source_recovery_support_indexes = ()
         self._hierarchy_lineage_lost = None
         self._clear_child_isolation_execution()
         self._marker_structural_actions.clear()
@@ -10200,6 +11198,7 @@ class VisualCausalPolicy:
         self._active_hierarchy_supports = plan.supports
         self._active_hierarchy_support_weights = plan.support_weights
         self._active_hierarchy_recovery_actions = plan.recovery_actions
+        self._active_carried_source_recovery_support_indexes = ()
 
     def _install_child_isolation_plan(self, plan: _ChildIsolationPlan) -> None:
         self._plan.clear()
@@ -10238,6 +11237,11 @@ class VisualCausalPolicy:
                 "hierarchy lineage was lost after a nonmatching returned consequence; "
                 "no unrelated fallback is authorized"
             )
+        if self._active_carried_source_recovery_support_indexes and not self._plan:
+            raise PolicyError(
+                "an exact carrier-source attachment remains active and requires an "
+                "observation-derived target-delivery continuation"
+            )
 
         if self._plan and ActionName.ACTION6 not in observation.available_actions:
             blocked_plan = self._plan[0]
@@ -10255,6 +11259,7 @@ class VisualCausalPolicy:
             self._active_hierarchy_supports = ()
             self._active_hierarchy_support_weights = ()
             self._active_hierarchy_recovery_actions = ()
+            self._active_carried_source_recovery_support_indexes = ()
             self._clear_child_isolation_execution()
             self._last_probe_failed = True
             if hierarchy_blocked:
@@ -10387,6 +11392,14 @@ class VisualCausalPolicy:
                 raise PolicyError(
                     "embedded marker group is unresolved but has no bounded same-group action"
                 )
+        queued_carried_source_support_indexes = (
+            self._active_carried_source_recovery_support_indexes
+            if self._plan
+            and self._plan[0].plan_signature.startswith(
+                "affine-carrier-source-occlusion-hierarchy-recovery:"
+            )
+            else None
+        )
         if (
             self._plan
             and self._plan[0].plan_signature.startswith(_HIERARCHY_PLAN_PREFIXES)
@@ -10396,6 +11409,7 @@ class VisualCausalPolicy:
                     extract_visual_scene(observation.frames[-1]),
                     self._plan[0],
                     active_color=self._last_active_color,
+                    required_carried_source_support_indexes=(queued_carried_source_support_indexes),
                 )
             )
         ):
@@ -10412,13 +11426,26 @@ class VisualCausalPolicy:
             self._active_hierarchy_supports = ()
             self._active_hierarchy_support_weights = ()
             self._active_hierarchy_recovery_actions = ()
+            self._active_carried_source_recovery_support_indexes = ()
             self._clear_child_isolation_execution()
             raise PolicyError(
                 "queued hierarchy precondition no longer matches the returned frame; "
                 "no unrelated fallback is authorized"
             )
         if self._plan:
-            planned = self._plan.popleft()
+            queued = self._plan.popleft()
+            planned = queued
+            if queued.plan_signature.startswith(_HIERARCHY_PLAN_PREFIXES):
+                assert self._last_active_color is not None
+                matched = _hierarchy_planned_click_matching_candidate(
+                    extract_visual_scene(observation.frames[-1]),
+                    queued,
+                    active_color=self._last_active_color,
+                    required_carried_source_support_indexes=(queued_carried_source_support_indexes),
+                )
+                if matched is None:
+                    raise PolicyError("validated hierarchy action lost its exact raster lineage")
+                planned = matched
             action = ActionRequest(ActionName.ACTION6, planned.coordinate)
             self._stage_pending(
                 observation,
@@ -10446,6 +11473,7 @@ class VisualCausalPolicy:
                 expected_occluded_endpoint_cells=(planned.expected_occluded_endpoint_cells),
                 expected_visible_endpoint_count=planned.expected_visible_endpoint_count,
                 expected_visible_mediator_count=planned.expected_visible_mediator_count,
+                carrier_source_recovery_candidate=planned,
             )
             return action
 
@@ -11064,6 +12092,7 @@ class VisualCausalPolicy:
         expected_occluded_endpoint_cells: tuple[tuple[int, int], ...] = (),
         expected_visible_endpoint_count: int | None = None,
         expected_visible_mediator_count: int | None = None,
+        carrier_source_recovery_candidate: PlannedClick | None = None,
         affine_reacquisition: bool = False,
     ) -> None:
         if self._pending_action is not None:
@@ -11096,6 +12125,7 @@ class VisualCausalPolicy:
         self._pending_expected_occluded_endpoint_cells = expected_occluded_endpoint_cells
         self._pending_expected_visible_endpoint_count = expected_visible_endpoint_count
         self._pending_expected_visible_mediator_count = expected_visible_mediator_count
+        self._pending_carrier_source_recovery_candidate = carrier_source_recovery_candidate
         self._pending_affine_reacquisition = affine_reacquisition
         self._pending_clef_prediction = _predicted_clef_effects(
             purpose=purpose,
@@ -11132,6 +12162,7 @@ class VisualCausalPolicy:
         self._pending_expected_occluded_endpoint_cells = ()
         self._pending_expected_visible_endpoint_count = None
         self._pending_expected_visible_mediator_count = None
+        self._pending_carrier_source_recovery_candidate = None
         self._pending_affine_reacquisition = False
         self._pending_clef_prediction = EffectVector.unknown()
         self._pending_mechanic_prediction = None
@@ -11140,6 +12171,12 @@ class VisualCausalPolicy:
         before = self._pending_before
         action = self._pending_action
         mechanic_prediction = self._pending_mechanic_prediction
+        carrier_source_recovery_candidate = self._pending_carrier_source_recovery_candidate
+        carrier_source_recovery_alternative = (
+            carrier_source_recovery_candidate.carrier_source_recovery_alternative
+            if carrier_source_recovery_candidate is not None
+            else None
+        )
         learner = self._mechanical_learner
         if before is None or action is None or mechanic_prediction is None or learner is None:
             raise PolicyError("mechanical policy received a consequence without a pending action")
@@ -11241,6 +12278,11 @@ class VisualCausalPolicy:
                 "affine-carrier-source-occlusion-hierarchy-recovery:"
             )
         )
+        carrier_source_delivery_action = bool(
+            carrier_source_occlusion_hierarchy_recovery_action
+            and carrier_source_recovery_candidate is not None
+            and carrier_source_recovery_candidate.carrier_source_delivery_step
+        )
         hierarchy_recovery_action = (
             self._pending_plan_signature is not None
             and self._pending_plan_signature.startswith(
@@ -11341,23 +12383,94 @@ class VisualCausalPolicy:
             and len(after_scene.endpoints) == self._pending_expected_visible_endpoint_count
             and len(after_scene.mediators) == self._pending_expected_visible_mediator_count
         )
-        hierarchy_expected_raster_matches = bool(
+        carrier_source_recovery_candidate_is_current = bool(
+            not carrier_source_occlusion_hierarchy_recovery_action
+            or (
+                carrier_source_recovery_candidate is not None
+                and carrier_source_recovery_candidate.plan_signature == self._pending_plan_signature
+                and carrier_source_recovery_candidate.coordinate == action.coordinate
+                and carrier_source_recovery_candidate.required_carried_source_support_indexes
+                == self._active_carried_source_recovery_support_indexes
+                and carrier_source_recovery_candidate.expected_child_protected_raster_hash
+                == expected_child_protected_raster_hash
+                and carrier_source_recovery_candidate.expected_visible_endpoint_count
+                == self._pending_expected_visible_endpoint_count
+                and carrier_source_recovery_candidate.expected_visible_mediator_count
+                == self._pending_expected_visible_mediator_count
+            )
+        )
+        hierarchy_raster_common_boundary = bool(
             (joint_hierarchy_action or hierarchy_recovery_action)
+            and carrier_source_recovery_candidate_is_current
+            and observation.levels_completed == before.levels_completed
+            and changed > 0
+            and (
+                carrier_source_delivery_action
+                or (hierarchy_target_readable and hierarchy_parent_target_preserved)
+            )
+        )
+        returned_protected_raster_hash = _child_isolation_protected_raster_hash(after_scene)
+        hierarchy_primary_raster_matches = bool(
+            hierarchy_raster_common_boundary
             and expected_child_protected_raster_hash is not None
-            and _child_isolation_protected_raster_hash(after_scene)
-            == expected_child_protected_raster_hash
+            and returned_protected_raster_hash == expected_child_protected_raster_hash
             and self._pending_expected_visible_endpoint_count is not None
             and self._pending_expected_visible_mediator_count is not None
             and len(after_scene.endpoints) == self._pending_expected_visible_endpoint_count
             and len(after_scene.mediators) == self._pending_expected_visible_mediator_count
-            and observation.levels_completed == before.levels_completed
-            and changed > 0
-            and hierarchy_target_readable
-            and hierarchy_parent_target_preserved
+        )
+        carried_source_recovery_alternative_matches = bool(
+            hierarchy_raster_common_boundary
+            and carrier_source_occlusion_hierarchy_recovery_action
+            and carrier_source_recovery_candidate is not None
+            and carrier_source_recovery_alternative is not None
+            and _carrier_source_recovery_consequence_alternative_is_compatible(
+                carrier_source_recovery_candidate,
+                carrier_source_recovery_alternative,
+            )
+            and carrier_source_recovery_alternative.coordinate == action.coordinate
+            and carrier_source_recovery_alternative.plan_signature == self._pending_plan_signature
+            and carrier_source_recovery_alternative.expected_child_protected_raster_hash is not None
+            and returned_protected_raster_hash
+            == carrier_source_recovery_alternative.expected_child_protected_raster_hash
+            and carrier_source_recovery_alternative.expected_visible_endpoint_count is not None
+            and carrier_source_recovery_alternative.expected_visible_mediator_count is not None
+            and len(after_scene.endpoints)
+            == carrier_source_recovery_alternative.expected_visible_endpoint_count
+            and len(after_scene.mediators)
+            == carrier_source_recovery_alternative.expected_visible_mediator_count
+        )
+        carried_source_recovery_certified = bool(
+            carried_source_recovery_alternative_matches and not hierarchy_primary_raster_matches
+        )
+        hierarchy_expected_raster_matches = bool(
+            hierarchy_primary_raster_matches != carried_source_recovery_alternative_matches
         )
         hierarchy_raster_certified = bool(
             hierarchy_expected_raster_matches and observation.state is GameStateName.NOT_FINISHED
         )
+        if hierarchy_raster_certified and carrier_source_occlusion_hierarchy_recovery_action:
+            matched_carrier_source_recovery = (
+                carrier_source_recovery_alternative
+                if carried_source_recovery_certified
+                else carrier_source_recovery_candidate
+            )
+            assert matched_carrier_source_recovery is not None
+            self._active_carried_source_recovery_support_indexes = (
+                matched_carrier_source_recovery.expected_carried_source_support_indexes
+            )
+            if (
+                carried_source_recovery_certified
+                and carrier_source_recovery_alternative is not None
+                and carrier_source_recovery_alternative.carrier_source_delivery_actions
+                and _carrier_source_delivery_actions_are_compatible(
+                    carrier_source_recovery_alternative
+                )
+            ):
+                self._plan.clear()
+                self._plan.extend(
+                    carrier_source_recovery_alternative.carrier_source_delivery_actions
+                )
         hierarchy_terminal_game_over_observed = bool(
             joint_hierarchy_action
             and self._pending_completes_hierarchy
@@ -11544,7 +12657,10 @@ class VisualCausalPolicy:
         hierarchy_observed_effect_readable = bool(
             hierarchy_consequence_certified
             and not (
-                carrier_source_occlusion_hierarchy_action
+                (
+                    carrier_source_occlusion_hierarchy_action
+                    or carrier_source_occlusion_hierarchy_recovery_action
+                )
                 and hierarchy_raster_certified
                 and not hierarchy_structure_readable
             )
@@ -12023,6 +13139,12 @@ class VisualCausalPolicy:
                 else:
                     self._failed_hierarchy_relation_keys.add(hierarchy_relation_key)
                     residual = "the exact equal-weight hierarchy terminal returned GAME_OVER"
+            if carrier_source_delivery_action:
+                if hierarchy_relation_key is not None:
+                    self._failed_carrier_source_occlusion_hierarchy_relation_keys.add(
+                        hierarchy_relation_key
+                    )
+                residual = "the exact carried-source delivery action returned official GAME_OVER"
             if (
                 observation.state is GameStateName.GAME_OVER
                 and self._pending_completes_child_isolation
@@ -12050,6 +13172,7 @@ class VisualCausalPolicy:
             self._active_hierarchy_supports = ()
             self._active_hierarchy_support_weights = ()
             self._active_hierarchy_recovery_actions = ()
+            self._active_carried_source_recovery_support_indexes = ()
             self._clear_child_isolation_execution()
             self._last_probe_failed = True
         elif observation.state is GameStateName.WIN:
@@ -12063,6 +13186,7 @@ class VisualCausalPolicy:
             self._active_hierarchy_supports = ()
             self._active_hierarchy_support_weights = ()
             self._active_hierarchy_recovery_actions = ()
+            self._active_carried_source_recovery_support_indexes = ()
             self._clear_child_isolation_execution()
             self._last_probe_failed = False
         elif level_progress:
@@ -12082,6 +13206,7 @@ class VisualCausalPolicy:
             self._active_hierarchy_supports = ()
             self._active_hierarchy_support_weights = ()
             self._active_hierarchy_recovery_actions = ()
+            self._active_carried_source_recovery_support_indexes = ()
             self._clear_child_isolation_execution()
             self._last_probe_failed = True
             if residual is None:
@@ -12144,42 +13269,67 @@ class VisualCausalPolicy:
                 "was falsified"
             )
         elif hierarchy_recovery_action and not self._plan and hierarchy_raster_certified:
-            self._preterminal_hierarchy_retry_signature = None
-            self._active_hierarchy_signature = None
-            self._active_hierarchy_relation_key = None
-            self._active_hierarchy_supports = ()
-            self._active_hierarchy_support_weights = ()
-            self._active_hierarchy_recovery_actions = ()
-            self._last_probe_failed = False
-            residual = (
-                "exact pre-hypothesis hierarchy and both filled source disks restored after "
-                "carrier-source occlusion sufficiency failed"
-                if carrier_source_occlusion_hierarchy_recovery_action
-                else (
-                    "exact pre-hypothesis hierarchy restored after external-own-composite "
-                    "recombination sufficiency failed"
-                    if external_own_composite_hierarchy_recovery_action
+            if (
+                carrier_source_delivery_action
+                and carrier_source_recovery_candidate is not None
+                and carrier_source_recovery_candidate.completes_carrier_source_delivery
+            ):
+                if hierarchy_relation_key is not None:
+                    self._failed_carrier_source_occlusion_hierarchy_relation_keys.add(
+                        hierarchy_relation_key
+                    )
+                self._last_probe_failed = True
+                residual = (
+                    "the exact carried source reached its unique observed raw target, but "
+                    "the official environment remained NOT_FINISHED"
+                )
+            elif (
+                carrier_source_occlusion_hierarchy_recovery_action
+                and self._active_carried_source_recovery_support_indexes
+            ):
+                self._last_probe_failed = True
+                residual = (
+                    "exact endpoint recovery ended with an observation-certified source "
+                    "attachment; no unrelated continuation is authorized"
+                )
+            else:
+                self._preterminal_hierarchy_retry_signature = None
+                self._active_hierarchy_signature = None
+                self._active_hierarchy_relation_key = None
+                self._active_hierarchy_supports = ()
+                self._active_hierarchy_support_weights = ()
+                self._active_hierarchy_recovery_actions = ()
+                self._active_carried_source_recovery_support_indexes = ()
+                self._last_probe_failed = False
+                residual = (
+                    "exact pre-hypothesis hierarchy and both filled source disks restored after "
+                    "carrier-source occlusion sufficiency failed"
+                    if carrier_source_occlusion_hierarchy_recovery_action
                     else (
-                        "exact pre-hypothesis hierarchy restored after raw-matching "
-                        "containing-composite sufficiency failed"
-                        if raw_matching_composite_hierarchy_recovery_action
+                        "exact pre-hypothesis hierarchy restored after external-own-composite "
+                        "recombination sufficiency failed"
+                        if external_own_composite_hierarchy_recovery_action
                         else (
-                            "exact pre-hypothesis hierarchy restored after external carrier-mask "
-                            "residual-chain sufficiency failed"
-                            if external_residual_linked_hierarchy_recovery_action
+                            "exact pre-hypothesis hierarchy restored after raw-matching "
+                            "containing-composite sufficiency failed"
+                            if raw_matching_composite_hierarchy_recovery_action
                             else (
-                                "exact pre-hypothesis hierarchy restored after residual-linked "
-                                "mixed-support sufficiency failed"
-                                if residual_linked_hierarchy_recovery_action
+                                "exact pre-hypothesis hierarchy restored after external carrier-mask "
+                                "residual-chain sufficiency failed"
+                                if external_residual_linked_hierarchy_recovery_action
                                 else (
-                                    "exact pre-hypothesis hierarchy restored after joint "
-                                    "sufficiency failed"
+                                    "exact pre-hypothesis hierarchy restored after residual-linked "
+                                    "mixed-support sufficiency failed"
+                                    if residual_linked_hierarchy_recovery_action
+                                    else (
+                                        "exact pre-hypothesis hierarchy restored after joint "
+                                        "sufficiency failed"
+                                    )
                                 )
                             )
                         )
                     )
                 )
-            )
         elif self._pending_completes_hierarchy and observation.state is GameStateName.NOT_FINISHED:
             self._preterminal_hierarchy_retry_signature = None
             if self._pending_plan_signature is not None:
@@ -12222,6 +13372,7 @@ class VisualCausalPolicy:
                 self._active_hierarchy_supports = ()
                 self._active_hierarchy_support_weights = ()
                 self._active_hierarchy_recovery_actions = ()
+                self._active_carried_source_recovery_support_indexes = ()
                 self._last_probe_failed = True
             if hierarchy_supports_observed:
                 residual = (
@@ -12318,6 +13469,7 @@ class VisualCausalPolicy:
                 self._active_hierarchy_supports = ()
                 self._active_hierarchy_support_weights = ()
                 self._active_hierarchy_recovery_actions = ()
+                self._active_carried_source_recovery_support_indexes = ()
             if child_isolation_action:
                 self._clear_child_isolation_execution()
             self._last_probe_failed = True
@@ -12524,6 +13676,9 @@ class VisualCausalPolicy:
             "hierarchy_signature": self._active_hierarchy_signature,
             "hierarchy_supports": [list(item) for item in self._active_hierarchy_supports],
             "hierarchy_support_weights": list(self._active_hierarchy_support_weights),
+            "hierarchy_carried_source_support_indexes": list(
+                self._active_carried_source_recovery_support_indexes
+            ),
             "hierarchy_recovery_active": bool(
                 self._plan
                 and self._plan[0].plan_signature.startswith(

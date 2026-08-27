@@ -492,7 +492,7 @@ Do not delete a burden when later evidence resolves it. Append a resolution with
 
 ## B-003-0034 - Campaign 35 exposed residual-foreground occlusion before the source terminal
 
-- **Status:** OPEN; OBSERVATION-GROUNDED IMPLEMENTATION EXPERIMENT
+- **Status:** RESOLVED AS FAILED_MECHANISM AFTER TERMINAL; CARRIED-SOURCE RESIDUAL REOPENED AS B-003-0037
 - **Stage:** 10 and target-game continuation
 - **Opened:** 2026-08-26
 - **Owner:** Codex
@@ -504,10 +504,11 @@ Do not delete a burden when later evidence resolves it. Append a resolution with
 - **Discrimination boundary:** Reproduce the exact Campaign 35 third consequence from the recording, certify every remaining forward and reverse transient under the same source-layer rule, and replay the entire immutable public-development Campaign 35 history with zero environment actions before another launch. A projection, replay, or complete-looking terminal remains non-completion evidence.
 - **Exposure and authority:** The exposure ledger contains 67 valid development events and zero holdout events; file SHA-256 `05afaa18f4b39245e4ad4e50d01d407be48f58f44126055d2b678afb5fc2d1cb`. No terms, credentials, holdout, submission, paid service, merge, or owner representation is authorized.
 - **Resolution condition:** The revised generic source-layer model passes exact observed-frame, palette/translation, ambiguity, full-forward, full-inverse, replay, source-quality, integrity, and exact-head CI gates, then receives an authoritative official consequence. Only official `GameState.WIN` resolves target completion.
+- **Campaign 36 resolution:** Exact `657f040` passed every stated implementation, replay, integrity, and hosted gate. Campaign 36 completed the nine-action source-occlusion route, whose terminal returned official `NOT_FINISHED`, then exposed a narrower carried-source translation on its first inverse. Source-occlusion sufficiency is therefore rejected; the new coupling evidence is preserved separately in B-003-0037.
 
 ## B-003-0035 - Masked raster certification initially over-promoted observed mechanics
 
-- **Status:** OPEN; LOCAL REPAIR AND STRICT WORKTREE REPLAY PASS; EXACT-COMMIT GATES PENDING
+- **Status:** RESOLVED BY EXACT 657F040 REPLAY, INTEGRITY, CI, AND CAMPAIGN EXECUTION
 - **Stage:** 10 and target-game continuation
 - **Opened:** 2026-08-26
 - **Owner:** Codex
@@ -517,10 +518,11 @@ Do not delete a burden when later evidence resolves it. Append a resolution with
 - **Local evidence:** The corrected focused test passed, the full visual-policy suite passed 134/134 tests in 388.93 seconds, source lint/format/type gates passed, and a full worktree replay matched 240/240 actions and 240/240 mechanics receipts, staged A4 `(52,55)`, and cancelled it unsubmitted with zero pending learner action. This is not official progress or completion.
 - **Impact:** Campaign 36 remains gated. The worktree replay cannot substitute for a clean exact-commit receipt, detached integrity, exact-head CI, or an official `GameState.WIN`.
 - **Resolution condition:** A frozen exact commit reproduces 240/240 strict receipt equality, selects and cancels the same A4 candidate, passes integrity and exact-head CI, and then receives an authoritative official consequence without crossing the sealed holdout or other human gates.
+- **Resolution evidence:** Exact `657f040` matched all 1,442 Campaign 35 events and 240 mechanics receipts, cancelled the same unsubmitted next action, passed clean-source integrity and every hosted job, and then produced the bounded Campaign 36 official consequence. No receipt migration or generic observed-effect promotion was introduced.
 
 ## B-003-0036 - One exact-head PR package runner reached the 2,700-second guard ceiling
 
-- **Status:** OPEN; LOCAL TIMEOUT-ONLY REPAIR PASSED; EXACT-COMMIT GATES PENDING
+- **Status:** RESOLVED BY EXACT 657F040 HOSTED GATES; D406E1B FAILURE PRESERVED
 - **Stage:** 10 and target-game continuation
 - **Opened:** 2026-08-26
 - **Owner:** Codex
@@ -531,3 +533,29 @@ Do not delete a burden when later evidence resolves it. Append a resolution with
 - **Local repair evidence:** All 17 package-only verifier-plan tests passed in 7.10 seconds; Ruff lint and format, strict MyPy, JSON parsing, and diff hygiene passed. No environment action was issued. Clean exact-commit replay, integrity, and all hosted jobs remain pending.
 - **Impact:** Campaign 36 remains gated. Seven other exact-`d406e1b` jobs passing cannot substitute for the failed required job, and local or replay success cannot substitute for official `GameState.WIN`.
 - **Resolution condition:** A new frozen commit passes all local package-plan/source gates, all five hosted workflows and nine jobs without timeout or failure, and preserves the complete package-only guard receipt and expected private-only `BLOCKED_EXTERNAL` terminal.
+- **Resolution evidence:** Exact repair `657f040` passed five of five workflows and nine of nine jobs. Both Windows package jobs completed under 3,000 seconds, including the PR job at 47m06s beyond the old 2,700-second ceiling. The prior exact-`d406e1b` timeout remains immutable `FAILED_INFRASTRUCTURE` evidence.
+
+## B-003-0037 - Campaign 36 exposed source-to-mediator coupling on the first inverse
+
+- **Status:** OPEN; LOCAL CANDIDATE VERIFIED; EXACT REPLAY, INTEGRITY, CI, AND OFFICIAL CONSEQUENCE PENDING
+- **Stage:** 10 and target-game continuation
+- **Opened:** 2026-08-27
+- **Owner:** Codex
+- **Burden:** Campaign 36's fully certified carrier-source terminal returned official `NOT_FINISHED` at `4/6`. Its first recovery endpoint moved to the exact inverse coordinate, but the assigned two-color source moved with the recomputed child mediator instead of remaining fixed. The static-source recovery certificate failed, ordinary mediator parsing became unreadable, lineage latched, and no further action or `WIN` was observed.
+- **Preserved evidence:** Root `C:\a\arc3-b003-play\build003-r11l-mechanical-seed7-657f040-campaign36`; 254 submissions, including 251 `ACTION6` and three legal `RESET`s; zero `WIN`; recording SHA-256 `4973df6030a8989f0f5795639285553d1b43df7db3ed6a00620324a2ab738da0`; trace tail `sha256:a5a551e557d25b26387f97966bb55de5cb8218d094c394da6aede0512aabbbf6`; run receipt hash `sha256:6b6f89bff82825e8e8e1e774e2b938e0913cfcb73757612de01c34980f782273`; completion observed false.
+- **Smallest implicated revision:** Certify only the unique relation-assigned full source footprint translating one-to-one from its old center to the recomputed mediator center, with the old footprint cleared and all unrelated protected cells unchanged. Rebase only remaining recovery certificates from the returned frame. Do not ignore raster hashes, accept arbitrary component movement, infer all sources are portable, or reopen an unrelated fallback.
+- **Impact:** Build 003 remains incomplete at official `NOT_FINISHED`, `4/6`. Offline projection, strict replay, carried-source recognition, and a safe next action remain non-completion evidence.
+- **Candidate verification:** The exact Campaign 36 frame now selects the uniquely implicated carried support, preserves the historical unreadable receipt, discards the stale inverse, and queues five exact observation-derived target-delivery actions. Adversarial carried-cell, stationary-obstacle, state-flag, and plan-identity mutations fail closed. The final focused case, six-test carrier-source slice, 135-test visual-policy suite, Ruff, format, strict MyPy, compilation, diff hygiene, and independent read-only audit pass. No environment action was issued by these gates.
+- **Resolution condition:** Exact Campaign 36 replay accepts all 254 historical consequences and receipts, the carried-source branch fails closed under adversarial mutations, one next action is selected and cancelled without environment use, clean exact-source and hosted gates pass, and an authorized official continuation observes either a bounded falsifying consequence or `GameState.WIN`.
+
+## B-003-0038 - Carried-source delivery to the raw target is not yet an official result
+
+- **Status:** OPEN; MODEL-DERIVED ROUTE ONLY; OFFICIAL PLAY PAUSED
+- **Stage:** 10 and target-game continuation
+- **Opened:** 2026-08-27
+- **Owner:** Codex
+- **Burden:** Campaign 36 proved that one assigned source translates with its mediator, and prior public observations supply a target-centered child layout. A generic unique palette/relation join yields a five-action carried-source delivery route, but no action in that continuation has been submitted and no official delivery consequence, level transition, or `WIN` exists.
+- **Bounded candidate:** The route moves the exact carried source while preserving its identity and all unrelated cells, keeps the hollow target ring intact, and ends with the carried 21-cell disk co-centered inside the disjoint 12-cell raw target ring. Frozen fixture coordinates are `(53,36)`, `(23,58)`, `(46,24)`, `(23,48)`, and `(60,24)`; production derives them from relation identities and the existing child-isolation planner rather than constants.
+- **Impact:** A complete-looking co-centered layout, exact local projection, high confidence, synthetic terminal, strict replay, or green CI cannot resolve Build 003. Completion remains false at official `NOT_FINISHED`, `4/6`, zero `WIN`; holdout consumption remains `0/1`.
+- **Smallest next evidence:** Freeze the candidate, replay all immutable Campaign 36 events, actions, and mechanics receipts with zero environment actions, pass clean exact-source integrity and all hosted gates, then submit only the first observation-linked discriminator in authorized public development play and continue only through exact returned consequences.
+- **Resolution condition:** The official environment returns a bounded falsifying consequence that reopens only the implicated hypothesis, or eventually returns authoritative `GameState.WIN`. Only the latter completes the target.

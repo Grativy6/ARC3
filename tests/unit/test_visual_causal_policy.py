@@ -3448,6 +3448,31 @@ def _campaign35_residual_foreground_after_a3_frame() -> GridFrame:
     return GridFrame.from_rows(tuple(tuple(raw[y * 64 : (y + 1) * 64]) for y in range(64)))
 
 
+_CAMPAIGN36_FIRST_CARRIED_SOURCE_RECOVERY_ZLIB_B64 = (
+    "eNrdl+tuhiAMhkv56iAa7v9yhxMPCIVKZ7KsRn4gz1taWhIJk1FmWBjVF9A7fKnxHk+cvcnv34nHc4FtJtA8xu84XQTkPJ34"
+    "VeBnDensCV/xD4+chWL7Oe/j0xHI8Zz36X1gcMOfCsBg2r/ic+eXy9jFtzf3v5Q4OMfg25jvfynwyDtF/Aw/HWOXrwcw7SK9"
+    "/Ee+Oj+lPYCyff4S78kJuzDU+LXwnbCJQ8lvfeOEl0j49fjV/pXxq/M/Fj8i/gfe6nhrrYa39rMKeIBx/8b4yIMi/p23g/n3"
+    "q4AxklzAPFfOL/JHLjq36pwEKucv8N/kBfEDQIOXpA3mZv1aXf3Ly7HKS47gTf9RwMh55pKTtQLHhyDrJeDcHzwM8mHtJUOd"
+    "bXD8uoGt0D5NASb+M/9t/1jnr+ffxFFVf8jw0vpLPA72H/K8FJfylZ9IPHkU/H/e16WZb7hPS1U="
+)
+
+
+def _campaign36_first_carried_source_recovery_frame() -> GridFrame:
+    """Decode the official first Campaign 36 recovery consequence.
+
+    The uncompressed public-development observation has SHA-256
+    ``ea46f9e727be7e25bfb26e75554cc918485f22547d41392301b3579be76bd01c``.
+    No game source or environment is consulted by this frozen replay fixture.
+    """
+
+    raw = zlib.decompress(base64.b64decode(_CAMPAIGN36_FIRST_CARRIED_SOURCE_RECOVERY_ZLIB_B64))
+    assert len(raw) == 64 * 64
+    assert hashlib.sha256(raw).hexdigest() == (
+        "ea46f9e727be7e25bfb26e75554cc918485f22547d41392301b3579be76bd01c"
+    )
+    return GridFrame.from_rows(tuple(tuple(raw[y * 64 : (y + 1) * 64]) for y in range(64)))
+
+
 @dataclass
 class _ProjectedWeightedHierarchyEnvironment:
     """Replay generic endpoint placement against one frozen public observation."""
@@ -3455,6 +3480,7 @@ class _ProjectedWeightedHierarchyEnvironment:
     scene: VisualScene
     hierarchy: visual_causal._AffineHierarchy
     carrier_source_supports: tuple[visual_causal._HierarchySourceSupport, ...] = ()
+    carried_source_support_indexes: frozenset[int] = frozenset()
     positions: dict[str, tuple[int, int]] = field(init=False)
     colors: dict[str, int] = field(init=False)
 
@@ -3472,12 +3498,13 @@ class _ProjectedWeightedHierarchyEnvironment:
 
     def observation(self, *, returned_action: ActionRequest | None = None) -> Observation:
         projected = (
-            visual_causal._carrier_source_residual_foreground_projected_scene(
+            visual_causal._carrier_source_carried_projected_scene(
                 self.scene,
                 self.hierarchy,
                 self.carrier_source_supports,
                 positions=self.positions,
                 colors=self.colors,
+                carried_support_indexes=self.carried_source_support_indexes,
             )
             if self.carrier_source_supports
             else visual_causal._hierarchy_projected_scene(
@@ -6201,6 +6228,288 @@ def test_carrier_source_residual_foreground_projection_matches_campaign35() -> N
     assert visual_causal._child_isolation_protected_raster_hash(next_scene) == (
         fourth.expected_child_protected_raster_hash
     )
+
+
+def test_carrier_source_recovery_rebases_only_the_exact_carried_support() -> None:
+    (
+        _frame,
+        scene,
+        hierarchy,
+        bridge,
+        mixed,
+        external,
+        raw_matching,
+        external_own,
+        relation,
+        plan,
+    ) = _carrier_source_occlusion_fixture()
+    first_recovery = plan.recovery_actions[0]
+    assert first_recovery.carrier_source_recovery_alternative is not None
+    alternative = first_recovery.carrier_source_recovery_alternative
+    delivery = alternative.carrier_source_delivery_actions
+    assert tuple((item.coordinate.x, item.coordinate.y, item.purpose) for item in delivery) == (
+        (53, 36, VisualActionPurpose.PROGRESS),
+        (23, 58, VisualActionPurpose.PROBE),
+        (46, 24, VisualActionPurpose.PROGRESS),
+        (23, 48, VisualActionPurpose.PROBE),
+        (60, 24, VisualActionPurpose.PROGRESS),
+    )
+    assert [item.completes_carrier_source_delivery for item in delivery] == [
+        False,
+        False,
+        False,
+        False,
+        True,
+    ]
+    assert visual_causal._carrier_source_delivery_actions_are_compatible(alternative)
+    assert not visual_causal._carrier_source_delivery_actions_are_compatible(
+        replace(
+            alternative,
+            carrier_source_delivery_actions=(
+                replace(delivery[0], completes_local_target=True),
+                *delivery[1:],
+            ),
+        )
+    )
+    assert not visual_causal._carrier_source_delivery_actions_are_compatible(
+        replace(
+            alternative,
+            carrier_source_delivery_actions=(
+                replace(delivery[0], stages_for_switch=True),
+                *delivery[1:],
+            ),
+        )
+    )
+    assert not visual_causal._carrier_source_delivery_actions_are_compatible(
+        replace(
+            alternative,
+            carrier_source_delivery_actions=(
+                *delivery[:-1],
+                replace(delivery[-1], plan_id="visual-carrier-source-delivery:split-lineage"),
+            ),
+        )
+    )
+
+    def mediator_center(
+        support: visual_causal._HierarchySourceSupport,
+        positions: dict[str, tuple[int, int]],
+    ) -> tuple[int, int]:
+        centers = tuple(positions[item.object_ref] for item in support.child.endpoints)
+        return (
+            sum(center[0] for center in centers) // support.child.arity,
+            sum(center[1] for center in centers) // support.child.arity,
+        )
+
+    def start_delivery() -> tuple[
+        _ProjectedWeightedHierarchyEnvironment,
+        Observation,
+        VisualCausalPolicy,
+        list[dict[str, object]],
+    ]:
+        environment = _ProjectedWeightedHierarchyEnvironment(
+            scene,
+            hierarchy,
+            carrier_source_supports=relation.supports,
+        )
+        observation = environment.observation()
+        policy = VisualCausalPolicy(max_coordinate_candidates=8)
+        policy._level_index = 4
+        policy._last_active_color = hierarchy.active_color
+        policy._ensure_learner(observation)
+        _seed_carrier_source_occlusion_prerequisites(
+            policy,
+            scene,
+            hierarchy,
+            bridge,
+            mixed,
+            external,
+            raw_matching,
+            external_own,
+        )
+        policy._install_hierarchy_plan(plan, relation_key=relation.relation_key)
+        for expected in plan.actions:
+            action = policy.select(observation)
+            assert action.coordinate == expected.coordinate
+            observation = environment.step(action)
+            policy.accept_consequence(observation)
+            policy.drain_durable_receipts()
+
+        action = policy.select(observation)
+        assert action.coordinate == first_recovery.coordinate == Coordinate(34, 55)
+        active_ref = next(
+            ref for ref, color in environment.colors.items() if color == hierarchy.active_color
+        )
+        prospective_positions = dict(environment.positions)
+        prospective_positions[active_ref] = (action.coordinate.x, action.coordinate.y)
+        implicated = tuple(
+            index
+            for index, support in enumerate(relation.supports)
+            if mediator_center(support, environment.positions)
+            != mediator_center(support, prospective_positions)
+        )
+        assert implicated == (1,)
+        environment.carried_source_support_indexes = frozenset(implicated)
+        observation = environment.step(action)
+        returned_scene = extract_visual_scene(observation.frames[-1])
+        assert visual_causal._child_isolation_protected_raster_hash(returned_scene) == (
+            "sha256:bd9c1cd80f7af28303970b32bfb6e4e58a0d2e675ed4494115a4c984a9d67b2f"
+        )
+        official = _campaign36_first_carried_source_recovery_frame()
+        assert all(
+            observation.frames[-1].cells[y][x] == official.cells[y][x]
+            for y in range(64)
+            for x in range(1, 64)
+        )
+        policy.accept_consequence(observation)
+        receipt = policy.drain_durable_receipts()
+        assert policy.snapshot()["pending_plan_actions"] == 5
+        return environment, observation, policy, receipt
+
+    environment, observation, policy, receipt = start_delivery()
+    assert len(receipt) == 1
+    assert receipt[0]["residual"] == "planned hierarchy consequence was not structurally readable"
+    assert policy.snapshot()["hierarchy_carried_source_support_indexes"] == [1]
+    target_cells = {(x, y): scene.cells[y][x] for x, y in hierarchy.target.cells}
+    assert len(target_cells) == 12
+    carried_support = relation.supports[1]
+
+    baseline_scene = extract_visual_scene(observation.frames[-1])
+    baseline_positions = dict(environment.positions)
+    future_positions = dict(baseline_positions)
+    active_ref = next(
+        ref for ref, color in environment.colors.items() if color == hierarchy.active_color
+    )
+    future_positions[active_ref] = (delivery[0].coordinate.x, delivery[0].coordinate.y)
+
+    def carried_footprint(positions: dict[str, tuple[int, int]]) -> frozenset[tuple[int, int]]:
+        endpoint_centers = tuple(
+            positions[endpoint.object_ref] for endpoint in carried_support.child.endpoints
+        )
+        center = (
+            sum(point[0] for point in endpoint_centers) // carried_support.child.arity,
+            sum(point[1] for point in endpoint_centers) // carried_support.child.arity,
+        )
+        dynamic = visual_causal._hierarchy_projected_group_footprint(
+            carried_support.child,
+            endpoint_centers=endpoint_centers,
+            mediator_center=center,
+        )
+        source_center_x, source_center_y = carried_support.source.center
+        translated = frozenset(
+            (center[0] + x - source_center_x, center[1] + y - source_center_y)
+            for x, y in carried_support.source.cells
+        )
+        return dynamic | translated
+
+    future_only = carried_footprint(future_positions) - carried_footprint(baseline_positions)
+    obstacle_cell = next(
+        (x, y)
+        for x, y in sorted(future_only)
+        if baseline_scene.cells[y][x] == baseline_scene.background
+    )
+    obstacle_rows = [list(row) for row in baseline_scene.cells]
+    obstacle_rows[obstacle_cell[1]][obstacle_cell[0]] = hierarchy.target.color
+    obstacle_scene = replace(
+        baseline_scene,
+        cells=tuple(tuple(row) for row in obstacle_rows),
+    )
+    assert (
+        visual_causal._carrier_source_target_delivery_projected_state_is_safe(
+            scene,
+            obstacle_scene,
+            hierarchy,
+            relation.supports,
+            support_index=1,
+            baseline_positions=baseline_positions,
+            positions=future_positions,
+            colors=dict(environment.colors),
+            completes_delivery=False,
+        )
+        is None
+    )
+
+    for expected in delivery:
+        action = policy.select(observation)
+        assert action.coordinate == expected.coordinate
+        assert policy._pending_carrier_source_recovery_candidate == expected
+        observation = environment.step(action)
+        returned_scene = extract_visual_scene(observation.frames[-1])
+        assert visual_causal._child_isolation_protected_raster_hash(returned_scene) == (
+            expected.expected_child_protected_raster_hash
+        )
+        policy.accept_consequence(observation)
+    assert (
+        mediator_center(carried_support, environment.positions) == hierarchy.target.rounded_center
+    )
+    assert all(
+        observation.frames[-1].cells[y][x] == value for (x, y), value in target_cells.items()
+    )
+    source_x, source_y = carried_support.source.center
+    target_x, target_y = hierarchy.target.rounded_center
+    translated_source = {
+        (target_x + x - source_x, target_y + y - source_y): scene.cells[y][x]
+        for x, y in carried_support.source.cells
+    }
+    assert len(translated_source) == 21
+    assert not (set(target_cells) & set(translated_source))
+    assert all(
+        observation.frames[-1].cells[y][x] == value for (x, y), value in translated_source.items()
+    )
+    assert observation.state is GameStateName.NOT_FINISHED
+    assert policy.receipts[-1].residual == (
+        "the exact carried source reached its unique observed raw target, but the official "
+        "environment remained NOT_FINISHED"
+    )
+    with pytest.raises(PolicyError, match="target-delivery continuation"):
+        policy.select(observation)
+
+    corrupt_environment, corrupt_observation, corrupt_policy, _receipt = start_delivery()
+    first_delivery = corrupt_policy.select(corrupt_observation)
+    assert first_delivery.coordinate == Coordinate(53, 36)
+    corrupted = corrupt_environment.step(first_delivery)
+    corrupted_rows = [list(row) for row in corrupted.frames[-1].cells]
+    carried_center = mediator_center(carried_support, corrupt_environment.positions)
+    old_x, old_y = carried_support.source.cells[0]
+    translated_cell = (
+        carried_center[0] + old_x - source_x,
+        carried_center[1] + old_y - source_y,
+    )
+    corrupted_rows[translated_cell[1]][translated_cell[0]] = scene.background
+    corrupt_policy.accept_consequence(
+        replace(
+            corrupted,
+            frames=(GridFrame.from_rows(corrupted_rows),),
+        )
+    )
+    assert corrupt_policy.snapshot()["hierarchy_lineage_lost"] is True
+    with pytest.raises(PolicyError, match="hierarchy lineage was lost"):
+        corrupt_policy.select(corrupted)
+
+    for terminal_state in (GameStateName.WIN, GameStateName.GAME_OVER):
+        terminal_environment, terminal_observation, terminal_policy, _receipt = start_delivery()
+        for expected in delivery[:-1]:
+            action = terminal_policy.select(terminal_observation)
+            assert action.coordinate == expected.coordinate
+            terminal_observation = terminal_environment.step(action)
+            terminal_policy.accept_consequence(terminal_observation)
+        final = terminal_policy.select(terminal_observation)
+        assert final.coordinate == delivery[-1].coordinate
+        terminal_observation = replace(
+            terminal_environment.step(final),
+            state=terminal_state,
+            available_actions=(() if terminal_state is GameStateName.WIN else (ActionName.RESET,)),
+        )
+        terminal_policy.accept_consequence(terminal_observation)
+        assert terminal_policy.snapshot()["pending_plan_actions"] == 0
+        if terminal_state is GameStateName.WIN:
+            assert terminal_policy.snapshot()["hierarchy_active"] is False
+            with pytest.raises(PolicyError, match="already reports WIN"):
+                terminal_policy.select(terminal_observation)
+        else:
+            assert terminal_policy.receipts[-1].residual == (
+                "the exact carried-source delivery action returned official GAME_OVER"
+            )
+            assert terminal_policy.select(terminal_observation) == ActionRequest(ActionName.RESET)
 
 
 def test_carrier_source_occlusion_selects_replays_and_restores_exact_sources() -> None:
