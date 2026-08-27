@@ -15936,8 +15936,8 @@ class VisualCausalPolicy:
                     post_receipt_paired_cargo_indexes = carried_indexes
                     self._last_probe_failed = False
                     residual = (
-                        "the exact untouched-carrier discriminator restored with every witnessed "
-                        "source still carried; derive only their own paired targets from this receipt"
+                        "exact endpoint recovery ended with an observation-certified source "
+                        "attachment; no unrelated continuation is authorized"
                     )
                 else:
                     self._last_probe_failed = True

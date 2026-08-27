@@ -6787,6 +6787,10 @@ def test_carrier_source_recovery_rebases_only_the_exact_carried_support(
         for y in range(64)
         for x in range(1, 64)
     )
+    assert policy.receipts[-1].residual == (
+        "exact endpoint recovery ended with an observation-certified source attachment; "
+        "no unrelated continuation is authorized"
+    )
     paired_cargo_route = tuple(policy._plan)
     assert len(paired_cargo_route) == 10
     assert tuple(
