@@ -1759,7 +1759,7 @@ def _build_package_only_plan(
             "package-safe-test-suite",
             "tests",
             tuple(test_argv),
-            2700.0,
+            3000.0,
             dependencies=lock_dependencies,
             nondeterminism=("test durations and coverage percentages may vary by host",),
         ),

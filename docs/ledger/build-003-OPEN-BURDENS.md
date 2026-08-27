@@ -517,3 +517,17 @@ Do not delete a burden when later evidence resolves it. Append a resolution with
 - **Local evidence:** The corrected focused test passed, the full visual-policy suite passed 134/134 tests in 388.93 seconds, source lint/format/type gates passed, and a full worktree replay matched 240/240 actions and 240/240 mechanics receipts, staged A4 `(52,55)`, and cancelled it unsubmitted with zero pending learner action. This is not official progress or completion.
 - **Impact:** Campaign 36 remains gated. The worktree replay cannot substitute for a clean exact-commit receipt, detached integrity, exact-head CI, or an official `GameState.WIN`.
 - **Resolution condition:** A frozen exact commit reproduces 240/240 strict receipt equality, selects and cancels the same A4 candidate, passes integrity and exact-head CI, and then receives an authoritative official consequence without crossing the sealed holdout or other human gates.
+
+## B-003-0036 - One exact-head PR package runner reached the 2,700-second guard ceiling
+
+- **Status:** OPEN; LOCAL TIMEOUT-ONLY REPAIR PASSED; EXACT-COMMIT GATES PENDING
+- **Stage:** 10 and target-game continuation
+- **Opened:** 2026-08-26
+- **Owner:** Codex
+- **Burden:** Exact `d406e1b` PR package Windows job `98396513754` reached the package-safe command's 2,700-second ceiling after emitting every pass/skip glyph but before final reporting and guard-receipt generation. The verifier correctly returned `FAILED_INFRASTRUCTURE`; its derivative missing-guard failure is not an independent mechanism result.
+- **Preserved evidence:** Run `33035269356`; plan `sha256:2f354c68171c15d28e29617a22c05dedf5e4f4154d12ca525d7094c49791f4ad`; 1,074 pass glyphs, three skip glyphs, and no failure/error glyph; successful process-tree cleanup with zero remaining PIDs; failed receipt file SHA-256 `5b66b14048a48502e31cfb75a5eff624759846e6e5ea81b4e54698aa09c2a0ff`; embedded receipt SHA-256 `sha256:5b5e553e0fb6f3b1a967955801b10ec9d9535ba34db6c022bdb2229f59b50eda`.
+- **Paired diagnosis:** The same exact push Windows plan passed in 1,676.0844144 seconds and produced a complete guard and expected `BLOCKED_EXTERNAL` receipt. The failed stdout is an exact byte prefix of the passing stdout; source, index, plan, package, integrity, and substantive artifact hashes match. This is strong runner-variance evidence, not proof that the timed-out finalization would have passed.
+- **Smallest repair:** Raise only the guarded command ceiling from 2,700 to 3,000 seconds and pin it. Keep the 60-minute outer workflow ceiling, full-profile timeout, complete selection, path/process guards, and verdict semantics unchanged.
+- **Local repair evidence:** All 17 package-only verifier-plan tests passed in 7.10 seconds; Ruff lint and format, strict MyPy, JSON parsing, and diff hygiene passed. No environment action was issued. Clean exact-commit replay, integrity, and all hosted jobs remain pending.
+- **Impact:** Campaign 36 remains gated. Seven other exact-`d406e1b` jobs passing cannot substitute for the failed required job, and local or replay success cannot substitute for official `GameState.WIN`.
+- **Resolution condition:** A new frozen commit passes all local package-plan/source gates, all five hosted workflows and nine jobs without timeout or failure, and preserves the complete package-only guard receipt and expected private-only `BLOCKED_EXTERNAL` terminal.
