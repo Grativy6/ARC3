@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import copy
 import hashlib
 import math
 import zlib
@@ -6664,7 +6665,7 @@ def test_carrier_source_recovery_rebases_only_the_exact_carried_support(
         )
         == continuation
     )
-    assert policy._active_carrier_source_attachment_replay_context is None
+    assert policy._active_carrier_source_attachment_replay_context is replay_context
     continued_observation = still_carried
     for index, expected in enumerate(continuation[:-1]):
         continued_action = policy.select(continued_observation)
@@ -6700,16 +6701,195 @@ def test_carrier_source_recovery_rebases_only_the_exact_carried_support(
         == scene.cells[y][x]
         for x, y in carried_support.source.cells
     )
+    atomic_policy = copy.deepcopy(policy)
+    atomic_receipt_count = len(atomic_policy.receipts)
+    with monkeypatch.context() as atomic_patch:
+        atomic_patch.setattr(
+            visual_causal,
+            "_carrier_source_untouched_discriminator_after_observed_attachment",
+            lambda *_args, **_kwargs: (_ for _ in ()).throw(ValueError("corrupt replay")),
+        )
+        atomic_policy.accept_consequence(continued_observation)
+    assert len(atomic_policy.receipts) == atomic_receipt_count + 1
+    assert atomic_policy.snapshot()["pending_plan_actions"] == 0
+    assert atomic_policy._pending_action is None
+    with pytest.raises(PolicyError, match="attachment remains active"):
+        atomic_policy.select(continued_observation)
+    campaign39_receipt_count = len(policy.receipts)
     policy.accept_consequence(continued_observation)
     continued_snapshot = policy.snapshot()
-    assert continued_snapshot["pending_plan_actions"] == 0
+    assert len(policy.receipts) == campaign39_receipt_count + 1
+    assert continued_snapshot["pending_plan_actions"] == 2
     assert continued_snapshot["hierarchy_carried_source_support_indexes"] == [1]
     assert policy.receipts[-1].residual == (
         "the exact inverse restored the pre-delivery raster with the source still attached; "
         "repeated target delivery is rejected"
     )
-    with pytest.raises(PolicyError, match=r"target-delivery continuation|still attached"):
-        policy.select(continued_observation)
+    assert tuple((item.coordinate.x, item.coordinate.y) for item in policy._plan) == (
+        (20, 42),
+        (43, 34),
+    )
+    assert policy._active_carrier_source_attachment_replay_context is None
+    untouched_role_exchange = policy._plan[0]
+    campaign39_final_scene = extract_visual_scene(continued_observation.frames[-1])
+    assert visual_causal._carrier_source_untouched_role_exchange_step_is_compatible(
+        untouched_role_exchange
+    )
+    assert (
+        visual_causal._child_isolation_protected_raster_hash(campaign39_final_scene)
+        == untouched_role_exchange.required_child_protected_raster_hash
+    )
+    assert any(
+        target.rounded_center == untouched_role_exchange.target_center
+        for target in campaign39_final_scene.targets
+    )
+    assert (
+        visual_causal._hierarchy_planned_click_matching_candidate(
+            campaign39_final_scene,
+            untouched_role_exchange,
+            active_color=hierarchy.active_color,
+            required_carried_source_support_indexes=(1,),
+        )
+        == untouched_role_exchange
+    )
+    stationary_environment = copy.deepcopy(environment)
+    stationary_policy = copy.deepcopy(policy)
+    corrupt_environment = copy.deepcopy(environment)
+    corrupt_policy = copy.deepcopy(policy)
+    cancel_policy = copy.deepcopy(policy)
+    win_environment = copy.deepcopy(environment)
+    win_policy = copy.deepcopy(policy)
+    game_over_environment = copy.deepcopy(environment)
+    game_over_policy = copy.deepcopy(policy)
+    progress_environment = copy.deepcopy(environment)
+    progress_policy = copy.deepcopy(policy)
+    campaign39_final_cells = continued_observation.frames[-1].cells
+    campaign39_final_protected_hash = visual_causal._child_isolation_protected_raster_hash(
+        campaign39_final_scene
+    )
+    for discriminator_index in range(4):
+        discriminator_action = policy.select(continued_observation)
+        if discriminator_index == 1:
+            environment.carried_source_support_indexes = frozenset({0, 1})
+        continued_observation = environment.step(discriminator_action)
+        policy.accept_consequence(continued_observation)
+        if discriminator_index == 1:
+            assert "followed its endpoint exactly" in policy.receipts[-1].residual
+            assert policy.snapshot()["pending_plan_actions"] == 2
+    assert (
+        visual_causal._child_isolation_protected_raster_hash(
+            extract_visual_scene(continued_observation.frames[-1])
+        )
+        == campaign39_final_protected_hash
+    )
+    assert all(
+        continued_observation.frames[-1].cells[y][x] == campaign39_final_cells[y][x]
+        for y in range(64)
+        for x in range(1, 64)
+    )
+    assert policy.snapshot()["pending_plan_actions"] == 0
+    assert policy.snapshot()["hierarchy_carried_source_support_indexes"] == [0, 1]
+
+    stationary_observation = continued_observation = replace(
+        continued_observation,
+        frames=(replace(continued_observation.frames[-1], cells=campaign39_final_cells),),
+    )
+    for discriminator_index in range(4):
+        discriminator_action = stationary_policy.select(stationary_observation)
+        stationary_observation = stationary_environment.step(discriminator_action)
+        stationary_policy.accept_consequence(stationary_observation)
+        if discriminator_index == 1:
+            assert "remained stationary" in stationary_policy.receipts[-1].residual
+            assert stationary_policy.snapshot()["pending_plan_actions"] == 2
+    assert (
+        visual_causal._child_isolation_protected_raster_hash(
+            extract_visual_scene(stationary_observation.frames[-1])
+        )
+        == campaign39_final_protected_hash
+    )
+    assert stationary_policy.snapshot()["pending_plan_actions"] == 0
+    assert stationary_policy.snapshot()["hierarchy_carried_source_support_indexes"] == [1]
+
+    corrupt_observation = replace(
+        continued_observation,
+        frames=(replace(continued_observation.frames[-1], cells=campaign39_final_cells),),
+    )
+    corrupt_role_action = corrupt_policy.select(corrupt_observation)
+    corrupt_observation = corrupt_environment.step(corrupt_role_action)
+    corrupt_policy.accept_consequence(corrupt_observation)
+    corrupt_discriminator_action = corrupt_policy.select(corrupt_observation)
+    corrupt_observation = corrupt_environment.step(corrupt_discriminator_action)
+    corrupt_rows = [list(row) for row in corrupt_observation.frames[-1].cells]
+    protected_x, protected_y = next(iter(target_cells))
+    corrupt_rows[protected_y][protected_x] = scene.background
+    corrupt_observation = replace(
+        corrupt_observation,
+        frames=(
+            replace(
+                corrupt_observation.frames[-1],
+                cells=tuple(tuple(row) for row in corrupt_rows),
+            ),
+        ),
+    )
+    corrupt_policy.accept_consequence(corrupt_observation)
+    assert corrupt_policy.snapshot()["pending_plan_actions"] == 0
+    with pytest.raises(PolicyError, match="lineage was lost"):
+        corrupt_policy.select(corrupt_observation)
+
+    cancelled = cancel_policy.select(
+        replace(
+            continued_observation,
+            frames=(replace(continued_observation.frames[-1], cells=campaign39_final_cells),),
+        )
+    )
+    assert cancelled.coordinate == Coordinate(20, 42)
+    cancel_policy.cancel_unsubmitted_action()
+    assert cancel_policy.snapshot()["pending_plan_actions"] == 0
+    with pytest.raises(PolicyError, match="attachment remains active"):
+        cancel_policy.select(
+            replace(
+                continued_observation,
+                frames=(replace(continued_observation.frames[-1], cells=campaign39_final_cells),),
+            )
+        )
+
+    for terminal_environment, terminal_policy, terminal_state in (
+        (win_environment, win_policy, GameStateName.WIN),
+        (game_over_environment, game_over_policy, GameStateName.GAME_OVER),
+    ):
+        terminal_observation = replace(
+            continued_observation,
+            frames=(replace(continued_observation.frames[-1], cells=campaign39_final_cells),),
+        )
+        terminal_action = terminal_policy.select(terminal_observation)
+        terminal_observation = replace(
+            terminal_environment.step(terminal_action),
+            state=terminal_state,
+            available_actions=(ActionName.RESET,)
+            if terminal_state is GameStateName.GAME_OVER
+            else (),
+        )
+        terminal_policy.accept_consequence(terminal_observation)
+        assert terminal_policy.snapshot()["pending_plan_actions"] == 0
+        assert terminal_policy.snapshot()["hierarchy_carried_source_support_indexes"] == []
+        if terminal_state is GameStateName.WIN:
+            with pytest.raises(PolicyError, match="already reports WIN"):
+                terminal_policy.select(terminal_observation)
+        else:
+            assert terminal_policy.select(terminal_observation).name is ActionName.RESET
+
+    progress_observation = replace(
+        continued_observation,
+        frames=(replace(continued_observation.frames[-1], cells=campaign39_final_cells),),
+    )
+    progress_action = progress_policy.select(progress_observation)
+    progress_observation = replace(
+        progress_environment.step(progress_action),
+        levels_completed=progress_observation.levels_completed + 1,
+    )
+    progress_policy.accept_consequence(progress_observation)
+    assert progress_policy.snapshot()["pending_plan_actions"] == 0
+    assert progress_policy.snapshot()["hierarchy_carried_source_support_indexes"] == []
 
     def reach_detachment() -> tuple[
         _ProjectedWeightedHierarchyEnvironment,

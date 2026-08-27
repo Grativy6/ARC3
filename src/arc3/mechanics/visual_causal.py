@@ -285,6 +285,11 @@ class PlannedClick:
     carrier_source_detachment_step: bool = False
     carrier_source_target_center_role_exchange_step: bool = False
     carrier_source_attachment_continuation_actions: tuple[PlannedClick, ...] = ()
+    carrier_source_untouched_role_exchange_step: bool = False
+    carrier_source_untouched_discriminator_step: bool = False
+    carrier_source_untouched_restoration_actions: tuple[PlannedClick, ...] = ()
+    carrier_source_untouched_restoration_step: bool = False
+    completes_carrier_source_untouched_restoration: bool = False
     expected_deposited_source_protected_raster_hash: str | None = None
     expected_deposited_visible_endpoint_count: int | None = None
     expected_deposited_visible_mediator_count: int | None = None
@@ -10824,6 +10829,10 @@ def _carrier_source_recovery_action_signature(planned: PlannedClick) -> tuple[ob
         planned.carrier_source_detachment_step,
         planned.carrier_source_target_center_role_exchange_step,
         planned.carrier_source_attachment_continuation_actions,
+        planned.carrier_source_untouched_role_exchange_step,
+        planned.carrier_source_untouched_discriminator_step,
+        planned.carrier_source_untouched_restoration_step,
+        planned.completes_carrier_source_untouched_restoration,
         planned.expected_deposited_source_protected_raster_hash,
         planned.expected_deposited_visible_endpoint_count,
         planned.expected_deposited_visible_mediator_count,
@@ -10841,6 +10850,11 @@ def _carrier_source_delivery_step_is_compatible(planned: PlannedClick) -> bool:
         and not planned.carrier_source_recovery_candidates
         and not planned.carrier_source_delivery_actions
         and not planned.carrier_source_attachment_continuation_actions
+        and not planned.carrier_source_untouched_role_exchange_step
+        and not planned.carrier_source_untouched_discriminator_step
+        and not planned.carrier_source_untouched_restoration_actions
+        and not planned.carrier_source_untouched_restoration_step
+        and not planned.completes_carrier_source_untouched_restoration
         and len(required_indexes) == 1
         and planned.expected_carried_source_support_indexes == required_indexes
         and planned.required_child_protected_raster_hash is not None
@@ -10941,6 +10955,11 @@ def _carrier_source_detachment_step_is_compatible(planned: PlannedClick) -> bool
         and not planned.carrier_source_delivery_actions
         and planned.carrier_source_detachment_probe is None
         and not planned.carrier_source_target_center_role_exchange_step
+        and not planned.carrier_source_untouched_role_exchange_step
+        and not planned.carrier_source_untouched_discriminator_step
+        and not planned.carrier_source_untouched_restoration_actions
+        and not planned.carrier_source_untouched_restoration_step
+        and not planned.completes_carrier_source_untouched_restoration
         and (
             not planned.carrier_source_attachment_continuation_actions
             or _carrier_source_attachment_continuation_actions_are_compatible(planned)
@@ -11099,6 +11118,579 @@ def _carrier_source_attachment_continuation_after_observed_restoration(
     return derived.carrier_source_attachment_continuation_actions
 
 
+def _carrier_source_untouched_discriminator_after_observed_attachment(
+    context: _CarrierSourceAttachmentReplayContext,
+    planned: PlannedClick,
+    restored_scene: VisualScene,
+) -> tuple[PlannedClick, ...]:
+    """Derive one untouched-carrier test only from the exact final carried receipt."""
+
+    if (
+        planned.carrier_source_attachment_continuation_actions
+        or not _carrier_source_detachment_step_is_compatible(planned)
+        or planned.expected_child_protected_raster_hash is None
+        or _child_isolation_protected_raster_hash(restored_scene)
+        != planned.expected_child_protected_raster_hash
+        or planned.expected_visible_endpoint_count != len(restored_scene.endpoints)
+        or planned.expected_visible_mediator_count != len(restored_scene.mediators)
+    ):
+        return ()
+    regenerated = _build_hierarchy_plan(
+        context.hierarchy,
+        context.layouts,
+        scene=context.scene,
+        move_order=context.move_order,
+        support_weights=context.support_weights,
+        carrier_source_supports=context.carrier_source_supports,
+        signature_prefix=context.signature_prefix,
+        terminal_expectation=context.terminal_expectation,
+        derive_carrier_source_attachment_continuations=True,
+    )
+
+    def replay(
+        actions: tuple[PlannedClick, ...],
+    ) -> tuple[dict[str, tuple[int, int]], dict[str, int]] | None:
+        positions = {
+            endpoint.object_ref: endpoint.rounded_center
+            for child in context.hierarchy.children
+            for endpoint in child.endpoints
+        }
+        colors = {
+            endpoint.object_ref: endpoint.color
+            for child in context.hierarchy.children
+            for endpoint in child.endpoints
+        }
+        for action in actions:
+            active_refs = tuple(
+                ref for ref, color in colors.items() if color == context.hierarchy.active_color
+            )
+            if len(active_refs) != 1:
+                return None
+            active_ref = active_refs[0]
+            coordinate = (action.coordinate.x, action.coordinate.y)
+            if action.purpose is VisualActionPurpose.PROBE:
+                selected_refs = tuple(
+                    ref for ref, center in positions.items() if center == coordinate
+                )
+                if len(selected_refs) != 1 or selected_refs[0] == active_ref:
+                    return None
+                selected_ref = selected_refs[0]
+                colors[active_ref], colors[selected_ref] = (
+                    colors[selected_ref],
+                    colors[active_ref],
+                )
+            elif action.purpose is VisualActionPurpose.PROGRESS:
+                positions[active_ref] = coordinate
+            else:
+                return None
+        return positions, colors
+
+    replay_matches: list[
+        tuple[
+            dict[str, tuple[int, int]],
+            dict[str, int],
+            tuple[int, ...],
+        ]
+    ] = []
+    for recovery_index, recovery in enumerate(regenerated.recovery_actions):
+        for state_candidate in (recovery, *recovery.carrier_source_recovery_candidates):
+            alternative = state_candidate.carrier_source_recovery_alternative
+            if alternative is None or not alternative.carrier_source_delivery_actions:
+                continue
+            delivery = alternative.carrier_source_delivery_actions
+            initial_probe = delivery[-1].carrier_source_detachment_probe
+            if initial_probe is None:
+                continue
+            continuation = initial_probe.carrier_source_attachment_continuation_actions
+            if not continuation or continuation[-1] != planned:
+                continue
+            replayed = replay(
+                (
+                    *regenerated.actions,
+                    *regenerated.recovery_actions[: recovery_index + 1],
+                    *delivery,
+                    initial_probe,
+                    *continuation,
+                )
+            )
+            if replayed is None:
+                continue
+            positions, colors = replayed
+            carried_indexes = planned.expected_carried_source_support_indexes
+            try:
+                projected = _carrier_source_carried_projected_scene(
+                    context.scene,
+                    context.hierarchy,
+                    context.carrier_source_supports,
+                    positions=positions,
+                    colors=colors,
+                    carried_support_indexes=frozenset(carried_indexes),
+                )
+            except ValueError:
+                continue
+            if (
+                tuple(tuple(row[1:]) for row in projected.cells)
+                != tuple(tuple(row[1:]) for row in restored_scene.cells)
+                or len(projected.endpoints) != len(restored_scene.endpoints)
+                or len(projected.mediators) != len(restored_scene.mediators)
+            ):
+                continue
+            replay_matches.append((positions, colors, carried_indexes))
+    if len(replay_matches) != 1:
+        return ()
+
+    positions, colors, carried_indexes = replay_matches[0]
+    support_count = len(context.carrier_source_supports)
+    carried = frozenset(carried_indexes)
+    unresolved_indexes = tuple(index for index in range(support_count) if index not in carried)
+    if len(carried) != 1 or len(unresolved_indexes) != 1:
+        return ()
+    untouched_index = unresolved_indexes[0]
+    untouched_support = context.carrier_source_supports[untouched_index]
+    matching_layouts = tuple(
+        layout for layout in context.layouts if layout.group == untouched_support.child
+    )
+    if len(matching_layouts) != 1 or not matching_layouts[0].movers:
+        return ()
+    untouched_layout = matching_layouts[0]
+    untouched_mover = untouched_layout.movers[-1]
+    untouched_ref = untouched_mover.object_ref
+    current_point = untouched_layout.points[-1]
+    predecessor = untouched_mover.rounded_center
+    active_refs = tuple(
+        ref for ref, color in colors.items() if color == context.hierarchy.active_color
+    )
+    if (
+        len(active_refs) != 1
+        or active_refs[0] == untouched_ref
+        or positions.get(untouched_ref) != current_point
+        or current_point == predecessor
+        or sum(center == current_point for center in positions.values()) != 1
+    ):
+        return ()
+    prior_active_ref = active_refs[0]
+    prior_active_point = positions[prior_active_ref]
+    visible_current = tuple(
+        endpoint
+        for endpoint in restored_scene.endpoints
+        if endpoint.rounded_center == current_point
+    )
+    visible_prior_active = tuple(
+        endpoint
+        for endpoint in restored_scene.endpoints
+        if endpoint.rounded_center == prior_active_point
+    )
+    if (
+        len(visible_current) != 1
+        or visible_current[0].color == context.hierarchy.active_color
+        or len(visible_prior_active) != 1
+        or visible_prior_active[0].color != context.hierarchy.active_color
+    ):
+        return ()
+
+    def project(
+        projected_positions: dict[str, tuple[int, int]],
+        projected_colors: dict[str, int],
+        indexes: frozenset[int],
+    ) -> VisualScene | None:
+        try:
+            return _carrier_source_carried_projected_scene(
+                context.scene,
+                context.hierarchy,
+                context.carrier_source_supports,
+                positions=projected_positions,
+                colors=projected_colors,
+                carried_support_indexes=indexes,
+            )
+        except ValueError:
+            return None
+
+    def certificate(projected: VisualScene) -> _HierarchyRasterCertificate:
+        return _HierarchyRasterCertificate(
+            protected_raster_hash=_child_isolation_protected_raster_hash(projected),
+            visible_endpoint_count=len(projected.endpoints),
+            visible_mediator_count=len(projected.mediators),
+        )
+
+    def require_exact_lineage(
+        candidate: PlannedClick,
+        required_scene: VisualScene,
+        *,
+        required_indexes: tuple[int, ...],
+    ) -> PlannedClick:
+        if _hierarchy_planned_click_is_safe(
+            required_scene,
+            candidate,
+            active_color=context.hierarchy.active_color,
+            required_carried_source_support_indexes=required_indexes,
+        ):
+            return candidate
+        visible_active_count = sum(
+            endpoint.color == context.hierarchy.active_color
+            for endpoint in required_scene.endpoints
+        )
+        alternative = candidate.carrier_source_recovery_alternative
+        recovery_candidates = candidate.carrier_source_recovery_candidates
+        masked = replace(
+            candidate,
+            required_visible_active_endpoint_count=visible_active_count,
+            carrier_source_recovery_alternative=(
+                replace(
+                    alternative,
+                    required_visible_active_endpoint_count=visible_active_count,
+                )
+                if alternative is not None
+                else None
+            ),
+            carrier_source_recovery_candidates=tuple(
+                replace(
+                    recovery_candidate,
+                    required_visible_active_endpoint_count=visible_active_count,
+                )
+                for recovery_candidate in recovery_candidates
+            ),
+        )
+        if not _hierarchy_planned_click_is_safe(
+            required_scene,
+            masked,
+            active_color=context.hierarchy.active_color,
+            required_carried_source_support_indexes=required_indexes,
+        ):
+            raise ValueError("untouched carrier action lacks an exact masked-lineage precondition")
+        return masked
+
+    baseline_scene = project(positions, colors, carried)
+    if baseline_scene is None or tuple(tuple(row[1:]) for row in baseline_scene.cells) != tuple(
+        tuple(row[1:]) for row in restored_scene.cells
+    ):
+        return ()
+    role_colors = dict(colors)
+    role_colors[prior_active_ref], role_colors[untouched_ref] = (
+        role_colors[untouched_ref],
+        role_colors[prior_active_ref],
+    )
+    role_scene = project(positions, role_colors, carried)
+    if role_scene is None or role_scene.cells == baseline_scene.cells:
+        return ()
+    moved_positions = dict(positions)
+    moved_positions[untouched_ref] = predecessor
+    newly_carried = carried | {untouched_index}
+    stationary_scene = project(moved_positions, role_colors, carried)
+    newly_carried_scene = project(moved_positions, role_colors, newly_carried)
+    if stationary_scene is None or newly_carried_scene is None:
+        return ()
+
+    untouched_centers = tuple(
+        positions[endpoint.object_ref] for endpoint in untouched_support.child.endpoints
+    )
+    untouched_moved_centers = tuple(
+        moved_positions[endpoint.object_ref] for endpoint in untouched_support.child.endpoints
+    )
+    untouched_center = (
+        sum(point[0] for point in untouched_centers) // untouched_support.child.arity,
+        sum(point[1] for point in untouched_centers) // untouched_support.child.arity,
+    )
+    untouched_moved_center = (
+        sum(point[0] for point in untouched_moved_centers) // untouched_support.child.arity,
+        sum(point[1] for point in untouched_moved_centers) // untouched_support.child.arity,
+    )
+    current_dynamic = _hierarchy_projected_group_footprint(
+        untouched_support.child,
+        endpoint_centers=untouched_centers,
+        mediator_center=untouched_center,
+    )
+    moved_dynamic = _hierarchy_projected_group_footprint(
+        untouched_support.child,
+        endpoint_centers=untouched_moved_centers,
+        mediator_center=untouched_moved_center,
+    )
+    source_x, source_y = untouched_support.source.center
+    moved_source = frozenset(
+        (untouched_moved_center[0] + x - source_x, untouched_moved_center[1] + y - source_y)
+        for x, y in untouched_support.source.cells
+    )
+    target_cells = frozenset(cell for target in context.scene.targets for cell in target.cells)
+    protected_cells = set(target_cells)
+    for index in carried:
+        support = context.carrier_source_supports[index]
+        support_centers = tuple(
+            positions[endpoint.object_ref] for endpoint in support.child.endpoints
+        )
+        support_center = (
+            sum(point[0] for point in support_centers) // support.child.arity,
+            sum(point[1] for point in support_centers) // support.child.arity,
+        )
+        protected_cells.update(support.source.cells)
+        protected_cells.update(
+            _hierarchy_projected_group_footprint(
+                support.child,
+                endpoint_centers=support_centers,
+                mediator_center=support_center,
+            )
+        )
+        support_source_x, support_source_y = support.source.center
+        protected_cells.update(
+            (support_center[0] + x - support_source_x, support_center[1] + y - support_source_y)
+            for x, y in support.source.cells
+        )
+    mutable_cells = (
+        current_dynamic | moved_dynamic | frozenset(untouched_support.source.cells) | moved_source
+    )
+    stationary_occupied = (
+        frozenset(
+            (x, y)
+            for y, row in enumerate(role_scene.cells)
+            for x, value in enumerate(row)
+            if value != role_scene.background
+        )
+        - current_dynamic
+        - frozenset(untouched_support.source.cells)
+    )
+    if (
+        not _hierarchy_cells_in_bounds(context.scene, moved_dynamic | moved_source)
+        or bool((moved_dynamic | moved_source) & frozenset(protected_cells))
+        or bool((moved_dynamic | moved_source) & stationary_occupied)
+        or any(
+            projected.cells[y][x] != role_scene.cells[y][x]
+            for projected in (stationary_scene, newly_carried_scene)
+            for y in range(context.scene.height)
+            for x in range(context.scene.width)
+            if (x, y) not in mutable_cells
+        )
+        or any(
+            projected.cells[y][x] != role_scene.cells[y][x]
+            for projected in (stationary_scene, newly_carried_scene)
+            for x, y in protected_cells
+        )
+    ):
+        return ()
+    stationary_certificate = certificate(stationary_scene)
+    newly_carried_certificate = certificate(newly_carried_scene)
+    if stationary_certificate == newly_carried_certificate:
+        return ()
+
+    stationary_restored = project(positions, role_colors, carried)
+    newly_carried_restored = project(positions, role_colors, newly_carried)
+    restored_colors = dict(role_colors)
+    restored_colors[prior_active_ref], restored_colors[untouched_ref] = (
+        restored_colors[untouched_ref],
+        restored_colors[prior_active_ref],
+    )
+    stationary_final = project(positions, restored_colors, carried)
+    newly_carried_final = project(positions, restored_colors, newly_carried)
+    if (
+        stationary_restored is None
+        or newly_carried_restored is None
+        or stationary_final is None
+        or newly_carried_final is None
+        or tuple(tuple(row[1:]) for row in stationary_restored.cells)
+        != tuple(tuple(row[1:]) for row in role_scene.cells)
+        or tuple(tuple(row[1:]) for row in newly_carried_restored.cells)
+        != tuple(tuple(row[1:]) for row in role_scene.cells)
+        or tuple(tuple(row[1:]) for row in stationary_final.cells)
+        != tuple(tuple(row[1:]) for row in baseline_scene.cells)
+        or tuple(tuple(row[1:]) for row in newly_carried_final.cells)
+        != tuple(tuple(row[1:]) for row in baseline_scene.cells)
+    ):
+        return ()
+
+    baseline_certificate = certificate(baseline_scene)
+    role_certificate = certificate(role_scene)
+    stationary_restored_certificate = certificate(stationary_restored)
+    newly_carried_restored_certificate = certificate(newly_carried_restored)
+    stationary_final_certificate = certificate(stationary_final)
+    newly_carried_final_certificate = certificate(newly_carried_final)
+    plan_id = (
+        "visual-carrier-source-untouched:"
+        + hashlib.sha256(
+            (
+                f"{planned.plan_id}|{untouched_support.child.mediator.object_ref}|"
+                f"{untouched_ref}|{predecessor[0]},{predecessor[1]}"
+            ).encode("ascii")
+        ).hexdigest()[:24]
+    )
+
+    def restoration_actions(
+        *,
+        indexes: tuple[int, ...],
+        moved_certificate: _HierarchyRasterCertificate,
+        restored_certificate: _HierarchyRasterCertificate,
+        final_certificate: _HierarchyRasterCertificate,
+    ) -> tuple[PlannedClick, ...]:
+        return (
+            PlannedClick(
+                coordinate=Coordinate(*current_point),
+                purpose=VisualActionPurpose.PROGRESS,
+                expectation=(
+                    "restore the untouched carrier endpoint to its exact pre-discriminator position"
+                ),
+                mechanic_ref=planned.mechanic_ref,
+                plan_id=plan_id,
+                plan_signature=planned.plan_signature,
+                target_center=planned.target_center,
+                mediator_color=untouched_support.child.mediator.color,
+                arity=untouched_support.child.arity,
+                expected_active_center=current_point,
+                required_child_protected_raster_hash=(moved_certificate.protected_raster_hash),
+                expected_child_protected_raster_hash=(restored_certificate.protected_raster_hash),
+                expected_visible_endpoint_count=restored_certificate.visible_endpoint_count,
+                expected_visible_mediator_count=restored_certificate.visible_mediator_count,
+                required_carried_source_support_indexes=indexes,
+                expected_carried_source_support_indexes=indexes,
+                carrier_source_untouched_restoration_step=True,
+            ),
+            PlannedClick(
+                coordinate=Coordinate(*prior_active_point),
+                purpose=VisualActionPurpose.PROBE,
+                expectation="restore the exact active endpoint role held before the discriminator",
+                mechanic_ref=planned.mechanic_ref,
+                plan_id=plan_id,
+                plan_signature=planned.plan_signature,
+                target_center=planned.target_center,
+                mediator_color=untouched_support.child.mediator.color,
+                arity=untouched_support.child.arity,
+                expected_active_center=prior_active_point,
+                required_child_protected_raster_hash=(restored_certificate.protected_raster_hash),
+                expected_child_protected_raster_hash=final_certificate.protected_raster_hash,
+                expected_visible_endpoint_count=final_certificate.visible_endpoint_count,
+                expected_visible_mediator_count=final_certificate.visible_mediator_count,
+                required_carried_source_support_indexes=indexes,
+                expected_carried_source_support_indexes=indexes,
+                carrier_source_untouched_restoration_step=True,
+                completes_carrier_source_untouched_restoration=True,
+            ),
+        )
+
+    stationary_indexes = tuple(sorted(carried))
+    newly_carried_indexes = tuple(sorted(newly_carried))
+    stationary_restoration = restoration_actions(
+        indexes=stationary_indexes,
+        moved_certificate=stationary_certificate,
+        restored_certificate=stationary_restored_certificate,
+        final_certificate=stationary_final_certificate,
+    )
+    newly_carried_restoration = restoration_actions(
+        indexes=newly_carried_indexes,
+        moved_certificate=newly_carried_certificate,
+        restored_certificate=newly_carried_restored_certificate,
+        final_certificate=newly_carried_final_certificate,
+    )
+    try:
+        stationary_restoration = (
+            require_exact_lineage(
+                stationary_restoration[0],
+                stationary_scene,
+                required_indexes=stationary_indexes,
+            ),
+            require_exact_lineage(
+                stationary_restoration[1],
+                stationary_restored,
+                required_indexes=stationary_indexes,
+            ),
+        )
+        newly_carried_restoration = (
+            require_exact_lineage(
+                newly_carried_restoration[0],
+                newly_carried_scene,
+                required_indexes=newly_carried_indexes,
+            ),
+            require_exact_lineage(
+                newly_carried_restoration[1],
+                newly_carried_restored,
+                required_indexes=newly_carried_indexes,
+            ),
+        )
+    except ValueError:
+        return ()
+    alternative = PlannedClick(
+        coordinate=Coordinate(*predecessor),
+        purpose=VisualActionPurpose.PROGRESS,
+        expectation=(
+            "move the unique unresolved carrier lineage-last-moved endpoint to its exact "
+            "historical predecessor and accept only stationary or carried projections"
+        ),
+        mechanic_ref=planned.mechanic_ref,
+        plan_id=plan_id,
+        plan_signature=planned.plan_signature,
+        target_center=planned.target_center,
+        mediator_color=untouched_support.child.mediator.color,
+        arity=untouched_support.child.arity,
+        expected_active_center=predecessor,
+        required_child_protected_raster_hash=role_certificate.protected_raster_hash,
+        expected_child_protected_raster_hash=newly_carried_certificate.protected_raster_hash,
+        expected_visible_endpoint_count=newly_carried_certificate.visible_endpoint_count,
+        expected_visible_mediator_count=newly_carried_certificate.visible_mediator_count,
+        required_carried_source_support_indexes=stationary_indexes,
+        expected_carried_source_support_indexes=newly_carried_indexes,
+        carrier_source_untouched_discriminator_step=True,
+        carrier_source_untouched_restoration_actions=newly_carried_restoration,
+    )
+    discriminator = PlannedClick(
+        coordinate=Coordinate(*predecessor),
+        purpose=VisualActionPurpose.PROGRESS,
+        expectation=(
+            "move the unique unresolved carrier lineage-last-moved endpoint to its exact "
+            "historical predecessor and accept only stationary or carried projections"
+        ),
+        mechanic_ref=planned.mechanic_ref,
+        plan_id=plan_id,
+        plan_signature=planned.plan_signature,
+        target_center=planned.target_center,
+        mediator_color=untouched_support.child.mediator.color,
+        arity=untouched_support.child.arity,
+        expected_active_center=predecessor,
+        required_child_protected_raster_hash=role_certificate.protected_raster_hash,
+        expected_child_protected_raster_hash=stationary_certificate.protected_raster_hash,
+        expected_visible_endpoint_count=stationary_certificate.visible_endpoint_count,
+        expected_visible_mediator_count=stationary_certificate.visible_mediator_count,
+        carrier_source_recovery_alternative=alternative,
+        required_carried_source_support_indexes=stationary_indexes,
+        expected_carried_source_support_indexes=stationary_indexes,
+        carrier_source_untouched_discriminator_step=True,
+        carrier_source_untouched_restoration_actions=stationary_restoration,
+    )
+    role_exchange = PlannedClick(
+        coordinate=Coordinate(*current_point),
+        purpose=VisualActionPurpose.PROBE,
+        expectation=(
+            "select the unique unresolved carrier lineage-last-moved endpoint while "
+            "preserving the exact carried-source receipt"
+        ),
+        mechanic_ref=planned.mechanic_ref,
+        plan_id=plan_id,
+        plan_signature=planned.plan_signature,
+        target_center=planned.target_center,
+        mediator_color=untouched_support.child.mediator.color,
+        arity=untouched_support.child.arity,
+        expected_active_center=current_point,
+        required_child_protected_raster_hash=baseline_certificate.protected_raster_hash,
+        expected_child_protected_raster_hash=role_certificate.protected_raster_hash,
+        expected_visible_endpoint_count=role_certificate.visible_endpoint_count,
+        expected_visible_mediator_count=role_certificate.visible_mediator_count,
+        required_carried_source_support_indexes=stationary_indexes,
+        expected_carried_source_support_indexes=stationary_indexes,
+        carrier_source_untouched_role_exchange_step=True,
+    )
+    try:
+        role_exchange = require_exact_lineage(
+            role_exchange,
+            baseline_scene,
+            required_indexes=stationary_indexes,
+        )
+        discriminator = require_exact_lineage(
+            discriminator,
+            role_scene,
+            required_indexes=stationary_indexes,
+        )
+    except ValueError:
+        return ()
+    if not _carrier_source_untouched_role_exchange_step_is_compatible(
+        role_exchange
+    ) or not _carrier_source_untouched_discriminator_step_is_compatible(discriminator):
+        return ()
+    return role_exchange, discriminator
+
+
 def _carrier_source_recovery_consequence_alternative_is_compatible(
     planned: PlannedClick,
     alternative: PlannedClick,
@@ -11133,6 +11725,188 @@ def _carrier_source_recovery_consequence_alternative_is_compatible(
     )
 
 
+def _carrier_source_untouched_role_exchange_step_is_compatible(
+    planned: PlannedClick,
+) -> bool:
+    """Require the observation-derived role selection that opens one discriminator."""
+
+    required_indexes = planned.required_carried_source_support_indexes
+    return bool(
+        planned.carrier_source_untouched_role_exchange_step
+        and planned.plan_id.startswith("visual-carrier-source-untouched:")
+        and planned.plan_signature.startswith("affine-carrier-source-occlusion-hierarchy-recovery:")
+        and planned.purpose is VisualActionPurpose.PROBE
+        and planned.carrier_source_recovery_alternative is None
+        and not planned.carrier_source_recovery_candidates
+        and not planned.carrier_source_delivery_actions
+        and planned.carrier_source_detachment_probe is None
+        and not planned.carrier_source_detachment_step
+        and not planned.carrier_source_target_center_role_exchange_step
+        and not planned.carrier_source_attachment_continuation_actions
+        and not planned.carrier_source_untouched_discriminator_step
+        and not planned.carrier_source_untouched_restoration_actions
+        and not planned.carrier_source_untouched_restoration_step
+        and not planned.completes_carrier_source_untouched_restoration
+        and required_indexes
+        and tuple(sorted(set(required_indexes))) == required_indexes
+        and planned.expected_carried_source_support_indexes == required_indexes
+        and planned.required_child_protected_raster_hash is not None
+        and planned.expected_child_protected_raster_hash is not None
+        and planned.expected_visible_endpoint_count is not None
+        and planned.expected_visible_mediator_count is not None
+        and planned.expected_active_center == (planned.coordinate.x, planned.coordinate.y)
+        and not planned.carrier_source_delivery_step
+        and not planned.completes_carrier_source_delivery
+        and not planned.completes_hierarchy
+        and not planned.completes_child_isolation
+        and not planned.completes_child_recovery
+        and not planned.completes_local_target
+        and not planned.stages_for_switch
+        and planned.expected_deposited_source_protected_raster_hash is None
+        and planned.expected_deposited_visible_endpoint_count is None
+        and planned.expected_deposited_visible_mediator_count is None
+    )
+
+
+def _carrier_source_untouched_restoration_step_is_compatible(
+    planned: PlannedClick,
+) -> bool:
+    """Require one exact branch-preserving move or role restoration."""
+
+    required_indexes = planned.required_carried_source_support_indexes
+    return bool(
+        planned.carrier_source_untouched_restoration_step
+        and planned.plan_id.startswith("visual-carrier-source-untouched:")
+        and planned.plan_signature.startswith("affine-carrier-source-occlusion-hierarchy-recovery:")
+        and planned.purpose in {VisualActionPurpose.PROGRESS, VisualActionPurpose.PROBE}
+        and planned.carrier_source_recovery_alternative is None
+        and not planned.carrier_source_recovery_candidates
+        and not planned.carrier_source_delivery_actions
+        and planned.carrier_source_detachment_probe is None
+        and not planned.carrier_source_detachment_step
+        and not planned.carrier_source_target_center_role_exchange_step
+        and not planned.carrier_source_attachment_continuation_actions
+        and not planned.carrier_source_untouched_role_exchange_step
+        and not planned.carrier_source_untouched_discriminator_step
+        and not planned.carrier_source_untouched_restoration_actions
+        and required_indexes
+        and tuple(sorted(set(required_indexes))) == required_indexes
+        and planned.expected_carried_source_support_indexes == required_indexes
+        and planned.required_child_protected_raster_hash is not None
+        and planned.expected_child_protected_raster_hash is not None
+        and planned.expected_visible_endpoint_count is not None
+        and planned.expected_visible_mediator_count is not None
+        and planned.expected_active_center == (planned.coordinate.x, planned.coordinate.y)
+        and not planned.carrier_source_delivery_step
+        and not planned.completes_carrier_source_delivery
+        and not planned.completes_hierarchy
+        and not planned.completes_child_isolation
+        and not planned.completes_child_recovery
+        and not planned.completes_local_target
+        and not planned.stages_for_switch
+        and planned.expected_deposited_source_protected_raster_hash is None
+        and planned.expected_deposited_visible_endpoint_count is None
+        and planned.expected_deposited_visible_mediator_count is None
+        and (
+            planned.completes_carrier_source_untouched_restoration
+            == (planned.purpose is VisualActionPurpose.PROBE)
+        )
+    )
+
+
+def _carrier_source_untouched_restoration_actions_are_compatible(
+    planned: PlannedClick,
+) -> bool:
+    """Validate the exact inverse move and prior-role restoration for one branch."""
+
+    actions = planned.carrier_source_untouched_restoration_actions
+    expected_indexes = planned.expected_carried_source_support_indexes
+    return bool(
+        len(actions) == 2
+        and actions[0].purpose is VisualActionPurpose.PROGRESS
+        and actions[1].purpose is VisualActionPurpose.PROBE
+        and not actions[0].completes_carrier_source_untouched_restoration
+        and actions[1].completes_carrier_source_untouched_restoration
+        and all(_carrier_source_untouched_restoration_step_is_compatible(item) for item in actions)
+        and all(item.plan_id == planned.plan_id for item in actions)
+        and all(item.plan_signature == planned.plan_signature for item in actions)
+        and all(item.mechanic_ref == planned.mechanic_ref for item in actions)
+        and all(item.target_center == planned.target_center for item in actions)
+        and all(item.mediator_color == planned.mediator_color for item in actions)
+        and all(item.arity == planned.arity for item in actions)
+        and all(
+            item.required_carried_source_support_indexes == expected_indexes for item in actions
+        )
+        and actions[0].required_child_protected_raster_hash
+        == planned.expected_child_protected_raster_hash
+        and actions[0].expected_child_protected_raster_hash
+        == actions[1].required_child_protected_raster_hash
+    )
+
+
+def _carrier_source_untouched_discriminator_step_is_compatible(
+    planned: PlannedClick,
+) -> bool:
+    """Require exactly two projected outcomes and a closed restoration per outcome."""
+
+    alternative = planned.carrier_source_recovery_alternative
+    required_indexes = planned.required_carried_source_support_indexes
+    if (
+        not planned.carrier_source_untouched_discriminator_step
+        or alternative is None
+        or planned.plan_id != alternative.plan_id
+        or not planned.plan_id.startswith("visual-carrier-source-untouched:")
+        or planned.purpose is not VisualActionPurpose.PROGRESS
+        or planned.carrier_source_recovery_candidates
+        or planned.carrier_source_delivery_actions
+        or planned.carrier_source_detachment_probe is not None
+        or planned.carrier_source_detachment_step
+        or planned.carrier_source_target_center_role_exchange_step
+        or planned.carrier_source_attachment_continuation_actions
+        or planned.carrier_source_untouched_role_exchange_step
+        or planned.carrier_source_untouched_restoration_step
+        or planned.completes_carrier_source_untouched_restoration
+        or not required_indexes
+        or tuple(sorted(set(required_indexes))) != required_indexes
+        or planned.expected_carried_source_support_indexes != required_indexes
+        or planned.required_child_protected_raster_hash is None
+        or planned.expected_child_protected_raster_hash is None
+        or planned.expected_visible_endpoint_count is None
+        or planned.expected_visible_mediator_count is None
+        or planned.expected_active_center != (planned.coordinate.x, planned.coordinate.y)
+        or planned.carrier_source_delivery_step
+        or planned.completes_carrier_source_delivery
+        or planned.completes_hierarchy
+        or planned.completes_child_isolation
+        or planned.completes_child_recovery
+        or planned.completes_local_target
+        or planned.stages_for_switch
+        or planned.expected_deposited_source_protected_raster_hash is not None
+        or planned.expected_deposited_visible_endpoint_count is not None
+        or planned.expected_deposited_visible_mediator_count is not None
+        or not _carrier_source_recovery_consequence_alternative_is_compatible(
+            planned,
+            alternative,
+        )
+        or not alternative.carrier_source_untouched_discriminator_step
+        or not _carrier_source_untouched_restoration_actions_are_compatible(planned)
+        or not _carrier_source_untouched_restoration_actions_are_compatible(alternative)
+    ):
+        return False
+    planned_restoration = planned.carrier_source_untouched_restoration_actions
+    alternative_restoration = alternative.carrier_source_untouched_restoration_actions
+    return bool(
+        tuple(item.coordinate for item in planned_restoration)
+        == tuple(item.coordinate for item in alternative_restoration)
+        and planned_restoration[-1].expected_child_protected_raster_hash
+        == alternative_restoration[-1].expected_child_protected_raster_hash
+        and planned_restoration[-1].expected_visible_endpoint_count
+        == alternative_restoration[-1].expected_visible_endpoint_count
+        and planned_restoration[-1].expected_visible_mediator_count
+        == alternative_restoration[-1].expected_visible_mediator_count
+    )
+
+
 def _carrier_source_recovery_state_candidate_is_compatible(
     planned: PlannedClick,
     candidate: PlannedClick,
@@ -11146,6 +11920,11 @@ def _carrier_source_recovery_state_candidate_is_compatible(
         and candidate.carrier_source_detachment_probe is None
         and not candidate.carrier_source_target_center_role_exchange_step
         and not candidate.carrier_source_attachment_continuation_actions
+        and not candidate.carrier_source_untouched_role_exchange_step
+        and not candidate.carrier_source_untouched_discriminator_step
+        and not candidate.carrier_source_untouched_restoration_actions
+        and not candidate.carrier_source_untouched_restoration_step
+        and not candidate.completes_carrier_source_untouched_restoration
         and not candidate.carrier_source_delivery_step
         and not candidate.carrier_source_detachment_step
         and not candidate.completes_carrier_source_delivery
@@ -11185,10 +11964,23 @@ def _hierarchy_planned_click_matching_candidate(
         _carrier_source_detachment_step_is_compatible(planned)
     ):
         return None
+    if planned.carrier_source_untouched_role_exchange_step and not (
+        _carrier_source_untouched_role_exchange_step_is_compatible(planned)
+    ):
+        return None
+    if planned.carrier_source_untouched_discriminator_step and not (
+        _carrier_source_untouched_discriminator_step_is_compatible(planned)
+    ):
+        return None
+    if planned.carrier_source_untouched_restoration_step and not (
+        _carrier_source_untouched_restoration_step_is_compatible(planned)
+    ):
+        return None
     candidates = (planned, *planned.carrier_source_recovery_candidates)
     for candidate in candidates:
         if candidate is not planned and not _carrier_source_recovery_state_candidate_is_compatible(
-            planned, candidate
+            planned,
+            candidate,
         ):
             return None
         if (
@@ -12987,6 +13779,8 @@ class VisualCausalPolicy:
         )
         residual: str | None = None
         post_receipt_attachment_continuation: tuple[PlannedClick, ...] = ()
+        post_receipt_untouched_context: _CarrierSourceAttachmentReplayContext | None = None
+        post_receipt_untouched_restoration: tuple[PlannedClick, ...] = ()
         mechanic: AffineMechanic | None = None
         before_scene = extract_visual_scene(before.frames[-1])
         after_scene = extract_visual_scene(observation.frames[-1])
@@ -13081,6 +13875,25 @@ class VisualCausalPolicy:
             carrier_source_occlusion_hierarchy_recovery_action
             and carrier_source_recovery_candidate is not None
             and carrier_source_recovery_candidate.carrier_source_detachment_step
+        )
+        carrier_source_untouched_discriminator_action = bool(
+            carrier_source_occlusion_hierarchy_recovery_action
+            and carrier_source_recovery_candidate is not None
+            and carrier_source_recovery_candidate.carrier_source_untouched_discriminator_step
+        )
+        carrier_source_untouched_restoration_action = bool(
+            carrier_source_occlusion_hierarchy_recovery_action
+            and carrier_source_recovery_candidate is not None
+            and carrier_source_recovery_candidate.carrier_source_untouched_restoration_step
+        )
+        carrier_source_untouched_action = bool(
+            carrier_source_untouched_discriminator_action
+            or carrier_source_untouched_restoration_action
+            or (
+                carrier_source_occlusion_hierarchy_recovery_action
+                and carrier_source_recovery_candidate is not None
+                and carrier_source_recovery_candidate.carrier_source_untouched_role_exchange_step
+            )
         )
         hierarchy_recovery_action = (
             self._pending_plan_signature is not None
@@ -13987,6 +14800,10 @@ class VisualCausalPolicy:
                         hierarchy_relation_key
                     )
                 residual = "the exact carrier-source detachment discriminator returned GAME_OVER"
+            elif carrier_source_untouched_action:
+                residual = (
+                    "the exact untouched-carrier discriminator or restoration returned GAME_OVER"
+                )
             if (
                 observation.state is GameStateName.GAME_OVER
                 and self._pending_completes_child_isolation
@@ -14144,12 +14961,50 @@ class VisualCausalPolicy:
                                 after_scene,
                             )
                         )
-                    self._active_carrier_source_attachment_replay_context = None
+                    if post_receipt_attachment_continuation:
+                        # The same immutable replay boundary is still needed to identify
+                        # the final alternative-endpoint consequence.  It is consumed
+                        # exactly once after that later receipt, never by a queued action.
+                        self._active_carrier_source_attachment_replay_context = attachment_context
+                    else:
+                        post_receipt_untouched_context = attachment_context
+                        self._active_carrier_source_attachment_replay_context = None
                     self._last_probe_failed = True
                     residual = (
                         "the exact inverse restored the pre-delivery raster with the source "
                         "still attached; repeated target delivery is rejected"
                     )
+            elif (
+                carrier_source_untouched_discriminator_action
+                and carrier_source_recovery_candidate is not None
+            ):
+                matched_discriminator = (
+                    carrier_source_recovery_alternative
+                    if carried_source_recovery_certified
+                    else carrier_source_recovery_candidate
+                )
+                if (
+                    matched_discriminator is not None
+                    and _carrier_source_untouched_restoration_actions_are_compatible(
+                        matched_discriminator
+                    )
+                ):
+                    post_receipt_untouched_restoration = (
+                        matched_discriminator.carrier_source_untouched_restoration_actions
+                    )
+                    self._last_probe_failed = False
+                    residual = (
+                        "the untouched carrier followed its endpoint exactly; restore the "
+                        "discriminator while retaining the newly certified attachment"
+                        if carried_source_recovery_certified
+                        else (
+                            "the untouched source remained stationary under the exact historical "
+                            "inverse; restore the discriminator without promoting attachment"
+                        )
+                    )
+                else:
+                    self._last_probe_failed = True
+                    residual = "the untouched-carrier consequence had no exact closed restoration"
             elif (
                 carrier_source_delivery_action
                 and carrier_source_recovery_candidate is not None
@@ -14391,10 +15246,33 @@ class VisualCausalPolicy:
         self._durable_receipts.append(receipt.to_dict())
 
         # A completed action receipt is immutable.  Only after preserving the exact
-        # observed-restoration receipt may the revised alternative-endpoint hypothesis
-        # become executable.
+        # observed consequence may a finite consequence-gated continuation become
+        # executable or even be derived from its retained replay context.
         if post_receipt_attachment_continuation:
             self._plan.extend(post_receipt_attachment_continuation)
+            self._last_probe_failed = False
+        elif (
+            post_receipt_untouched_context is not None
+            and carrier_source_recovery_candidate is not None
+        ):
+            try:
+                untouched_continuation = (
+                    _carrier_source_untouched_discriminator_after_observed_attachment(
+                        post_receipt_untouched_context,
+                        carrier_source_recovery_candidate,
+                        after_scene,
+                    )
+                )
+            except ValueError:
+                # The factual action receipt is already durable.  A malformed or
+                # internally inconsistent replay context may suppress only the future
+                # hypothesis; pending action state must still close normally.
+                untouched_continuation = ()
+            if untouched_continuation:
+                self._plan.extend(untouched_continuation)
+                self._last_probe_failed = False
+        elif post_receipt_untouched_restoration:
+            self._plan.extend(post_receipt_untouched_restoration)
             self._last_probe_failed = False
 
         self._previous_observation = observation
@@ -14416,6 +15294,15 @@ class VisualCausalPolicy:
         before = self._pending_before
         action = self._pending_action
         prediction = self._pending_mechanic_prediction
+        carrier_source_candidate = self._pending_carrier_source_recovery_candidate
+        interrupted_untouched_continuation = bool(
+            carrier_source_candidate is not None
+            and (
+                carrier_source_candidate.carrier_source_untouched_role_exchange_step
+                or carrier_source_candidate.carrier_source_untouched_discriminator_step
+                or carrier_source_candidate.carrier_source_untouched_restoration_step
+            )
+        )
         learner = self._mechanical_learner
         learner_pending = learner.pending if learner is not None else ()
         if before is None and action is None and prediction is None and not learner_pending:
@@ -14432,6 +15319,9 @@ class VisualCausalPolicy:
         learner.cancel_unsubmitted_prediction(prediction_id)
         self._clear_pending_action_state()
         self._active_carrier_source_attachment_replay_context = None
+        if interrupted_untouched_continuation:
+            self._plan.clear()
+            self._last_probe_failed = True
 
     def drain_durable_receipts(self) -> tuple[dict[str, JSONValue], ...]:
         """Return each newly completed receipt exactly once for durable journaling."""
