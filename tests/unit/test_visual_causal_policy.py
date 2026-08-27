@@ -3946,6 +3946,7 @@ def _carrier_source_occlusion_fixture() -> tuple[
         scene,
         hierarchy,
         relation,
+        level_index=4,
         rejected_signatures=set(),
     )
     assert plan is not None
@@ -5959,7 +5960,6 @@ def test_external_own_composite_is_equivariant_and_fails_closed(
             )
             is None
         )
-
     palette_swap = {8: 9, 9: 8, 11: 14, 14: 11}
     swapped_frame = GridFrame.from_rows(
         tuple(tuple(palette_swap.get(value, value) for value in row) for row in frame.cells)
@@ -6729,7 +6729,7 @@ def test_carrier_source_recovery_rebases_only_the_exact_carried_support(
         (20, 42),
         (43, 34),
     )
-    assert policy._active_carrier_source_attachment_replay_context is None
+    assert policy._active_carrier_source_attachment_replay_context is replay_context
     untouched_role_exchange = policy._plan[0]
     campaign39_final_scene = extract_visual_scene(continued_observation.frames[-1])
     assert visual_causal._carrier_source_untouched_role_exchange_step_is_compatible(
@@ -6787,8 +6787,373 @@ def test_carrier_source_recovery_rebases_only_the_exact_carried_support(
         for y in range(64)
         for x in range(1, 64)
     )
-    assert policy.snapshot()["pending_plan_actions"] == 0
+    paired_cargo_route = tuple(policy._plan)
+    assert len(paired_cargo_route) == 10
+    assert tuple(
+        (item.coordinate.x, item.coordinate.y, item.purpose) for item in paired_cargo_route
+    ) == (
+        (8, 38, VisualActionPurpose.PROBE),
+        (21, 15, VisualActionPurpose.PROGRESS),
+        (20, 42, VisualActionPurpose.PROBE),
+        (9, 15, VisualActionPurpose.PROGRESS),
+        (60, 24, VisualActionPurpose.PROBE),
+        (49, 22, VisualActionPurpose.PROGRESS),
+        (53, 36, VisualActionPurpose.PROBE),
+        (50, 34, VisualActionPurpose.PROGRESS),
+        (23, 58, VisualActionPurpose.PROBE),
+        (60, 28, VisualActionPurpose.PROGRESS),
+    )
+    assert all(item.carrier_source_paired_cargo_step for item in paired_cargo_route)
+    assert all(
+        item.required_carried_source_support_indexes == (0, 1)
+        and item.expected_carried_source_support_indexes == (0, 1)
+        and item.required_child_protected_raster_hash is not None
+        and item.expected_child_protected_raster_hash is not None
+        for item in paired_cargo_route
+    )
+    assert tuple(
+        (item.expected_visible_endpoint_count, item.expected_visible_mediator_count)
+        for item in paired_cargo_route
+    ) == ((5, 0),) * 9 + ((5, 1),)
+    assert paired_cargo_route[-1].completes_carrier_source_paired_cargo is True
+    paired_cargo_inverse = paired_cargo_route[-1].carrier_source_paired_cargo_restoration_actions
+    assert len(paired_cargo_inverse) == 10
+    assert tuple(
+        (item.coordinate.x, item.coordinate.y, item.purpose) for item in paired_cargo_inverse
+    ) == (
+        (23, 58, VisualActionPurpose.PROGRESS),
+        (50, 34, VisualActionPurpose.PROBE),
+        (53, 36, VisualActionPurpose.PROGRESS),
+        (49, 22, VisualActionPurpose.PROBE),
+        (60, 24, VisualActionPurpose.PROGRESS),
+        (9, 15, VisualActionPurpose.PROBE),
+        (20, 42, VisualActionPurpose.PROGRESS),
+        (21, 15, VisualActionPurpose.PROBE),
+        (8, 38, VisualActionPurpose.PROGRESS),
+        (23, 58, VisualActionPurpose.PROBE),
+    )
+    assert visual_causal._carrier_source_paired_cargo_restoration_actions_are_compatible(
+        paired_cargo_route[-1]
+    )
+    initial_paired_boundary_hash = paired_cargo_route[0].required_child_protected_raster_hash
+    assert initial_paired_boundary_hash is not None
+    assert all(
+        item.carrier_source_paired_cargo_initial_protected_raster_hash
+        == initial_paired_boundary_hash
+        for item in (*paired_cargo_route, *paired_cargo_inverse)
+    )
+    assert (
+        paired_cargo_inverse[-1].expected_child_protected_raster_hash
+        == initial_paired_boundary_hash
+    )
+    assert not visual_causal._carrier_source_paired_cargo_restoration_actions_are_compatible(
+        replace(
+            paired_cargo_route[-1],
+            carrier_source_paired_cargo_initial_protected_raster_hash="0" * 64,
+        )
+    )
+    mismatched_inverse_boundary = (
+        replace(
+            paired_cargo_inverse[0],
+            carrier_source_paired_cargo_initial_protected_raster_hash="0" * 64,
+        ),
+        *paired_cargo_inverse[1:],
+    )
+    assert not visual_causal._carrier_source_paired_cargo_restoration_actions_are_compatible(
+        replace(
+            paired_cargo_route[-1],
+            carrier_source_paired_cargo_restoration_actions=mismatched_inverse_boundary,
+        )
+    )
+    malformed_inverse = (
+        *paired_cargo_inverse[:-1],
+        replace(
+            paired_cargo_inverse[-1],
+            expected_child_protected_raster_hash="0" * 64,
+        ),
+    )
+    assert not visual_causal._carrier_source_paired_cargo_restoration_actions_are_compatible(
+        replace(
+            paired_cargo_route[-1],
+            carrier_source_paired_cargo_restoration_actions=malformed_inverse,
+        )
+    )
+    assert (
+        tuple(
+            (item.expected_visible_endpoint_count, item.expected_visible_mediator_count)
+            for item in paired_cargo_inverse
+        )
+        == ((5, 0),) * 10
+    )
+    assert (
+        visual_causal._carrier_source_paired_cargo_plan_after_observed_restoration(
+            replay_context,
+            extract_visual_scene(continued_observation.frames[-1]),
+            carried_indexes=(1,),
+            rejected_signatures=set(),
+        )
+        is None
+    )
+    paired_supports = replay_context.carrier_source_supports
+    external_paired_targets = visual_causal._carrier_source_paired_cargo_target_supports(
+        scene,
+        hierarchy,
+        paired_supports,
+        level_index=replay_context.level_index,
+        rejected_external_relation_key=(replay_context.rejected_external_residual_relation_key),
+    )
+    assert external_paired_targets is not None
+    assert tuple(item.target.rounded_center for item in external_paired_targets) == tuple(
+        item.target.rounded_center for item in external.supports
+    )
+    assert all(
+        target.target.cells != support.example.target.cells
+        for support, target in zip(
+            paired_supports,
+            external_paired_targets,
+            strict=True,
+        )
+    )
+    assert (
+        visual_causal._carrier_source_paired_cargo_target_supports(
+            scene,
+            hierarchy,
+            paired_supports,
+            level_index=replay_context.level_index,
+            rejected_external_relation_key=(
+                replay_context.rejected_external_residual_relation_key + "-stale"
+            ),
+        )
+        is None
+    )
+    swapped_examples = (
+        replace(paired_supports[0], example=paired_supports[1].example),
+        replace(paired_supports[1], example=paired_supports[0].example),
+    )
+    duplicate_target = (
+        replace(
+            paired_supports[0],
+            example=replace(
+                paired_supports[0].example,
+                target=paired_supports[1].example.target,
+            ),
+        ),
+        paired_supports[1],
+    )
+    assert (
+        visual_causal._carrier_source_paired_cargo_target_supports(
+            scene,
+            hierarchy,
+            swapped_examples,
+            level_index=replay_context.level_index,
+            rejected_external_relation_key=(replay_context.rejected_external_residual_relation_key),
+        )
+        is None
+    )
+    assert (
+        visual_causal._carrier_source_paired_cargo_target_supports(
+            scene,
+            hierarchy,
+            duplicate_target,
+            level_index=replay_context.level_index,
+            rejected_external_relation_key=(replay_context.rejected_external_residual_relation_key),
+        )
+        is None
+    )
     assert policy.snapshot()["hierarchy_carried_source_support_indexes"] == [0, 1]
+
+    campaign40_positions = dict(environment.positions)
+    campaign40_colors = dict(environment.colors)
+    campaign40_active_ref = next(
+        ref for ref, color in campaign40_colors.items() if color == hierarchy.active_color
+    )
+    paired_environment = copy.deepcopy(environment)
+    paired_policy = copy.deepcopy(policy)
+    paired_observation = continued_observation
+    for index, expected in enumerate(paired_cargo_route):
+        required_scene = extract_visual_scene(paired_observation.frames[-1])
+        assert visual_causal._child_isolation_protected_raster_hash(required_scene) == (
+            expected.required_child_protected_raster_hash
+        )
+        paired_action = paired_policy.select(paired_observation)
+        assert paired_action.coordinate == expected.coordinate
+        assert paired_policy._pending_carrier_source_recovery_candidate == expected
+        paired_observation = paired_environment.step(paired_action)
+        returned_scene = extract_visual_scene(paired_observation.frames[-1])
+        assert visual_causal._child_isolation_protected_raster_hash(returned_scene) == (
+            expected.expected_child_protected_raster_hash
+        )
+        assert len(returned_scene.endpoints) == expected.expected_visible_endpoint_count
+        assert len(returned_scene.mediators) == expected.expected_visible_mediator_count
+        paired_policy.accept_consequence(paired_observation)
+        if index + 1 < len(paired_cargo_route):
+            assert paired_policy.snapshot()["pending_plan_actions"] == 9 - index
+    assert paired_observation.state is GameStateName.NOT_FINISHED
+    assert paired_policy.receipts[-1].residual == (
+        "both exact carried sources reached the previously rejected external-chain targets, "
+        "but the official environment remained NOT_FINISHED"
+    )
+    assert tuple(paired_policy._plan) == paired_cargo_inverse
+
+    for index, expected in enumerate(paired_cargo_inverse):
+        required_scene = extract_visual_scene(paired_observation.frames[-1])
+        assert visual_causal._child_isolation_protected_raster_hash(required_scene) == (
+            expected.required_child_protected_raster_hash
+        )
+        paired_action = paired_policy.select(paired_observation)
+        assert paired_action.coordinate == expected.coordinate
+        assert paired_policy._pending_carrier_source_recovery_candidate == expected
+        paired_observation = paired_environment.step(paired_action)
+        returned_scene = extract_visual_scene(paired_observation.frames[-1])
+        assert visual_causal._child_isolation_protected_raster_hash(returned_scene) == (
+            expected.expected_child_protected_raster_hash
+        )
+        paired_policy.accept_consequence(paired_observation)
+        if index + 1 < len(paired_cargo_inverse):
+            assert paired_policy.snapshot()["pending_plan_actions"] == 9 - index
+    assert paired_policy.snapshot()["pending_plan_actions"] == 0
+    assert paired_policy.snapshot()["hierarchy_carried_source_support_indexes"] == [0, 1]
+    assert paired_environment.carried_source_support_indexes == frozenset({0, 1})
+    assert paired_environment.positions == campaign40_positions
+    assert paired_environment.colors == campaign40_colors
+    assert (
+        next(
+            ref
+            for ref, color in paired_environment.colors.items()
+            if color == hierarchy.active_color
+        )
+        == campaign40_active_ref
+    )
+    assert all(
+        paired_observation.frames[-1].cells[y][x] == campaign39_final_cells[y][x]
+        for y in range(64)
+        for x in range(1, 64)
+    )
+    assert paired_cargo_route[-1].plan_signature in paired_policy._failed_plan_signatures
+    with pytest.raises(PolicyError, match="attachment remains active"):
+        paired_policy.select(paired_observation)
+
+    paired_win_environment = copy.deepcopy(environment)
+    paired_win_policy = copy.deepcopy(policy)
+    paired_win_observation = continued_observation
+    for index, expected in enumerate(paired_cargo_route):
+        paired_win_action = paired_win_policy.select(paired_win_observation)
+        assert paired_win_action.coordinate == expected.coordinate
+        paired_win_observation = paired_win_environment.step(paired_win_action)
+        if index + 1 == len(paired_cargo_route):
+            paired_win_observation = replace(
+                paired_win_observation,
+                state=GameStateName.WIN,
+            )
+        paired_win_policy.accept_consequence(paired_win_observation)
+    assert paired_win_policy.snapshot()["pending_plan_actions"] == 0
+    assert paired_win_policy.snapshot()["hierarchy_carried_source_support_indexes"] == []
+
+    paired_progress_environment = copy.deepcopy(environment)
+    paired_progress_policy = copy.deepcopy(policy)
+    paired_progress_observation = continued_observation
+    next_level_index = paired_progress_observation.levels_completed + 1
+    for index, expected in enumerate(paired_cargo_route):
+        paired_progress_action = paired_progress_policy.select(paired_progress_observation)
+        assert paired_progress_action.coordinate == expected.coordinate
+        paired_progress_observation = paired_progress_environment.step(paired_progress_action)
+        if index + 1 == len(paired_cargo_route):
+            paired_progress_observation = replace(
+                paired_progress_observation,
+                levels_completed=next_level_index,
+            )
+        paired_progress_policy.accept_consequence(paired_progress_observation)
+    paired_progress_snapshot = paired_progress_policy.snapshot()
+    assert paired_progress_snapshot["pending_plan_actions"] == 0
+    assert paired_progress_snapshot["hierarchy_carried_source_support_indexes"] == []
+    assert paired_progress_snapshot["hierarchy_active"] is False
+    assert paired_progress_snapshot["hierarchy_relation_key"] is None
+    assert paired_progress_snapshot["hierarchy_supports"] == []
+    assert paired_progress_snapshot["hierarchy_support_weights"] == []
+    assert paired_progress_snapshot["hierarchy_recovery_active"] is False
+    assert paired_progress_snapshot["failed_plan_count"] == 0
+    assert paired_progress_policy._active_carrier_source_attachment_replay_context is None
+    assert paired_progress_snapshot["active_level_index"] == next_level_index
+
+    paired_game_over_environment = copy.deepcopy(environment)
+    paired_game_over_policy = copy.deepcopy(policy)
+    paired_game_over_observation = continued_observation
+    for index, expected in enumerate(paired_cargo_route):
+        paired_game_over_action = paired_game_over_policy.select(paired_game_over_observation)
+        assert paired_game_over_action.coordinate == expected.coordinate
+        paired_game_over_observation = paired_game_over_environment.step(paired_game_over_action)
+        if index + 1 == len(paired_cargo_route):
+            paired_game_over_observation = replace(
+                paired_game_over_observation,
+                state=GameStateName.GAME_OVER,
+                available_actions=(ActionName.RESET,),
+            )
+        paired_game_over_policy.accept_consequence(paired_game_over_observation)
+    assert paired_game_over_policy.snapshot()["pending_plan_actions"] == 0
+    assert paired_game_over_policy._preterminal_hierarchy_retry_signature is None
+    assert paired_cargo_route[-1].plan_signature in (
+        paired_game_over_policy._failed_plan_signatures
+    )
+    reset_action = paired_game_over_policy.select(paired_game_over_observation)
+    assert reset_action.name is ActionName.RESET
+    assert (
+        visual_causal._carrier_source_paired_cargo_plan_after_observed_restoration(
+            replay_context,
+            extract_visual_scene(continued_observation.frames[-1]),
+            carried_indexes=(0, 1),
+            rejected_signatures=paired_game_over_policy._failed_plan_signatures,
+        )
+        is None
+    )
+    paired_reset_observation = replace(
+        continued_observation,
+        returned_action=reset_action,
+    )
+    paired_game_over_policy.accept_consequence(paired_reset_observation)
+    paired_reset_snapshot = paired_game_over_policy.snapshot()
+    assert paired_cargo_route[-1].plan_signature in (
+        paired_game_over_policy._failed_plan_signatures
+    )
+    assert paired_reset_snapshot["pending_plan_actions"] == 0
+    assert paired_reset_snapshot["hierarchy_carried_source_support_indexes"] == []
+    assert paired_game_over_policy._active_carrier_source_attachment_replay_context is None
+    reset_receipt_count = len(paired_game_over_policy.receipts)
+    paired_game_over_policy.select(paired_reset_observation)
+    assert (
+        paired_game_over_policy._pending_plan_signature is None
+        or paired_game_over_policy._pending_plan_signature != paired_cargo_route[-1].plan_signature
+    )
+    post_reset_candidate = paired_game_over_policy._pending_carrier_source_recovery_candidate
+    assert post_reset_candidate is None or not (
+        post_reset_candidate.carrier_source_paired_cargo_step
+        or post_reset_candidate.carrier_source_paired_cargo_restoration_step
+    )
+    paired_game_over_policy.cancel_unsubmitted_action()
+    assert paired_game_over_policy._pending_action is None
+    assert paired_game_over_policy._pending_plan_signature is None
+    assert len(paired_game_over_policy.receipts) == reset_receipt_count
+
+    paired_cancel_policy = copy.deepcopy(policy)
+    paired_cancel_policy.select(continued_observation)
+    paired_cancel_policy.cancel_unsubmitted_action()
+    assert paired_cancel_policy.snapshot()["pending_plan_actions"] == 0
+    with pytest.raises(PolicyError, match="attachment remains active"):
+        paired_cancel_policy.select(continued_observation)
+
+    paired_corrupt_environment = copy.deepcopy(environment)
+    paired_corrupt_policy = copy.deepcopy(policy)
+    paired_corrupt_action = paired_corrupt_policy.select(continued_observation)
+    paired_corrupt_observation = paired_corrupt_environment.step(paired_corrupt_action)
+    corrupt_rows = [list(row) for row in paired_corrupt_observation.frames[-1].cells]
+    protected_x, protected_y = next(iter(sorted(hierarchy.target.cells)))
+    corrupt_rows[protected_y][protected_x] = scene.background
+    paired_corrupt_observation = replace(
+        paired_corrupt_observation,
+        frames=(GridFrame.from_rows(corrupt_rows),),
+    )
+    paired_corrupt_policy.accept_consequence(paired_corrupt_observation)
+    assert paired_corrupt_policy.snapshot()["pending_plan_actions"] == 0
+    assert paired_cargo_route[-1].plan_signature in (paired_corrupt_policy._failed_plan_signatures)
 
     stationary_observation = continued_observation = replace(
         continued_observation,
@@ -7266,6 +7631,7 @@ def test_carrier_source_occlusion_selects_replays_and_restores_exact_sources() -
         scene,
         hierarchy,
         relation,
+        level_index=4,
         rejected_signatures=set(),
         search_budget=budget,
     )
@@ -7411,6 +7777,15 @@ def test_carrier_source_occlusion_requires_all_gates_and_is_equivariant(
             is None
         )
 
+    paired_targets = visual_causal._carrier_source_paired_cargo_target_supports(
+        scene,
+        hierarchy,
+        relation.supports,
+        level_index=4,
+        rejected_external_relation_key=external.relation_key,
+    )
+    assert paired_targets is not None
+
     def derive(
         candidate_scene: VisualScene,
         candidate_hierarchy: visual_causal._AffineHierarchy,
@@ -7484,6 +7859,21 @@ def test_carrier_source_occlusion_requires_all_gates_and_is_equivariant(
         frozenset(palette_swap.get(value, value) for value in support.source.palette)
         for support in relation.supports
     )
+    swapped_targets = visual_causal._carrier_source_paired_cargo_target_supports(
+        swapped_scene,
+        swapped_hierarchy,
+        swapped_relation.supports,
+        level_index=4,
+        rejected_external_relation_key=swapped_relation.external_relation_key,
+    )
+    assert swapped_targets is not None
+    assert tuple(item.target.rounded_center for item in swapped_targets) == tuple(
+        item.target.rounded_center for item in paired_targets
+    )
+    assert tuple(item.surface_signature for item in swapped_targets) == tuple(
+        frozenset(palette_swap.get(value, value) for value in item.surface_signature)
+        for item in paired_targets
+    )
 
     relevant_cells = set(hierarchy.target.cells)
     for child in hierarchy.children:
@@ -7508,6 +7898,35 @@ def test_carrier_source_occlusion_requires_all_gates_and_is_equivariant(
     assert tuple(support.source.center for support in translated_relation.supports) == tuple(
         (support.source.center[0] + delta_x, support.source.center[1] + delta_y)
         for support in relation.supports
+    )
+    translated_targets = visual_causal._carrier_source_paired_cargo_target_supports(
+        translated_scene,
+        translated_hierarchy,
+        translated_relation.supports,
+        level_index=4,
+        rejected_external_relation_key=translated_relation.external_relation_key,
+    )
+    assert translated_targets is not None
+    assert tuple(item.target.rounded_center for item in translated_targets) == tuple(
+        (item.target.rounded_center[0] + delta_x, item.target.rounded_center[1] + delta_y)
+        for item in paired_targets
+    )
+    assert tuple(
+        (
+            target.target.rounded_center[0] - support.source.center[0],
+            target.target.rounded_center[1] - support.source.center[1],
+        )
+        for support, target in zip(relation.supports, paired_targets, strict=True)
+    ) == tuple(
+        (
+            target.target.rounded_center[0] - support.source.center[0],
+            target.target.rounded_center[1] - support.source.center[1],
+        )
+        for support, target in zip(
+            translated_relation.supports,
+            translated_targets,
+            strict=True,
+        )
     )
 
     counterpart_assignment = next(
