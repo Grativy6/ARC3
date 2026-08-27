@@ -564,7 +564,7 @@ Do not delete a burden when later evidence resolves it. Append a resolution with
 
 ## B-003-0039 - Campaign 37 target promotion leaves source attachment unresolved
 
-- **Status:** OPEN; EXACT 2986C78 REPLAY AND INTEGRITY PASSED; HOSTED TIMEOUT REPAIR AND OFFICIAL CONSEQUENCE PENDING
+- **Status:** RESOLVED AS CARRIED BY CAMPAIGN 38; ALTERNATIVE TARGET INVERSE FAILED IN CAMPAIGN 39
 - **Stage:** 10 and target-game continuation
 - **Opened:** 2026-08-27
 - **Owner:** Codex
@@ -578,10 +578,11 @@ Do not delete a burden when later evidence resolves it. Append a resolution with
 - **Hosted gate evidence:** Evidence head `2986c7864ede3b651f68b3ffb85c837a7eb7ef44` repeated strict replay of all 1,556 events, 259 submissions, and 259 mechanics receipts; selected and cancelled `(23,48)` with zero environment actions; and passed bound manifest, package, action-semantics, and 119-of-122 clean-source gates with three platform skips. Eight of nine hosted jobs passed. The required push Windows package job reached its exact 3,000-second guarded ceiling and remains `FAILED_INFRASTRUCTURE`; Campaign 38 was not launched.
 - **Impact:** Build 003 remains incomplete at official `NOT_FINISHED`, `4/6`, zero `WIN`. A certified inverse, projected branch, passing replay, green CI, or deposited-looking frame cannot substitute for authoritative completion.
 - **Resolution condition:** A frozen exact commit strictly replays all 1,556 Campaign 37 events, 259 submissions, and 259 mechanics receipts with zero environment actions, selects and cancels the exact inverse, passes clean-source integrity and hosted gates, and an authorized official continuation returns either a bounded falsifying consequence or `GameState.WIN`. Only `WIN` completes the target.
+- **Resolution evidence:** Exact `9590c03d4d7490f01b09326e0f59feaf8bdb67a1` passed the repaired hosted gate set and Campaign 38 submitted the exact inverse. The complete 21-cell source moved with its child, establishing the carried branch while returning `NOT_FINISHED`. Exact `c8f0cfc03eecb16711a55078aeedffcbc5382381` then passed strict replay, bound integrity, and all hosted jobs; Campaign 39 redelivered through the alternative endpoint and its inverse again moved the source while preserving every target-ring cell. Both target-centered continuations remain failed mechanisms, and the remaining untouched attachment is tracked by B-003-0041.
 
 ## B-003-0040 - Campaign 38 launch gate reached the guarded package timeout
 
-- **Status:** OPEN; BOUNDED TIMEOUT REPAIR PASSES LOCAL GATES; EXACT-COMMIT AND HOSTED EVIDENCE PENDING
+- **Status:** RESOLVED BY EXACT 9590C03 HOSTED GATES; 2986C78 FAILURE PRESERVED
 - **Stage:** 10 and target-game continuation
 - **Opened:** 2026-08-27
 - **Owner:** Codex
@@ -591,3 +592,17 @@ Do not delete a burden when later evidence resolves it. Append a resolution with
 - **Local evidence:** Nineteen focused tests passed; Ruff lint/format, strict MyPy, and diff hygiene passed. The repair changes no learner or gameplay bytes and issued no environment action.
 - **Impact:** Campaign 38 remains paused. Exact replay, local integrity, or the paired hosted success cannot substitute for the failed required job, and none can substitute for official `GameState.WIN`.
 - **Resolution condition:** One new frozen repair commit repeats strict Campaign 37 replay and bound integrity/action/package gates, then all five required workflow runs and all nine jobs pass without timeout, cancellation, or failure while preserving the full guarded selection and expected private-only boundary.
+- **Resolution evidence:** Exact repair `9590c03d4d7490f01b09326e0f59feaf8bdb67a1`, tree `57d363d70faccc16be053ac9724c40a488116e6f`, repeated strict replay and bound local gates, then passed all five required workflows and all nine hosted jobs under the 3,300-second guarded command and 65-minute workflow ceilings. Campaign 38 launched only after that evidence. The exact `2986c78` timeout remains immutable `FAILED_INFRASTRUCTURE` and is not relabeled by the repaired result.
+
+## B-003-0041 - Campaign 39 leaves the sole untouched carrier-source attachment unresolved
+
+- **Status:** OPEN; FINITE OBSERVATION-DERIVED DISCRIMINATOR PENDING IMPLEMENTATION AND GATES
+- **Stage:** 10 and target-game continuation
+- **Opened:** 2026-08-27
+- **Owner:** Codex
+- **Burden:** Campaigns 38 and 39 established that the target-linked 21-cell source remains carried through both exact target inverses, and neither route returned progress or `WIN`. One separate split-source carrier relation has never been moved. Its attachment behavior and any relevance to level completion remain unobserved.
+- **Preserved evidence:** Campaign 39 root `C:\a\arc3-b003-play\build003-r11l-mechanical-seed7-c8f0cfc-campaign39`; raw final `NOT_FINISHED`, score boundary `GAME_OVER`, `levels_completed=4/6`, 263 submissions, three legal resets, zero `WIN`; run receipt hash `sha256:6475c6f5f48536bb51a281a00081e9d6895360bf153997e62ff31a3e0438f653`; recording SHA-256 `fbbb740b8229d7caa0c8dd235f5dcebc88338c20133ca9124914b3ef6005ece1`; trace tail `sha256:c6aff1fa14864841d325ee9375c56c3467229aa9eda00b048df11e100fe0b95e`. Verification passed all 417 declared artifacts and all 263 action/consequence/receipt links. Exposure is 75 development events and zero holdout events.
+- **Smallest implicated candidate:** Select the unique untouched support from observation history, role-exchange to its current endpoint, issue its exact witnessed predecessor inverse, classify only exact stationary-source or translated-source rasters, reverse the move, and restore the prior active role. Frozen evidence coordinates are `(20,42)`, `(43,34)`, `(20,42)`, and `(23,58)`; production must derive them from endpoint lineage rather than store them. The first role exchange must change exactly 24 non-HUD shell cells. The move branches are exactly 76 versus 97 non-HUD changes and differ on 31 cells.
+- **Safety boundary:** The route corridor intersects the target ring, already-carried source, and its carrier component at zero cells. Require exact predecessor and consequence protected hashes, unique support identity, exact source footprint, active-role continuity, branch separation, and byte-exact complete restoration. Stop on `WIN`, level change, `GAME_OVER`, ambiguity, a third raster, or restoration mismatch. Do not enumerate unrelated interactions.
+- **Impact:** Build 003 remains incomplete at official `NOT_FINISHED`, `4/6`, zero `WIN`. Offline branch prediction, replay, local tests, complete restoration, and hosted CI cannot substitute for authoritative completion.
+- **Resolution condition:** A frozen exact commit strictly replays every Campaign 39 event, submission, and mechanics receipt with zero environment action, selects and cancels the exact first discriminator, passes clean-source and all hosted gates, and an authorized official continuation returns a bounded consequence or authoritative `GameState.WIN`. Only `WIN` completes the target.
