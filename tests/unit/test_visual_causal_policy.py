@@ -6338,45 +6338,8 @@ def test_carrier_source_recovery_rebases_only_the_exact_carried_support(
     assert detachment.expected_deposited_source_protected_raster_hash != (
         detachment.expected_child_protected_raster_hash
     )
-    continuation = detachment.carrier_source_attachment_continuation_actions
-    assert tuple((item.coordinate.x, item.coordinate.y, item.purpose) for item in continuation) == (
-        (60, 24, VisualActionPurpose.PROGRESS),
-        (46, 24, VisualActionPurpose.PROBE),
-        (23, 58, VisualActionPurpose.PROGRESS),
-    )
-    assert [item.carrier_source_target_center_role_exchange_step for item in continuation] == [
-        False,
-        True,
-        False,
-    ]
-    assert continuation[-1].carrier_source_detachment_step is True
-    assert visual_causal._carrier_source_attachment_continuation_actions_are_compatible(detachment)
-    assert not visual_causal._carrier_source_attachment_continuation_actions_are_compatible(
-        replace(
-            detachment,
-            carrier_source_attachment_continuation_actions=(
-                continuation[0],
-                replace(
-                    continuation[1],
-                    carrier_source_target_center_role_exchange_step=False,
-                ),
-                continuation[2],
-            ),
-        )
-    )
-    assert not visual_causal._carrier_source_attachment_continuation_actions_are_compatible(
-        replace(
-            detachment,
-            carrier_source_attachment_continuation_actions=(
-                continuation[0],
-                replace(
-                    continuation[1],
-                    required_child_protected_raster_hash="sha256:broken-lineage",
-                ),
-                continuation[2],
-            ),
-        )
-    )
+    assert detachment.carrier_source_attachment_continuation_actions == ()
+    assert plan.carrier_source_attachment_replay_context is not None
     assert visual_causal._carrier_source_delivery_actions_are_compatible(alternative)
     delivery_without_detachment = (
         *delivery[:-1],
@@ -6642,9 +6605,66 @@ def test_carrier_source_recovery_rebases_only_the_exact_carried_support(
     assert still_carried_snapshot["pending_plan_actions"] == 3
     assert still_carried_snapshot["hierarchy_carried_source_support_indexes"] == [1]
     assert still_carried_snapshot["hierarchy_carrier_source_occlusion_relation_rejected_count"] == 1
-    assert "alternative-endpoint detachment discriminator was queued" in (
-        policy.receipts[-1].residual
+    assert policy.receipts[-1].residual == (
+        "the exact inverse restored the pre-delivery raster with the source still attached; "
+        "repeated target delivery is rejected"
     )
+    continuation = tuple(policy._plan)
+    assert tuple((item.coordinate.x, item.coordinate.y, item.purpose) for item in continuation) == (
+        (60, 24, VisualActionPurpose.PROGRESS),
+        (46, 24, VisualActionPurpose.PROBE),
+        (23, 58, VisualActionPurpose.PROGRESS),
+    )
+    assert [item.carrier_source_target_center_role_exchange_step for item in continuation] == [
+        False,
+        True,
+        False,
+    ]
+    assert continuation[-1].carrier_source_detachment_step is True
+    derived_detachment = replace(
+        detachment,
+        carrier_source_attachment_continuation_actions=continuation,
+    )
+    assert visual_causal._carrier_source_attachment_continuation_actions_are_compatible(
+        derived_detachment
+    )
+    assert not visual_causal._carrier_source_attachment_continuation_actions_are_compatible(
+        replace(
+            derived_detachment,
+            carrier_source_attachment_continuation_actions=(
+                continuation[0],
+                replace(
+                    continuation[1],
+                    carrier_source_target_center_role_exchange_step=False,
+                ),
+                continuation[2],
+            ),
+        )
+    )
+    assert not visual_causal._carrier_source_attachment_continuation_actions_are_compatible(
+        replace(
+            derived_detachment,
+            carrier_source_attachment_continuation_actions=(
+                continuation[0],
+                replace(
+                    continuation[1],
+                    required_child_protected_raster_hash="sha256:broken-lineage",
+                ),
+                continuation[2],
+            ),
+        )
+    )
+    replay_context = plan.carrier_source_attachment_replay_context
+    assert replay_context is not None
+    assert (
+        visual_causal._carrier_source_attachment_continuation_after_observed_restoration(
+            replay_context,
+            detachment,
+            extract_visual_scene(still_carried.frames[-1]),
+        )
+        == continuation
+    )
+    assert policy._active_carrier_source_attachment_replay_context is None
     continued_observation = still_carried
     for index, expected in enumerate(continuation[:-1]):
         continued_action = policy.select(continued_observation)
@@ -6684,8 +6704,9 @@ def test_carrier_source_recovery_rebases_only_the_exact_carried_support(
     continued_snapshot = policy.snapshot()
     assert continued_snapshot["pending_plan_actions"] == 0
     assert continued_snapshot["hierarchy_carried_source_support_indexes"] == [1]
-    assert "no further endpoint-detachment continuation is authorized" in (
-        policy.receipts[-1].residual
+    assert policy.receipts[-1].residual == (
+        "the exact inverse restored the pre-delivery raster with the source still attached; "
+        "repeated target delivery is rejected"
     )
     with pytest.raises(PolicyError, match=r"target-delivery continuation|still attached"):
         policy.select(continued_observation)
@@ -6855,6 +6876,7 @@ def test_carrier_source_recovery_rebases_only_the_exact_carried_support(
         )
         terminal_policy.accept_consequence(terminal_observation)
         assert terminal_policy.snapshot()["pending_plan_actions"] == 0
+        assert terminal_policy._active_carrier_source_attachment_replay_context is None
         if terminal_state is GameStateName.WIN:
             assert terminal_policy.snapshot()["hierarchy_active"] is False
             with pytest.raises(PolicyError, match="already reports WIN"):
@@ -6881,6 +6903,7 @@ def test_carrier_source_recovery_rebases_only_the_exact_carried_support(
         terminal_snapshot = detachment_policy.snapshot()
         assert terminal_snapshot["pending_plan_actions"] == 0
         assert terminal_snapshot["hierarchy_carried_source_support_indexes"] == []
+        assert detachment_policy._active_carrier_source_attachment_replay_context is None
         if terminal_state is GameStateName.WIN:
             assert terminal_snapshot["hierarchy_active"] is False
             with pytest.raises(PolicyError, match="already reports WIN"):
@@ -7546,6 +7569,7 @@ def test_carrier_source_occlusion_game_over_lifecycle() -> None:
         return environment, observation, policy
 
     terminal_environment, terminal_observation, terminal_policy = prepared()
+    assert terminal_policy._active_carrier_source_attachment_replay_context is not None
     for action_index in range(len(plan.actions)):
         action = terminal_policy.select(terminal_observation)
         terminal_observation = terminal_environment.step(action)
@@ -7562,6 +7586,20 @@ def test_carrier_source_occlusion_game_over_lifecycle() -> None:
     assert terminal_policy.receipts[-1].residual == (
         "the exact carrier-source occlusion discriminator terminal returned GAME_OVER"
     )
+    assert terminal_policy._active_carrier_source_attachment_replay_context is None
+
+    _cancel_environment, cancel_observation, cancel_policy = prepared()
+    assert cancel_policy._active_carrier_source_attachment_replay_context is not None
+    cancel_policy.select(cancel_observation)
+    cancel_policy.cancel_unsubmitted_action()
+    assert cancel_policy._active_carrier_source_attachment_replay_context is None
+
+    _reset_environment, reset_epoch_observation, reset_epoch_policy = prepared()
+    reset_epoch_policy._begin_reset_epoch()
+    assert reset_epoch_policy._active_carrier_source_attachment_replay_context is None
+    level_policy = prepared()[2]
+    level_policy._begin_level(replace(reset_epoch_observation, levels_completed=5))
+    assert level_policy._active_carrier_source_attachment_replay_context is None
 
     retry_environment, retry_observation, retry_policy = prepared()
     first_action = retry_policy.select(retry_observation)

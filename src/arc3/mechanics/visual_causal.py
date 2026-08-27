@@ -334,6 +334,7 @@ class _HierarchyPlan:
     supports: tuple[tuple[int, int], ...]
     support_weights: tuple[int, ...]
     recovery_actions: tuple[PlannedClick, ...]
+    carrier_source_attachment_replay_context: _CarrierSourceAttachmentReplayContext | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -453,6 +454,20 @@ class _CarrierSourceOcclusionHierarchyRelation:
     external_own_relation_key: str
     supports: tuple[_HierarchySourceSupport, ...]
     relation_key: str
+
+
+@dataclass(frozen=True, slots=True)
+class _CarrierSourceAttachmentReplayContext:
+    """Finite observed lineage needed to derive one post-restoration continuation."""
+
+    hierarchy: _AffineHierarchy
+    layouts: tuple[_HierarchyChildLayout, ...]
+    scene: VisualScene
+    move_order: tuple[str, ...] | None
+    support_weights: tuple[int, ...] | None
+    carrier_source_supports: tuple[_HierarchySourceSupport, ...]
+    signature_prefix: str
+    terminal_expectation: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -7210,6 +7225,7 @@ def _build_hierarchy_plan(
     carrier_source_supports: tuple[_HierarchySourceSupport, ...] = (),
     signature_prefix: str = "affine-hierarchy",
     terminal_expectation: str = "complete the distinct child-mediator centroid relation",
+    derive_carrier_source_attachment_continuations: bool = False,
 ) -> _HierarchyPlan:
     geometry = "|".join(
         f"{layout.support[0]},{layout.support[1]}:"
@@ -8032,16 +8048,23 @@ def _build_hierarchy_plan(
                             deposited_inverse_certificate = source_subset_certificate(
                                 deposited_inverse_scene
                             )
-                            attachment_continuation = attachment_continuation_actions(
-                                restored_positions=inverse_positions,
-                                restored_colors=delivery_colors,
-                                restored_scene=carried_inverse_scene,
+                            attachment_continuation = (
+                                attachment_continuation_actions(
+                                    restored_positions=inverse_positions,
+                                    restored_colors=delivery_colors,
+                                    restored_scene=carried_inverse_scene,
+                                )
+                                if derive_carrier_source_attachment_continuations
+                                else ()
                             )
                             source_x, source_y = support.source.center
                             target_x, target_y = hierarchy.target.rounded_center
                             detachment_branches_are_exact = bool(
                                 deposited_inverse_certificate != carried_inverse_certificate
-                                and attachment_continuation
+                                and (
+                                    not derive_carrier_source_attachment_continuations
+                                    or attachment_continuation
+                                )
                                 and all(
                                     deposited_inverse_scene.cells[y][x]
                                     == expected_scene.cells[y][x]
@@ -8327,6 +8350,20 @@ def _build_hierarchy_plan(
         supports=tuple(layout.support for layout in layouts),
         support_weights=weights,
         recovery_actions=tuple(recovery_actions),
+        carrier_source_attachment_replay_context=(
+            _CarrierSourceAttachmentReplayContext(
+                hierarchy=hierarchy,
+                layouts=layouts,
+                scene=scene,
+                move_order=move_order,
+                support_weights=support_weights,
+                carrier_source_supports=carrier_source_supports,
+                signature_prefix=signature_prefix,
+                terminal_expectation=terminal_expectation,
+            )
+            if carrier_source_supports
+            else None
+        ),
     )
 
 
@@ -10988,24 +11025,78 @@ def _carrier_source_delivery_actions_are_compatible(alternative: PlannedClick) -
         != actions[-2].expected_visible_endpoint_count
         or final_probe.expected_visible_mediator_count
         != actions[-2].expected_visible_mediator_count
-        or not final_probe.carrier_source_attachment_continuation_actions
-        or final_probe.carrier_source_attachment_continuation_actions[0].coordinate
-        != actions[-1].coordinate
-        or final_probe.carrier_source_attachment_continuation_actions[
-            0
-        ].expected_child_protected_raster_hash
-        != actions[-1].expected_child_protected_raster_hash
-        or final_probe.carrier_source_attachment_continuation_actions[
-            0
-        ].expected_visible_endpoint_count
-        != actions[-1].expected_visible_endpoint_count
-        or final_probe.carrier_source_attachment_continuation_actions[
-            0
-        ].expected_visible_mediator_count
-        != actions[-1].expected_visible_mediator_count
+        or (
+            bool(final_probe.carrier_source_attachment_continuation_actions)
+            and (
+                final_probe.carrier_source_attachment_continuation_actions[0].coordinate
+                != actions[-1].coordinate
+                or final_probe.carrier_source_attachment_continuation_actions[
+                    0
+                ].expected_child_protected_raster_hash
+                != actions[-1].expected_child_protected_raster_hash
+                or final_probe.carrier_source_attachment_continuation_actions[
+                    0
+                ].expected_visible_endpoint_count
+                != actions[-1].expected_visible_endpoint_count
+                or final_probe.carrier_source_attachment_continuation_actions[
+                    0
+                ].expected_visible_mediator_count
+                != actions[-1].expected_visible_mediator_count
+            )
+        )
     ):
         return False
     return True
+
+
+def _carrier_source_attachment_continuation_after_observed_restoration(
+    context: _CarrierSourceAttachmentReplayContext,
+    planned: PlannedClick,
+    restored_scene: VisualScene,
+) -> tuple[PlannedClick, ...]:
+    """Derive one finite continuation only after the carried restoration is observed."""
+
+    if (
+        planned.carrier_source_attachment_continuation_actions
+        or not _carrier_source_detachment_step_is_compatible(planned)
+        or planned.expected_child_protected_raster_hash is None
+        or _child_isolation_protected_raster_hash(restored_scene)
+        != planned.expected_child_protected_raster_hash
+        or planned.expected_visible_endpoint_count != len(restored_scene.endpoints)
+        or planned.expected_visible_mediator_count != len(restored_scene.mediators)
+    ):
+        return ()
+    regenerated = _build_hierarchy_plan(
+        context.hierarchy,
+        context.layouts,
+        scene=context.scene,
+        move_order=context.move_order,
+        support_weights=context.support_weights,
+        carrier_source_supports=context.carrier_source_supports,
+        signature_prefix=context.signature_prefix,
+        terminal_expectation=context.terminal_expectation,
+        derive_carrier_source_attachment_continuations=True,
+    )
+    matches: list[PlannedClick] = []
+    for recovery in regenerated.recovery_actions:
+        for state_candidate in (recovery, *recovery.carrier_source_recovery_candidates):
+            alternative = state_candidate.carrier_source_recovery_alternative
+            if alternative is None or not alternative.carrier_source_delivery_actions:
+                continue
+            probe = alternative.carrier_source_delivery_actions[-1].carrier_source_detachment_probe
+            if (
+                probe is not None
+                and probe.plan_id == planned.plan_id
+                and probe.carrier_source_attachment_continuation_actions
+                and replace(probe, carrier_source_attachment_continuation_actions=()) == planned
+            ):
+                matches.append(probe)
+    if len(matches) != 1:
+        return ()
+    derived = matches[0]
+    if not _carrier_source_attachment_continuation_actions_are_compatible(derived):
+        return ()
+    return derived.carrier_source_attachment_continuation_actions
 
 
 def _carrier_source_recovery_consequence_alternative_is_compatible(
@@ -11448,6 +11539,9 @@ class VisualCausalPolicy:
         self._active_hierarchy_supports: tuple[tuple[int, int], ...] = ()
         self._active_hierarchy_support_weights: tuple[int, ...] = ()
         self._active_hierarchy_recovery_actions: tuple[PlannedClick, ...] = ()
+        self._active_carrier_source_attachment_replay_context: (
+            _CarrierSourceAttachmentReplayContext | None
+        ) = None
         self._active_carried_source_recovery_support_indexes: tuple[int, ...] = ()
         self._failed_hierarchy_relation_keys: set[str] = set()
         self._failed_weighted_hierarchy_relation_keys: set[str] = set()
@@ -11575,6 +11669,7 @@ class VisualCausalPolicy:
         self._active_hierarchy_supports = ()
         self._active_hierarchy_support_weights = ()
         self._active_hierarchy_recovery_actions = ()
+        self._active_carrier_source_attachment_replay_context = None
         self._active_carried_source_recovery_support_indexes = ()
         self._failed_hierarchy_relation_keys.clear()
         self._failed_weighted_hierarchy_relation_keys.clear()
@@ -11616,6 +11711,7 @@ class VisualCausalPolicy:
         self._active_hierarchy_supports = ()
         self._active_hierarchy_support_weights = ()
         self._active_hierarchy_recovery_actions = ()
+        self._active_carrier_source_attachment_replay_context = None
         self._active_carried_source_recovery_support_indexes = ()
         self._hierarchy_lineage_lost = None
         self._clear_child_isolation_execution()
@@ -11890,6 +11986,9 @@ class VisualCausalPolicy:
         self._active_hierarchy_supports = plan.supports
         self._active_hierarchy_support_weights = plan.support_weights
         self._active_hierarchy_recovery_actions = plan.recovery_actions
+        self._active_carrier_source_attachment_replay_context = (
+            plan.carrier_source_attachment_replay_context
+        )
         self._active_carried_source_recovery_support_indexes = ()
 
     def _install_child_isolation_plan(self, plan: _ChildIsolationPlan) -> None:
@@ -11951,6 +12050,7 @@ class VisualCausalPolicy:
             self._active_hierarchy_supports = ()
             self._active_hierarchy_support_weights = ()
             self._active_hierarchy_recovery_actions = ()
+            self._active_carrier_source_attachment_replay_context = None
             self._active_carried_source_recovery_support_indexes = ()
             self._clear_child_isolation_execution()
             self._last_probe_failed = True
@@ -12118,6 +12218,7 @@ class VisualCausalPolicy:
             self._active_hierarchy_supports = ()
             self._active_hierarchy_support_weights = ()
             self._active_hierarchy_recovery_actions = ()
+            self._active_carrier_source_attachment_replay_context = None
             self._active_carried_source_recovery_support_indexes = ()
             self._clear_child_isolation_execution()
             raise PolicyError(
@@ -12885,6 +12986,7 @@ class VisualCausalPolicy:
             )
         )
         residual: str | None = None
+        post_receipt_attachment_continuation: tuple[PlannedClick, ...] = ()
         mechanic: AffineMechanic | None = None
         before_scene = extract_visual_scene(before.frames[-1])
         after_scene = extract_visual_scene(observation.frames[-1])
@@ -13912,6 +14014,7 @@ class VisualCausalPolicy:
             self._active_hierarchy_supports = ()
             self._active_hierarchy_support_weights = ()
             self._active_hierarchy_recovery_actions = ()
+            self._active_carrier_source_attachment_replay_context = None
             self._active_carried_source_recovery_support_indexes = ()
             self._clear_child_isolation_execution()
             self._last_probe_failed = True
@@ -13926,6 +14029,7 @@ class VisualCausalPolicy:
             self._active_hierarchy_supports = ()
             self._active_hierarchy_support_weights = ()
             self._active_hierarchy_recovery_actions = ()
+            self._active_carrier_source_attachment_replay_context = None
             self._active_carried_source_recovery_support_indexes = ()
             self._clear_child_isolation_execution()
             self._last_probe_failed = False
@@ -13946,6 +14050,7 @@ class VisualCausalPolicy:
             self._active_hierarchy_supports = ()
             self._active_hierarchy_support_weights = ()
             self._active_hierarchy_recovery_actions = ()
+            self._active_carrier_source_attachment_replay_context = None
             self._active_carried_source_recovery_support_indexes = ()
             self._clear_child_isolation_execution()
             self._last_probe_failed = True
@@ -14021,6 +14126,7 @@ class VisualCausalPolicy:
                     self._active_hierarchy_supports = ()
                     self._active_hierarchy_support_weights = ()
                     self._active_hierarchy_recovery_actions = ()
+                    self._active_carrier_source_attachment_replay_context = None
                     self._active_carried_source_recovery_support_indexes = ()
                     self._last_probe_failed = False
                     residual = (
@@ -14028,26 +14134,21 @@ class VisualCausalPolicy:
                         "source remained deposited at the former target; continuation is "
                         "reopened only from this observation"
                     )
-                elif (
-                    carrier_source_recovery_candidate.carrier_source_attachment_continuation_actions
-                    and _carrier_source_attachment_continuation_actions_are_compatible(
-                        carrier_source_recovery_candidate
-                    )
-                ):
-                    self._plan.extend(
-                        carrier_source_recovery_candidate.carrier_source_attachment_continuation_actions
-                    )
-                    self._last_probe_failed = False
-                    residual = (
-                        "the exact inverse restored the pre-delivery raster with the source "
-                        "still attached; one exact target re-entry and alternative-endpoint "
-                        "detachment discriminator was queued from this consequence"
-                    )
                 else:
+                    attachment_context = self._active_carrier_source_attachment_replay_context
+                    if attachment_context is not None:
+                        post_receipt_attachment_continuation = (
+                            _carrier_source_attachment_continuation_after_observed_restoration(
+                                attachment_context,
+                                carrier_source_recovery_candidate,
+                                after_scene,
+                            )
+                        )
+                    self._active_carrier_source_attachment_replay_context = None
                     self._last_probe_failed = True
                     residual = (
-                        "the alternative exact inverse restored the source with its carrier; "
-                        "no further endpoint-detachment continuation is authorized"
+                        "the exact inverse restored the pre-delivery raster with the source "
+                        "still attached; repeated target delivery is rejected"
                     )
             elif (
                 carrier_source_delivery_action
@@ -14088,6 +14189,7 @@ class VisualCausalPolicy:
                 self._active_hierarchy_supports = ()
                 self._active_hierarchy_support_weights = ()
                 self._active_hierarchy_recovery_actions = ()
+                self._active_carrier_source_attachment_replay_context = None
                 self._active_carried_source_recovery_support_indexes = ()
                 self._last_probe_failed = False
                 residual = (
@@ -14161,6 +14263,7 @@ class VisualCausalPolicy:
                 self._active_hierarchy_supports = ()
                 self._active_hierarchy_support_weights = ()
                 self._active_hierarchy_recovery_actions = ()
+                self._active_carrier_source_attachment_replay_context = None
                 self._active_carried_source_recovery_support_indexes = ()
                 self._last_probe_failed = True
             if hierarchy_supports_observed:
@@ -14258,6 +14361,7 @@ class VisualCausalPolicy:
                 self._active_hierarchy_supports = ()
                 self._active_hierarchy_support_weights = ()
                 self._active_hierarchy_recovery_actions = ()
+                self._active_carrier_source_attachment_replay_context = None
                 self._active_carried_source_recovery_support_indexes = ()
             if child_isolation_action:
                 self._clear_child_isolation_execution()
@@ -14285,6 +14389,13 @@ class VisualCausalPolicy:
         )
         self._receipts.append(receipt)
         self._durable_receipts.append(receipt.to_dict())
+
+        # A completed action receipt is immutable.  Only after preserving the exact
+        # observed-restoration receipt may the revised alternative-endpoint hypothesis
+        # become executable.
+        if post_receipt_attachment_continuation:
+            self._plan.extend(post_receipt_attachment_continuation)
+            self._last_probe_failed = False
 
         self._previous_observation = observation
         self._clear_pending_action_state()
@@ -14320,6 +14431,7 @@ class VisualCausalPolicy:
             raise PolicyError("policy and learner pending prediction identities disagree")
         learner.cancel_unsubmitted_prediction(prediction_id)
         self._clear_pending_action_state()
+        self._active_carrier_source_attachment_replay_context = None
 
     def drain_durable_receipts(self) -> tuple[dict[str, JSONValue], ...]:
         """Return each newly completed receipt exactly once for durable journaling."""
