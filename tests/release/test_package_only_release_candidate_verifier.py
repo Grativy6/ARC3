@@ -61,7 +61,7 @@ def test_package_only_plan_has_no_public_inventory_or_gameplay(tmp_path: Path) -
     assert "scripts.package_only_pytest" in by_id["package-safe-test-suite"].argv
     assert "--select-in-process-tests" in by_id["package-safe-test-suite"].argv
     assert "--build001-boundary-policy" in by_id["package-safe-test-suite"].argv
-    assert by_id["package-safe-test-suite"].timeout_seconds == 3000.0
+    assert by_id["package-safe-test-suite"].timeout_seconds == 3300.0
     assert (
         by_id["package-safe-test-suite"].argv[
             by_id["package-safe-test-suite"].argv.index("--expected-commit") + 1
@@ -320,6 +320,29 @@ def test_package_workflow_normalizes_expected_blocked_exit_only_after_receipt_ch
     assert expected_exit < blocked_status < sealed_boundary < normalized_exit
     assert 'push:\n    branches:\n      - "build/**"' in workflow
     assert "pull_request:\n    branches:\n      - main" in workflow
+
+
+def test_package_workflow_preserves_outer_timeout_reserve(tmp_path: Path) -> None:
+    repository = Path(__file__).resolve().parents[2]
+    workflow = (repository / ".github/workflows/build001-package-only.yml").read_text(
+        encoding="utf-8"
+    )
+    timeout_lines = [line.strip() for line in workflow.splitlines() if "timeout-minutes:" in line]
+    specs = build_plan(
+        repository=repository,
+        output_root=tmp_path / "output",
+        transient_root=tmp_path / "transient",
+        expectation=None,
+        uv_command=("uv",),
+        official_environments=None,
+        profile=BUILD001_PACKAGE_ONLY_PROFILE,
+    )
+    guarded_timeout = next(
+        spec.timeout_seconds for spec in specs if spec.check_id == "package-safe-test-suite"
+    )
+
+    assert timeout_lines == ["timeout-minutes: 65"]
+    assert 65 * 60 - guarded_timeout == 600.0
 
 
 def test_package_workflow_uploads_available_failure_evidence() -> None:
