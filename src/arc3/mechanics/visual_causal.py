@@ -11535,6 +11535,20 @@ class VisualCausalPolicy:
                 or child_recovery_restoration_certified
             )
         )
+        # An exact protected-raster match can preserve plan lineage without
+        # making the transformed hierarchy structurally readable.  The
+        # carrier-source foreground candidate deliberately uses that narrower
+        # boundary: its masked transient earns continuation under the exact
+        # certificate, but it does not manufacture a generic observed
+        # coordinate-transform fact from components the parser cannot read.
+        hierarchy_observed_effect_readable = bool(
+            hierarchy_consequence_certified
+            and not (
+                carrier_source_occlusion_hierarchy_action
+                and hierarchy_raster_certified
+                and not hierarchy_structure_readable
+            )
+        )
         hierarchy_supports_observed = bool(
             joint_hierarchy_action
             and self._pending_completes_hierarchy
@@ -11694,7 +11708,7 @@ class VisualCausalPolicy:
             hierarchy_action
             and not level_progress
             and observation.state is GameStateName.NOT_FINISHED
-            and not hierarchy_consequence_certified
+            and not hierarchy_observed_effect_readable
             and residual is None
         ):
             residual = (
@@ -11708,7 +11722,7 @@ class VisualCausalPolicy:
             )
         coordinate_transform = (
             local_target_satisfied
-            or hierarchy_consequence_certified
+            or hierarchy_observed_effect_readable
             or marker_action_structure_readable
             or marker_bootstrap_succeeded
             or _coordinate_transform_observed(

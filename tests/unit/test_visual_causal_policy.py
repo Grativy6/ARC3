@@ -6285,11 +6285,42 @@ def test_carrier_source_occlusion_selects_replays_and_restores_exact_sources() -
         external_own,
     )
     policy._install_hierarchy_plan(plan, relation_key=relation.relation_key)
-    for expected in plan.actions:
+    for action_index, expected in enumerate(plan.actions):
         action = policy.select(observation)
         assert action.coordinate == expected.coordinate
         observation = environment.step(action)
         policy.accept_consequence(observation)
+        durable = policy.drain_durable_receipts()
+        assert len(durable) == 1
+        if action_index == 2:
+            receipt = durable[0]
+            assert receipt["residual"] == (
+                "planned hierarchy consequence was not structurally readable"
+            )
+            causal = receipt["causal_action_receipt"]
+            assert isinstance(causal, dict)
+            observed = causal["observed_effects"]
+            assert isinstance(observed, dict)
+            assert observed["other_object_displacement_or_transformation"] == {
+                "channel": "other_object_displacement_or_transformation",
+                "dynamic_candidate": False,
+                "evidence_refs": [],
+                "knowledge": "UNKNOWN",
+                "value": None,
+            }
+            assert causal["explained_effects"] == []
+            learning = receipt["mechanic_learning_receipt"]
+            assert isinstance(learning, dict)
+            assert learning["passive_support_receipt_ids"] == []
+            residual = learning["residual"]
+            assert isinstance(residual, dict)
+            channels = residual["channels"]
+            assert isinstance(channels, list)
+            assert channels[1]["channel"] == "other_object_effects"
+            assert channels[1]["kind"] == "unreadable_observation"
+            snapshot = policy.snapshot()
+            assert snapshot["hierarchy_lineage_lost"] is False
+            assert snapshot["hierarchy_signature"] == plan.signature
 
     assert policy._failed_carrier_source_occlusion_hierarchy_relation_keys == {
         relation.relation_key
