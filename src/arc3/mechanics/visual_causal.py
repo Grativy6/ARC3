@@ -14,7 +14,7 @@ import heapq
 import itertools
 import math
 from collections import Counter, deque
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from enum import StrEnum
 
 from arc3.adapters import GridFrame, Observation
@@ -267,6 +267,7 @@ class PlannedClick:
     expected_active_center: tuple[int, int] | None = None
     required_child_protected_raster_hash: str | None = None
     expected_child_protected_raster_hash: str | None = None
+    required_visible_active_endpoint_count: int | None = None
     required_child_raster_signature: _RasterStateSignature = ()
     expected_child_raster_signature: _RasterStateSignature = ()
     expected_occluded_endpoint_centers: tuple[tuple[int, int], ...] = ()
@@ -627,6 +628,10 @@ _HIERARCHY_PLAN_PREFIXES = (
     "affine-carrier-source-occlusion-hierarchy-recovery:",
     "affine-child-isolation:",
     "affine-child-recovery:",
+)
+_CARRIER_SOURCE_MASKED_PLAN_PREFIXES = (
+    "affine-carrier-source-occlusion-hierarchy:",
+    "affine-carrier-source-occlusion-hierarchy-recovery:",
 )
 
 
@@ -5276,6 +5281,85 @@ def _hierarchy_projected_scene(
     return extract_visual_scene(GridFrame.from_rows(rows))
 
 
+def _carrier_source_residual_foreground(
+    support: _HierarchySourceSupport,
+) -> tuple[int, frozenset[tuple[int, int]]]:
+    """Derive one exact non-carrier source mask for the Campaign 35 candidate."""
+
+    residual_colors = support.source.palette - {support.example.carrier_color}
+    if len(residual_colors) != 1:
+        raise ValueError("carrier-source foreground requires one residual source color")
+    residual_color = next(iter(residual_colors))
+    residual_offsets = support.source.offsets(residual_color)
+    residual_cells = frozenset(
+        (support.source.center[0] + dx, support.source.center[1] + dy)
+        for dx, dy in residual_offsets
+    )
+    if not residual_offsets or not residual_cells < frozenset(support.source.cells):
+        raise ValueError("carrier-source residual mask must be a proper source subset")
+    return residual_color, residual_cells
+
+
+def _carrier_source_residual_foreground_overlay(
+    projected: VisualScene,
+    hierarchy: _AffineHierarchy,
+    supports: tuple[_HierarchySourceSupport, ...],
+    *,
+    positions: dict[str, tuple[int, int]],
+) -> VisualScene:
+    """Apply the observation-grounded residual-above-mediator candidate.
+
+    Campaign 35 showed this ordering at one assigned source: a centered
+    hierarchy mediator covered the carrier-colored source layer while the exact
+    complementary non-carrier mask remained foreground.  Applying the same
+    source-relative rule to the assigned counterpart is a bounded candidate
+    transfer, not an observed counterpart consequence.  No other projected cell
+    is relaxed.
+    """
+
+    if tuple(item.child for item in supports) != hierarchy.children:
+        raise ValueError("carrier-source supports must retain hierarchy child order")
+    rows = [list(row) for row in projected.cells]
+    for support in supports:
+        endpoint_centers = tuple(
+            positions[endpoint.object_ref] for endpoint in support.child.endpoints
+        )
+        mediator_center = (
+            sum(center[0] for center in endpoint_centers) // support.child.arity,
+            sum(center[1] for center in endpoint_centers) // support.child.arity,
+        )
+        if mediator_center != support.source.center:
+            continue
+        residual_color, residual_cells = _carrier_source_residual_foreground(support)
+        for x, y in residual_cells:
+            rows[y][x] = residual_color
+    return extract_visual_scene(GridFrame.from_rows(rows))
+
+
+def _carrier_source_residual_foreground_projected_scene(
+    scene: VisualScene,
+    hierarchy: _AffineHierarchy,
+    supports: tuple[_HierarchySourceSupport, ...],
+    *,
+    positions: dict[str, tuple[int, int]],
+    colors: dict[str, int],
+) -> VisualScene:
+    """Project hierarchy motion plus the bounded residual-foreground candidate."""
+
+    projected = _hierarchy_projected_scene(
+        scene,
+        hierarchy,
+        positions=positions,
+        colors=colors,
+    )
+    return _carrier_source_residual_foreground_overlay(
+        projected,
+        hierarchy,
+        supports,
+        positions=positions,
+    )
+
+
 def _hierarchy_cells_in_bounds(scene: VisualScene, cells: frozenset[tuple[int, int]]) -> bool:
     return all(0 < x < scene.width - 1 and 0 < y < scene.height - 1 for x, y in cells)
 
@@ -6020,12 +6104,33 @@ def _carrier_source_occlusion_projected_state_is_safe(
         ):
             return False
 
-    projected = _hierarchy_projected_scene(
+    latent_projected = _hierarchy_projected_scene(
         scene,
         hierarchy,
         positions=positions,
         colors=colors,
     )
+    projected = _carrier_source_residual_foreground_overlay(
+        latent_projected,
+        hierarchy,
+        supports,
+        positions=positions,
+    )
+    foreground_cells: dict[tuple[int, int], int] = {}
+    for support in supports:
+        if mediator_centers[support.child.mediator.object_ref] != support.source.center:
+            continue
+        residual_color, residual_cells = _carrier_source_residual_foreground(support)
+        for cell in residual_cells:
+            if cell in foreground_cells:
+                return False
+            foreground_cells[cell] = residual_color
+    if any(
+        projected.cells[y][x] != foreground_cells.get((x, y), latent_projected.cells[y][x])
+        for y, row in enumerate(projected.cells)
+        for x, _value in enumerate(row)
+    ):
+        return False
     if (
         _target_surface_signature(projected) != preserved_target_signature
         or _visible_target_regions(projected) != target_regions
@@ -6059,7 +6164,7 @@ def _carrier_source_occlusion_projected_state_is_safe(
     search_budget.consume()
     return _projected_hierarchy_lineages_match(
         scene,
-        projected,
+        latent_projected,
         hierarchy,
         positions=positions,
         colors=colors,
@@ -6676,6 +6781,7 @@ def _build_hierarchy_plan(
     scene: VisualScene,
     move_order: tuple[str, ...] | None = None,
     support_weights: tuple[int, ...] | None = None,
+    carrier_source_supports: tuple[_HierarchySourceSupport, ...] = (),
     signature_prefix: str = "affine-hierarchy",
     terminal_expectation: str = "complete the distinct child-mediator centroid relation",
 ) -> _HierarchyPlan:
@@ -6711,6 +6817,10 @@ def _build_hierarchy_plan(
         identity = f"{identity}|weights={','.join(str(item) for item in weights)}"
     if move_order is not None:
         identity = f"{identity}|order={','.join(ordered_refs)}"
+    if carrier_source_supports:
+        if tuple(item.child for item in carrier_source_supports) != hierarchy.children:
+            raise ValueError("carrier-source supports must retain hierarchy child order")
+        identity = f"{identity}|source-layer=residual-foreground-v2"
     signature = signature_prefix + ":" + hashlib.sha256(identity.encode()).hexdigest()[:24]
     plan_id = "visual-hierarchy-plan:" + signature.rsplit(":", 1)[-1]
 
@@ -6731,18 +6841,56 @@ def _build_hierarchy_plan(
         raise ValueError("hierarchy plan requires exactly one active endpoint")
     active_ref = active[0]
 
-    def certificate() -> _HierarchyRasterCertificate:
-        projected = _hierarchy_projected_scene(
-            scene,
-            hierarchy,
-            positions=positions,
-            colors=colors,
+    def projected_scene() -> VisualScene:
+        return (
+            _carrier_source_residual_foreground_projected_scene(
+                scene,
+                hierarchy,
+                carrier_source_supports,
+                positions=positions,
+                colors=colors,
+            )
+            if carrier_source_supports
+            else _hierarchy_projected_scene(
+                scene,
+                hierarchy,
+                positions=positions,
+                colors=colors,
+            )
         )
+
+    def certificate() -> _HierarchyRasterCertificate:
+        projected = projected_scene()
         return _HierarchyRasterCertificate(
             protected_raster_hash=_child_isolation_protected_raster_hash(projected),
             visible_endpoint_count=len(projected.endpoints),
             visible_mediator_count=len(projected.mediators),
         )
+
+    def require_masked_lineage_only_if_needed(
+        planned: PlannedClick,
+        required_scene: VisualScene | None,
+    ) -> PlannedClick:
+        if required_scene is None or _hierarchy_planned_click_is_safe(
+            required_scene,
+            planned,
+            active_color=hierarchy.active_color,
+        ):
+            return planned
+        visible_active_count = sum(
+            endpoint.color == hierarchy.active_color for endpoint in required_scene.endpoints
+        )
+        masked = replace(
+            planned,
+            required_visible_active_endpoint_count=visible_active_count,
+        )
+        if not _hierarchy_planned_click_is_safe(
+            required_scene,
+            masked,
+            active_color=hierarchy.active_color,
+        ):
+            raise ValueError("carrier-source action lacks an exact masked-lineage precondition")
+        return masked
 
     initial_certificate = certificate()
     if initial_certificate.protected_raster_hash != _child_isolation_protected_raster_hash(scene):
@@ -6754,6 +6902,7 @@ def _build_hierarchy_plan(
     for move_index, mover_ref in enumerate(ordered_refs):
         layout, _mover, point = moves[mover_ref]
         if mover_ref != active_ref:
+            required_scene = projected_scene() if carrier_source_supports else None
             old_active_ref = active_ref
             old_active_group = next(
                 child
@@ -6769,24 +6918,27 @@ def _build_hierarchy_plan(
             active_ref = mover_ref
             expected = certificate()
             actions.append(
-                PlannedClick(
-                    coordinate=Coordinate(*selected_at),
-                    purpose=VisualActionPurpose.PROBE,
-                    expectation=(
-                        "exchange the active role while preserving the certified "
-                        "two-layer hierarchy raster"
+                require_masked_lineage_only_if_needed(
+                    PlannedClick(
+                        coordinate=Coordinate(*selected_at),
+                        purpose=VisualActionPurpose.PROBE,
+                        expectation=(
+                            "exchange the active role while preserving the certified "
+                            "two-layer hierarchy raster"
+                        ),
+                        mechanic_ref=hierarchy.mechanic_ref,
+                        plan_id=plan_id,
+                        plan_signature=signature,
+                        target_center=hierarchy.target.rounded_center,
+                        mediator_color=layout.group.mediator.color,
+                        arity=layout.group.arity,
+                        expected_active_center=selected_at,
+                        required_child_protected_raster_hash=required.protected_raster_hash,
+                        expected_child_protected_raster_hash=expected.protected_raster_hash,
+                        expected_visible_endpoint_count=expected.visible_endpoint_count,
+                        expected_visible_mediator_count=expected.visible_mediator_count,
                     ),
-                    mechanic_ref=hierarchy.mechanic_ref,
-                    plan_id=plan_id,
-                    plan_signature=signature,
-                    target_center=hierarchy.target.rounded_center,
-                    mediator_color=layout.group.mediator.color,
-                    arity=layout.group.arity,
-                    expected_active_center=selected_at,
-                    required_child_protected_raster_hash=required.protected_raster_hash,
-                    expected_child_protected_raster_hash=expected.protected_raster_hash,
-                    expected_visible_endpoint_count=expected.visible_endpoint_count,
-                    expected_visible_mediator_count=expected.visible_mediator_count,
+                    required_scene,
                 )
             )
             inverse_specs.append(
@@ -6799,31 +6951,35 @@ def _build_hierarchy_plan(
             )
             required = expected
 
+        required_scene = projected_scene() if carrier_source_supports else None
         before_position = positions[mover_ref]
         positions[mover_ref] = point
         expected = certificate()
         final_action = move_index + 1 == len(ordered_refs)
         actions.append(
-            PlannedClick(
-                coordinate=Coordinate(*point),
-                purpose=VisualActionPurpose.PROGRESS,
-                expectation=(
-                    terminal_expectation
-                    if final_action
-                    else "place the active endpoint on a protected child-support layout"
+            require_masked_lineage_only_if_needed(
+                PlannedClick(
+                    coordinate=Coordinate(*point),
+                    purpose=VisualActionPurpose.PROGRESS,
+                    expectation=(
+                        terminal_expectation
+                        if final_action
+                        else "place the active endpoint on a protected child-support layout"
+                    ),
+                    mechanic_ref=hierarchy.mechanic_ref,
+                    plan_id=plan_id,
+                    plan_signature=signature,
+                    target_center=hierarchy.target.rounded_center,
+                    mediator_color=layout.group.mediator.color,
+                    arity=layout.group.arity,
+                    completes_hierarchy=final_action,
+                    expected_active_center=point,
+                    required_child_protected_raster_hash=required.protected_raster_hash,
+                    expected_child_protected_raster_hash=expected.protected_raster_hash,
+                    expected_visible_endpoint_count=expected.visible_endpoint_count,
+                    expected_visible_mediator_count=expected.visible_mediator_count,
                 ),
-                mechanic_ref=hierarchy.mechanic_ref,
-                plan_id=plan_id,
-                plan_signature=signature,
-                target_center=hierarchy.target.rounded_center,
-                mediator_color=layout.group.mediator.color,
-                arity=layout.group.arity,
-                completes_hierarchy=final_action,
-                expected_active_center=point,
-                required_child_protected_raster_hash=required.protected_raster_hash,
-                expected_child_protected_raster_hash=expected.protected_raster_hash,
-                expected_visible_endpoint_count=expected.visible_endpoint_count,
-                expected_visible_mediator_count=expected.visible_mediator_count,
+                required_scene,
             )
         )
         inverse_specs.append(
@@ -6862,6 +7018,7 @@ def _build_hierarchy_plan(
     recovery_plan_id = "visual-hierarchy-recovery:" + signature.rsplit(":", 1)[-1]
     recovery_actions: list[PlannedClick] = []
     for purpose, endpoint_ref, inverse_coordinate, group in reversed(inverse_specs):
+        required_scene = projected_scene() if carrier_source_supports else None
         if purpose is VisualActionPurpose.PROBE:
             if endpoint_ref == active_ref or colors[endpoint_ref] == hierarchy.active_color:
                 raise ValueError("hierarchy recovery role exchange is not reversible")
@@ -6878,21 +7035,24 @@ def _build_hierarchy_plan(
             expectation = "restore one endpoint to its exact pre-hypothesis position"
         expected = certificate()
         recovery_actions.append(
-            PlannedClick(
-                coordinate=Coordinate(*inverse_coordinate),
-                purpose=purpose,
-                expectation=expectation,
-                mechanic_ref=hierarchy.mechanic_ref,
-                plan_id=recovery_plan_id,
-                plan_signature=recovery_signature,
-                target_center=hierarchy.target.rounded_center,
-                mediator_color=group.mediator.color,
-                arity=group.arity,
-                expected_active_center=positions[active_ref],
-                required_child_protected_raster_hash=required.protected_raster_hash,
-                expected_child_protected_raster_hash=expected.protected_raster_hash,
-                expected_visible_endpoint_count=expected.visible_endpoint_count,
-                expected_visible_mediator_count=expected.visible_mediator_count,
+            require_masked_lineage_only_if_needed(
+                PlannedClick(
+                    coordinate=Coordinate(*inverse_coordinate),
+                    purpose=purpose,
+                    expectation=expectation,
+                    mechanic_ref=hierarchy.mechanic_ref,
+                    plan_id=recovery_plan_id,
+                    plan_signature=recovery_signature,
+                    target_center=hierarchy.target.rounded_center,
+                    mediator_color=group.mediator.color,
+                    arity=group.arity,
+                    expected_active_center=positions[active_ref],
+                    required_child_protected_raster_hash=required.protected_raster_hash,
+                    expected_child_protected_raster_hash=expected.protected_raster_hash,
+                    expected_visible_endpoint_count=expected.visible_endpoint_count,
+                    expected_visible_mediator_count=expected.visible_mediator_count,
+                ),
+                required_scene,
             )
         )
         required = expected
@@ -7285,6 +7445,7 @@ def _carrier_source_occlusion_hierarchy_plan(
             hierarchy,
             layouts,
             scene=scene,
+            carrier_source_supports=supports,
             signature_prefix="affine-carrier-source-occlusion-hierarchy",
             terminal_expectation=(
                 "test the unique carrier-matched source-occlusion support hypothesis"
@@ -9226,6 +9387,48 @@ def _hierarchy_planned_click_is_safe(
     if planned.required_child_raster_signature and any(
         scene.cells[y][x] != value for x, y, value in planned.required_child_raster_signature
     ):
+        return False
+    if planned.required_visible_active_endpoint_count is not None:
+        if (
+            planned.required_child_protected_raster_hash is None
+            or planned.expected_child_protected_raster_hash is None
+            or planned.expected_visible_endpoint_count is None
+            or planned.expected_visible_mediator_count is None
+            or not planned.plan_signature.startswith(_CARRIER_SOURCE_MASKED_PLAN_PREFIXES)
+        ):
+            return False
+        coordinate = (planned.coordinate.x, planned.coordinate.y)
+        visible_active = tuple(
+            endpoint for endpoint in scene.endpoints if endpoint.color == active_color
+        )
+        if len(visible_active) != planned.required_visible_active_endpoint_count:
+            return False
+        if planned.purpose is VisualActionPurpose.PROBE:
+            selected = tuple(
+                endpoint for endpoint in scene.endpoints if endpoint.rounded_center == coordinate
+            )
+            return bool(
+                planned.required_visible_active_endpoint_count in {0, 1}
+                and planned.expected_active_center == coordinate
+                and len(selected) == 1
+                and selected[0].color != active_color
+                and not _role_swap_remains_readable(
+                    scene,
+                    selected[0],
+                    active_color=active_color,
+                )
+            )
+        if planned.purpose is VisualActionPurpose.PROGRESS:
+            destination = frozenset({coordinate})
+            return bool(
+                planned.required_visible_active_endpoint_count == 0
+                and planned.expected_active_center == coordinate
+                and _hierarchy_cells_in_bounds(scene, destination)
+                and _hierarchy_avoids_target_regions(
+                    destination,
+                    _visible_target_regions(scene),
+                )
+            )
         return False
     if planned.purpose is VisualActionPurpose.PROBE:
         selected = tuple(

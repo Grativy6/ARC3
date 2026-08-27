@@ -3421,12 +3421,40 @@ def _campaign26_weighted_origin_frame() -> GridFrame:
     return GridFrame.from_rows(tuple(tuple(raw[y * 64 : (y + 1) * 64]) for y in range(64)))
 
 
+_CAMPAIGN35_RESIDUAL_FOREGROUND_AFTER_A3_ZLIB_B64 = (
+    "eNrdl2FvxCAIhhGPTtPF//9zZ12bswqVyvXDRpPmwvm8CIhJCXejk2FnxC+gZ/he4zmeJHuSP/4nGT8L/HoSrXP8gVMlo"
+    "OfpjdcCZQ3Z7A7Pxb9laYDH/AwErnEaCdAANwncsK/8tPZdvYc4CQINDiEIOC/Q4pkPhjQFfqneA55PYNHhZQOsf9Hhf8oi"
+    "BeUUJun4B+UQJ2l6gvISSQ9kb4xvzN9c/8n7G/E/8N7Ge+8tvPevTSACzMd3LmYeDPkfPEzWP24Czmk2AevK9C/z2435Ggp"
+    "A5lep/4r4l7wifwC44Fnz7QbunV/xgOn4/YDNz48xvjxgWl7qao8nbiWAINDxKXErZZ4GfEncFd65vhQMf0qgTLY78s8/3bk"
+    "VffUyf9X4xjMqf9/42oNDnmm8r4Nb7m/8DI/zOMI8jzd45iMS3zwqvj/bdbvnB8spS9I="
+)
+
+
+def _campaign35_residual_foreground_after_a3_frame() -> GridFrame:
+    """Decode the official Campaign 35 consequence after its third setup action.
+
+    The uncompressed 64x64 public-development observation has SHA-256
+    ``10502941cabb15b6379a2995c39f0e1b67b5225349f91bfa007d72866cd78688``.
+    It is recording row 240 from the frozen public-development Campaign 35
+    artifact set.  No game
+    source or environment is consulted by this regression fixture.
+    """
+
+    raw = zlib.decompress(base64.b64decode(_CAMPAIGN35_RESIDUAL_FOREGROUND_AFTER_A3_ZLIB_B64))
+    assert len(raw) == 64 * 64
+    assert hashlib.sha256(raw).hexdigest() == (
+        "10502941cabb15b6379a2995c39f0e1b67b5225349f91bfa007d72866cd78688"
+    )
+    return GridFrame.from_rows(tuple(tuple(raw[y * 64 : (y + 1) * 64]) for y in range(64)))
+
+
 @dataclass
 class _ProjectedWeightedHierarchyEnvironment:
     """Replay generic endpoint placement against one frozen public observation."""
 
     scene: VisualScene
     hierarchy: visual_causal._AffineHierarchy
+    carrier_source_supports: tuple[visual_causal._HierarchySourceSupport, ...] = ()
     positions: dict[str, tuple[int, int]] = field(init=False)
     colors: dict[str, int] = field(init=False)
 
@@ -3443,11 +3471,21 @@ class _ProjectedWeightedHierarchyEnvironment:
         }
 
     def observation(self, *, returned_action: ActionRequest | None = None) -> Observation:
-        projected = visual_causal._hierarchy_projected_scene(
-            self.scene,
-            self.hierarchy,
-            positions=self.positions,
-            colors=self.colors,
+        projected = (
+            visual_causal._carrier_source_residual_foreground_projected_scene(
+                self.scene,
+                self.hierarchy,
+                self.carrier_source_supports,
+                positions=self.positions,
+                colors=self.colors,
+            )
+            if self.carrier_source_supports
+            else visual_causal._hierarchy_projected_scene(
+                self.scene,
+                self.hierarchy,
+                positions=self.positions,
+                colors=self.colors,
+            )
         )
         return Observation(
             game_id=GameId("synthetic-weighted-hierarchy-replay"),
@@ -6046,6 +6084,125 @@ def test_external_own_composite_is_equivariant_and_fails_closed(
         )
 
 
+def test_carrier_source_residual_foreground_projection_matches_campaign35() -> None:
+    (
+        _frame,
+        scene,
+        hierarchy,
+        _bridge,
+        _mixed,
+        _external,
+        _raw_matching,
+        _external_own,
+        relation,
+        plan,
+    ) = _carrier_source_occlusion_fixture()
+    environment = _ProjectedWeightedHierarchyEnvironment(
+        scene,
+        hierarchy,
+        carrier_source_supports=relation.supports,
+    )
+    observation = environment.observation()
+
+    for planned in plan.actions[:3]:
+        observation = environment.step(ActionRequest(ActionName.ACTION6, planned.coordinate))
+        projected_scene = extract_visual_scene(observation.frames[-1])
+        assert visual_causal._child_isolation_protected_raster_hash(projected_scene) == (
+            planned.expected_child_protected_raster_hash
+        )
+
+    official = _campaign35_residual_foreground_after_a3_frame()
+    assert all(
+        observation.frames[-1].cells[y][x] == official.cells[y][x]
+        for y in range(64)
+        for x in range(1, 64)
+    )
+
+    mediator_centers = {
+        child.mediator.object_ref: (
+            sum(environment.positions[endpoint.object_ref][0] for endpoint in child.endpoints)
+            // child.arity,
+            sum(environment.positions[endpoint.object_ref][1] for endpoint in child.endpoints)
+            // child.arity,
+        )
+        for child in hierarchy.children
+    }
+    occluded_supports = tuple(
+        support
+        for support in relation.supports
+        if mediator_centers[support.child.mediator.object_ref] == support.source.center
+    )
+    assert len(occluded_supports) == 1
+    support = occluded_supports[0]
+    residual_colors = support.source.palette - {support.example.carrier_color}
+    assert len(residual_colors) == 1
+    residual_color = next(iter(residual_colors))
+    residual_cells = frozenset(
+        (support.source.center[0] + dx, support.source.center[1] + dy)
+        for dx, dy in support.source.offsets(residual_color)
+    )
+    latent = visual_causal._hierarchy_projected_scene(
+        scene,
+        hierarchy,
+        positions=environment.positions,
+        colors=environment.colors,
+    )
+    official_foreground_delta = frozenset(
+        (x, y)
+        for y in range(64)
+        for x in range(1, 64)
+        if latent.cells[y][x] != official.cells[y][x]
+    )
+    assert official_foreground_delta == residual_cells
+    assert all(official.cells[y][x] == residual_color for x, y in residual_cells)
+    official_scene = extract_visual_scene(official)
+    assert len(official_scene.endpoints) == 4
+    assert sorted(len(item.cells) for item in official_scene.mediators) == [21, 23]
+    fourth = plan.actions[3]
+    assert fourth.required_visible_active_endpoint_count == 0
+    assert tuple(
+        (
+            item.coordinate.x,
+            item.coordinate.y,
+            item.required_visible_active_endpoint_count,
+        )
+        for item in plan.actions
+        if item.required_visible_active_endpoint_count is not None
+    ) == ((52, 55, 0),)
+    assert tuple(
+        (
+            item.coordinate.x,
+            item.coordinate.y,
+            item.required_visible_active_endpoint_count,
+        )
+        for item in plan.recovery_actions
+        if item.required_visible_active_endpoint_count is not None
+    ) == ((20, 42, 1), (43, 34, 0))
+    assert visual_causal._hierarchy_planned_click_is_safe(
+        official_scene,
+        fourth,
+        active_color=hierarchy.active_color,
+    )
+    corrupted_rows = [list(row) for row in official.cells]
+    corrupted_rows[1][1] = 6 if corrupted_rows[1][1] != 6 else 7
+    assert not visual_causal._hierarchy_planned_click_is_safe(
+        extract_visual_scene(GridFrame.from_rows(corrupted_rows)),
+        fourth,
+        active_color=hierarchy.active_color,
+    )
+
+    # The next unsubmitted discriminator remains model-derived: the role switch
+    # restores all five endpoint glyphs while retaining one source-masked child
+    # mediator.  It is not official progress or a terminal claim.
+    next_observation = environment.step(ActionRequest(ActionName.ACTION6, fourth.coordinate))
+    next_scene = extract_visual_scene(next_observation.frames[-1])
+    assert len(next_scene.endpoints) == 5
+    assert len(next_scene.mediators) == 1
+    assert visual_causal._child_isolation_protected_raster_hash(next_scene) == (
+        fourth.expected_child_protected_raster_hash
+    )
+
+
 def test_carrier_source_occlusion_selects_replays_and_restores_exact_sources() -> None:
     (
         frame,
@@ -6107,7 +6264,11 @@ def test_carrier_source_occlusion_selects_replays_and_restores_exact_sources() -
     assert capped_plan == plan
     assert budget.remaining > 0
 
-    environment = _ProjectedWeightedHierarchyEnvironment(scene, hierarchy)
+    environment = _ProjectedWeightedHierarchyEnvironment(
+        scene,
+        hierarchy,
+        carrier_source_supports=relation.supports,
+    )
     observation = environment.observation()
     policy = VisualCausalPolicy(max_coordinate_candidates=8)
     policy._level_index = 4
@@ -6525,7 +6686,11 @@ def test_carrier_source_occlusion_game_over_lifecycle() -> None:
         Observation,
         VisualCausalPolicy,
     ]:
-        environment = _ProjectedWeightedHierarchyEnvironment(scene, hierarchy)
+        environment = _ProjectedWeightedHierarchyEnvironment(
+            scene,
+            hierarchy,
+            carrier_source_supports=relation.supports,
+        )
         observation = environment.observation()
         policy = VisualCausalPolicy(max_coordinate_candidates=8)
         policy._level_index = 4
@@ -6575,7 +6740,11 @@ def test_carrier_source_occlusion_game_over_lifecycle() -> None:
 
     reset_action = retry_policy.select(first_game_over)
     assert reset_action.name is ActionName.RESET
-    reset_environment = _ProjectedWeightedHierarchyEnvironment(scene, hierarchy)
+    reset_environment = _ProjectedWeightedHierarchyEnvironment(
+        scene,
+        hierarchy,
+        carrier_source_supports=relation.supports,
+    )
     reset_observation = replace(
         reset_environment.observation(returned_action=reset_action),
         full_reset=True,
