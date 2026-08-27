@@ -3481,6 +3481,7 @@ class _ProjectedWeightedHierarchyEnvironment:
     hierarchy: visual_causal._AffineHierarchy
     carrier_source_supports: tuple[visual_causal._HierarchySourceSupport, ...] = ()
     carried_source_support_indexes: frozenset[int] = frozenset()
+    fixed_source_centers: dict[int, tuple[int, int]] = field(default_factory=dict)
     positions: dict[str, tuple[int, int]] = field(init=False)
     colors: dict[str, int] = field(init=False)
 
@@ -3505,6 +3506,7 @@ class _ProjectedWeightedHierarchyEnvironment:
                 positions=self.positions,
                 colors=self.colors,
                 carried_support_indexes=self.carried_source_support_indexes,
+                fixed_source_centers=self.fixed_source_centers,
             )
             if self.carrier_source_supports
             else visual_causal._hierarchy_projected_scene(
@@ -6230,7 +6232,9 @@ def test_carrier_source_residual_foreground_projection_matches_campaign35() -> N
     )
 
 
-def test_carrier_source_recovery_rebases_only_the_exact_carried_support() -> None:
+def test_carrier_source_recovery_rebases_only_the_exact_carried_support(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     (
         _frame,
         scene,
@@ -6261,13 +6265,78 @@ def test_carrier_source_recovery_rebases_only_the_exact_carried_support() -> Non
         False,
         True,
     ]
+    assert all(item.carrier_source_detachment_probe is None for item in delivery[:-1])
+    detachment = delivery[-1].carrier_source_detachment_probe
+    assert detachment is not None
+    assert detachment.carrier_source_detachment_step is True
+    assert detachment.coordinate == delivery[-2].coordinate
+    assert detachment.required_child_protected_raster_hash == (
+        delivery[-1].expected_child_protected_raster_hash
+    )
+    assert detachment.expected_child_protected_raster_hash == (
+        delivery[-1].required_child_protected_raster_hash
+    )
+    assert detachment.expected_deposited_source_protected_raster_hash is not None
+    assert detachment.expected_deposited_source_protected_raster_hash != (
+        detachment.expected_child_protected_raster_hash
+    )
     assert visual_causal._carrier_source_delivery_actions_are_compatible(alternative)
+    delivery_without_detachment = (
+        *delivery[:-1],
+        replace(delivery[-1], carrier_source_detachment_probe=None),
+    )
+    alternative_without_detachment = replace(
+        alternative,
+        carrier_source_delivery_actions=delivery_without_detachment,
+    )
+    assert visual_causal._carrier_source_delivery_actions_are_compatible(
+        alternative_without_detachment
+    )
     assert not visual_causal._carrier_source_delivery_actions_are_compatible(
         replace(
             alternative,
             carrier_source_delivery_actions=(
                 replace(delivery[0], completes_local_target=True),
                 *delivery[1:],
+            ),
+        )
+    )
+    assert not visual_causal._carrier_source_delivery_actions_are_compatible(
+        replace(
+            alternative,
+            carrier_source_delivery_actions=(
+                *delivery[:-1],
+                replace(
+                    delivery[-1],
+                    carrier_source_detachment_probe=replace(
+                        detachment,
+                        coordinate=Coordinate(
+                            detachment.coordinate.x + 1,
+                            detachment.coordinate.y,
+                        ),
+                        expected_active_center=(
+                            detachment.coordinate.x + 1,
+                            detachment.coordinate.y,
+                        ),
+                    ),
+                ),
+            ),
+        )
+    )
+    assert not visual_causal._carrier_source_delivery_actions_are_compatible(
+        replace(
+            alternative,
+            carrier_source_delivery_actions=(
+                *delivery[:-1],
+                replace(
+                    delivery[-1],
+                    carrier_source_detachment_probe=replace(
+                        detachment,
+                        expected_deposited_source_protected_raster_hash=(
+                            detachment.expected_child_protected_raster_hash
+                        ),
+                    ),
+                ),
             ),
         )
     )
@@ -6428,10 +6497,13 @@ def test_carrier_source_recovery_rebases_only_the_exact_carried_support() -> Non
         is None
     )
 
+    pre_final_observation: Observation | None = None
     for expected in delivery:
         action = policy.select(observation)
         assert action.coordinate == expected.coordinate
         assert policy._pending_carrier_source_recovery_candidate == expected
+        if expected.completes_carrier_source_delivery:
+            pre_final_observation = observation
         observation = environment.step(action)
         returned_scene = extract_visual_scene(observation.frames[-1])
         assert visual_causal._child_isolation_protected_raster_hash(returned_scene) == (
@@ -6460,13 +6532,66 @@ def test_carrier_source_recovery_rebases_only_the_exact_carried_support() -> Non
         "the exact carried source reached its unique observed raw target, but the official "
         "environment remained NOT_FINISHED"
     )
-    with pytest.raises(PolicyError, match="target-delivery continuation"):
-        policy.select(observation)
+    assert policy.snapshot()["pending_plan_actions"] == 1
+    detachment_action = policy.select(observation)
+    assert detachment_action.coordinate == detachment.coordinate == delivery[-2].coordinate
+    assert policy._pending_carrier_source_recovery_candidate == detachment
+    assert policy.snapshot()["pending_plan_actions"] == 0
+    assert pre_final_observation is not None
+    still_carried = environment.step(detachment_action)
+    assert still_carried.frames[-1].cells == pre_final_observation.frames[-1].cells
+    policy.accept_consequence(still_carried)
+    still_carried_snapshot = policy.snapshot()
+    assert still_carried_snapshot["pending_plan_actions"] == 0
+    assert still_carried_snapshot["hierarchy_carried_source_support_indexes"] == [1]
+    assert still_carried_snapshot["hierarchy_carrier_source_occlusion_relation_rejected_count"] == 1
+    assert "still attached" in policy.receipts[-1].residual
+    with pytest.raises(PolicyError, match=r"target-delivery continuation|still attached"):
+        policy.select(still_carried)
 
-    corrupt_environment, corrupt_observation, corrupt_policy, _receipt = start_delivery()
-    first_delivery = corrupt_policy.select(corrupt_observation)
-    assert first_delivery.coordinate == Coordinate(53, 36)
-    corrupted = corrupt_environment.step(first_delivery)
+    def reach_detachment() -> tuple[
+        _ProjectedWeightedHierarchyEnvironment,
+        Observation,
+        VisualCausalPolicy,
+        ActionRequest,
+    ]:
+        replay_environment, replay_observation, replay_policy, _receipt = start_delivery()
+        for expected in delivery:
+            action = replay_policy.select(replay_observation)
+            assert action.coordinate == expected.coordinate
+            replay_observation = replay_environment.step(action)
+            replay_policy.accept_consequence(replay_observation)
+        assert replay_policy.snapshot()["pending_plan_actions"] == 1
+        inverse = replay_policy.select(replay_observation)
+        assert inverse.coordinate == detachment.coordinate
+        assert replay_policy._pending_carrier_source_recovery_candidate == detachment
+        return replay_environment, replay_observation, replay_policy, inverse
+
+    deposited_environment, _final_observation, deposited_policy, deposited_inverse = (
+        reach_detachment()
+    )
+    deposited_environment.fixed_source_centers[1] = hierarchy.target.rounded_center
+    deposited = deposited_environment.step(deposited_inverse)
+    deposited_scene = extract_visual_scene(deposited.frames[-1])
+    assert visual_causal._child_isolation_protected_raster_hash(deposited_scene) == (
+        detachment.expected_deposited_source_protected_raster_hash
+    )
+    assert len(deposited_scene.endpoints) == detachment.expected_deposited_visible_endpoint_count
+    assert len(deposited_scene.mediators) == detachment.expected_deposited_visible_mediator_count
+    assert all(
+        deposited.frames[-1].cells[y][x] == value for (x, y), value in translated_source.items()
+    )
+    deposited_policy.accept_consequence(deposited)
+    deposited_snapshot = deposited_policy.snapshot()
+    assert deposited_snapshot["pending_plan_actions"] == 0
+    assert deposited_snapshot["hierarchy_carried_source_support_indexes"] == []
+    assert "remained deposited" in deposited_policy.receipts[-1].residual
+    fresh_action = deposited_policy.select(deposited)
+    assert fresh_action.coordinate != delivery[-1].coordinate
+    assert deposited_policy._pending_carrier_source_recovery_candidate is None
+
+    corrupt_environment, _final_observation, corrupt_policy, corrupt_inverse = reach_detachment()
+    corrupted = corrupt_environment.step(corrupt_inverse)
     corrupted_rows = [list(row) for row in corrupted.frames[-1].cells]
     carried_center = mediator_center(carried_support, corrupt_environment.positions)
     old_x, old_y = carried_support.source.cells[0]
@@ -6475,15 +6600,14 @@ def test_carrier_source_recovery_rebases_only_the_exact_carried_support() -> Non
         carried_center[1] + old_y - source_y,
     )
     corrupted_rows[translated_cell[1]][translated_cell[0]] = scene.background
-    corrupt_policy.accept_consequence(
-        replace(
-            corrupted,
-            frames=(GridFrame.from_rows(corrupted_rows),),
-        )
+    corrupted_detachment = replace(
+        corrupted,
+        frames=(GridFrame.from_rows(corrupted_rows),),
     )
+    corrupt_policy.accept_consequence(corrupted_detachment)
     assert corrupt_policy.snapshot()["hierarchy_lineage_lost"] is True
     with pytest.raises(PolicyError, match="hierarchy lineage was lost"):
-        corrupt_policy.select(corrupted)
+        corrupt_policy.select(corrupted_detachment)
 
     for terminal_state in (GameStateName.WIN, GameStateName.GAME_OVER):
         terminal_environment, terminal_observation, terminal_policy, _receipt = start_delivery()
@@ -6510,6 +6634,148 @@ def test_carrier_source_recovery_rebases_only_the_exact_carried_support() -> Non
                 "the exact carried-source delivery action returned official GAME_OVER"
             )
             assert terminal_policy.select(terminal_observation) == ActionRequest(ActionName.RESET)
+
+    for terminal_state in (GameStateName.WIN, GameStateName.GAME_OVER):
+        (
+            detachment_environment,
+            _final_observation,
+            detachment_policy,
+            terminal_inverse,
+        ) = reach_detachment()
+        terminal_detachment = replace(
+            detachment_environment.step(terminal_inverse),
+            state=terminal_state,
+            available_actions=(() if terminal_state is GameStateName.WIN else (ActionName.RESET,)),
+        )
+        detachment_policy.accept_consequence(terminal_detachment)
+        terminal_snapshot = detachment_policy.snapshot()
+        assert terminal_snapshot["pending_plan_actions"] == 0
+        assert terminal_snapshot["hierarchy_carried_source_support_indexes"] == []
+        if terminal_state is GameStateName.WIN:
+            assert terminal_snapshot["hierarchy_active"] is False
+            with pytest.raises(PolicyError, match="already reports WIN"):
+                detachment_policy.select(terminal_detachment)
+        else:
+            assert "detachment" in detachment_policy.receipts[-1].residual
+            assert "GAME_OVER" in detachment_policy.receipts[-1].residual
+            assert detachment_policy.select(terminal_detachment) == ActionRequest(ActionName.RESET)
+
+    def reach_final_delivery(
+        actions: tuple[visual_causal.PlannedClick, ...],
+    ) -> tuple[
+        _ProjectedWeightedHierarchyEnvironment,
+        Observation,
+        VisualCausalPolicy,
+        ActionRequest,
+    ]:
+        final_environment, final_observation, final_policy, _receipt = start_delivery()
+        final_policy._plan.clear()
+        final_policy._plan.extend(actions)
+        for expected in actions[:-1]:
+            selected = final_policy.select(final_observation)
+            assert selected.coordinate == expected.coordinate
+            final_observation = final_environment.step(selected)
+            final_policy.accept_consequence(final_observation)
+        final_action = final_policy.select(final_observation)
+        assert final_action.coordinate == actions[-1].coordinate
+        return final_environment, final_observation, final_policy, final_action
+
+    no_probe_win_environment, _before_win, no_probe_win_policy, no_probe_win_action = (
+        reach_final_delivery(delivery_without_detachment)
+    )
+    no_probe_win = replace(
+        no_probe_win_environment.step(no_probe_win_action),
+        state=GameStateName.WIN,
+        available_actions=(),
+    )
+    no_probe_win_policy.accept_consequence(no_probe_win)
+    assert no_probe_win_policy.snapshot()["hierarchy_active"] is False
+    assert no_probe_win_policy.snapshot()["pending_plan_actions"] == 0
+
+    no_probe_environment, _before_no_probe, no_probe_policy, no_probe_action = reach_final_delivery(
+        delivery_without_detachment
+    )
+    no_probe_not_finished = no_probe_environment.step(no_probe_action)
+    no_probe_policy.accept_consequence(no_probe_not_finished)
+    no_probe_snapshot = no_probe_policy.snapshot()
+    assert no_probe_snapshot["pending_plan_actions"] == 0
+    assert no_probe_snapshot["hierarchy_carried_source_support_indexes"] == [1]
+    with pytest.raises(PolicyError, match="target-delivery continuation"):
+        no_probe_policy.select(no_probe_not_finished)
+
+    unpromoted_environment, _before_unpromoted, unpromoted_policy, unpromoted_action = (
+        reach_final_delivery(delivery)
+    )
+    unpromoted = unpromoted_environment.step(unpromoted_action)
+    actual_extract_visual_scene = visual_causal.extract_visual_scene
+    unpromoted_digest = str(unpromoted.frames[-1].digest)
+    parsed_unpromoted = actual_extract_visual_scene(unpromoted.frames[-1])
+    semantic_target_not_promoted = replace(
+        parsed_unpromoted,
+        objects=(*parsed_unpromoted.objects, hierarchy.target),
+    )
+
+    def extract_without_target_promotion(frame: GridFrame) -> VisualScene:
+        parsed = actual_extract_visual_scene(frame)
+        return semantic_target_not_promoted if str(frame.digest) == unpromoted_digest else parsed
+
+    monkeypatch.setattr(
+        visual_causal,
+        "extract_visual_scene",
+        extract_without_target_promotion,
+    )
+    unpromoted_policy.accept_consequence(unpromoted)
+    monkeypatch.undo()
+    unpromoted_snapshot = unpromoted_policy.snapshot()
+    assert unpromoted_snapshot["pending_plan_actions"] == 0
+    assert unpromoted_snapshot["hierarchy_carried_source_support_indexes"] == [1]
+    with pytest.raises(PolicyError, match="target-delivery continuation"):
+        unpromoted_policy.select(unpromoted)
+
+
+def test_carrier_source_delivery_survives_optional_detachment_projection_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    project_carried_scene = visual_causal._carrier_source_carried_projected_scene
+
+    def reject_fixed_source_projection(
+        scene: VisualScene,
+        hierarchy: visual_causal._AffineHierarchy,
+        supports: tuple[visual_causal._HierarchySourceSupport, ...],
+        *,
+        positions: dict[str, tuple[int, int]],
+        colors: dict[str, int],
+        carried_support_indexes: frozenset[int],
+        fixed_source_centers: dict[int, tuple[int, int]] | None = None,
+    ) -> VisualScene:
+        if fixed_source_centers is not None:
+            raise ValueError("synthetic detachment-only projection failure")
+        return project_carried_scene(
+            scene,
+            hierarchy,
+            supports,
+            positions=positions,
+            colors=colors,
+            carried_support_indexes=carried_support_indexes,
+        )
+
+    monkeypatch.setattr(
+        visual_causal,
+        "_carrier_source_carried_projected_scene",
+        reject_fixed_source_projection,
+    )
+    _carrier_source_occlusion_fixture.cache_clear()
+    try:
+        *_, plan = _carrier_source_occlusion_fixture()
+        alternative = plan.recovery_actions[0].carrier_source_recovery_alternative
+        assert alternative is not None
+        delivery = alternative.carrier_source_delivery_actions
+        assert delivery
+        assert delivery[-1].completes_carrier_source_delivery is True
+        assert delivery[-1].carrier_source_detachment_probe is None
+        assert visual_causal._carrier_source_delivery_actions_are_compatible(alternative)
+    finally:
+        _carrier_source_occlusion_fixture.cache_clear()
 
 
 def test_carrier_source_occlusion_selects_replays_and_restores_exact_sources() -> None:

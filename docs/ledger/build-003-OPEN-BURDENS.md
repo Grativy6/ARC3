@@ -537,7 +537,7 @@ Do not delete a burden when later evidence resolves it. Append a resolution with
 
 ## B-003-0037 - Campaign 36 exposed source-to-mediator coupling on the first inverse
 
-- **Status:** OPEN; EXACT B307B6B REPLAY AND INTEGRITY PASSED; HOSTED CI AND OFFICIAL CONSEQUENCE PENDING
+- **Status:** RESOLVED BY EXACT 1FDE5C1 GATES AND CAMPAIGN 37; TARGET-PROMOTION RESIDUAL REOPENED AS B-003-0039
 - **Stage:** 10 and target-game continuation
 - **Opened:** 2026-08-27
 - **Owner:** Codex
@@ -547,10 +547,11 @@ Do not delete a burden when later evidence resolves it. Append a resolution with
 - **Impact:** Build 003 remains incomplete at official `NOT_FINISHED`, `4/6`. Offline projection, strict replay, carried-source recognition, and a safe next action remain non-completion evidence.
 - **Candidate verification:** The exact Campaign 36 frame now selects the uniquely implicated carried support, preserves the historical unreadable receipt, discards the stale inverse, and queues five exact observation-derived target-delivery actions. Adversarial carried-cell, stationary-obstacle, state-flag, and plan-identity mutations fail closed. The final focused case, six-test carrier-source slice, 135-test visual-policy suite, Ruff, format, strict MyPy, compilation, diff hygiene, and independent read-only audit pass. Clean detached `b307b6b` then replayed all 1,526 trace events, 254 submissions, and 254 mechanics receipts with zero mismatch or environment action, selected and cancelled `(53,36)`, passed 119 current integrity/reachability/action tests with three platform skips, and passed manifest-aware, package-only, secret, and raw-action-semantics scans. The first manifest-aware invocation is preserved as failed preflight because its known manifest hash was not explicitly bound; the bound rerun passed.
 - **Resolution condition:** Exact Campaign 36 replay accepts all 254 historical consequences and receipts, the carried-source branch fails closed under adversarial mutations, one next action is selected and cancelled without environment use, clean exact-source and hosted gates pass, and an authorized official continuation observes either a bounded falsifying consequence or `GameState.WIN`.
+- **Resolution evidence:** Exact `1fde5c1dbed04f5318c85cf3f8a7fab669a51cd9` passed clean strict Campaign 36 replay, bound integrity/action/package gates, five hosted workflows and nine jobs, then Campaign 37 submitted the complete five-action carried-source route. Each returned exact protected evidence through the final target-centered source geometry. The final official `NOT_FINISHED` promoted the target role to a mediator and reopened only the new detachment burden in B-003-0039; no `WIN` was observed.
 
 ## B-003-0038 - Carried-source delivery to the raw target is not yet an official result
 
-- **Status:** OPEN; EXACT REPLAY AND INTEGRITY PASSED; HOSTED CI PENDING; OFFICIAL PLAY PAUSED
+- **Status:** RESOLVED AS FAILED_MECHANISM BY CAMPAIGN 37; DETACHMENT BURDEN REOPENED AS B-003-0039
 - **Stage:** 10 and target-game continuation
 - **Opened:** 2026-08-27
 - **Owner:** Codex
@@ -559,3 +560,18 @@ Do not delete a burden when later evidence resolves it. Append a resolution with
 - **Impact:** A complete-looking co-centered layout, exact local projection, high confidence, synthetic terminal, strict replay, or green CI cannot resolve Build 003. Completion remains false at official `NOT_FINISHED`, `4/6`, zero `WIN`; holdout consumption remains `0/1`.
 - **Smallest next evidence:** Push the evidence-bound candidate, pass every required hosted job at one exact head, reproduce the clean replay/integrity bindings at that launch head, then submit only the first observation-linked discriminator in authorized public development play and continue only through exact returned consequences.
 - **Resolution condition:** The official environment returns a bounded falsifying consequence that reopens only the implicated hypothesis, or eventually returns authoritative `GameState.WIN`. Only the latter completes the target.
+- **Resolution evidence:** Exact `1fde5c1dbed04f5318c85cf3f8a7fab669a51cd9` passed strict replay, integrity, action, package, and every hosted gate. Campaign 37 then submitted all five delivery actions. The final official state remained `NOT_FINISHED` at `4/6`, the hollow target interpretation disappeared, and one target-centered mediator appeared while the source geometry remained delivered. Direct delivery is therefore a preserved failed mechanism, not completion; the smallest inverse discriminator is tracked separately in B-003-0039.
+
+## B-003-0039 - Campaign 37 target promotion leaves source attachment unresolved
+
+- **Status:** OPEN; LOCAL CANDIDATE PASSED; EXACT REPLAY, INTEGRITY, CI, AND OFFICIAL CONSEQUENCE PENDING
+- **Stage:** 10 and target-game continuation
+- **Opened:** 2026-08-27
+- **Owner:** Codex
+- **Burden:** Campaign 37 completed the exact carried-source target route but returned official `NOT_FINISHED` at `4/6`. The final contact replaced the hollow target interpretation with a target-centered mediator while the 21-cell source remained at that center. The observation does not reveal whether the source remains attached to the child or was deposited, and no inverse, level transition, or `WIN` was observed.
+- **Preserved evidence:** Root `C:\a\arc3-b003-play\build003-r11l-mechanical-seed7-1fde5c1-campaign37`; 259 submissions, including 256 `ACTION6` and three legal `RESET`s; zero `WIN`; recording SHA-256 `672746f3d1c0a2466b3e8a80194a840b18f00e8bf6ab687598140782bf4770af`; trace tail `sha256:478718ca9a67bd569f52906164e2de4f582f9c954cd0d249288b524db3495055`; run receipt hash `sha256:7d4018f8d575c10d7a1a6759142998aafd529a8f96e75be048ee606ca683de7d`; completion observed false. Exposure is 71 development events and zero holdout events.
+- **Smallest implicated revision:** After and only after the exact promoted final `NOT_FINISHED` scene, issue one inverse to the observed predecessor active center. Certify two distinct exact outcomes: source and child return together, or child returns while the source remains fixed at the former target. Reject repeated delivery in the first branch; clear stale carrier state and recompute only from the returned frame in the second. Any other raster, count, lifecycle, or lineage result fails closed.
+- **Optionality boundary:** The future inverse certificate must not gate a potentially direct-to-`WIN` delivery. If the inverse branches cannot be precomputed, direct delivery remains admissible, `WIN` remains accepted, and a later `NOT_FINISHED` stops without unrelated fallback. Missing target promotion likewise enqueues no inverse.
+- **Candidate verification:** Final bytes pass two focused lifecycle/generation tests, seven carrier-source tests, all 136 visual-policy tests, Ruff lint/format, strict MyPy, compilation, and diff hygiene. Tests cover exact predecessor selection, carried and deposited rasters, corrupt consequence latch, optional-projection failure, missing promotion, direct `WIN`, `GAME_OVER`/reset, stale-state clearance, and fresh deposited-state planning. Independent audit found no remaining P0/P1 issue. This is local deterministic evidence only.
+- **Impact:** Build 003 remains incomplete at official `NOT_FINISHED`, `4/6`, zero `WIN`. A certified inverse, projected branch, passing replay, green CI, or deposited-looking frame cannot substitute for authoritative completion.
+- **Resolution condition:** A frozen exact commit strictly replays all 1,556 Campaign 37 events, 259 submissions, and 259 mechanics receipts with zero environment actions, selects and cancels the exact inverse, passes clean-source integrity and hosted gates, and an authorized official continuation returns either a bounded falsifying consequence or `GameState.WIN`. Only `WIN` completes the target.
