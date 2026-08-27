@@ -6232,6 +6232,64 @@ def test_carrier_source_residual_foreground_projection_matches_campaign35() -> N
     )
 
 
+def test_carrier_source_attachment_inverse_is_unique_minimum_among_safe() -> None:
+    route = (
+        ("candidate", (10, 13)),
+        ("other", (15, 18)),
+        ("final", (20, 20)),
+    )
+    baseline_positions = {
+        "candidate": (10, 11),
+        "other": (12, 12),
+        "final": (18, 18),
+    }
+    assert visual_causal._carrier_source_attachment_alternative_inverse(
+        route,
+        baseline_positions=baseline_positions,
+        safe_endpoint_refs=frozenset({"candidate", "other"}),
+    ) == ("candidate", (10, 13), (10, 11))
+    assert visual_causal._carrier_source_attachment_alternative_inverse(
+        route,
+        baseline_positions=baseline_positions,
+        safe_endpoint_refs=frozenset({"other"}),
+    ) == ("other", (15, 18), (12, 12))
+    assert (
+        visual_causal._carrier_source_attachment_alternative_inverse(
+            route,
+            baseline_positions={**baseline_positions, "other": (15, 16)},
+            safe_endpoint_refs=frozenset({"candidate", "other"}),
+        )
+        is None
+    )
+    assert (
+        visual_causal._carrier_source_attachment_alternative_inverse(
+            route,
+            baseline_positions={
+                **baseline_positions,
+                "candidate": route[0][1],
+            },
+            safe_endpoint_refs=frozenset({"candidate"}),
+        )
+        is None
+    )
+    assert (
+        visual_causal._carrier_source_attachment_alternative_inverse(
+            route,
+            baseline_positions=baseline_positions,
+            safe_endpoint_refs=frozenset({"final"}),
+        )
+        is None
+    )
+    assert (
+        visual_causal._carrier_source_attachment_alternative_inverse(
+            route,
+            baseline_positions=baseline_positions,
+            safe_endpoint_refs=frozenset(),
+        )
+        is None
+    )
+
+
 def test_carrier_source_recovery_rebases_only_the_exact_carried_support(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -6279,6 +6337,45 @@ def test_carrier_source_recovery_rebases_only_the_exact_carried_support(
     assert detachment.expected_deposited_source_protected_raster_hash is not None
     assert detachment.expected_deposited_source_protected_raster_hash != (
         detachment.expected_child_protected_raster_hash
+    )
+    continuation = detachment.carrier_source_attachment_continuation_actions
+    assert tuple((item.coordinate.x, item.coordinate.y, item.purpose) for item in continuation) == (
+        (60, 24, VisualActionPurpose.PROGRESS),
+        (46, 24, VisualActionPurpose.PROBE),
+        (23, 58, VisualActionPurpose.PROGRESS),
+    )
+    assert [item.carrier_source_target_center_role_exchange_step for item in continuation] == [
+        False,
+        True,
+        False,
+    ]
+    assert continuation[-1].carrier_source_detachment_step is True
+    assert visual_causal._carrier_source_attachment_continuation_actions_are_compatible(detachment)
+    assert not visual_causal._carrier_source_attachment_continuation_actions_are_compatible(
+        replace(
+            detachment,
+            carrier_source_attachment_continuation_actions=(
+                continuation[0],
+                replace(
+                    continuation[1],
+                    carrier_source_target_center_role_exchange_step=False,
+                ),
+                continuation[2],
+            ),
+        )
+    )
+    assert not visual_causal._carrier_source_attachment_continuation_actions_are_compatible(
+        replace(
+            detachment,
+            carrier_source_attachment_continuation_actions=(
+                continuation[0],
+                replace(
+                    continuation[1],
+                    required_child_protected_raster_hash="sha256:broken-lineage",
+                ),
+                continuation[2],
+            ),
+        )
     )
     assert visual_causal._carrier_source_delivery_actions_are_compatible(alternative)
     delivery_without_detachment = (
@@ -6542,12 +6639,56 @@ def test_carrier_source_recovery_rebases_only_the_exact_carried_support(
     assert still_carried.frames[-1].cells == pre_final_observation.frames[-1].cells
     policy.accept_consequence(still_carried)
     still_carried_snapshot = policy.snapshot()
-    assert still_carried_snapshot["pending_plan_actions"] == 0
+    assert still_carried_snapshot["pending_plan_actions"] == 3
     assert still_carried_snapshot["hierarchy_carried_source_support_indexes"] == [1]
     assert still_carried_snapshot["hierarchy_carrier_source_occlusion_relation_rejected_count"] == 1
-    assert "still attached" in policy.receipts[-1].residual
+    assert "alternative-endpoint detachment discriminator was queued" in (
+        policy.receipts[-1].residual
+    )
+    continued_observation = still_carried
+    for index, expected in enumerate(continuation[:-1]):
+        continued_action = policy.select(continued_observation)
+        assert continued_action.coordinate == expected.coordinate
+        assert policy._pending_carrier_source_recovery_candidate == expected
+        continued_observation = environment.step(continued_action)
+        continued_scene = extract_visual_scene(continued_observation.frames[-1])
+        assert visual_causal._child_isolation_protected_raster_hash(continued_scene) == (
+            expected.expected_child_protected_raster_hash
+        )
+        policy.accept_consequence(continued_observation)
+        assert policy.snapshot()["pending_plan_actions"] == 2 - index
+
+    alternate_detachment = continuation[-1]
+    alternate_action = policy.select(continued_observation)
+    assert alternate_action.coordinate == alternate_detachment.coordinate
+    assert policy._pending_carrier_source_recovery_candidate == alternate_detachment
+    continued_observation = environment.step(alternate_action)
+    continued_scene = extract_visual_scene(continued_observation.frames[-1])
+    assert visual_causal._child_isolation_protected_raster_hash(continued_scene) == (
+        alternate_detachment.expected_child_protected_raster_hash
+    )
+    assert all(
+        continued_observation.frames[-1].cells[y][x] == value
+        for (x, y), value in target_cells.items()
+    )
+    alternate_carried_center = mediator_center(carried_support, environment.positions)
+    assert alternate_carried_center != hierarchy.target.rounded_center
+    assert all(
+        continued_observation.frames[-1].cells[alternate_carried_center[1] + y - source_y][
+            alternate_carried_center[0] + x - source_x
+        ]
+        == scene.cells[y][x]
+        for x, y in carried_support.source.cells
+    )
+    policy.accept_consequence(continued_observation)
+    continued_snapshot = policy.snapshot()
+    assert continued_snapshot["pending_plan_actions"] == 0
+    assert continued_snapshot["hierarchy_carried_source_support_indexes"] == [1]
+    assert "no further endpoint-detachment continuation is authorized" in (
+        policy.receipts[-1].residual
+    )
     with pytest.raises(PolicyError, match=r"target-delivery continuation|still attached"):
-        policy.select(still_carried)
+        policy.select(continued_observation)
 
     def reach_detachment() -> tuple[
         _ProjectedWeightedHierarchyEnvironment,
@@ -6565,6 +6706,35 @@ def test_carrier_source_recovery_rebases_only_the_exact_carried_support(
         inverse = replay_policy.select(replay_observation)
         assert inverse.coordinate == detachment.coordinate
         assert replay_policy._pending_carrier_source_recovery_candidate == detachment
+        return replay_environment, replay_observation, replay_policy, inverse
+
+    def reach_alternate_detachment() -> tuple[
+        _ProjectedWeightedHierarchyEnvironment,
+        Observation,
+        VisualCausalPolicy,
+        ActionRequest,
+    ]:
+        (
+            replay_environment,
+            _delivered_observation,
+            replay_policy,
+            initial_inverse,
+        ) = reach_detachment()
+        replay_observation = replay_environment.step(initial_inverse)
+        replay_policy.accept_consequence(replay_observation)
+        assert replay_policy.snapshot()["pending_plan_actions"] == len(continuation)
+        for expected in continuation[:-1]:
+            action = replay_policy.select(replay_observation)
+            assert action.coordinate == expected.coordinate
+            replay_observation = replay_environment.step(action)
+            returned_scene = extract_visual_scene(replay_observation.frames[-1])
+            assert visual_causal._child_isolation_protected_raster_hash(returned_scene) == (
+                expected.expected_child_protected_raster_hash
+            )
+            replay_policy.accept_consequence(replay_observation)
+        inverse = replay_policy.select(replay_observation)
+        assert inverse.coordinate == continuation[-1].coordinate
+        assert replay_policy._pending_carrier_source_recovery_candidate == continuation[-1]
         return replay_environment, replay_observation, replay_policy, inverse
 
     deposited_environment, _final_observation, deposited_policy, deposited_inverse = (
@@ -6589,6 +6759,66 @@ def test_carrier_source_recovery_rebases_only_the_exact_carried_support(
     fresh_action = deposited_policy.select(deposited)
     assert fresh_action.coordinate != delivery[-1].coordinate
     assert deposited_policy._pending_carrier_source_recovery_candidate is None
+
+    (
+        alternate_deposited_environment,
+        _role_observation,
+        alternate_deposited_policy,
+        alternate_inverse,
+    ) = reach_alternate_detachment()
+    alternate_deposited_environment.fixed_source_centers[1] = hierarchy.target.rounded_center
+    alternate_deposited = alternate_deposited_environment.step(alternate_inverse)
+    alternate_deposited_scene = extract_visual_scene(alternate_deposited.frames[-1])
+    assert (
+        visual_causal._child_isolation_protected_raster_hash(alternate_deposited_scene)
+        == alternate_detachment.expected_deposited_source_protected_raster_hash
+    )
+    assert len(alternate_deposited_scene.endpoints) == (
+        alternate_detachment.expected_deposited_visible_endpoint_count
+    )
+    assert len(alternate_deposited_scene.mediators) == (
+        alternate_detachment.expected_deposited_visible_mediator_count
+    )
+    assert all(
+        alternate_deposited.frames[-1].cells[y][x] == value
+        for (x, y), value in target_cells.items()
+    )
+    assert all(
+        alternate_deposited.frames[-1].cells[y][x] == value
+        for (x, y), value in translated_source.items()
+    )
+    alternate_deposited_policy.accept_consequence(alternate_deposited)
+    alternate_deposited_snapshot = alternate_deposited_policy.snapshot()
+    assert alternate_deposited_snapshot["pending_plan_actions"] == 0
+    assert alternate_deposited_snapshot["hierarchy_carried_source_support_indexes"] == []
+    assert "remained deposited" in alternate_deposited_policy.receipts[-1].residual
+    alternate_fresh_action = alternate_deposited_policy.select(alternate_deposited)
+    assert alternate_fresh_action.coordinate != continuation[0].coordinate
+    assert alternate_deposited_policy._pending_carrier_source_recovery_candidate is None
+
+    role_environment, _delivered, role_policy, role_initial_inverse = reach_detachment()
+    role_observation = role_environment.step(role_initial_inverse)
+    role_policy.accept_consequence(role_observation)
+    redelivery_action = role_policy.select(role_observation)
+    assert redelivery_action.coordinate == continuation[0].coordinate
+    role_observation = role_environment.step(redelivery_action)
+    role_policy.accept_consequence(role_observation)
+    role_action = role_policy.select(role_observation)
+    assert role_action.coordinate == continuation[1].coordinate
+    role_observation = role_environment.step(role_action)
+    role_rows = [list(row) for row in role_observation.frames[-1].cells]
+    corrupt_role_x, corrupt_role_y = min(translated_source)
+    assert role_rows[corrupt_role_y][corrupt_role_x] != scene.background
+    role_rows[corrupt_role_y][corrupt_role_x] = scene.background
+    corrupted_role = replace(
+        role_observation,
+        frames=(GridFrame.from_rows(role_rows),),
+    )
+    role_policy.accept_consequence(corrupted_role)
+    assert role_policy.snapshot()["hierarchy_lineage_lost"] is True
+    assert role_policy.snapshot()["pending_plan_actions"] == 0
+    with pytest.raises(PolicyError, match="hierarchy lineage was lost"):
+        role_policy.select(corrupted_role)
 
     corrupt_environment, _final_observation, corrupt_policy, corrupt_inverse = reach_detachment()
     corrupted = corrupt_environment.step(corrupt_inverse)

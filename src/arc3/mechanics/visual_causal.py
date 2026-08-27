@@ -283,6 +283,8 @@ class PlannedClick:
     completes_carrier_source_delivery: bool = False
     carrier_source_detachment_probe: PlannedClick | None = None
     carrier_source_detachment_step: bool = False
+    carrier_source_target_center_role_exchange_step: bool = False
+    carrier_source_attachment_continuation_actions: tuple[PlannedClick, ...] = ()
     expected_deposited_source_protected_raster_hash: str | None = None
     expected_deposited_visible_endpoint_count: int | None = None
     expected_deposited_visible_mediator_count: int | None = None
@@ -7156,6 +7158,48 @@ def _carrier_source_target_delivery_projected_state_is_safe(
     return projected
 
 
+def _carrier_source_attachment_alternative_inverse(
+    route: tuple[tuple[str, tuple[int, int]], ...],
+    *,
+    baseline_positions: dict[str, tuple[int, int]],
+    safe_endpoint_refs: frozenset[str],
+) -> tuple[str, tuple[int, int], tuple[int, int]] | None:
+    """Return the unique smallest projected-safe alternative historical inverse."""
+
+    route_refs = tuple(ref for ref, _point in route)
+    alternate_refs = frozenset(route_refs[:-1])
+    if (
+        len(route) < 2
+        or len(set(route_refs)) != len(route_refs)
+        or any(ref not in baseline_positions for ref in route_refs)
+        or not safe_endpoint_refs
+        or not safe_endpoint_refs <= alternate_refs
+    ):
+        return None
+    inverse_candidates = tuple(
+        (
+            ref,
+            point,
+            baseline_positions[ref],
+            (point[0] - baseline_positions[ref][0]) ** 2
+            + (point[1] - baseline_positions[ref][1]) ** 2,
+        )
+        for ref, point in route[:-1]
+        if ref in safe_endpoint_refs
+    )
+    inverse_distances = tuple(candidate[3] for candidate in inverse_candidates)
+    minimum_distance = min(inverse_distances)
+    if (
+        any(candidate[1] == candidate[2] for candidate in inverse_candidates)
+        or inverse_distances.count(minimum_distance) != 1
+    ):
+        return None
+    ref, point, predecessor, _distance_squared = next(
+        candidate for candidate in inverse_candidates if candidate[3] == minimum_distance
+    )
+    return ref, point, predecessor
+
+
 def _build_hierarchy_plan(
     hierarchy: _AffineHierarchy,
     layouts: tuple[_HierarchyChildLayout, ...],
@@ -7550,6 +7594,332 @@ def _build_hierarchy_plan(
             required_scene = baseline_scene
             required_certificate = source_subset_certificate(required_scene)
             planned_actions: list[PlannedClick] = []
+
+            def attachment_continuation_actions(
+                *,
+                restored_positions: dict[str, tuple[int, int]],
+                restored_colors: dict[str, int],
+                restored_scene: VisualScene,
+            ) -> tuple[PlannedClick, ...]:
+                """Derive one exact alternative-endpoint detachment after restoration."""
+
+                final_mover_ref, final_point = route[-1]
+                active_refs = tuple(
+                    ref for ref, color in restored_colors.items() if color == hierarchy.active_color
+                )
+                if len(active_refs) != 1 or active_refs[0] != final_mover_ref:
+                    return ()
+
+                redelivery_positions = dict(restored_positions)
+                redelivery_positions[final_mover_ref] = final_point
+                redelivery_scene = _carrier_source_target_delivery_projected_state_is_safe(
+                    scene,
+                    baseline_scene,
+                    hierarchy,
+                    carrier_source_supports,
+                    support_index=support_index,
+                    baseline_positions=baseline_positions,
+                    positions=redelivery_positions,
+                    colors=restored_colors,
+                    completes_delivery=True,
+                )
+                if redelivery_scene is None:
+                    return ()
+                restored_certificate = source_subset_certificate(restored_scene)
+                redelivery_certificate = source_subset_certificate(redelivery_scene)
+                continuation_candidates: dict[str, tuple[PlannedClick, ...]] = {}
+                for alternate_ref, alternate_point in route[:-1]:
+                    alternate_predecessor = baseline_positions.get(alternate_ref)
+                    if (
+                        alternate_predecessor is None
+                        or alternate_ref == final_mover_ref
+                        or restored_positions.get(alternate_ref) != alternate_point
+                        or alternate_point == alternate_predecessor
+                    ):
+                        continue
+                    continuation_plan_id = (
+                        "visual-carrier-source-detachment:"
+                        + hashlib.sha256(
+                            (
+                                f"{delivery_plan_id}|{final_mover_ref}|{alternate_ref}|"
+                                f"{alternate_predecessor[0]},{alternate_predecessor[1]}"
+                            ).encode("ascii")
+                        ).hexdigest()[:24]
+                    )
+                    alternate_colors = dict(restored_colors)
+                    alternate_colors[final_mover_ref], alternate_colors[alternate_ref] = (
+                        alternate_colors[alternate_ref],
+                        alternate_colors[final_mover_ref],
+                    )
+                    role_scene = _carrier_source_target_delivery_projected_state_is_safe(
+                        scene,
+                        baseline_scene,
+                        hierarchy,
+                        carrier_source_supports,
+                        support_index=support_index,
+                        baseline_positions=baseline_positions,
+                        positions=redelivery_positions,
+                        colors=alternate_colors,
+                        completes_delivery=True,
+                    )
+                    if role_scene is None:
+                        continue
+                    role_certificate = source_subset_certificate(role_scene)
+                    alternate_positions = dict(redelivery_positions)
+                    alternate_positions[alternate_ref] = alternate_predecessor
+                    try:
+                        redelivery = require_masked_lineage_only_if_needed(
+                            PlannedClick(
+                                coordinate=Coordinate(*final_point),
+                                purpose=VisualActionPurpose.PROGRESS,
+                                expectation=(
+                                    "re-establish the exact observed target-centered carrier "
+                                    "state before an alternative-endpoint detachment"
+                                ),
+                                mechanic_ref=hierarchy.mechanic_ref,
+                                plan_id=continuation_plan_id,
+                                plan_signature=recovery_signature,
+                                target_center=hierarchy.target.rounded_center,
+                                mediator_color=support.child.mediator.color,
+                                arity=support.child.arity,
+                                expected_active_center=final_point,
+                                required_child_protected_raster_hash=(
+                                    restored_certificate.protected_raster_hash
+                                ),
+                                expected_child_protected_raster_hash=(
+                                    redelivery_certificate.protected_raster_hash
+                                ),
+                                expected_visible_endpoint_count=(
+                                    redelivery_certificate.visible_endpoint_count
+                                ),
+                                expected_visible_mediator_count=(
+                                    redelivery_certificate.visible_mediator_count
+                                ),
+                                required_carried_source_support_indexes=subset_indexes,
+                                expected_carried_source_support_indexes=subset_indexes,
+                                carrier_source_delivery_step=True,
+                            ),
+                            restored_scene,
+                        )
+                        role_exchange = require_masked_lineage_only_if_needed(
+                            PlannedClick(
+                                coordinate=Coordinate(*alternate_point),
+                                purpose=VisualActionPurpose.PROBE,
+                                expectation=(
+                                    "select the unique minimum-distance endpoint among exact "
+                                    "target-preserving historical inverse candidates"
+                                ),
+                                mechanic_ref=hierarchy.mechanic_ref,
+                                plan_id=continuation_plan_id,
+                                plan_signature=recovery_signature,
+                                target_center=hierarchy.target.rounded_center,
+                                mediator_color=support.child.mediator.color,
+                                arity=support.child.arity,
+                                expected_active_center=alternate_point,
+                                required_child_protected_raster_hash=(
+                                    redelivery_certificate.protected_raster_hash
+                                ),
+                                expected_child_protected_raster_hash=(
+                                    role_certificate.protected_raster_hash
+                                ),
+                                expected_visible_endpoint_count=(
+                                    role_certificate.visible_endpoint_count
+                                ),
+                                expected_visible_mediator_count=(
+                                    role_certificate.visible_mediator_count
+                                ),
+                                required_carried_source_support_indexes=subset_indexes,
+                                expected_carried_source_support_indexes=subset_indexes,
+                                carrier_source_delivery_step=True,
+                                carrier_source_target_center_role_exchange_step=True,
+                            ),
+                            redelivery_scene,
+                        )
+                        carried_alternate_scene = _carrier_source_carried_projected_scene(
+                            scene,
+                            hierarchy,
+                            carrier_source_supports,
+                            positions=alternate_positions,
+                            colors=alternate_colors,
+                            carried_support_indexes=carried_subset,
+                        )
+                        deposited_alternate_scene = _carrier_source_carried_projected_scene(
+                            scene,
+                            hierarchy,
+                            carrier_source_supports,
+                            positions=alternate_positions,
+                            colors=alternate_colors,
+                            carried_support_indexes=carried_subset,
+                            fixed_source_centers={support_index: hierarchy.target.rounded_center},
+                        )
+                    except ValueError:
+                        continue
+
+                    alternate_endpoint_centers = tuple(
+                        alternate_positions[endpoint.object_ref]
+                        for endpoint in support.child.endpoints
+                    )
+                    alternate_mediator_center = (
+                        sum(center[0] for center in alternate_endpoint_centers)
+                        // support.child.arity,
+                        sum(center[1] for center in alternate_endpoint_centers)
+                        // support.child.arity,
+                    )
+                    role_endpoint_centers = tuple(
+                        redelivery_positions[endpoint.object_ref]
+                        for endpoint in support.child.endpoints
+                    )
+                    role_dynamic = _hierarchy_projected_group_footprint(
+                        support.child,
+                        endpoint_centers=role_endpoint_centers,
+                        mediator_center=hierarchy.target.rounded_center,
+                    )
+                    alternate_dynamic = _hierarchy_projected_group_footprint(
+                        support.child,
+                        endpoint_centers=alternate_endpoint_centers,
+                        mediator_center=alternate_mediator_center,
+                    )
+                    source_x, source_y = support.source.center
+                    role_source = frozenset(
+                        (
+                            hierarchy.target.rounded_center[0] + x - source_x,
+                            hierarchy.target.rounded_center[1] + y - source_y,
+                        )
+                        for x, y in support.source.cells
+                    )
+                    alternate_source = frozenset(
+                        (
+                            alternate_mediator_center[0] + x - source_x,
+                            alternate_mediator_center[1] + y - source_y,
+                        )
+                        for x, y in support.source.cells
+                    )
+                    stationary_occupied = (
+                        frozenset(
+                            (x, y)
+                            for y, row in enumerate(role_scene.cells)
+                            for x, value in enumerate(row)
+                            if value != role_scene.background
+                        )
+                        - role_dynamic
+                        - role_source
+                    )
+                    alternate_mutable = (
+                        role_dynamic | alternate_dynamic | role_source | alternate_source
+                    )
+                    target_surface = frozenset(hierarchy.target.cells)
+                    if (
+                        len(alternate_source) != len(support.source.cells)
+                        or not _hierarchy_cells_in_bounds(scene, alternate_source)
+                        or any(
+                            alternate_source
+                            & _translated_object_footprint(
+                                endpoint,
+                                center=alternate_positions[endpoint.object_ref],
+                            )
+                            for endpoint in support.child.endpoints
+                        )
+                        or bool(alternate_source & target_surface)
+                        or bool((alternate_dynamic | alternate_source) & stationary_occupied)
+                        or any(
+                            carried_alternate_scene.cells[y][x] != role_scene.cells[y][x]
+                            for y in range(scene.height)
+                            for x in range(scene.width)
+                            if (x, y) not in alternate_mutable
+                        )
+                        or any(
+                            carried_alternate_scene.cells[y][x] != baseline_scene.cells[y][x]
+                            or deposited_alternate_scene.cells[y][x] != baseline_scene.cells[y][x]
+                            for x, y in hierarchy.target.cells
+                        )
+                        or any(
+                            carried_alternate_scene.cells[
+                                alternate_mediator_center[1] + y - source_y
+                            ][alternate_mediator_center[0] + x - source_x]
+                            != scene.cells[y][x]
+                            for x, y in support.source.cells
+                        )
+                    ):
+                        continue
+                    carried_alternate_certificate = source_subset_certificate(
+                        carried_alternate_scene
+                    )
+                    deposited_alternate_certificate = source_subset_certificate(
+                        deposited_alternate_scene
+                    )
+                    target_x, target_y = hierarchy.target.rounded_center
+                    if not (
+                        carried_alternate_certificate != deposited_alternate_certificate
+                        and all(
+                            deposited_alternate_scene.cells[target_y + y - source_y][
+                                target_x + x - source_x
+                            ]
+                            == scene.cells[y][x]
+                            for x, y in support.source.cells
+                        )
+                    ):
+                        continue
+                    try:
+                        alternate_detachment = require_masked_lineage_only_if_needed(
+                            PlannedClick(
+                                coordinate=Coordinate(*alternate_predecessor),
+                                purpose=VisualActionPurpose.PROGRESS,
+                                expectation=(
+                                    "move the uniquely selected endpoint to its exact "
+                                    "historical predecessor to discriminate deposition from "
+                                    "continued attachment"
+                                ),
+                                mechanic_ref=hierarchy.mechanic_ref,
+                                plan_id=continuation_plan_id,
+                                plan_signature=recovery_signature,
+                                target_center=hierarchy.target.rounded_center,
+                                mediator_color=support.child.mediator.color,
+                                arity=support.child.arity,
+                                expected_active_center=alternate_predecessor,
+                                required_child_protected_raster_hash=(
+                                    role_certificate.protected_raster_hash
+                                ),
+                                expected_child_protected_raster_hash=(
+                                    carried_alternate_certificate.protected_raster_hash
+                                ),
+                                expected_visible_endpoint_count=(
+                                    carried_alternate_certificate.visible_endpoint_count
+                                ),
+                                expected_visible_mediator_count=(
+                                    carried_alternate_certificate.visible_mediator_count
+                                ),
+                                required_carried_source_support_indexes=subset_indexes,
+                                expected_carried_source_support_indexes=subset_indexes,
+                                carrier_source_detachment_step=True,
+                                expected_deposited_source_protected_raster_hash=(
+                                    deposited_alternate_certificate.protected_raster_hash
+                                ),
+                                expected_deposited_visible_endpoint_count=(
+                                    deposited_alternate_certificate.visible_endpoint_count
+                                ),
+                                expected_deposited_visible_mediator_count=(
+                                    deposited_alternate_certificate.visible_mediator_count
+                                ),
+                            ),
+                            role_scene,
+                        )
+                    except ValueError:
+                        continue
+                    continuation_candidates[alternate_ref] = (
+                        redelivery,
+                        role_exchange,
+                        alternate_detachment,
+                    )
+
+                alternative_inverse = _carrier_source_attachment_alternative_inverse(
+                    route,
+                    baseline_positions=baseline_positions,
+                    safe_endpoint_refs=frozenset(continuation_candidates),
+                )
+                if alternative_inverse is None:
+                    return ()
+                return continuation_candidates[alternative_inverse[0]]
+
             for mover_index, (mover_ref, point) in enumerate(route):
                 if mover_ref != delivery_active_ref:
                     if delivery_colors[mover_ref] == hierarchy.active_color:
@@ -7662,10 +8032,16 @@ def _build_hierarchy_plan(
                             deposited_inverse_certificate = source_subset_certificate(
                                 deposited_inverse_scene
                             )
+                            attachment_continuation = attachment_continuation_actions(
+                                restored_positions=inverse_positions,
+                                restored_colors=delivery_colors,
+                                restored_scene=carried_inverse_scene,
+                            )
                             source_x, source_y = support.source.center
                             target_x, target_y = hierarchy.target.rounded_center
                             detachment_branches_are_exact = bool(
                                 deposited_inverse_certificate != carried_inverse_certificate
+                                and attachment_continuation
                                 and all(
                                     deposited_inverse_scene.cells[y][x]
                                     == expected_scene.cells[y][x]
@@ -7720,6 +8096,9 @@ def _build_hierarchy_plan(
                                         required_carried_source_support_indexes=subset_indexes,
                                         expected_carried_source_support_indexes=subset_indexes,
                                         carrier_source_detachment_step=True,
+                                        carrier_source_attachment_continuation_actions=(
+                                            attachment_continuation
+                                        ),
                                         expected_deposited_source_protected_raster_hash=(
                                             deposited_inverse_certificate.protected_raster_hash
                                         ),
@@ -10255,7 +10634,21 @@ def _single_hierarchy_planned_click_is_safe(
 
     if not planned.plan_signature.startswith(_HIERARCHY_PLAN_PREFIXES):
         return True
-    if planned.carrier_source_detachment_step:
+    if planned.carrier_source_target_center_role_exchange_step:
+        if (
+            not _carrier_source_delivery_step_is_compatible(planned)
+            or any(target.rounded_center == planned.target_center for target in scene.targets)
+            or len(
+                tuple(
+                    mediator
+                    for mediator in scene.mediators
+                    if mediator.rounded_center == planned.target_center
+                )
+            )
+            != 1
+        ):
+            return False
+    elif planned.carrier_source_detachment_step:
         if (
             not _carrier_source_detachment_step_is_compatible(planned)
             or any(target.rounded_center == planned.target_center for target in scene.targets)
@@ -10392,6 +10785,8 @@ def _carrier_source_recovery_action_signature(planned: PlannedClick) -> tuple[ob
         planned.carrier_source_delivery_step,
         planned.completes_carrier_source_delivery,
         planned.carrier_source_detachment_step,
+        planned.carrier_source_target_center_role_exchange_step,
+        planned.carrier_source_attachment_continuation_actions,
         planned.expected_deposited_source_protected_raster_hash,
         planned.expected_deposited_visible_endpoint_count,
         planned.expected_deposited_visible_mediator_count,
@@ -10408,6 +10803,7 @@ def _carrier_source_delivery_step_is_compatible(planned: PlannedClick) -> bool:
         and planned.carrier_source_recovery_alternative is None
         and not planned.carrier_source_recovery_candidates
         and not planned.carrier_source_delivery_actions
+        and not planned.carrier_source_attachment_continuation_actions
         and len(required_indexes) == 1
         and planned.expected_carried_source_support_indexes == required_indexes
         and planned.required_child_protected_raster_hash is not None
@@ -10425,6 +10821,14 @@ def _carrier_source_delivery_step_is_compatible(planned: PlannedClick) -> bool:
         and not planned.completes_local_target
         and not planned.stages_for_switch
         and not planned.carrier_source_detachment_step
+        and (
+            not planned.carrier_source_target_center_role_exchange_step
+            or (
+                planned.purpose is VisualActionPurpose.PROBE
+                and planned.plan_id.startswith("visual-carrier-source-detachment:")
+                and not planned.completes_carrier_source_delivery
+            )
+        )
         and planned.expected_deposited_source_protected_raster_hash is None
         and planned.expected_deposited_visible_endpoint_count is None
         and planned.expected_deposited_visible_mediator_count is None
@@ -10437,6 +10841,52 @@ def _carrier_source_delivery_step_is_compatible(planned: PlannedClick) -> bool:
                 )
             )
         )
+    )
+
+
+def _carrier_source_attachment_continuation_actions_are_compatible(
+    planned: PlannedClick,
+) -> bool:
+    """Validate one consequence-gated alternative-endpoint detachment route."""
+
+    actions = planned.carrier_source_attachment_continuation_actions
+    expected_indexes = planned.expected_carried_source_support_indexes
+    if (
+        len(actions) != 3
+        or len(expected_indexes) != 1
+        or not actions[0].plan_id.startswith("visual-carrier-source-detachment:")
+        or actions[0].required_child_protected_raster_hash
+        != planned.expected_child_protected_raster_hash
+    ):
+        return False
+    for index, action in enumerate(actions):
+        if (
+            action.plan_signature != planned.plan_signature
+            or action.mechanic_ref != planned.mechanic_ref
+            or action.plan_id != actions[0].plan_id
+            or action.target_center != planned.target_center
+            or action.mediator_color != planned.mediator_color
+            or action.arity != planned.arity
+            or action.required_carried_source_support_indexes != expected_indexes
+            or action.expected_carried_source_support_indexes != expected_indexes
+            or action.carrier_source_attachment_continuation_actions
+            or action.carrier_source_target_center_role_exchange_step != (index == 1)
+        ):
+            return False
+        if index and (
+            actions[index - 1].expected_child_protected_raster_hash
+            != action.required_child_protected_raster_hash
+        ):
+            return False
+    return bool(
+        actions[0].purpose is VisualActionPurpose.PROGRESS
+        and actions[1].purpose is VisualActionPurpose.PROBE
+        and actions[2].purpose is VisualActionPurpose.PROGRESS
+        and _carrier_source_delivery_step_is_compatible(actions[0])
+        and _carrier_source_delivery_step_is_compatible(actions[1])
+        and not actions[0].completes_carrier_source_delivery
+        and not actions[1].completes_carrier_source_delivery
+        and _carrier_source_detachment_step_is_compatible(actions[2])
     )
 
 
@@ -10453,6 +10903,11 @@ def _carrier_source_detachment_step_is_compatible(planned: PlannedClick) -> bool
         and not planned.carrier_source_recovery_candidates
         and not planned.carrier_source_delivery_actions
         and planned.carrier_source_detachment_probe is None
+        and not planned.carrier_source_target_center_role_exchange_step
+        and (
+            not planned.carrier_source_attachment_continuation_actions
+            or _carrier_source_attachment_continuation_actions_are_compatible(planned)
+        )
         and len(required_indexes) == 1
         and planned.expected_carried_source_support_indexes == required_indexes
         and planned.required_child_protected_raster_hash is not None
@@ -10533,6 +10988,21 @@ def _carrier_source_delivery_actions_are_compatible(alternative: PlannedClick) -
         != actions[-2].expected_visible_endpoint_count
         or final_probe.expected_visible_mediator_count
         != actions[-2].expected_visible_mediator_count
+        or not final_probe.carrier_source_attachment_continuation_actions
+        or final_probe.carrier_source_attachment_continuation_actions[0].coordinate
+        != actions[-1].coordinate
+        or final_probe.carrier_source_attachment_continuation_actions[
+            0
+        ].expected_child_protected_raster_hash
+        != actions[-1].expected_child_protected_raster_hash
+        or final_probe.carrier_source_attachment_continuation_actions[
+            0
+        ].expected_visible_endpoint_count
+        != actions[-1].expected_visible_endpoint_count
+        or final_probe.carrier_source_attachment_continuation_actions[
+            0
+        ].expected_visible_mediator_count
+        != actions[-1].expected_visible_mediator_count
     ):
         return False
     return True
@@ -10583,6 +11053,8 @@ def _carrier_source_recovery_state_candidate_is_compatible(
         not candidate.carrier_source_recovery_candidates
         and not candidate.carrier_source_delivery_actions
         and candidate.carrier_source_detachment_probe is None
+        and not candidate.carrier_source_target_center_role_exchange_step
+        and not candidate.carrier_source_attachment_continuation_actions
         and not candidate.carrier_source_delivery_step
         and not candidate.carrier_source_detachment_step
         and not candidate.completes_carrier_source_delivery
@@ -13556,11 +14028,26 @@ class VisualCausalPolicy:
                         "source remained deposited at the former target; continuation is "
                         "reopened only from this observation"
                     )
+                elif (
+                    carrier_source_recovery_candidate.carrier_source_attachment_continuation_actions
+                    and _carrier_source_attachment_continuation_actions_are_compatible(
+                        carrier_source_recovery_candidate
+                    )
+                ):
+                    self._plan.extend(
+                        carrier_source_recovery_candidate.carrier_source_attachment_continuation_actions
+                    )
+                    self._last_probe_failed = False
+                    residual = (
+                        "the exact inverse restored the pre-delivery raster with the source "
+                        "still attached; one exact target re-entry and alternative-endpoint "
+                        "detachment discriminator was queued from this consequence"
+                    )
                 else:
                     self._last_probe_failed = True
                     residual = (
-                        "the exact inverse restored the pre-delivery raster with the source "
-                        "still attached; repeated target delivery is rejected"
+                        "the alternative exact inverse restored the source with its carrier; "
+                        "no further endpoint-detachment continuation is authorized"
                     )
             elif (
                 carrier_source_delivery_action
