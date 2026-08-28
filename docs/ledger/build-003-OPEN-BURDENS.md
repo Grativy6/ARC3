@@ -611,7 +611,7 @@ Do not delete a burden when later evidence resolves it. Append a resolution with
 
 ## B-003-0042 - Both carried sources have one unique paired destination hypothesis but no official consequence
 
-- **Status:** OPEN; EXACT D0D210D REPLAY AND LOCAL GATES PASSED; HOSTED LAUNCH GATE FAILED; OFFICIAL CONSEQUENCE PENDING
+- **Status:** RESOLVED BY OFFICIAL FAILED_MECHANISM; EXACT INVERSE RESTORATION OBSERVED
 - **Stage:** 10 and target-game continuation
 - **Opened:** 2026-08-27
 - **Owner:** Codex
@@ -626,10 +626,11 @@ Do not delete a burden when later evidence resolves it. Append a resolution with
 - **Final exact-head gate evidence:** Exact evidence head `d0d210df6fafa513fd2e6a500f6709f5c81816cb`, tree `c035fbfce532a97b2015c78e8ccacbc06e3e3e06`, repeated sealed replay and every clean-source gate with zero environment actions. All five hosted workflows and nine jobs terminated, but both Windows package-only jobs timed out at 3,300 seconds and push Windows ARC3 CI exceeded its 75-minute outer ceiling. Six jobs passed; the three non-successes are preserved under B-003-0043. Campaign 41 was not launched.
 - **Impact:** Build 003 remains incomplete at official `NOT_FINISHED`, `4/6`, zero `WIN`. Offline reconstruction, a complete mechanic map, synthetic paired placement, strict replay, tests, or hosted gates cannot substitute for authoritative completion.
 - **Resolution condition:** A frozen exact candidate preserves all 267 Campaign 40 submissions and mechanics receipts, selects and cancels exactly one paired-delivery action with zero environment actions, passes clean-source integrity and every hosted gate, and authorized public-development continuation returns a bounded official consequence or authoritative `GameState.WIN`. Only `WIN` completes the target.
+- **Resolution evidence:** Exact repair head `6f117d2c265e7922f430e4ff0afcc61b7fad27cb`, tree `7c37a06eba90175567d97cf0a64aa280272bbc17`, passed strict replay, bound local gates, launch audit, and all five hosted workflows/nine jobs. Campaign 41 then submitted the ten-action forward route. Both carried sources reached the selected destinations, but the official terminal remained `NOT_FINISHED` at `4/6`. The ten-action inverse restored every gameplay cell at `x=1..63`; zero `WIN` occurred. Paired destination sufficiency is rejected, while the carried-source and inverse mechanics remain supported.
 
 ## B-003-0043 - Campaign 41 exact head reached independent hosted Windows time ceilings
 
-- **Status:** OPEN; NARROW FULL-SCOPE REPAIR LOCALLY VERIFIED; EXACT HEAD AND HOSTED GATES PENDING
+- **Status:** RESOLVED BY EXACT 6F117D2 HOSTED GATES; D0D210D FAILURES PRESERVED
 - **Stage:** 10 and 11
 - **Opened:** 2026-08-27
 - **Owner:** Codex
@@ -639,3 +640,17 @@ Do not delete a burden when later evidence resolves it. Append a resolution with
 - **Local evidence:** Nineteen focused verifier/workflow cases passed; Ruff lint/format, strict MyPy, compilation, JSON and workflow YAML parsing, and diff hygiene passed. The first concurrent live-tree attempt remains `FAILED_INFRASTRUCTURE` because two bounded repository snapshots detected changing OneDrive bytes while the other 17 cases passed; the unchanged sequential rerun passed all 19. The repair changed no learner or gameplay byte and issued no environment action.
 - **Impact:** Build 003 remains incomplete at official `NOT_FINISHED`, `4/6`, and zero `WIN`. No official action was sent. Replay, local gates, passing duplicate jobs, or a longer ceiling cannot substitute for authoritative `GameState.WIN`.
 - **Resolution condition:** A new frozen repair head leaves learner and gameplay bytes unchanged, repeats strict Campaign 40 replay and bound integrity/action/package gates, and completes all five required workflows and all nine jobs without timeout, cancellation, or failure. Only then may authorized development-only Campaign 41 play begin.
+- **Resolution evidence:** Exact repair `6f117d2c265e7922f430e4ff0afcc61b7fad27cb`, tree `7c37a06eba90175567d97cf0a64aa280272bbc17`, repeated strict replay and every bound local gate, then passed all five required workflows and all nine jobs. Package Windows jobs completed the unchanged 1,082-item guarded selection under the 3,900-second ceiling, and both ordinary Windows CI jobs completed the unchanged full coverage command under the 90-minute ceiling. The three exact-`d0d210d` non-successes remain immutable `FAILED_INFRASTRUCTURE` evidence.
+
+## B-003-0044 - Paired terminal has one untested complementary active-child orientation
+
+- **Status:** OPEN; CAMPAIGN 41 SEALED; IMPLEMENTATION AND GATES PENDING
+- **Stage:** 10 and target-game continuation
+- **Opened:** 2026-08-28
+- **Owner:** Codex
+- **Burden:** Campaign 41 rejected the selected paired carried-source geometry under the active role produced by its final placement. The same terminal has exactly one complementary child endpoint whose role can be activated without moving either endpoint group or either source. No official consequence for that orientation, level progress, or `WIN` has been observed.
+- **Preserved evidence:** Campaign 41 root `C:\a\arc3-b003-play\build003-r11l-mechanical-seed7-6f117d2-campaign41`; raw final `NOT_FINISHED`; score boundary `GAME_OVER`; `levels_completed=4/6`; 287 submissions; 284 non-reset actions; three legal resets; zero `WIN`; recording SHA-256 `d3b3b7fdef431f0bfc86bdee5375631e2cff6a12796dd70091ff1d60824b2b7b`; trace tail `sha256:2d0651bd48b33a2e964ae6b2f5ae8818fb9c706f6d92a6b100640cf68b5f5e87`; run receipt hash `sha256:f15ccba685e1af28ad86765c4da5bc263b344084711d3a9be7f5cd3beb188a08`. Exposure is 79 development events and zero holdout events.
+- **Smallest candidate:** Recreate the exact paired terminal, derive the complementary placed-child endpoint and current active terminal endpoint from route lineage, then submit one role exchange. The frozen evidence coordinates are complementary `(9,15)` and active `(60,28)`; production may not store them as game, level, campaign, or coordinate constants. Exact `NOT_FINISHED` must change only the two endpoint shells, after which the active role is restored and the certified paired inverse runs. Do not enumerate any other endpoint or destination.
+- **Safety boundary:** Require unique terminal reconstruction, unique endpoint lineage, exactly one active endpoint, a 24-gameplay-cell role-only raster, unchanged cargo, target, static cells and visible counts, exact terminal restoration, and the existing complete inverse. `WIN` and level progress terminate the old-level plan. `GAME_OVER`, ambiguous identity, unavailable action, a third raster, protected mutation, or restoration mismatch fails closed and preserves the consequence.
+- **Impact:** Build 003 remains incomplete at official `NOT_FINISHED`, `4/6`, zero `WIN`. A complete mechanic map, exact projection, replay, tests, or restoration cannot substitute for authoritative completion.
+- **Resolution condition:** A frozen exact implementation strictly replays all 287 Campaign 41 submissions and mechanics receipts with zero environment action, selects and cancels only the complementary role action, passes clean-source and every hosted gate, and authorized development play returns a bounded official consequence or authoritative `GameState.WIN`. Only `WIN` completes the target.
