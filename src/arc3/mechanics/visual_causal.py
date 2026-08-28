@@ -296,6 +296,11 @@ class PlannedClick:
     carrier_source_paired_cargo_restoration_actions: tuple[PlannedClick, ...] = ()
     carrier_source_paired_cargo_restoration_step: bool = False
     completes_carrier_source_paired_cargo_restoration: bool = False
+    carrier_source_paired_cargo_role_handoff_family: bool = False
+    carrier_source_paired_cargo_role_handoff: PlannedClick | None = None
+    carrier_source_paired_cargo_role_handoff_step: bool = False
+    carrier_source_paired_cargo_role_restoration_actions: tuple[PlannedClick, ...] = ()
+    carrier_source_paired_cargo_role_restoration_step: bool = False
     expected_deposited_source_protected_raster_hash: str | None = None
     expected_deposited_visible_endpoint_count: int | None = None
     expected_deposited_visible_mediator_count: int | None = None
@@ -10705,11 +10710,15 @@ def _single_hierarchy_planned_click_is_safe(
     paired_cargo_step = bool(
         planned.carrier_source_paired_cargo_step
         or planned.carrier_source_paired_cargo_restoration_step
+        or planned.carrier_source_paired_cargo_role_handoff_step
+        or planned.carrier_source_paired_cargo_role_restoration_step
     )
     if paired_cargo_step:
         if not (
             _carrier_source_paired_cargo_step_is_compatible(planned)
             or _carrier_source_paired_cargo_restoration_step_is_compatible(planned)
+            or _carrier_source_paired_cargo_role_handoff_step_is_compatible(planned)
+            or _carrier_source_paired_cargo_role_restoration_step_is_compatible(planned)
         ):
             return False
     elif planned.carrier_source_target_center_role_exchange_step:
@@ -10875,6 +10884,11 @@ def _carrier_source_recovery_action_signature(planned: PlannedClick) -> tuple[ob
         planned.carrier_source_paired_cargo_restoration_actions,
         planned.carrier_source_paired_cargo_restoration_step,
         planned.completes_carrier_source_paired_cargo_restoration,
+        planned.carrier_source_paired_cargo_role_handoff_family,
+        planned.carrier_source_paired_cargo_role_handoff,
+        planned.carrier_source_paired_cargo_role_handoff_step,
+        planned.carrier_source_paired_cargo_role_restoration_actions,
+        planned.carrier_source_paired_cargo_role_restoration_step,
         planned.expected_deposited_source_protected_raster_hash,
         planned.expected_deposited_visible_endpoint_count,
         planned.expected_deposited_visible_mediator_count,
@@ -11940,6 +11954,7 @@ def _carrier_source_paired_cargo_plan_after_observed_restoration(
     *,
     carried_indexes: tuple[int, ...],
     rejected_signatures: set[str] | frozenset[str],
+    include_terminal_role_handoff: bool = False,
 ) -> _HierarchyPlan | None:
     """Derive one reversible route to the rejected external-chain supports."""
 
@@ -12308,7 +12323,17 @@ def _carrier_source_paired_cargo_plan_after_observed_restoration(
             )
         ),
     )
-    suffix = hashlib.sha256(repr(identity).encode("ascii")).hexdigest()[:24]
+    base_suffix = hashlib.sha256(repr(identity).encode("ascii")).hexdigest()[:24]
+    base_signature = f"affine-carrier-source-occlusion-hierarchy-recovery:{base_suffix}"
+    if include_terminal_role_handoff and base_signature not in rejected_signatures:
+        return None
+    suffix = (
+        hashlib.sha256(
+            repr((identity, "paired-terminal-active-role-handoff-v1")).encode("ascii")
+        ).hexdigest()[:24]
+        if include_terminal_role_handoff
+        else base_suffix
+    )
     signature = f"affine-carrier-source-occlusion-hierarchy-recovery:{suffix}"
     if signature in rejected_signatures:
         return None
@@ -12356,6 +12381,7 @@ def _carrier_source_paired_cargo_plan_after_observed_restoration(
                 carrier_source_paired_cargo_step=True,
                 completes_carrier_source_paired_cargo=index + 1 == len(transitions),
                 carrier_source_paired_cargo_initial_protected_raster_hash=(initial_boundary_hash),
+                carrier_source_paired_cargo_role_handoff_family=(include_terminal_role_handoff),
             )
         )
     for index, (purpose, _coordinate, inverse, group, required_scene, expected_scene) in enumerate(
@@ -12384,11 +12410,125 @@ def _carrier_source_paired_cargo_plan_after_observed_restoration(
                 carrier_source_paired_cargo_initial_protected_raster_hash=(initial_boundary_hash),
                 carrier_source_paired_cargo_restoration_step=True,
                 completes_carrier_source_paired_cargo_restoration=(index + 1 == len(transitions)),
+                carrier_source_paired_cargo_role_handoff_family=(include_terminal_role_handoff),
             )
+        )
+    role_handoff: PlannedClick | None = None
+    if include_terminal_role_handoff:
+        terminal_positions = dict(initial_positions)
+        terminal_colors = dict(initial_colors)
+        active_ref = active_refs[0]
+        for purpose, coordinate, _inverse, _group, _required, _expected in transitions:
+            if purpose is VisualActionPurpose.PROBE:
+                selected_refs = tuple(
+                    ref for ref, position in terminal_positions.items() if position == coordinate
+                )
+                if len(selected_refs) != 1 or selected_refs[0] == active_ref:
+                    return None
+                selected_ref = selected_refs[0]
+                terminal_colors[active_ref], terminal_colors[selected_ref] = (
+                    terminal_colors[selected_ref],
+                    terminal_colors[active_ref],
+                )
+                active_ref = selected_ref
+            else:
+                terminal_positions[active_ref] = coordinate
+        current_active_refs = tuple(
+            ref for ref, color in terminal_colors.items() if color == hierarchy.active_color
+        )
+        if len(current_active_refs) != 1 or current_active_refs[0] != active_ref:
+            return None
+        terminal_group = transitions[-1][3]
+        complementary_groups = tuple(
+            group for group in hierarchy.children if group != terminal_group
+        )
+        if len(complementary_groups) != 1:
+            return None
+        complementary_group = complementary_groups[0]
+        complementary_progress = tuple(
+            transition
+            for transition in transitions
+            if transition[0] is VisualActionPurpose.PROGRESS
+            and transition[3] == complementary_group
+        )
+        if not complementary_progress:
+            return None
+        complementary_coordinate = complementary_progress[-1][1]
+        complementary_refs = tuple(
+            endpoint.object_ref
+            for endpoint in complementary_group.endpoints
+            if terminal_positions[endpoint.object_ref] == complementary_coordinate
+        )
+        if (
+            len(complementary_refs) != 1
+            or complementary_refs[0] == active_ref
+            or terminal_colors[complementary_refs[0]] == hierarchy.active_color
+        ):
+            return None
+        complementary_ref = complementary_refs[0]
+        terminal_scene = safe_state(terminal_positions, terminal_colors)
+        handoff_colors = dict(terminal_colors)
+        handoff_colors[active_ref], handoff_colors[complementary_ref] = (
+            handoff_colors[complementary_ref],
+            handoff_colors[active_ref],
+        )
+        handoff_scene = safe_state(terminal_positions, handoff_colors)
+        if terminal_scene is None or handoff_scene is None:
+            return None
+        terminal_certificate = certificate(terminal_scene)
+        handoff_certificate = certificate(handoff_scene)
+        role_restoration = PlannedClick(
+            coordinate=Coordinate(*terminal_positions[active_ref]),
+            purpose=VisualActionPurpose.PROBE,
+            expectation="restore the paired-terminal active endpoint before the exact inverse",
+            mechanic_ref=hierarchy.mechanic_ref,
+            plan_id=f"visual-carrier-source-paired-cargo-role-restoration:{suffix}",
+            plan_signature=signature,
+            target_center=hierarchy.target.rounded_center,
+            mediator_color=terminal_group.mediator.color,
+            arity=terminal_group.arity,
+            expected_active_center=terminal_positions[active_ref],
+            required_child_protected_raster_hash=handoff_certificate.protected_raster_hash,
+            expected_child_protected_raster_hash=terminal_certificate.protected_raster_hash,
+            expected_visible_endpoint_count=terminal_certificate.visible_endpoint_count,
+            expected_visible_mediator_count=terminal_certificate.visible_mediator_count,
+            required_carried_source_support_indexes=carried_indexes,
+            expected_carried_source_support_indexes=carried_indexes,
+            carrier_source_paired_cargo_initial_protected_raster_hash=initial_boundary_hash,
+            carrier_source_paired_cargo_role_handoff_family=True,
+            carrier_source_paired_cargo_role_restoration_step=True,
+        )
+        role_handoff = PlannedClick(
+            coordinate=Coordinate(*complementary_coordinate),
+            purpose=VisualActionPurpose.PROBE,
+            expectation=(
+                "handoff the paired-terminal active role to the complementary terminal endpoint"
+            ),
+            mechanic_ref=hierarchy.mechanic_ref,
+            plan_id=f"visual-carrier-source-paired-cargo-role-handoff:{suffix}",
+            plan_signature=signature,
+            target_center=hierarchy.target.rounded_center,
+            mediator_color=complementary_group.mediator.color,
+            arity=complementary_group.arity,
+            expected_active_center=complementary_coordinate,
+            required_child_protected_raster_hash=terminal_certificate.protected_raster_hash,
+            expected_child_protected_raster_hash=handoff_certificate.protected_raster_hash,
+            expected_visible_endpoint_count=handoff_certificate.visible_endpoint_count,
+            expected_visible_mediator_count=handoff_certificate.visible_mediator_count,
+            required_carried_source_support_indexes=carried_indexes,
+            expected_carried_source_support_indexes=carried_indexes,
+            carrier_source_paired_cargo_initial_protected_raster_hash=initial_boundary_hash,
+            carrier_source_paired_cargo_role_handoff_family=True,
+            carrier_source_paired_cargo_role_handoff_step=True,
+            carrier_source_paired_cargo_role_restoration_actions=(
+                role_restoration,
+                *restoration,
+            ),
         )
     forward[-1] = replace(
         forward[-1],
         carrier_source_paired_cargo_restoration_actions=tuple(restoration),
+        carrier_source_paired_cargo_role_handoff=role_handoff,
     )
     return _HierarchyPlan(
         actions=tuple(forward),
@@ -12669,6 +12809,10 @@ def _carrier_source_paired_cargo_restoration_step_is_compatible(
         and not planned.carrier_source_paired_cargo_step
         and not planned.completes_carrier_source_paired_cargo
         and not planned.carrier_source_paired_cargo_restoration_actions
+        and planned.carrier_source_paired_cargo_role_handoff is None
+        and not planned.carrier_source_paired_cargo_role_handoff_step
+        and not planned.carrier_source_paired_cargo_role_restoration_actions
+        and not planned.carrier_source_paired_cargo_role_restoration_step
     )
 
 
@@ -12699,6 +12843,8 @@ def _carrier_source_paired_cargo_restoration_actions_are_compatible(
             or action.expected_carried_source_support_indexes != expected_indexes
             or action.carrier_source_paired_cargo_initial_protected_raster_hash
             != planned.carrier_source_paired_cargo_initial_protected_raster_hash
+            or action.carrier_source_paired_cargo_role_handoff_family
+            != planned.carrier_source_paired_cargo_role_handoff_family
             or action.completes_carrier_source_paired_cargo_restoration
             != (index + 1 == len(actions))
         ):
@@ -12711,6 +12857,94 @@ def _carrier_source_paired_cargo_restoration_actions_are_compatible(
     return True
 
 
+def _carrier_source_paired_cargo_role_restoration_step_is_compatible(
+    planned: PlannedClick,
+) -> bool:
+    """Require the single exact role restoration preceding the paired inverse."""
+
+    return bool(
+        planned.carrier_source_paired_cargo_role_handoff_family
+        and planned.carrier_source_paired_cargo_role_restoration_step
+        and planned.plan_id.startswith("visual-carrier-source-paired-cargo-role-restoration:")
+        and planned.purpose is VisualActionPurpose.PROBE
+        and _carrier_source_paired_cargo_common_is_compatible(planned)
+        and not planned.carrier_source_paired_cargo_step
+        and not planned.completes_carrier_source_paired_cargo
+        and not planned.carrier_source_paired_cargo_restoration_actions
+        and not planned.carrier_source_paired_cargo_restoration_step
+        and not planned.completes_carrier_source_paired_cargo_restoration
+        and planned.carrier_source_paired_cargo_role_handoff is None
+        and not planned.carrier_source_paired_cargo_role_handoff_step
+        and not planned.carrier_source_paired_cargo_role_restoration_actions
+    )
+
+
+def _carrier_source_paired_cargo_role_restoration_actions_are_compatible(
+    planned: PlannedClick,
+) -> bool:
+    """Validate role restoration followed by the already-certified exact inverse."""
+
+    actions = planned.carrier_source_paired_cargo_role_restoration_actions
+    if len(actions) < 3 or not actions:
+        return False
+    role_restoration, *inverse = actions
+    expected_indexes = planned.expected_carried_source_support_indexes
+    if (
+        not _carrier_source_paired_cargo_role_restoration_step_is_compatible(role_restoration)
+        or not all(
+            _carrier_source_paired_cargo_restoration_step_is_compatible(action)
+            for action in inverse
+        )
+        or not inverse[-1].completes_carrier_source_paired_cargo_restoration
+        or role_restoration.required_child_protected_raster_hash
+        != planned.expected_child_protected_raster_hash
+        or role_restoration.expected_child_protected_raster_hash
+        != inverse[0].required_child_protected_raster_hash
+        or inverse[-1].expected_child_protected_raster_hash
+        != planned.carrier_source_paired_cargo_initial_protected_raster_hash
+    ):
+        return False
+    return bool(
+        all(action.plan_signature == planned.plan_signature for action in actions)
+        and all(action.mechanic_ref == planned.mechanic_ref for action in actions)
+        and all(action.target_center == planned.target_center for action in actions)
+        and all(action.carrier_source_paired_cargo_role_handoff_family for action in actions)
+        and all(
+            action.required_carried_source_support_indexes == expected_indexes
+            and action.expected_carried_source_support_indexes == expected_indexes
+            for action in actions
+        )
+        and all(
+            actions[index - 1].expected_child_protected_raster_hash
+            == action.required_child_protected_raster_hash
+            for index, action in enumerate(actions)
+            if index
+        )
+    )
+
+
+def _carrier_source_paired_cargo_role_handoff_step_is_compatible(
+    planned: PlannedClick,
+) -> bool:
+    """Require one complementary paired-terminal role handoff and closed restoration."""
+
+    return bool(
+        planned.carrier_source_paired_cargo_role_handoff_family
+        and planned.carrier_source_paired_cargo_role_handoff_step
+        and planned.plan_id.startswith("visual-carrier-source-paired-cargo-role-handoff:")
+        and planned.purpose is VisualActionPurpose.PROBE
+        and _carrier_source_paired_cargo_common_is_compatible(planned)
+        and not planned.carrier_source_paired_cargo_step
+        and not planned.completes_carrier_source_paired_cargo
+        and not planned.carrier_source_paired_cargo_restoration_actions
+        and not planned.carrier_source_paired_cargo_restoration_step
+        and not planned.completes_carrier_source_paired_cargo_restoration
+        and planned.carrier_source_paired_cargo_role_handoff is None
+        and not planned.carrier_source_paired_cargo_role_restoration_step
+        and _carrier_source_paired_cargo_role_restoration_actions_are_compatible(planned)
+    )
+
+
 def _carrier_source_paired_cargo_step_is_compatible(planned: PlannedClick) -> bool:
     """Require one exact carried-pair placement step and a closed terminal inverse."""
 
@@ -12721,12 +12955,26 @@ def _carrier_source_paired_cargo_step_is_compatible(planned: PlannedClick) -> bo
         and _carrier_source_paired_cargo_common_is_compatible(planned)
         and not planned.carrier_source_paired_cargo_restoration_step
         and not planned.completes_carrier_source_paired_cargo_restoration
+        and not planned.carrier_source_paired_cargo_role_handoff_step
+        and not planned.carrier_source_paired_cargo_role_restoration_actions
+        and not planned.carrier_source_paired_cargo_role_restoration_step
         and bool(restoration) == planned.completes_carrier_source_paired_cargo
+        and bool(planned.carrier_source_paired_cargo_role_handoff)
+        == (
+            planned.carrier_source_paired_cargo_role_handoff_family
+            and planned.completes_carrier_source_paired_cargo
+        )
         and (
             not planned.completes_carrier_source_paired_cargo
             or (
                 planned.purpose is VisualActionPurpose.PROGRESS
                 and _carrier_source_paired_cargo_restoration_actions_are_compatible(planned)
+                and (
+                    planned.carrier_source_paired_cargo_role_handoff is None
+                    or _carrier_source_paired_cargo_role_handoff_step_is_compatible(
+                        planned.carrier_source_paired_cargo_role_handoff
+                    )
+                )
             )
         )
     )
@@ -12788,10 +13036,17 @@ def _hierarchy_planned_click_matching_candidate(
         or planned.carrier_source_paired_cargo_restoration_actions
         or planned.carrier_source_paired_cargo_restoration_step
         or planned.completes_carrier_source_paired_cargo_restoration
+        or planned.carrier_source_paired_cargo_role_handoff_family
+        or planned.carrier_source_paired_cargo_role_handoff is not None
+        or planned.carrier_source_paired_cargo_role_handoff_step
+        or planned.carrier_source_paired_cargo_role_restoration_actions
+        or planned.carrier_source_paired_cargo_role_restoration_step
     )
     if paired_cargo_fields and not (
         _carrier_source_paired_cargo_step_is_compatible(planned)
         or _carrier_source_paired_cargo_restoration_step_is_compatible(planned)
+        or _carrier_source_paired_cargo_role_handoff_step_is_compatible(planned)
+        or _carrier_source_paired_cargo_role_restoration_step_is_compatible(planned)
     ):
         return None
     if planned.carrier_source_delivery_step and not _carrier_source_delivery_step_is_compatible(
@@ -14625,6 +14880,7 @@ class VisualCausalPolicy:
         post_receipt_paired_cargo_context: _CarrierSourceAttachmentReplayContext | None = None
         post_receipt_paired_cargo_indexes: tuple[int, ...] = ()
         post_receipt_paired_cargo_restoration: tuple[PlannedClick, ...] = ()
+        post_receipt_paired_cargo_role_handoff_family = False
         mechanic: AffineMechanic | None = None
         before_scene = extract_visual_scene(before.frames[-1])
         after_scene = extract_visual_scene(observation.frames[-1])
@@ -14739,6 +14995,16 @@ class VisualCausalPolicy:
             carrier_source_occlusion_hierarchy_recovery_action
             and carrier_source_recovery_candidate is not None
             and carrier_source_recovery_candidate.carrier_source_paired_cargo_restoration_step
+        )
+        carrier_source_paired_cargo_role_handoff_action = bool(
+            carrier_source_occlusion_hierarchy_recovery_action
+            and carrier_source_recovery_candidate is not None
+            and carrier_source_recovery_candidate.carrier_source_paired_cargo_role_handoff_step
+        )
+        carrier_source_paired_cargo_role_restoration_action = bool(
+            carrier_source_occlusion_hierarchy_recovery_action
+            and carrier_source_recovery_candidate is not None
+            and carrier_source_recovery_candidate.carrier_source_paired_cargo_role_restoration_step
         )
         carrier_source_untouched_action = bool(
             carrier_source_untouched_discriminator_action
@@ -14886,6 +15152,8 @@ class VisualCausalPolicy:
                 or carrier_source_detachment_action
                 or carrier_source_paired_cargo_action
                 or carrier_source_paired_cargo_restoration_action
+                or carrier_source_paired_cargo_role_handoff_action
+                or carrier_source_paired_cargo_role_restoration_action
                 or (hierarchy_target_readable and hierarchy_parent_target_preserved)
             )
         )
@@ -14994,6 +15262,8 @@ class VisualCausalPolicy:
             and not self._pending_completes_hierarchy
             and not carrier_source_paired_cargo_action
             and not carrier_source_paired_cargo_restoration_action
+            and not carrier_source_paired_cargo_role_handoff_action
+            and not carrier_source_paired_cargo_role_restoration_action
             and observation.state is GameStateName.GAME_OVER
         )
         hierarchy_visible_counts_certified = bool(
@@ -15646,11 +15916,19 @@ class VisualCausalPolicy:
                 else:
                     self._failed_hierarchy_relation_keys.add(hierarchy_relation_key)
                     residual = "the exact equal-weight hierarchy terminal returned GAME_OVER"
-            if carrier_source_paired_cargo_action or carrier_source_paired_cargo_restoration_action:
+            if (
+                carrier_source_paired_cargo_action
+                or carrier_source_paired_cargo_restoration_action
+                or carrier_source_paired_cargo_role_handoff_action
+                or carrier_source_paired_cargo_role_restoration_action
+            ):
                 self._preterminal_hierarchy_retry_signature = None
                 if self._pending_plan_signature is not None:
                     self._failed_plan_signatures.add(self._pending_plan_signature)
-                residual = "the exact paired-cargo placement or inverse returned official GAME_OVER"
+                residual = (
+                    "the exact paired-cargo placement, active-role handoff, or inverse "
+                    "returned official GAME_OVER"
+                )
             elif carrier_source_delivery_action:
                 if hierarchy_relation_key is not None:
                     self._failed_carrier_source_occlusion_hierarchy_relation_keys.add(
@@ -15793,6 +16071,11 @@ class VisualCausalPolicy:
                 "exact pre-discriminator hierarchy restored after child-only sufficiency "
                 "was falsified"
             )
+        elif carrier_source_paired_cargo_role_restoration_action and hierarchy_raster_certified:
+            self._last_probe_failed = False
+            residual = (
+                "the paired-terminal active role restored exactly before the certified inverse"
+            )
         elif hierarchy_recovery_action and not self._plan and hierarchy_raster_certified:
             if (
                 carrier_source_paired_cargo_action
@@ -15804,7 +16087,19 @@ class VisualCausalPolicy:
                 ):
                     if self._pending_plan_signature is not None:
                         self._failed_plan_signatures.add(self._pending_plan_signature)
-                    post_receipt_paired_cargo_restoration = carrier_source_recovery_candidate.carrier_source_paired_cargo_restoration_actions
+                    role_handoff = (
+                        carrier_source_recovery_candidate.carrier_source_paired_cargo_role_handoff
+                    )
+                    if (
+                        carrier_source_recovery_candidate.carrier_source_paired_cargo_role_handoff_family
+                        and role_handoff is not None
+                        and _carrier_source_paired_cargo_role_handoff_step_is_compatible(
+                            role_handoff
+                        )
+                    ):
+                        post_receipt_paired_cargo_restoration = (role_handoff,)
+                    else:
+                        post_receipt_paired_cargo_restoration = carrier_source_recovery_candidate.carrier_source_paired_cargo_restoration_actions
                     self._last_probe_failed = False
                 else:
                     self._last_probe_failed = True
@@ -15814,13 +16109,40 @@ class VisualCausalPolicy:
                     "but the official environment remained NOT_FINISHED"
                 )
             elif (
+                carrier_source_paired_cargo_role_handoff_action
+                and carrier_source_recovery_candidate is not None
+            ):
+                if _carrier_source_paired_cargo_role_restoration_actions_are_compatible(
+                    carrier_source_recovery_candidate
+                ):
+                    post_receipt_paired_cargo_restoration = carrier_source_recovery_candidate.carrier_source_paired_cargo_role_restoration_actions
+                    self._last_probe_failed = False
+                else:
+                    self._last_probe_failed = True
+                residual = (
+                    "the complementary paired-terminal active-role handoff was exact, but "
+                    "the official environment remained NOT_FINISHED"
+                )
+            elif (
                 carrier_source_paired_cargo_restoration_action
                 and carrier_source_recovery_candidate is not None
                 and carrier_source_recovery_candidate.completes_carrier_source_paired_cargo_restoration
             ):
                 if self._pending_plan_signature is not None:
                     self._failed_plan_signatures.add(self._pending_plan_signature)
-                self._last_probe_failed = True
+                attachment_context = self._active_carrier_source_attachment_replay_context
+                carried_indexes = self._active_carried_source_recovery_support_indexes
+                if (
+                    not carrier_source_recovery_candidate.carrier_source_paired_cargo_role_handoff_family
+                    and attachment_context is not None
+                    and len(carried_indexes) == len(attachment_context.carrier_source_supports)
+                ):
+                    post_receipt_paired_cargo_context = attachment_context
+                    post_receipt_paired_cargo_indexes = carried_indexes
+                    post_receipt_paired_cargo_role_handoff_family = True
+                    self._last_probe_failed = False
+                else:
+                    self._last_probe_failed = True
                 residual = (
                     "the exact paired-cargo inverse restored the observed carried-source boundary "
                     "after paired placement remained NOT_FINISHED"
@@ -16203,6 +16525,7 @@ class VisualCausalPolicy:
                 after_scene,
                 carried_indexes=post_receipt_paired_cargo_indexes,
                 rejected_signatures=self._failed_plan_signatures,
+                include_terminal_role_handoff=(post_receipt_paired_cargo_role_handoff_family),
             )
             if paired_cargo_plan is not None:
                 self._plan.extend(paired_cargo_plan.actions)
@@ -16241,6 +16564,8 @@ class VisualCausalPolicy:
                 or carrier_source_candidate.carrier_source_untouched_restoration_step
                 or carrier_source_candidate.carrier_source_paired_cargo_step
                 or carrier_source_candidate.carrier_source_paired_cargo_restoration_step
+                or carrier_source_candidate.carrier_source_paired_cargo_role_handoff_step
+                or carrier_source_candidate.carrier_source_paired_cargo_role_restoration_step
             )
         )
         learner = self._mechanical_learner

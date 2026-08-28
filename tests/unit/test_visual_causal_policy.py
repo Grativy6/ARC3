@@ -6898,6 +6898,16 @@ def test_carrier_source_recovery_rebases_only_the_exact_carried_support(
         )
         is None
     )
+    assert (
+        visual_causal._carrier_source_paired_cargo_plan_after_observed_restoration(
+            replay_context,
+            extract_visual_scene(continued_observation.frames[-1]),
+            carried_indexes=(0, 1),
+            rejected_signatures=set(),
+            include_terminal_role_handoff=True,
+        )
+        is None
+    )
     paired_supports = replay_context.carrier_source_supports
     external_paired_targets = visual_causal._carrier_source_paired_cargo_target_supports(
         scene,
@@ -6974,6 +6984,7 @@ def test_carrier_source_recovery_rebases_only_the_exact_carried_support(
     paired_environment = copy.deepcopy(environment)
     paired_policy = copy.deepcopy(policy)
     paired_observation = continued_observation
+    historical_receipt_count = len(paired_policy.receipts)
     for index, expected in enumerate(paired_cargo_route):
         required_scene = extract_visual_scene(paired_observation.frames[-1])
         assert visual_causal._child_isolation_protected_raster_hash(required_scene) == (
@@ -7015,7 +7026,37 @@ def test_carrier_source_recovery_rebases_only_the_exact_carried_support(
         paired_policy.accept_consequence(paired_observation)
         if index + 1 < len(paired_cargo_inverse):
             assert paired_policy.snapshot()["pending_plan_actions"] == 9 - index
-    assert paired_policy.snapshot()["pending_plan_actions"] == 0
+    assert len(paired_policy.receipts) == historical_receipt_count + 20
+    assert tuple(
+        receipt.action.coordinate for receipt in paired_policy.receipts[historical_receipt_count:]
+    ) == tuple(item.coordinate for item in (*paired_cargo_route, *paired_cargo_inverse))
+    assert paired_policy.receipts[-1].residual == (
+        "the exact paired-cargo inverse restored the observed carried-source boundary "
+        "after paired placement remained NOT_FINISHED"
+    )
+    role_handoff_route = tuple(paired_policy._plan)
+    assert len(role_handoff_route) == 10
+    assert tuple(item.coordinate for item in role_handoff_route) == tuple(
+        item.coordinate for item in paired_cargo_route
+    )
+    assert role_handoff_route[-1].plan_signature != paired_cargo_route[-1].plan_signature
+    assert all(
+        item.carrier_source_paired_cargo_step
+        and item.carrier_source_paired_cargo_role_handoff_family
+        for item in role_handoff_route
+    )
+    role_handoff = role_handoff_route[-1].carrier_source_paired_cargo_role_handoff
+    assert role_handoff is not None
+    assert role_handoff.coordinate == Coordinate(9, 15)
+    assert role_handoff.carrier_source_paired_cargo_role_handoff_step is True
+    assert visual_causal._carrier_source_paired_cargo_role_handoff_step_is_compatible(role_handoff)
+    role_restoration = role_handoff.carrier_source_paired_cargo_role_restoration_actions
+    assert len(role_restoration) == 11
+    assert role_restoration[0].coordinate == Coordinate(60, 28)
+    assert role_restoration[0].carrier_source_paired_cargo_role_restoration_step is True
+    assert tuple(item.coordinate for item in role_restoration[1:]) == tuple(
+        item.coordinate for item in paired_cargo_inverse
+    )
     assert paired_policy.snapshot()["hierarchy_carried_source_support_indexes"] == [0, 1]
     assert paired_environment.carried_source_support_indexes == frozenset({0, 1})
     assert paired_environment.positions == campaign40_positions
@@ -7034,8 +7075,162 @@ def test_carrier_source_recovery_rebases_only_the_exact_carried_support(
         for x in range(1, 64)
     )
     assert paired_cargo_route[-1].plan_signature in paired_policy._failed_plan_signatures
-    with pytest.raises(PolicyError, match="attachment remains active"):
-        paired_policy.select(paired_observation)
+
+    for expected in role_handoff_route:
+        paired_action = paired_policy.select(paired_observation)
+        assert paired_action.coordinate == expected.coordinate
+        paired_observation = paired_environment.step(paired_action)
+        paired_policy.accept_consequence(paired_observation)
+    assert tuple(paired_policy._plan) == (role_handoff,)
+    terminal_positions = dict(paired_environment.positions)
+    terminal_colors = dict(paired_environment.colors)
+    terminal_observation = paired_observation
+    handoff_terminal_environment = copy.deepcopy(paired_environment)
+    handoff_terminal_policy = copy.deepcopy(paired_policy)
+
+    handoff_action = paired_policy.select(paired_observation)
+    assert handoff_action.coordinate == role_handoff.coordinate
+    paired_observation = paired_environment.step(handoff_action)
+    assert paired_environment.positions == terminal_positions
+    assert paired_environment.colors != terminal_colors
+    handoff_scene = extract_visual_scene(paired_observation.frames[-1])
+    assert visual_causal._child_isolation_protected_raster_hash(handoff_scene) == (
+        role_handoff.expected_child_protected_raster_hash
+    )
+    paired_policy.accept_consequence(paired_observation)
+    assert paired_policy.receipts[-1].changed_cells == 24
+    assert paired_policy.receipts[-1].residual == (
+        "the complementary paired-terminal active-role handoff was exact, but "
+        "the official environment remained NOT_FINISHED"
+    )
+    assert tuple(paired_policy._plan) == role_restoration
+
+    role_restoration_boundary_environment = copy.deepcopy(paired_environment)
+    role_restoration_boundary_policy = copy.deepcopy(paired_policy)
+    role_restoration_boundary_observation = paired_observation
+
+    nonmatching_restoration_environment = copy.deepcopy(role_restoration_boundary_environment)
+    nonmatching_restoration_policy = copy.deepcopy(role_restoration_boundary_policy)
+    nonmatching_restoration_action = nonmatching_restoration_policy.select(
+        role_restoration_boundary_observation
+    )
+    assert nonmatching_restoration_action.coordinate == role_restoration[0].coordinate
+    nonmatching_restoration_observation = nonmatching_restoration_environment.step(
+        nonmatching_restoration_action
+    )
+    nonmatching_rows = [list(row) for row in nonmatching_restoration_observation.frames[-1].cells]
+    restoration_protected_x, restoration_protected_y = next(iter(sorted(hierarchy.target.cells)))
+    nonmatching_rows[restoration_protected_y][restoration_protected_x] = scene.background
+    nonmatching_restoration_observation = replace(
+        nonmatching_restoration_observation,
+        frames=(GridFrame.from_rows(nonmatching_rows),),
+    )
+    nonmatching_restoration_policy.accept_consequence(nonmatching_restoration_observation)
+    nonmatching_restoration_snapshot = nonmatching_restoration_policy.snapshot()
+    assert nonmatching_restoration_snapshot["pending_plan_actions"] == 0
+    assert nonmatching_restoration_snapshot["hierarchy_carried_source_support_indexes"] == []
+    assert nonmatching_restoration_policy._active_carrier_source_attachment_replay_context is None
+    assert role_handoff.plan_signature in nonmatching_restoration_policy._failed_plan_signatures
+    assert nonmatching_restoration_policy._last_probe_failed is True
+
+    unavailable_restoration_policy = copy.deepcopy(role_restoration_boundary_policy)
+    unavailable_restoration_receipt_count = len(unavailable_restoration_policy.receipts)
+    unavailable_restoration_observation = replace(
+        role_restoration_boundary_observation,
+        available_actions=(ActionName.RESET,),
+    )
+    with pytest.raises(
+        PolicyError,
+        match="queued hierarchy action became unavailable",
+    ):
+        unavailable_restoration_policy.select(unavailable_restoration_observation)
+    unavailable_restoration_snapshot = unavailable_restoration_policy.snapshot()
+    assert unavailable_restoration_snapshot["pending_plan_actions"] == 0
+    assert unavailable_restoration_snapshot["hierarchy_carried_source_support_indexes"] == []
+    assert unavailable_restoration_policy._active_carrier_source_attachment_replay_context is None
+    assert role_handoff.plan_signature in unavailable_restoration_policy._failed_plan_signatures
+    assert unavailable_restoration_policy._hierarchy_lineage_lost is not None
+    assert unavailable_restoration_policy._pending_action is None
+    assert len(unavailable_restoration_policy.receipts) == unavailable_restoration_receipt_count
+
+    for index, expected in enumerate(role_restoration):
+        paired_action = paired_policy.select(paired_observation)
+        assert paired_action.coordinate == expected.coordinate
+        paired_observation = paired_environment.step(paired_action)
+        paired_policy.accept_consequence(paired_observation)
+        if index == 0:
+            assert paired_environment.positions == terminal_positions
+            assert paired_environment.colors == terminal_colors
+            assert paired_policy.receipts[-1].residual == (
+                "the paired-terminal active role restored exactly before the certified inverse"
+            )
+    assert paired_policy.snapshot()["pending_plan_actions"] == 0
+    assert paired_environment.positions == campaign40_positions
+    assert paired_environment.colors == campaign40_colors
+
+    handoff_win_environment = copy.deepcopy(handoff_terminal_environment)
+    handoff_win_policy = copy.deepcopy(handoff_terminal_policy)
+    handoff_win_action = handoff_win_policy.select(terminal_observation)
+    handoff_win_observation = handoff_win_environment.step(handoff_win_action)
+    handoff_win_policy.accept_consequence(replace(handoff_win_observation, state=GameStateName.WIN))
+    assert handoff_win_policy.snapshot()["pending_plan_actions"] == 0
+    assert handoff_win_policy.snapshot()["hierarchy_carried_source_support_indexes"] == []
+
+    handoff_progress_environment = copy.deepcopy(handoff_terminal_environment)
+    handoff_progress_policy = copy.deepcopy(handoff_terminal_policy)
+    handoff_progress_action = handoff_progress_policy.select(terminal_observation)
+    handoff_progress_observation = handoff_progress_environment.step(handoff_progress_action)
+    handoff_progress_policy.accept_consequence(
+        replace(
+            handoff_progress_observation,
+            levels_completed=terminal_observation.levels_completed + 1,
+        )
+    )
+    assert handoff_progress_policy.snapshot()["pending_plan_actions"] == 0
+    assert handoff_progress_policy.snapshot()["hierarchy_active"] is False
+
+    handoff_game_over_environment = copy.deepcopy(handoff_terminal_environment)
+    handoff_game_over_policy = copy.deepcopy(handoff_terminal_policy)
+    handoff_game_over_action = handoff_game_over_policy.select(terminal_observation)
+    handoff_game_over_observation = handoff_game_over_environment.step(handoff_game_over_action)
+    handoff_game_over_observation = replace(
+        handoff_game_over_observation,
+        state=GameStateName.GAME_OVER,
+        available_actions=(ActionName.RESET,),
+    )
+    handoff_game_over_policy.accept_consequence(handoff_game_over_observation)
+    assert handoff_game_over_policy.snapshot()["pending_plan_actions"] == 0
+    handoff_reset_action = handoff_game_over_policy.select(handoff_game_over_observation)
+    assert handoff_reset_action.name is ActionName.RESET
+    handoff_game_over_policy.accept_consequence(
+        replace(continued_observation, returned_action=handoff_reset_action)
+    )
+    assert handoff_game_over_policy.snapshot()["pending_plan_actions"] == 0
+    assert handoff_game_over_policy.snapshot()["hierarchy_carried_source_support_indexes"] == []
+    assert handoff_game_over_policy._active_carrier_source_attachment_replay_context is None
+
+    handoff_corrupt_environment = copy.deepcopy(handoff_terminal_environment)
+    handoff_corrupt_policy = copy.deepcopy(handoff_terminal_policy)
+    handoff_corrupt_action = handoff_corrupt_policy.select(terminal_observation)
+    handoff_corrupt_observation = handoff_corrupt_environment.step(handoff_corrupt_action)
+    handoff_corrupt_rows = [list(row) for row in handoff_corrupt_observation.frames[-1].cells]
+    protected_x, protected_y = next(iter(sorted(hierarchy.target.cells)))
+    handoff_corrupt_rows[protected_y][protected_x] = scene.background
+    handoff_corrupt_observation = replace(
+        handoff_corrupt_observation,
+        frames=(GridFrame.from_rows(handoff_corrupt_rows),),
+    )
+    handoff_corrupt_policy.accept_consequence(handoff_corrupt_observation)
+    assert handoff_corrupt_policy.snapshot()["pending_plan_actions"] == 0
+    assert handoff_corrupt_policy.snapshot()["hierarchy_carried_source_support_indexes"] == []
+    assert role_handoff.plan_signature in handoff_corrupt_policy._failed_plan_signatures
+    assert handoff_corrupt_policy._active_carrier_source_attachment_replay_context is None
+
+    handoff_cancel_policy = copy.deepcopy(handoff_terminal_policy)
+    handoff_cancel_policy.select(terminal_observation)
+    handoff_cancel_policy.cancel_unsubmitted_action()
+    assert handoff_cancel_policy.snapshot()["pending_plan_actions"] == 0
+    assert handoff_cancel_policy._active_carrier_source_attachment_replay_context is None
 
     paired_win_environment = copy.deepcopy(environment)
     paired_win_policy = copy.deepcopy(policy)
