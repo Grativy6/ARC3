@@ -11694,12 +11694,54 @@ def test_campaign43_crossed_route_resource_lifecycle_and_interrupts() -> None:
         )
         resource_policy.accept_consequence(live_observation)
     assert resource_policy._episode_action6_count == 54
-    assert tuple(resource_policy._plan) == delivery_plan.recovery_actions
-    assert resource_policy.snapshot()["crossed_delivery_recovery_active"] is True
+    returned_scene = extract_visual_scene(live_observation.frames[-1])
+    assert (
+        len(returned_scene.endpoints),
+        len(returned_scene.mediators),
+        len(returned_scene.targets),
+    ) == (5, 1, 0)
+    assert len(resource_policy._plan) == 1
+    access_candidate = resource_policy._plan[0]
+    access_certificate = access_candidate.post_deposit_mediator_access_certificate
+    assert access_certificate is not None
+    returned_mediator = returned_scene.mediators[0]
+    assert access_candidate.coordinate == Coordinate(*returned_mediator.rounded_center)
+    assert access_candidate.target_center == returned_mediator.rounded_center
+    assert access_candidate.mediator_color == returned_mediator.color
+    assert access_certificate.mediator_signature == (
+        visual_causal._visual_object_state_signature(returned_mediator)
+    )
+    assert access_certificate.protected_raster_hash == (
+        visual_causal._child_isolation_protected_raster_hash(returned_scene)
+    )
+    assert access_certificate.visible_endpoint_count == 5
+    assert access_certificate.resource_action_count == 54
+    assert access_certificate.exhausted_after_actions == 60
+    assert access_certificate.resource_action_count + 1 < (
+        access_certificate.exhausted_after_actions
+    )
+    assert visual_causal._single_hierarchy_planned_click_is_safe(
+        returned_scene,
+        access_candidate,
+        active_color=hierarchy.active_color,
+    )
+    shifted_x = (
+        access_candidate.coordinate.x + 1
+        if access_candidate.coordinate.x + 1 < len(returned_scene.cells[0])
+        else access_candidate.coordinate.x - 1
+    )
+    assert not visual_causal._single_hierarchy_planned_click_is_safe(
+        returned_scene,
+        replace(access_candidate, coordinate=Coordinate(shifted_x, access_candidate.coordinate.y)),
+        active_color=hierarchy.active_color,
+    )
+    assert resource_policy.snapshot()["crossed_delivery_recovery_active"] is False
+    assert resource_policy.snapshot()["post_deposit_mediator_access_active"] is True
     active_lineage = resource_policy._active_crossed_replay_resource_lineage
     assert active_lineage is not None
     assert active_lineage.forward_remaining_actions == 0
-    assert "only its certified inverse prefix" in resource_policy.receipts[-1].residual
+    assert active_lineage.exhausted_after_actions == 60
+    assert "one unique observation-derived" in resource_policy.receipts[-1].residual
 
     assert delivery_terminal_policy is not None
     assert delivery_terminal_environment is not None
@@ -11731,61 +11773,504 @@ def test_campaign43_crossed_route_resource_lifecycle_and_interrupts() -> None:
     assert progress_policy.snapshot()["pending_plan_actions"] == 0
     assert progress_policy.snapshot()["active_level_index"] == 5
 
-    non_resource_policy: VisualCausalPolicy | None = None
-    non_resource_environment: _ProjectedWeightedHierarchyEnvironment | None = None
-    non_resource_observation: Observation | None = None
+    # A second observation-derived mediator makes identity non-unique and must
+    # close the active lineage without selecting either object.
+    ambiguous_rows = [list(row) for row in returned_scene.cells]
+    mediator_width = returned_mediator.max_x - returned_mediator.min_x + 1
+    mediator_height = returned_mediator.max_y - returned_mediator.min_y + 1
+    destination_x, destination_y = next(
+        (x, y)
+        for y in range(1, len(ambiguous_rows) - mediator_height)
+        for x in range(2, len(ambiguous_rows[0]) - mediator_width)
+        if all(
+            ambiguous_rows[y + dy][x + dx] == returned_scene.background
+            for dy in range(-1, mediator_height + 1)
+            for dx in range(-1, mediator_width + 1)
+        )
+    )
+    for source_y in range(returned_mediator.min_y, returned_mediator.max_y + 1):
+        for source_x in range(returned_mediator.min_x, returned_mediator.max_x + 1):
+            value = returned_scene.cells[source_y][source_x]
+            if value != returned_scene.background:
+                ambiguous_rows[destination_y + source_y - returned_mediator.min_y][
+                    destination_x + source_x - returned_mediator.min_x
+                ] = value
+    ambiguous_observation = replace(
+        live_observation,
+        frames=(GridFrame.from_rows(ambiguous_rows),),
+    )
+    assert len(extract_visual_scene(ambiguous_observation.frames[-1]).mediators) == 2
+    ambiguous_policy = copy.deepcopy(resource_policy)
+    with pytest.raises(PolicyError, match="queued hierarchy precondition"):
+        ambiguous_policy.select(ambiguous_observation)
+    assert ambiguous_policy._active_crossed_replay_resource_lineage is None
+    assert ambiguous_policy.snapshot()["pending_plan_actions"] == 0
+
+    # A stale meter prefix cannot authorize the otherwise matching click.
+    prefix_mismatch_policy = copy.deepcopy(resource_policy)
+    prefix_mismatch_observation = _campaign43_with_edge(live_observation, history[53])
+    with pytest.raises(PolicyError, match="crossed resource lineage"):
+        prefix_mismatch_policy.select(prefix_mismatch_observation)
+    assert prefix_mismatch_policy._active_crossed_replay_resource_lineage is None
+    assert prefix_mismatch_policy.snapshot()["pending_plan_actions"] == 0
+
+    access_win_policy = copy.deepcopy(resource_policy)
+    access_win_environment = copy.deepcopy(environment)
+    access_win_action = access_win_policy.select(live_observation)
+    assert access_win_action.coordinate == access_candidate.coordinate
+    access_win_observation = access_win_environment.step(access_win_action)
+    access_win_observation = _campaign43_with_edge(
+        access_win_observation,
+        history[55],
+        state=GameStateName.WIN,
+    )
+    access_win_policy.accept_consequence(access_win_observation)
+    assert access_win_policy.snapshot()["pending_plan_actions"] == 0
+    assert access_win_policy._active_crossed_replay_resource_lineage is None
+    assert access_win_policy.snapshot()["post_deposit_mediator_access_rejected_count"] == 0
+    assert access_win_policy.snapshot()["post_deposit_mediator_access_attempted_count"] == 1
+
+    access_progress_policy = copy.deepcopy(resource_policy)
+    access_progress_environment = copy.deepcopy(environment)
+    access_progress_action = access_progress_policy.select(live_observation)
+    access_progress_observation = access_progress_environment.step(access_progress_action)
+    access_progress_observation = _campaign43_with_edge(
+        access_progress_observation,
+        history[55],
+        levels_completed=5,
+    )
+    access_progress_policy.accept_consequence(access_progress_observation)
+    assert access_progress_policy.snapshot()["pending_plan_actions"] == 0
+    assert access_progress_policy.snapshot()["active_level_index"] == 5
+    assert access_progress_policy._active_crossed_replay_resource_lineage is None
+    assert access_progress_policy.snapshot()["post_deposit_mediator_access_attempted_count"] == 0
+
+    access_not_finished_policy = copy.deepcopy(resource_policy)
+    access_not_finished_environment = copy.deepcopy(environment)
+    failed_state_before = {
+        name: copy.deepcopy(value)
+        for name, value in vars(access_not_finished_policy).items()
+        if name.startswith("_failed_")
+        and name != "_failed_post_deposit_mediator_access_hypothesis_keys"
+    }
+    receipts_before = access_not_finished_policy.receipts
+    access_not_finished_action = access_not_finished_policy.select(live_observation)
+    access_not_finished_observation = access_not_finished_environment.step(
+        access_not_finished_action
+    )
+    access_not_finished_observation = _campaign43_with_edge(
+        access_not_finished_observation,
+        history[55],
+    )
+    access_not_finished_policy.accept_consequence(access_not_finished_observation)
+    assert access_not_finished_policy.receipts[:-1] == receipts_before
+    assert {
+        name: value
+        for name, value in vars(access_not_finished_policy).items()
+        if name.startswith("_failed_")
+        and name != "_failed_post_deposit_mediator_access_hypothesis_keys"
+    } == failed_state_before
+    assert access_not_finished_policy._failed_post_deposit_mediator_access_hypothesis_keys == {
+        access_certificate.hypothesis_key
+    }
+    assert access_not_finished_policy._attempted_post_deposit_mediator_access_hypothesis_keys == {
+        access_certificate.hypothesis_key
+    }
+    assert access_not_finished_policy.snapshot()["post_deposit_mediator_access_closed"] is True
+    assert access_not_finished_policy.snapshot()["post_deposit_mediator_access_rejected_count"] == 1
+    assert access_not_finished_policy.snapshot()["pending_plan_actions"] == 0
+    assert access_not_finished_policy._active_crossed_replay_resource_lineage is None
+    assert "only mediator-access sufficiency is rejected" in (
+        access_not_finished_policy.receipts[-1].residual
+    )
+    with pytest.raises(PolicyError, match="one-shot post-deposit mediator-access"):
+        access_not_finished_policy.select(access_not_finished_observation)
+    restored_not_finished_policy = copy.deepcopy(access_not_finished_policy)
+    with pytest.raises(PolicyError, match="one-shot post-deposit mediator-access"):
+        restored_not_finished_policy.select(access_not_finished_observation)
+    assert (
+        visual_causal._post_deposit_mediator_access_plan(
+            extract_visual_scene(delivery_terminal_observation.frames[-1]),
+            returned_scene,
+            target_center=delivery_plan.actions[-1].target_center,
+            crossed_delivery_plan_signature=delivery_plan.actions[-1].plan_signature,
+            recovery_actions=delivery_plan.recovery_actions,
+            resource_lineage=active_lineage,
+            current_actions=54,
+            excluded_hypothesis_keys=(
+                access_not_finished_policy._failed_post_deposit_mediator_access_hypothesis_keys
+                | access_not_finished_policy._attempted_post_deposit_mediator_access_hypothesis_keys
+            ),
+        )
+        is None
+    )
+
+    consequence_mismatch_policy = copy.deepcopy(resource_policy)
+    consequence_mismatch_environment = copy.deepcopy(environment)
+    consequence_mismatch_action = consequence_mismatch_policy.select(live_observation)
+    consequence_mismatch_observation = consequence_mismatch_environment.step(
+        consequence_mismatch_action
+    )
+    consequence_mismatch_observation = _campaign43_with_edge(
+        consequence_mismatch_observation,
+        history[56],
+    )
+    consequence_mismatch_policy.accept_consequence(consequence_mismatch_observation)
+    assert consequence_mismatch_policy._failed_post_deposit_mediator_access_hypothesis_keys == set()
+    assert consequence_mismatch_policy._attempted_post_deposit_mediator_access_hypothesis_keys == {
+        access_certificate.hypothesis_key
+    }
+    assert consequence_mismatch_policy._active_crossed_replay_resource_lineage is None
+    assert consequence_mismatch_policy.snapshot()["pending_plan_actions"] == 0
+    assert "lost its exact resource lineage" in consequence_mismatch_policy.receipts[-1].residual
+
+    unexpected_policy = copy.deepcopy(resource_policy)
+    unexpected_environment = copy.deepcopy(environment)
+    unexpected_action = unexpected_policy.select(live_observation)
+    unexpected_observation = unexpected_environment.step(unexpected_action)
+    unexpected_observation = _campaign43_with_edge(
+        unexpected_observation,
+        history[55],
+        state=GameStateName.UNKNOWN,
+    )
+    unexpected_policy.accept_consequence(unexpected_observation)
+    assert unexpected_policy._active_crossed_replay_resource_lineage is None
+    assert unexpected_policy.snapshot()["pending_plan_actions"] == 0
+    assert unexpected_policy._failed_post_deposit_mediator_access_hypothesis_keys == set()
+    assert unexpected_policy._attempted_post_deposit_mediator_access_hypothesis_keys == {
+        access_certificate.hypothesis_key
+    }
+
+    game_over_policy = copy.deepcopy(resource_policy)
+    game_over_environment = copy.deepcopy(environment)
+    game_over_action = game_over_policy.select(live_observation)
+    game_over_observation = game_over_environment.step(game_over_action)
+    game_over_observation = _campaign43_with_edge(
+        game_over_observation,
+        history[55],
+        state=GameStateName.GAME_OVER,
+    )
+    game_over_policy.accept_consequence(game_over_observation)
+    assert access_candidate.plan_signature in game_over_policy._failed_plan_signatures
+    assert game_over_policy._failed_post_deposit_mediator_access_hypothesis_keys == set()
+    assert game_over_policy._attempted_post_deposit_mediator_access_hypothesis_keys == {
+        access_certificate.hypothesis_key
+    }
+    assert game_over_policy._active_crossed_replay_resource_lineage is None
+    assert game_over_policy.snapshot()["pending_plan_actions"] == 0
+    assert game_over_policy.receipts[-1].residual == (
+        "the one-shot post-deposit mediator-access discriminator returned official GAME_OVER"
+    )
+    assert game_over_policy.select(game_over_observation).name is ActionName.RESET
+
+    attempted_before_reset = set(
+        game_over_policy._attempted_post_deposit_mediator_access_hypothesis_keys
+    )
+    game_over_policy._begin_reset_epoch(delivery_terminal_observation)
+    assert (
+        game_over_policy._attempted_post_deposit_mediator_access_hypothesis_keys
+        == attempted_before_reset
+    )
+
+    # Reconstructing the same crossed-delivery boundary after RESET must not
+    # re-authorize the already-submitted access discriminator.
+    reconstructed_policy = copy.deepcopy(delivery_terminal_policy)
+    reconstructed_policy._attempted_post_deposit_mediator_access_hypothesis_keys.update(
+        attempted_before_reset
+    )
+    reconstructed_environment = copy.deepcopy(delivery_terminal_environment)
+    reconstructed_action = reconstructed_policy.select(delivery_terminal_observation)
+    reconstructed_observation = reconstructed_environment.step(reconstructed_action)
+    reconstructed_observation = _campaign43_with_edge(
+        reconstructed_observation,
+        history[54],
+    )
+    reconstructed_policy.accept_consequence(reconstructed_observation)
+    assert reconstructed_policy.snapshot()["post_deposit_mediator_access_active"] is False
+    assert reconstructed_policy.snapshot()["pending_plan_actions"] == 0
+    assert (
+        reconstructed_policy._attempted_post_deposit_mediator_access_hypothesis_keys
+        == attempted_before_reset
+    )
+
+
+def test_campaign44_target_retained_fallback_preserves_crossed_inverse_failure() -> None:
+    (
+        _frame,
+        scene,
+        hierarchy,
+        _bridge,
+        _mixed,
+        _external,
+        _raw_matching,
+        _external_own,
+        relation,
+        historical_plan,
+    ) = _carrier_source_occlusion_fixture()
+    context = historical_plan.carrier_source_attachment_replay_context
+    assert context is not None
+    carried_frame = _campaign42_frame(
+        _CAMPAIGN42_FRESH_CARRIED_BOUNDARY_ZLIB_B64,
+        "1d8f6011f2925697eaac7835edd6656fc56b107e34ae0177b0b88ec77c84a837",
+    )
+    carried_scene = extract_visual_scene(carried_frame)
+    replayed_state = visual_causal._carrier_source_replayed_attachment_state(
+        context,
+        carried_scene,
+        carried_indexes=(0, 1),
+    )
+    assert replayed_state is not None
+    replayed_positions, replayed_colors = replayed_state
+    base_plan = visual_causal._carrier_source_paired_cargo_plan_after_observed_restoration(
+        context,
+        carried_scene,
+        carried_indexes=(0, 1),
+        rejected_signatures=set(),
+    )
+    assert base_plan is not None
+    role_plan = visual_causal._carrier_source_paired_cargo_plan_after_observed_restoration(
+        context,
+        carried_scene,
+        carried_indexes=(0, 1),
+        rejected_signatures={base_plan.signature},
+        include_terminal_role_handoff=True,
+    )
+    assert role_plan is not None
+    crossed_plan = visual_causal._carrier_source_paired_cargo_plan_after_observed_restoration(
+        context,
+        carried_scene,
+        carried_indexes=(0, 1),
+        rejected_signatures={base_plan.signature, role_plan.signature},
+        include_terminal_role_handoff=True,
+        include_crossed_predecessor=True,
+    )
+    assert crossed_plan is not None
+    role_handoff = crossed_plan.actions[-1].carrier_source_paired_cargo_role_handoff
+    assert role_handoff is not None
+    predecessor = role_handoff.carrier_source_paired_cargo_crossed_predecessor_actions
+
+    environment = _ProjectedWeightedHierarchyEnvironment(
+        scene,
+        hierarchy,
+        carrier_source_supports=relation.supports,
+        carried_source_support_indexes=frozenset({0, 1}),
+    )
+    environment.positions = dict(replayed_positions)
+    environment.colors = dict(replayed_colors)
+    observation = environment.observation()
+    for planned in (*crossed_plan.actions, role_handoff, *predecessor):
+        observation = environment.step(ActionRequest(ActionName.ACTION6, planned.coordinate))
+    crossed_scene = extract_visual_scene(observation.frames[-1])
+    crossed_context = crossed_plan.carrier_source_crossed_delivery_replay_context
+    assert crossed_context is not None
+    delivery_plan = visual_causal._carrier_source_crossed_delivery_after_observed_predecessor(
+        crossed_context,
+        crossed_scene,
+        rejected_signatures={
+            base_plan.signature,
+            role_plan.signature,
+            crossed_plan.signature,
+        },
+    )
+    assert delivery_plan is not None
+    for planned in delivery_plan.actions[:-1]:
+        observation = environment.step(ActionRequest(ActionName.ACTION6, planned.coordinate))
+
+    before_final_scene = extract_visual_scene(observation.frames[-1])
+    assert (len(before_final_scene.targets), len(before_final_scene.mediators)) == (1, 0)
+    normal_final_observation = environment.step(
+        ActionRequest(ActionName.ACTION6, delivery_plan.actions[-1].coordinate)
+    )
+    normal_final_scene = extract_visual_scene(normal_final_observation.frames[-1])
+    assert (len(normal_final_scene.targets), len(normal_final_scene.mediators)) == (0, 1)
+    prior_target = before_final_scene.targets[0]
+    deposited_mediator = normal_final_scene.mediators[0]
+    assert prior_target.rounded_center == deposited_mediator.rounded_center
+    assert prior_target.color == deposited_mediator.color
+    assert (
+        prior_target.min_x,
+        prior_target.min_y,
+        prior_target.max_x,
+        prior_target.max_y,
+    ) == (
+        deposited_mediator.min_x,
+        deposited_mediator.min_y,
+        deposited_mediator.max_x,
+        deposited_mediator.max_y,
+    )
+
+    # Preserve the former target at its observed center while retaining one
+    # mediator elsewhere.  The plan certificates are transformed together so
+    # this remains one internally closed, target-retained fallback family.
+    retained_rows = [list(row) for row in normal_final_scene.cells]
+    mediator_width = deposited_mediator.max_x - deposited_mediator.min_x + 1
+    mediator_height = deposited_mediator.max_y - deposited_mediator.min_y + 1
+    mediator_x, mediator_y = next(
+        (x, y)
+        for y in range(1, len(retained_rows) - mediator_height)
+        for x in range(2, len(retained_rows[0]) - mediator_width)
+        if all(
+            retained_rows[y + dy][x + dx] == normal_final_scene.background
+            for dy in range(-1, mediator_height + 1)
+            for dx in range(-1, mediator_width + 1)
+        )
+    )
+    for y in range(deposited_mediator.min_y, deposited_mediator.max_y + 1):
+        for x in range(deposited_mediator.min_x, deposited_mediator.max_x + 1):
+            retained_rows[y][x] = normal_final_scene.background
+    for y in range(prior_target.min_y, prior_target.max_y + 1):
+        for x in range(prior_target.min_x, prior_target.max_x + 1):
+            retained_rows[y][x] = before_final_scene.cells[y][x]
+    for source_y in range(deposited_mediator.min_y, deposited_mediator.max_y + 1):
+        for source_x in range(deposited_mediator.min_x, deposited_mediator.max_x + 1):
+            value = normal_final_scene.cells[source_y][source_x]
+            if value != normal_final_scene.background:
+                retained_rows[mediator_y + source_y - deposited_mediator.min_y][
+                    mediator_x + source_x - deposited_mediator.min_x
+                ] = value
+    retained_frame = GridFrame.from_rows(retained_rows)
+    retained_scene = extract_visual_scene(retained_frame)
+    assert (
+        len(retained_scene.endpoints),
+        len(retained_scene.mediators),
+        len(retained_scene.targets),
+    ) == (
+        5,
+        1,
+        1,
+    )
+    assert retained_scene.targets[0].rounded_center == prior_target.rounded_center
+    retained_hash = visual_causal._child_isolation_protected_raster_hash(retained_scene)
+    retained_final_action = replace(
+        delivery_plan.actions[-1],
+        expected_child_protected_raster_hash=retained_hash,
+        expected_visible_endpoint_count=len(retained_scene.endpoints),
+        expected_visible_mediator_count=len(retained_scene.mediators),
+    )
+    retained_first_inverse = replace(
+        delivery_plan.recovery_actions[0],
+        required_child_protected_raster_hash=retained_hash,
+    )
+    retained_delivery_plan = replace(
+        delivery_plan,
+        actions=(*delivery_plan.actions[:-1], retained_final_action),
+        recovery_actions=(retained_first_inverse, *delivery_plan.recovery_actions[1:]),
+    )
+    assert visual_causal._carrier_source_crossed_delivery_recovery_is_compatible(
+        retained_delivery_plan
+    )
+
+    history = _campaign42_edge_history()
+    before_final_observation = _campaign43_with_edge(observation, history[53])
+    retained_final_observation = _campaign43_with_edge(
+        replace(normal_final_observation, frames=(retained_frame,)),
+        history[54],
+    )
+    resource_baseline, resource_at_53 = _campaign43_edge_progress(53)
+    _exhausted_baseline, resource_at_60 = _campaign43_edge_progress(60)
+    exhausted_resource = visual_causal._exhausted_edge_resource_candidate(resource_at_60)
+    assert exhausted_resource is not None
+    policy = VisualCausalPolicy(max_coordinate_candidates=8)
+    policy._level_index = 4
+    policy._last_active_color = hierarchy.active_color
+    policy._ensure_learner(before_final_observation)
+    policy._episode_resource_baseline_edges = resource_baseline
+    policy._episode_resource_candidates = resource_at_53
+    policy._episode_action6_count = 53
+    policy._active_crossed_replay_resource_lineage = (
+        visual_causal._ActiveCrossedReplayResourceLineage(
+            level_index=4,
+            context_key=visual_causal._carrier_source_attachment_context_key(context),
+            edge_index=exhausted_resource.edge_index,
+            edge_baseline=exhausted_resource.baseline,
+            edge_fill_color=exhausted_resource.fill_color,
+            exhausted_filled_index_history=exhausted_resource.filled_index_history,
+            exhausted_after_actions=exhausted_resource.observed_actions,
+            reset_epoch=policy._reset_epoch_index,
+            forward_remaining_actions=1,
+        )
+    )
+    policy._active_hierarchy_signature = retained_delivery_plan.signature
+    policy._active_hierarchy_relation_key = relation.relation_key
+    policy._active_hierarchy_supports = retained_delivery_plan.supports
+    policy._active_hierarchy_support_weights = retained_delivery_plan.support_weights
+    policy._active_hierarchy_recovery_actions = retained_delivery_plan.recovery_actions
+    policy._active_carrier_source_attachment_replay_context = context
+    policy._active_carried_source_recovery_support_indexes = (0, 1)
+    policy._plan.append(retained_final_action)
+    assert policy._active_crossed_resource_matches(before_final_observation)
+
+    selected_final = policy.select(before_final_observation)
+    assert selected_final == ActionRequest(ActionName.ACTION6, retained_final_action.coordinate)
+    policy.accept_consequence(retained_final_observation)
+    assert policy._episode_action6_count == 54
+    assert tuple(policy._plan) == retained_delivery_plan.recovery_actions
+    assert all(planned.post_deposit_mediator_access_certificate is None for planned in policy._plan)
+    assert policy.snapshot()["crossed_delivery_recovery_active"] is True
+
+    live_observation = retained_final_observation
+    terminal_policy: VisualCausalPolicy | None = None
+    terminal_environment: _ProjectedWeightedHierarchyEnvironment | None = None
+    terminal_observation: Observation | None = None
+    failed_before: set[str] | None = None
+    relation_failures_before: set[str] | None = None
     for recovery_index in range(6):
-        assert resource_policy._active_crossed_replay_resource_lineage is not None
         if recovery_index == 5:
-            non_resource_policy = copy.deepcopy(resource_policy)
-            non_resource_environment = copy.deepcopy(environment)
-            non_resource_observation = live_observation
-        recovery_action = resource_policy.select(live_observation)
+            terminal_policy = copy.deepcopy(policy)
+            terminal_environment = copy.deepcopy(environment)
+            terminal_observation = live_observation
+            failed_before = set(policy._failed_plan_signatures)
+            relation_failures_before = set(
+                policy._failed_carrier_source_occlusion_hierarchy_relation_keys
+            )
+        recovery_action = policy.select(live_observation)
         live_observation = environment.step(recovery_action)
-        next_count = resource_policy._episode_action6_count + 1
+        next_count = policy._episode_action6_count + 1
         live_observation = _campaign43_with_edge(
             live_observation,
             history[next_count],
             state=(GameStateName.GAME_OVER if next_count == 60 else None),
         )
-        failed_before = set(resource_policy._failed_plan_signatures)
-        relation_failures_before = set(
-            resource_policy._failed_carrier_source_occlusion_hierarchy_relation_keys
-        )
-        resource_policy.accept_consequence(live_observation)
-    assert resource_policy._episode_action6_count == 60
-    assert resource_policy._failed_plan_signatures == failed_before
+        policy.accept_consequence(live_observation)
+    assert failed_before is not None
+    assert relation_failures_before is not None
+    assert policy._episode_action6_count == 60
+    assert policy._failed_plan_signatures == failed_before
     assert (
-        resource_policy._failed_carrier_source_occlusion_hierarchy_relation_keys
-        == relation_failures_before
+        policy._failed_carrier_source_occlusion_hierarchy_relation_keys == relation_failures_before
     )
-    assert resource_policy.receipts[-1].residual == (
+    assert policy.receipts[-1].residual == (
         "the exact paired-cargo placement, active-role handoff, or inverse returned "
         "official GAME_OVER"
     )
-    assert resource_policy._last_probe_failed is False
-    assert resource_policy.snapshot()["pending_plan_actions"] == 0
-    assert resource_policy._resource_interrupted_paired_replay is None
-    assert resource_policy._active_crossed_replay_resource_lineage is None
+    assert policy._last_probe_failed is False
+    assert policy.snapshot()["pending_plan_actions"] == 0
+    assert policy._resource_interrupted_paired_replay is None
+    assert policy._active_crossed_replay_resource_lineage is None
 
-    assert non_resource_policy is not None
-    assert non_resource_environment is not None
-    assert non_resource_observation is not None
-    non_resource_action = non_resource_policy.select(non_resource_observation)
-    non_resource_after = non_resource_environment.step(non_resource_action)
-    non_resource_after = _campaign43_with_edge(
-        non_resource_after,
+    assert terminal_policy is not None
+    assert terminal_environment is not None
+    assert terminal_observation is not None
+    corrupt_action = terminal_policy.select(terminal_observation)
+    corrupt_observation = terminal_environment.step(corrupt_action)
+    corrupt_observation = _campaign43_with_edge(
+        corrupt_observation,
         history[60],
         state=GameStateName.GAME_OVER,
     )
-    corrupt_rows = [list(row) for row in non_resource_after.frames[-1].cells]
+    corrupt_rows = [list(row) for row in corrupt_observation.frames[-1].cells]
+    corrupt_x, corrupt_y = next(
+        (x, y)
+        for x, y in sorted(hierarchy.target.cells)
+        if corrupt_rows[y][x] != crossed_scene.background
+    )
     corrupt_rows[corrupt_y][corrupt_x] = crossed_scene.background
-    non_resource_after = replace(
-        non_resource_after,
+    corrupt_observation = replace(
+        corrupt_observation,
         frames=(GridFrame.from_rows(corrupt_rows),),
     )
-    rejected_signature = non_resource_policy._pending_plan_signature
+    rejected_signature = terminal_policy._pending_plan_signature
     assert rejected_signature is not None
-    non_resource_policy._failed_plan_signatures.discard(rejected_signature)
-    non_resource_policy.accept_consequence(non_resource_after)
-    assert rejected_signature in non_resource_policy._failed_plan_signatures
+    terminal_policy._failed_plan_signatures.discard(rejected_signature)
+    terminal_policy.accept_consequence(corrupt_observation)
+    assert rejected_signature in terminal_policy._failed_plan_signatures

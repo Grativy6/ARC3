@@ -46,6 +46,7 @@ from scripts.check_competition_integrity import (  # noqa: E402
 
 SCHEMA = "arc3.build003.mechanical-recording-replay.v0.1"
 TRACE_SCHEMA = "arc3.build003.mechanical-sealed-trace-replay.v0.1"
+TRACE_REOPENING_SCHEMA = "arc3.build003.mechanical-sealed-trace-prefix-reopening.v0.1"
 POLICY_PROFILE = "build003-mechanical-v0.1"
 MAX_COORDINATE_CANDIDATES = 8
 LEGACY_CAMPAIGN_AUDIT_SCHEMA = "arc3.build003.campaign28-integrity-replay-audit.v0.1"
@@ -526,23 +527,32 @@ def _sealed_trace_binding(
     replay: Mapping[str, object],
     *,
     generator_commit: str,
+    replay_mode: str = "sealed-trace",
 ) -> dict[str, JSONValue]:
     trace_summary = _object(replay.get("trace"), field="trace")
     game_id = trace_summary.get("game_id")
     if not isinstance(game_id, str) or not game_id:
         raise ValueError("sealed trace replay result omits its validated game identity")
-    return {
+    binding: dict[str, JSONValue] = {
         "event_count": trace_summary.get("event_count"),
         "game_id": game_id,
         "generator_commit": generator_commit,
         "manifest_hash": trace_summary.get("manifest_hash"),
-        "mode": "sealed-trace",
+        "mode": replay_mode,
         "recording_reconstructed": False,
         "root": trace_summary.get("path"),
         "run_id": trace_summary.get("run_id"),
         "submission_count": trace_summary.get("submission_count"),
         "tail_event_hash": trace_summary.get("tail_event_hash"),
     }
+    if replay_mode == "sealed-trace-prefix-reopening":
+        reopening = _object(replay.get("reopening_boundary"), field="reopening_boundary")
+        binding["reopening_consequence_event_hash"] = reopening.get("consequence_event_hash")
+        binding["reopening_consequence_event_id"] = reopening.get("consequence_event_id")
+        binding["reopening_submission_count"] = reopening.get("submission_count")
+        binding["reopening_candidate_plan_prefix"] = reopening.get("candidate_plan_prefix")
+        binding["reopening_candidate_plan_signature"] = reopening.get("candidate_plan_signature")
+    return binding
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -566,6 +576,16 @@ def _parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--expected-trace-levels-completed", type=int)
     parser.add_argument("--expected-trace-win-levels", type=int)
+    parser.add_argument("--expected-trace-reopening-submission", type=int)
+    parser.add_argument("--expected-trace-reopening-consequence-event-id")
+    parser.add_argument("--expected-trace-reopening-consequence-event-hash")
+    parser.add_argument(
+        "--expected-trace-reopening-state",
+        choices=(GameStateName.NOT_FINISHED.value,),
+    )
+    parser.add_argument("--expected-trace-reopening-levels-completed", type=int)
+    parser.add_argument("--expected-trace-reopening-win-levels", type=int)
+    parser.add_argument("--expected-trace-reopening-candidate-plan-prefix")
     parser.add_argument("--expected-commit", required=True)
     parser.add_argument("--expected-tree", required=True)
     parser.add_argument("--output", type=Path, required=True)
@@ -590,12 +610,37 @@ _TRACE_MODE_ARGUMENTS = (
     ("expected_trace_levels_completed", "--expected-trace-levels-completed"),
     ("expected_trace_win_levels", "--expected-trace-win-levels"),
 )
+_TRACE_REOPENING_MODE_ARGUMENTS = (
+    ("expected_trace_reopening_submission", "--expected-trace-reopening-submission"),
+    (
+        "expected_trace_reopening_consequence_event_id",
+        "--expected-trace-reopening-consequence-event-id",
+    ),
+    (
+        "expected_trace_reopening_consequence_event_hash",
+        "--expected-trace-reopening-consequence-event-hash",
+    ),
+    ("expected_trace_reopening_state", "--expected-trace-reopening-state"),
+    (
+        "expected_trace_reopening_levels_completed",
+        "--expected-trace-reopening-levels-completed",
+    ),
+    ("expected_trace_reopening_win_levels", "--expected-trace-reopening-win-levels"),
+    (
+        "expected_trace_reopening_candidate_plan_prefix",
+        "--expected-trace-reopening-candidate-plan-prefix",
+    ),
+)
 
 
 def _replay_mode(args: argparse.Namespace) -> str:
     campaign_mode = args.campaign_audit is not None
     required = _CAMPAIGN_MODE_ARGUMENTS if campaign_mode else _TRACE_MODE_ARGUMENTS
-    forbidden = _TRACE_MODE_ARGUMENTS if campaign_mode else _CAMPAIGN_MODE_ARGUMENTS
+    forbidden = (
+        _TRACE_MODE_ARGUMENTS + _TRACE_REOPENING_MODE_ARGUMENTS
+        if campaign_mode
+        else _CAMPAIGN_MODE_ARGUMENTS
+    )
     missing = [option for attribute, option in required if getattr(args, attribute) is None]
     if missing:
         raise ValueError(
@@ -608,7 +653,26 @@ def _replay_mode(args: argparse.Namespace) -> str:
         raise ValueError(
             "selected replay mode received incompatible arguments: " + ", ".join(supplied_forbidden)
         )
-    return "campaign-recording" if campaign_mode else "sealed-trace"
+    if campaign_mode:
+        return "campaign-recording"
+    reopening_supplied = [
+        getattr(args, attribute) is not None
+        for attribute, _option in _TRACE_REOPENING_MODE_ARGUMENTS
+    ]
+    if any(reopening_supplied) and not all(reopening_supplied):
+        missing_reopening = [
+            option
+            for (attribute, option), supplied in zip(
+                _TRACE_REOPENING_MODE_ARGUMENTS,
+                reopening_supplied,
+                strict=True,
+            )
+            if not supplied
+        ]
+        raise ValueError(
+            "sealed reopening mode is missing required arguments: " + ", ".join(missing_reopening)
+        )
+    return "sealed-trace-prefix-reopening" if all(reopening_supplied) else "sealed-trace"
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -670,16 +734,57 @@ def main(argv: list[str] | None = None) -> int:
                 expected_levels_completed=args.expected_trace_levels_completed,
                 expected_win_levels=args.expected_trace_win_levels,
                 max_coordinate_candidates=MAX_COORDINATE_CANDIDATES,
+                expected_reopening_submission_count=(args.expected_trace_reopening_submission),
+                expected_reopening_consequence_event_id=(
+                    args.expected_trace_reopening_consequence_event_id
+                ),
+                expected_reopening_consequence_event_hash=(
+                    args.expected_trace_reopening_consequence_event_hash
+                ),
+                expected_reopening_state=(
+                    GameStateName(args.expected_trace_reopening_state)
+                    if args.expected_trace_reopening_state is not None
+                    else None
+                ),
+                expected_reopening_levels_completed=(
+                    args.expected_trace_reopening_levels_completed
+                ),
+                expected_reopening_win_levels=(args.expected_trace_reopening_win_levels),
+                expected_reopening_candidate_plan_prefix=(
+                    args.expected_trace_reopening_candidate_plan_prefix
+                ),
             )
-            expected_submission_count = args.expected_trace_submission_count
+            expected_submission_count = (
+                args.expected_trace_reopening_submission
+                if replay_mode == "sealed-trace-prefix-reopening"
+                else args.expected_trace_submission_count
+            )
             trace_binding = _sealed_trace_binding(
                 replay,
                 generator_commit=trace_generator_commit,
+                replay_mode=replay_mode,
             )
-            receipt_status = "PASS_SEALED_TRACE_REPLAY"
-            receipt_schema = TRACE_SCHEMA
+            if replay_mode == "sealed-trace-prefix-reopening":
+                receipt_status = "PASS_SEALED_TRACE_PREFIX_REOPENING"
+                receipt_schema = TRACE_REOPENING_SCHEMA
+            else:
+                receipt_status = "PASS_SEALED_TRACE_REPLAY"
+                receipt_schema = TRACE_SCHEMA
         replay_result = _object(replay.get("replay_result"), field="replay_result")
-        if replay_result.get("matched_submission_count") != expected_submission_count:
+        if replay_mode == "sealed-trace-prefix-reopening":
+            reopening_boundary = _object(
+                replay.get("reopening_boundary"),
+                field="reopening_boundary",
+            )
+            if (
+                replay_result.get("matched_submission_count") != expected_submission_count - 1
+                or reopening_boundary.get("matched_action_and_consequence_through_submission")
+                != expected_submission_count
+            ):
+                raise ValueError(
+                    "canonical reopening prefix counts disagree with the selected evidence"
+                )
+        elif replay_result.get("matched_submission_count") != expected_submission_count:
             raise ValueError("canonical replay count disagrees with the selected evidence")
         source_after_binding, source_after = _source_snapshot(
             expected_commit=args.expected_commit,

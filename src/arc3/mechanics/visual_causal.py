@@ -242,6 +242,18 @@ class AffineMechanic:
 
 
 @dataclass(frozen=True, slots=True)
+class _PostDepositMediatorAccessCertificate:
+    """Exact observation and resource boundary for one mediator-access probe."""
+
+    hypothesis_key: str
+    mediator_signature: _VisualObjectStateSignature
+    protected_raster_hash: str
+    visible_endpoint_count: int
+    resource_action_count: int
+    exhausted_after_actions: int
+
+
+@dataclass(frozen=True, slots=True)
 class PlannedClick:
     """One bounded action in a causally justified local plan."""
 
@@ -307,6 +319,7 @@ class PlannedClick:
     completes_carrier_source_paired_cargo_crossed_predecessor: bool = False
     carrier_source_paired_cargo_crossed_delivery_step: bool = False
     completes_carrier_source_paired_cargo_crossed_delivery: bool = False
+    post_deposit_mediator_access_certificate: _PostDepositMediatorAccessCertificate | None = None
     expected_deposited_source_protected_raster_hash: str | None = None
     expected_deposited_visible_endpoint_count: int | None = None
     expected_deposited_visible_mediator_count: int | None = None
@@ -743,6 +756,7 @@ _HIERARCHY_PLAN_PREFIXES = (
     "affine-external-own-composite-hierarchy-recovery:",
     "affine-carrier-source-occlusion-hierarchy:",
     "affine-carrier-source-occlusion-hierarchy-recovery:",
+    "affine-crossed-post-deposit-mediator-access:",
     "affine-child-isolation:",
     "affine-child-recovery:",
 )
@@ -10943,6 +10957,18 @@ def _single_hierarchy_planned_click_is_safe(
 
     if not planned.plan_signature.startswith(_HIERARCHY_PLAN_PREFIXES):
         return True
+    access_certificate = planned.post_deposit_mediator_access_certificate
+    if access_certificate is not None:
+        return bool(
+            _post_deposit_mediator_access_step_is_compatible(planned)
+            and not scene.targets
+            and len(scene.mediators) == 1
+            and _visual_object_state_signature(scene.mediators[0])
+            == access_certificate.mediator_signature
+            and _child_isolation_protected_raster_hash(scene)
+            == access_certificate.protected_raster_hash
+            and len(scene.endpoints) == access_certificate.visible_endpoint_count
+        )
     paired_cargo_step = bool(
         planned.carrier_source_paired_cargo_step
         or planned.carrier_source_paired_cargo_restoration_step
@@ -13458,6 +13484,118 @@ def _is_crossed_replay_inverse_action(
     )
 
 
+def _post_deposit_mediator_access_step_is_compatible(planned: PlannedClick) -> bool:
+    """Validate the closed, observation-derived shape of one access probe."""
+
+    certificate = planned.post_deposit_mediator_access_certificate
+    return bool(
+        certificate is not None
+        and planned.plan_signature.startswith("affine-crossed-post-deposit-mediator-access:")
+        and planned.coordinate == Coordinate(*certificate.mediator_signature[0])
+        and planned.target_center == certificate.mediator_signature[0]
+        and planned.mediator_color == certificate.mediator_signature[1]
+        and planned.arity == 1
+        and planned.required_child_protected_raster_hash == certificate.protected_raster_hash
+        and certificate.visible_endpoint_count > 0
+        and certificate.resource_action_count >= 0
+        and certificate.resource_action_count + 1 < certificate.exhausted_after_actions
+        and not planned.carrier_source_paired_cargo_crossed_delivery_step
+        and not planned.carrier_source_paired_cargo_restoration_step
+    )
+
+
+def _post_deposit_mediator_access_plan(
+    before_scene: VisualScene,
+    returned_scene: VisualScene,
+    *,
+    target_center: tuple[int, int] | None,
+    crossed_delivery_plan_signature: str | None,
+    recovery_actions: tuple[PlannedClick, ...],
+    resource_lineage: _ActiveCrossedReplayResourceLineage | None,
+    current_actions: int,
+    excluded_hypothesis_keys: set[str] | frozenset[str],
+) -> PlannedClick | None:
+    """Derive one access test from a unique target-to-mediator transition.
+
+    The target identity, click coordinate, and resource limit all come from the
+    returned observation and the already-consumed crossed replay token.  The
+    active resource lineage is already bound to the observed episode prefix;
+    the new discriminator consumes only one action strictly before its learned
+    failure boundary.
+    """
+
+    prior_targets = tuple(
+        target for target in before_scene.targets if target.rounded_center == target_center
+    )
+    if (
+        target_center is None
+        or crossed_delivery_plan_signature is None
+        or len(prior_targets) != 1
+        or returned_scene.targets
+        or len(returned_scene.mediators) != 1
+        or not recovery_actions
+        or resource_lineage is None
+        or resource_lineage.forward_remaining_actions != 0
+        or not _strict_crossed_replay_budget_closes(
+            current_actions=current_actions,
+            route_action_upper_bound=1,
+            exhausted_after_actions=resource_lineage.exhausted_after_actions,
+        )
+    ):
+        return None
+
+    prior_target = prior_targets[0]
+    mediator = returned_scene.mediators[0]
+    if (
+        mediator.rounded_center != target_center
+        or mediator.color != prior_target.color
+        or (mediator.min_x, mediator.min_y, mediator.max_x, mediator.max_y)
+        != (prior_target.min_x, prior_target.min_y, prior_target.max_x, prior_target.max_y)
+    ):
+        return None
+
+    mediator_signature = _visual_object_state_signature(mediator)
+    protected_raster_hash = _child_isolation_protected_raster_hash(returned_scene)
+    identity = (
+        crossed_delivery_plan_signature,
+        prior_target.color,
+        (prior_target.min_x, prior_target.min_y, prior_target.max_x, prior_target.max_y),
+        mediator_signature,
+        protected_raster_hash,
+        len(returned_scene.endpoints),
+        current_actions,
+        resource_lineage.exhausted_after_actions,
+    )
+    digest = hashlib.sha256(repr(identity).encode("ascii")).hexdigest()[:24]
+    hypothesis_key = f"post-deposit-mediator-access:{digest}"
+    if hypothesis_key in excluded_hypothesis_keys:
+        return None
+    certificate = _PostDepositMediatorAccessCertificate(
+        hypothesis_key=hypothesis_key,
+        mediator_signature=mediator_signature,
+        protected_raster_hash=protected_raster_hash,
+        visible_endpoint_count=len(returned_scene.endpoints),
+        resource_action_count=current_actions,
+        exhausted_after_actions=resource_lineage.exhausted_after_actions,
+    )
+    planned = PlannedClick(
+        coordinate=Coordinate(*mediator.rounded_center),
+        purpose=VisualActionPurpose.PROBE,
+        expectation=(
+            "test whether the unique post-deposit mediator is an access or completion control"
+        ),
+        mechanic_ref="visual-post-deposit-mediator-access",
+        plan_id=f"visual-post-deposit-mediator-access:{digest}",
+        plan_signature=f"affine-crossed-post-deposit-mediator-access:{digest}",
+        target_center=mediator.rounded_center,
+        mediator_color=mediator.color,
+        arity=1,
+        required_child_protected_raster_hash=protected_raster_hash,
+        post_deposit_mediator_access_certificate=certificate,
+    )
+    return planned if _post_deposit_mediator_access_step_is_compatible(planned) else None
+
+
 def _carrier_source_recovery_consequence_alternative_is_compatible(
     planned: PlannedClick,
     alternative: PlannedClick,
@@ -14534,6 +14672,9 @@ class VisualCausalPolicy:
         self._paired_role_handoff_observed_setup_action_count: int | None = None
         self._paired_role_handoff_observed_crossed_forward_action_count: int | None = None
         self._crossed_delivery_recovery_signature: str | None = None
+        self._attempted_post_deposit_mediator_access_hypothesis_keys: set[str] = set()
+        self._failed_post_deposit_mediator_access_hypothesis_keys: set[str] = set()
+        self._post_deposit_mediator_access_closed: str | None = None
         self._episode_resource_baseline_edges: tuple[tuple[int, ...], ...] = ()
         self._episode_resource_candidates: tuple[_EdgeResourceProgress, ...] = ()
         self._episode_action6_count = 0
@@ -14679,6 +14820,9 @@ class VisualCausalPolicy:
         self._paired_role_handoff_observed_setup_action_count = None
         self._paired_role_handoff_observed_crossed_forward_action_count = None
         self._crossed_delivery_recovery_signature = None
+        self._attempted_post_deposit_mediator_access_hypothesis_keys.clear()
+        self._failed_post_deposit_mediator_access_hypothesis_keys.clear()
+        self._post_deposit_mediator_access_closed = None
         self._episode_resource_baseline_edges = _frame_edge_signatures(observation.frames[-1])
         self._episode_resource_candidates = ()
         self._episode_action6_count = 0
@@ -14743,6 +14887,7 @@ class VisualCausalPolicy:
         self._paired_role_handoff_observed_setup_action_count = None
         self._paired_role_handoff_observed_crossed_forward_action_count = None
         self._crossed_delivery_recovery_signature = None
+        self._post_deposit_mediator_access_closed = None
         self._episode_resource_baseline_edges = _frame_edge_signatures(observation.frames[-1])
         self._episode_resource_candidates = ()
         self._episode_action6_count = 0
@@ -15179,6 +15324,11 @@ class VisualCausalPolicy:
             raise PolicyError("levels_completed regressed within one policy lifetime")
         if observation.levels_completed > self._level_index:
             self._begin_level(observation)
+        if self._post_deposit_mediator_access_closed is not None:
+            raise PolicyError(
+                "the one-shot post-deposit mediator-access sufficiency hypothesis "
+                "was rejected; no repeated or unrelated continuation is authorized"
+            )
         if self._hierarchy_lineage_lost is not None:
             raise PolicyError(
                 "hierarchy lineage was lost after a nonmatching returned consequence; "
@@ -15271,9 +15421,11 @@ class VisualCausalPolicy:
                 queued_crossed,
                 recovery_signature=self._crossed_delivery_recovery_signature,
             )
+            access_certificate = queued_crossed.post_deposit_mediator_access_certificate
             crossed_family = bool(
                 crossed_forward
                 or crossed_inverse
+                or access_certificate is not None
                 or queued_crossed.carrier_source_paired_cargo_crossed_predecessor_family
                 or queued_crossed.carrier_source_paired_cargo_crossed_delivery_step
             )
@@ -15297,8 +15449,23 @@ class VisualCausalPolicy:
                 and active_crossed_lineage.forward_remaining_actions == 0
                 and self._episode_action6_count < active_crossed_lineage.exhausted_after_actions
             )
+            access_prefix_open = bool(
+                active_crossed_lineage is not None
+                and access_certificate is not None
+                and _post_deposit_mediator_access_step_is_compatible(queued_crossed)
+                and active_crossed_lineage.forward_remaining_actions == 0
+                and self._episode_action6_count == access_certificate.resource_action_count
+                and active_crossed_lineage.exhausted_after_actions
+                == access_certificate.exhausted_after_actions
+                and _strict_crossed_replay_budget_closes(
+                    current_actions=self._episode_action6_count,
+                    route_action_upper_bound=1,
+                    exhausted_after_actions=(active_crossed_lineage.exhausted_after_actions),
+                )
+            )
             if (active_crossed_lineage is not None or crossed_family) and not (
-                resource_matches and (forward_budget_closes or inverse_prefix_open)
+                resource_matches
+                and (forward_budget_closes or inverse_prefix_open or access_prefix_open)
             ):
                 self._latch_hierarchy_lineage_failure(
                     level_index=observation.levels_completed,
@@ -16503,6 +16670,11 @@ class VisualCausalPolicy:
             and carrier_source_recovery_candidate is not None
             and carrier_source_recovery_candidate.carrier_source_paired_cargo_crossed_delivery_step
         )
+        post_deposit_mediator_access_action = bool(
+            carrier_source_recovery_candidate is not None
+            and carrier_source_recovery_candidate.post_deposit_mediator_access_certificate
+            is not None
+        )
         carrier_source_untouched_action = bool(
             carrier_source_untouched_discriminator_action
             or carrier_source_untouched_restoration_action
@@ -17360,19 +17532,46 @@ class VisualCausalPolicy:
                 recovery_signature=self._crossed_delivery_recovery_signature,
             )
         )
+        access_certificate = (
+            carrier_source_recovery_candidate.post_deposit_mediator_access_certificate
+            if carrier_source_recovery_candidate is not None
+            else None
+        )
+        if post_deposit_mediator_access_action and access_certificate is not None:
+            # A submitted discriminator is one-shot even when its consequence
+            # is GAME_OVER, UNKNOWN, or loses the exact resource lineage.  This
+            # records only that the action was attempted; epistemic rejection
+            # remains confined to an exact NOT_FINISHED consequence below.
+            self._attempted_post_deposit_mediator_access_hypothesis_keys.add(
+                access_certificate.hypothesis_key
+            )
         if (
-            (crossed_forward_action or crossed_inverse_action)
+            (crossed_forward_action or crossed_inverse_action or access_certificate is not None)
             and not level_progress
             and observation.state is GameStateName.NOT_FINISHED
         ):
             active_lineage = self._active_crossed_replay_resource_lineage
-            crossed_resource_lineage_mismatch = bool(
-                active_lineage is None
-                or not hierarchy_raster_certified
-                or not self._active_crossed_resource_matches(observation)
-                or (crossed_forward_action and active_lineage.forward_remaining_actions <= 0)
-                or (crossed_inverse_action and active_lineage.forward_remaining_actions != 0)
-            )
+            if access_certificate is not None:
+                assert carrier_source_recovery_candidate is not None
+                crossed_resource_lineage_mismatch = bool(
+                    active_lineage is None
+                    or not _post_deposit_mediator_access_step_is_compatible(
+                        carrier_source_recovery_candidate
+                    )
+                    or not self._active_crossed_resource_matches(observation)
+                    or active_lineage.forward_remaining_actions != 0
+                    or active_lineage.exhausted_after_actions
+                    != access_certificate.exhausted_after_actions
+                    or self._episode_action6_count != access_certificate.resource_action_count + 1
+                )
+            else:
+                crossed_resource_lineage_mismatch = bool(
+                    active_lineage is None
+                    or not hierarchy_raster_certified
+                    or not self._active_crossed_resource_matches(observation)
+                    or (crossed_forward_action and active_lineage.forward_remaining_actions <= 0)
+                    or (crossed_inverse_action and active_lineage.forward_remaining_actions != 0)
+                )
             if not crossed_resource_lineage_mismatch and crossed_forward_action:
                 assert active_lineage is not None
                 self._active_crossed_replay_resource_lineage = replace(
@@ -17569,6 +17768,11 @@ class VisualCausalPolicy:
                         hierarchy_relation_key
                     )
                 residual = "the exact carried-source delivery action returned official GAME_OVER"
+            elif post_deposit_mediator_access_action:
+                residual = (
+                    "the one-shot post-deposit mediator-access discriminator returned "
+                    "official GAME_OVER"
+                )
             elif carrier_source_detachment_action:
                 if hierarchy_relation_key is not None:
                     self._failed_carrier_source_occlusion_hierarchy_relation_keys.add(
@@ -17690,6 +17894,25 @@ class VisualCausalPolicy:
                     if hierarchy_action
                     else "official environment state was UNKNOWN"
                 )
+        elif post_deposit_mediator_access_action:
+            if access_certificate is None or crossed_resource_lineage_mismatch:
+                self._clear_crossed_replay_execution()
+                residual = (
+                    "the one-shot post-deposit mediator-access discriminator lost its exact "
+                    "resource lineage and failed closed"
+                )
+            else:
+                self._failed_post_deposit_mediator_access_hypothesis_keys.add(
+                    access_certificate.hypothesis_key
+                )
+                self._post_deposit_mediator_access_closed = access_certificate.hypothesis_key
+                self._clear_crossed_replay_execution()
+                residual = (
+                    "the unique post-deposit mediator was accessed under the exact crossed "
+                    "delivery and resource certificate, but the official environment remained "
+                    "NOT_FINISHED; only mediator-access sufficiency is rejected and no repeat "
+                    "is authorized"
+                )
         elif marker_bootstrap:
             self._plan.clear()
             if mechanic is None and not marker_bootstrap_succeeded:
@@ -17783,10 +18006,30 @@ class VisualCausalPolicy:
                 )
                 if self._pending_plan_signature is not None and delivery_lineage_complete:
                     self._failed_plan_signatures.add(self._pending_plan_signature)
-                    self._crossed_delivery_recovery_signature = self._pending_plan_signature
                 recovery_actions = self._active_hierarchy_recovery_actions
                 self._plan.clear()
-                if recovery_actions and delivery_lineage_complete:
+                access_plan = (
+                    _post_deposit_mediator_access_plan(
+                        before_scene,
+                        after_scene,
+                        target_center=self._pending_target_center,
+                        crossed_delivery_plan_signature=self._pending_plan_signature,
+                        recovery_actions=recovery_actions,
+                        resource_lineage=active_lineage,
+                        current_actions=self._episode_action6_count,
+                        excluded_hypothesis_keys=(
+                            self._failed_post_deposit_mediator_access_hypothesis_keys
+                            | self._attempted_post_deposit_mediator_access_hypothesis_keys
+                        ),
+                    )
+                    if delivery_lineage_complete and not after_scene.targets
+                    else None
+                )
+                if access_plan is not None:
+                    self._plan.append(access_plan)
+                    self._last_probe_failed = False
+                elif delivery_lineage_complete and after_scene.targets and recovery_actions:
+                    self._crossed_delivery_recovery_signature = self._pending_plan_signature
                     self._plan.extend(recovery_actions)
                     self._last_probe_failed = False
                 else:
@@ -17795,8 +18038,21 @@ class VisualCausalPolicy:
                 self._resource_interrupted_paired_replay = None
                 residual = (
                     "the one recomputed crossed delivery matched its protected raster "
-                    "but remained NOT_FINISHED; only its certified inverse prefix is "
-                    "authorized before the learned resource boundary"
+                    "but remained NOT_FINISHED; one unique observation-derived "
+                    "post-deposit mediator access test is authorized strictly before "
+                    "the learned resource boundary"
+                    if access_plan is not None
+                    else (
+                        "the one recomputed crossed delivery matched its protected raster "
+                        "but remained NOT_FINISHED; only its certified inverse prefix is "
+                        "authorized before the learned resource boundary"
+                        if self._plan
+                        else (
+                            "the one recomputed crossed delivery had no unique "
+                            "resource-safe post-deposit mediator identity; continuation "
+                            "failed closed"
+                        )
+                    )
                 )
             elif (
                 carrier_source_paired_cargo_action
@@ -18497,6 +18753,7 @@ class VisualCausalPolicy:
                 or carrier_source_candidate.carrier_source_paired_cargo_role_restoration_step
                 or carrier_source_candidate.carrier_source_paired_cargo_crossed_predecessor_step
                 or carrier_source_candidate.carrier_source_paired_cargo_crossed_delivery_step
+                or carrier_source_candidate.post_deposit_mediator_access_certificate is not None
             )
         )
         learner = self._mechanical_learner
@@ -18597,6 +18854,27 @@ class VisualCausalPolicy:
             ),
             "crossed_delivery_recovery_active": (
                 self._crossed_delivery_recovery_signature is not None
+            ),
+            "post_deposit_mediator_access_active": bool(
+                (
+                    self._pending_plan_signature is not None
+                    and self._pending_plan_signature.startswith(
+                        "affine-crossed-post-deposit-mediator-access:"
+                    )
+                )
+                or any(
+                    planned.post_deposit_mediator_access_certificate is not None
+                    for planned in self._plan
+                )
+            ),
+            "post_deposit_mediator_access_closed": (
+                self._post_deposit_mediator_access_closed is not None
+            ),
+            "post_deposit_mediator_access_attempted_count": len(
+                self._attempted_post_deposit_mediator_access_hypothesis_keys
+            ),
+            "post_deposit_mediator_access_rejected_count": len(
+                self._failed_post_deposit_mediator_access_hypothesis_keys
             ),
             "hierarchy_preterminal_retry_count": int(
                 self._preterminal_hierarchy_retry_signature is not None
@@ -18753,6 +19031,7 @@ class VisualCausalPolicy:
                 if self._pending_mechanic_prediction is not None
                 else None
             ),
+            "pending_plan_signature": self._pending_plan_signature,
             "pending_plan_actions": len(self._plan),
             "receipt_count": len(self._receipts),
             "receipts": [item.to_dict() for item in self._receipts[-192:]],

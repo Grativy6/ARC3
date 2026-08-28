@@ -299,7 +299,11 @@ def _observation_dict(observation: Observation) -> dict[str, JSONValue]:
     }
 
 
-def _family_state(snapshot: Mapping[str, JSONValue]) -> dict[str, JSONValue]:
+def _family_state(
+    snapshot: Mapping[str, JSONValue],
+    *,
+    include_plan_signature: bool = False,
+) -> dict[str, JSONValue]:
     keys = (
         "child_isolation_distinct_strata_count",
         "child_isolation_hypothesis_rejected_count",
@@ -325,7 +329,10 @@ def _family_state(snapshot: Mapping[str, JSONValue]) -> dict[str, JSONValue]:
         "pending_plan_actions",
         "receipt_count",
     )
-    return {key: snapshot.get(key) for key in keys}
+    state = {key: snapshot.get(key) for key in keys}
+    if include_plan_signature:
+        state["pending_plan_signature"] = snapshot.get("pending_plan_signature")
+    return state
 
 
 def _normalized_expected_sha256(value: str) -> str:
@@ -644,6 +651,8 @@ def _validate_trace_event_position(
 def _stage_and_cancel_candidate(
     policy: VisualCausalPolicy,
     observation: Observation,
+    *,
+    include_plan_signature: bool = False,
 ) -> tuple[
     dict[str, JSONValue],
     dict[str, JSONValue],
@@ -667,13 +676,18 @@ def _stage_and_cancel_candidate(
     candidate_payload: dict[str, JSONValue] = {
         "action": _action_dict(candidate),
         "pending_plan_actions_after_selection": selected_snapshot.get("pending_plan_actions"),
-        "plan_signature": selected_snapshot.get("hierarchy_signature"),
+        "plan_signature": selected_snapshot.get(
+            "pending_plan_signature" if include_plan_signature else "hierarchy_signature"
+        ),
         "prediction_id": candidate_prediction_id,
         "submitted": False,
         "support_weights": selected_snapshot.get("hierarchy_support_weights"),
         "supports": selected_snapshot.get("hierarchy_supports"),
     }
-    family_payload = _family_state(selected_snapshot)
+    family_payload = _family_state(
+        selected_snapshot,
+        include_plan_signature=include_plan_signature,
+    )
     selected_snapshot_hash = sha256_bytes(canonical_json_bytes(selected_snapshot))
 
     policy.cancel_unsubmitted_action()
@@ -716,13 +730,26 @@ def replay_unfinished_mechanical_trace(
     expected_levels_completed: int,
     expected_win_levels: int,
     max_coordinate_candidates: int = 8,
+    expected_reopening_submission_count: int | None = None,
+    expected_reopening_consequence_event_id: str | None = None,
+    expected_reopening_consequence_event_hash: str | None = None,
+    expected_reopening_state: GameStateName | None = None,
+    expected_reopening_levels_completed: int | None = None,
+    expected_reopening_win_levels: int | None = None,
+    expected_reopening_candidate_plan_prefix: str | None = None,
 ) -> dict[str, JSONValue]:
-    """Replay one complete sealed trace without repairing its SDK recording.
+    """Replay one sealed trace or an explicitly bound reopening prefix.
 
     The immutable trace must contain exactly one initial observation, one
     six-event cycle for each submitted action, and one final candidate event.
     The initial SDK ``returned_action`` is not represented by the trace schema
     and is therefore kept explicitly unavailable rather than invented.
+
+    Reopening mode still verifies the complete immutable trace and its suffix,
+    but current-policy action and receipt equality stops at one named official
+    consequence.  The boundary action must still match.  Its newly regenerated
+    receipt must differ from the historical receipt before one next candidate
+    can be staged and cancelled from that returned observation.
     """
 
     if not expected_run_id.strip() or not expected_game_id.strip():
@@ -752,6 +779,62 @@ def replay_unfinished_mechanical_trace(
         raise MechanicalReplayError("expected final counters must be non-negative")
     if max_coordinate_candidates <= 0 or max_coordinate_candidates > 64:
         raise MechanicalReplayError("max coordinate candidates must be within 1..64")
+    reopening_values = (
+        expected_reopening_submission_count,
+        expected_reopening_consequence_event_id,
+        expected_reopening_consequence_event_hash,
+        expected_reopening_state,
+        expected_reopening_levels_completed,
+        expected_reopening_win_levels,
+        expected_reopening_candidate_plan_prefix,
+    )
+    reopening_mode = any(value is not None for value in reopening_values)
+    if reopening_mode and any(value is None for value in reopening_values):
+        raise MechanicalReplayError(
+            "sealed reopening replay requires every named reopening boundary field"
+        )
+    if reopening_mode:
+        if (
+            isinstance(expected_reopening_submission_count, bool)
+            or not isinstance(expected_reopening_submission_count, int)
+            or not 1 <= expected_reopening_submission_count < expected_submission_count
+        ):
+            raise MechanicalReplayError(
+                "expected reopening submission count must precede the sealed suffix"
+            )
+        if (
+            not isinstance(expected_reopening_consequence_event_id, str)
+            or not expected_reopening_consequence_event_id.strip()
+        ):
+            raise MechanicalReplayError("expected reopening consequence event ID must be non-empty")
+        if expected_reopening_state is not GameStateName.NOT_FINISHED:
+            raise MechanicalReplayError(
+                "sealed reopening replay requires a NOT_FINISHED consequence"
+            )
+        if (
+            isinstance(expected_reopening_levels_completed, bool)
+            or not isinstance(expected_reopening_levels_completed, int)
+            or expected_reopening_levels_completed < 0
+            or isinstance(expected_reopening_win_levels, bool)
+            or not isinstance(expected_reopening_win_levels, int)
+            or expected_reopening_win_levels < 0
+        ):
+            raise MechanicalReplayError("expected reopening counters must be non-negative integers")
+        if (
+            not isinstance(expected_reopening_candidate_plan_prefix, str)
+            or not expected_reopening_candidate_plan_prefix.strip()
+        ):
+            raise MechanicalReplayError(
+                "expected reopening candidate plan prefix must be non-empty"
+            )
+        named_reopening_event_hash = _normalized_trace_sha256(
+            cast(str, expected_reopening_consequence_event_hash),
+            field="expected reopening consequence event hash",
+        )
+        policy_replay_submission_count = expected_reopening_submission_count
+    else:
+        named_reopening_event_hash = None
+        policy_replay_submission_count = expected_submission_count
     named_manifest_hash = _normalized_trace_sha256(
         expected_trace_manifest_hash,
         field="expected trace manifest hash",
@@ -864,9 +947,17 @@ def replay_unfinished_mechanical_trace(
     state_counts: Counter[str] = Counter()
     action_counts: Counter[str] = Counter()
     reset_count = 0
+    sealed_state_counts: Counter[str] = Counter()
+    sealed_action_counts: Counter[str] = Counter()
+    sealed_reset_count = 0
     matched = 0
     regenerated_receipts = 0
     current: Observation | None = None
+    reopening_observation: Observation | None = None
+    reopening_historical_receipt: dict[str, JSONValue] | None = None
+    reopening_regenerated_receipt: dict[str, JSONValue] | None = None
+    reopening_consequence_event: TraceEvent | None = None
+    historical_suffix_first_action: ActionRequest | None = None
     try:
         if len(events) != expected_event_count:
             raise MechanicalReplayError(
@@ -928,6 +1019,7 @@ def replay_unfinished_mechanical_trace(
                     f"sealed trace action cycle {submission_index + 1} is incomplete or reordered"
                 )
             candidates, selected_event, submitted, consequence, observed, mechanical = cycle
+            policy_replay_cycle = submission_index < policy_replay_submission_count
             for event in (candidates, selected_event, submitted, consequence, mechanical):
                 _validate_trace_event_position(
                     event,
@@ -941,13 +1033,16 @@ def replay_unfinished_mechanical_trace(
                 selected_event.payload.get("selected_action"),
                 field=f"action.selected step {submission_index}",
             )
-            selected = policy.select(current)
-            if selected != recorded_action:
-                raise MechanicalReplayError(
-                    f"policy divergence at sealed submission {submission_index + 1}: "
-                    f"selected {_action_dict(selected)!r}, trace "
-                    f"{_action_dict(recorded_action)!r}"
-                )
+            if reopening_mode and submission_index == policy_replay_submission_count:
+                historical_suffix_first_action = recorded_action
+            if policy_replay_cycle:
+                selected = policy.select(current)
+                if selected != recorded_action:
+                    raise MechanicalReplayError(
+                        f"policy divergence at sealed submission {submission_index + 1}: "
+                        f"selected {_action_dict(selected)!r}, trace "
+                        f"{_action_dict(recorded_action)!r}"
+                    )
             selected_payload = _trace_action_dict(recorded_action)
             if (
                 submitted.payload.get("selected_event_id") != selected_event.event_id
@@ -1015,7 +1110,9 @@ def replay_unfinished_mechanical_trace(
                     raise MechanicalReplayError(
                         f"sealed RESET {submission_index + 1} does not preserve level recovery"
                     )
-                reset_count += 1
+                sealed_reset_count += 1
+                if policy_replay_cycle:
+                    reset_count += 1
             elif current.state in {GameStateName.GAME_OVER, GameStateName.NOT_PLAYED}:
                 raise MechanicalReplayError(
                     f"sealed submission {submission_index + 1} bypasses mandatory RESET"
@@ -1034,16 +1131,58 @@ def replay_unfinished_mechanical_trace(
                 raise MechanicalReplayError(
                     f"sealed mechanics receipt {submission_index + 1} is malformed"
                 )
-            policy.accept_consequence(after)
-            durable = policy.drain_durable_receipts()
-            if len(durable) != 1 or durable[0] != trace_receipt:
-                raise MechanicalReplayError(
-                    f"regenerated mechanics receipt disagrees at submission {submission_index + 1}"
+            sealed_action_counts[recorded_action.name.value] += 1
+            sealed_state_counts[after.state.value] += 1
+            if policy_replay_cycle:
+                policy.accept_consequence(after)
+                durable = policy.drain_durable_receipts()
+                if len(durable) != 1:
+                    raise MechanicalReplayError(
+                        "regenerated mechanics receipt cardinality disagrees at submission "
+                        f"{submission_index + 1}"
+                    )
+                regenerated = durable[0]
+                reopening_boundary = bool(
+                    reopening_mode and submission_index + 1 == policy_replay_submission_count
                 )
-            regenerated_receipts += 1
-            matched += 1
-            action_counts[recorded_action.name.value] += 1
-            state_counts[after.state.value] += 1
+                if reopening_boundary:
+                    if (
+                        consequence.event_id != cast(str, expected_reopening_consequence_event_id)
+                        or consequence.event_hash != named_reopening_event_hash
+                        or after.state is not expected_reopening_state
+                        or after.levels_completed != expected_reopening_levels_completed
+                        or after.win_levels != expected_reopening_win_levels
+                    ):
+                        raise MechanicalReplayError(
+                            "sealed reopening consequence disagrees with the named boundary"
+                        )
+                    historical_without_residual = dict(trace_receipt)
+                    regenerated_without_residual = dict(regenerated)
+                    historical_residual = historical_without_residual.pop("residual", None)
+                    regenerated_residual = regenerated_without_residual.pop("residual", None)
+                    if (
+                        not isinstance(historical_residual, str)
+                        or not isinstance(regenerated_residual, str)
+                        or historical_residual == regenerated_residual
+                        or historical_without_residual != regenerated_without_residual
+                    ):
+                        raise MechanicalReplayError(
+                            "sealed reopening receipt must differ only in its residual"
+                        )
+                    reopening_observation = after
+                    reopening_historical_receipt = trace_receipt
+                    reopening_regenerated_receipt = regenerated
+                    reopening_consequence_event = consequence
+                else:
+                    if regenerated != trace_receipt:
+                        raise MechanicalReplayError(
+                            "regenerated mechanics receipt disagrees at submission "
+                            f"{submission_index + 1}"
+                        )
+                    regenerated_receipts += 1
+                matched += 1
+                action_counts[recorded_action.name.value] += 1
+                state_counts[after.state.value] += 1
             current = after
             cursor += 6
 
@@ -1069,69 +1208,124 @@ def replay_unfinished_mechanical_trace(
             raise MechanicalReplayError(
                 "sealed trace final observation disagrees with the named evidence boundary"
             )
-        if (
-            matched != expected_submission_count
-            or regenerated_receipts != expected_submission_count
-            or len(policy.receipts) != expected_submission_count
-        ):
-            raise MechanicalReplayError("sealed trace replay receipt cardinality is inconsistent")
+        if reopening_mode:
+            if (
+                matched != policy_replay_submission_count
+                or regenerated_receipts != policy_replay_submission_count - 1
+                or len(policy.receipts) != policy_replay_submission_count
+                or reopening_observation is None
+                or reopening_historical_receipt is None
+                or reopening_regenerated_receipt is None
+                or reopening_consequence_event is None
+            ):
+                raise MechanicalReplayError(
+                    "sealed reopening replay receipt cardinality is inconsistent"
+                )
+            candidate_observation = reopening_observation
+        else:
+            if (
+                matched != expected_submission_count
+                or regenerated_receipts != expected_submission_count
+                or len(policy.receipts) != expected_submission_count
+            ):
+                raise MechanicalReplayError(
+                    "sealed trace replay receipt cardinality is inconsistent"
+                )
+            candidate_observation = current
 
         candidate, cancellation, family, snapshot_hash = _stage_and_cancel_candidate(
             policy,
-            current,
+            candidate_observation,
+            include_plan_signature=reopening_mode,
         )
+        if reopening_mode:
+            candidate_plan_signature = candidate.get("plan_signature")
+            if not isinstance(
+                candidate_plan_signature, str
+            ) or not candidate_plan_signature.startswith(
+                cast(str, expected_reopening_candidate_plan_prefix)
+            ):
+                raise MechanicalReplayError(
+                    "sealed reopening candidate does not match the named plan family"
+                )
+            if historical_suffix_first_action is None or candidate["action"] == _action_dict(
+                historical_suffix_first_action
+            ):
+                raise MechanicalReplayError(
+                    "sealed reopening candidate does not diverge from the historical suffix"
+                )
         final_projection, final_byte_length = _sealed_trace_projection(path)
         if final_projection != trace_projection or final_byte_length != trace_byte_length:
             raise MechanicalReplayError("sealed trace changed during read-only replay")
-        return {
-            "boundaries": {
-                "completion_claimed": False,
-                "environment_actions_issued": False,
-                "game_source_inspected": False,
-                "holdout_accessed": False,
-                "initial_returned_action_represented": False,
-                "initial_returned_action_reconstructed": False,
-                "recording_rewritten": False,
-                "session_or_adapter_constructed": False,
-                "trace_root_modified": False,
-            },
+        boundaries: dict[str, JSONValue] = {
+            "completion_claimed": False,
+            "environment_actions_issued": False,
+            "game_source_inspected": False,
+            "holdout_accessed": False,
+            "initial_returned_action_represented": False,
+            "initial_returned_action_reconstructed": False,
+            "recording_rewritten": False,
+            "session_or_adapter_constructed": False,
+            "trace_root_modified": False,
+        }
+        evidence_completeness: dict[str, JSONValue] = {
+            "official_recording_evaluated": False,
+            "receipt_complete": False,
+            "recording_verified": False,
+            "run_evidence_complete": False,
+            "trace_replay_does_not_repair_sdk_recording": True,
+        }
+        method: dict[str, JSONValue] = {
+            "consequence_order": (
+                "select(observation[n]); compare selected/submitted/consequence; "
+                "accept(observation[n+1]); compare regenerated durable receipt"
+            ),
+            "environment_boundary": "none",
+            "final_selection": "selected once, captured, cancelled as unsubmitted",
+            "initial_returned_action": "unavailable in trace schema; retained as None",
+            "policy": "arc3.mechanics.visual_causal.VisualCausalPolicy",
+            "trace_parser": "EventJournal plus ReplayEngine over sealed first-party blobs",
+        }
+        matched_submission_count = matched
+        matched_through_submission = matched
+        mismatch: JSONValue = None
+        if reopening_mode:
+            matched_submission_count = regenerated_receipts
+            matched_through_submission = regenerated_receipts
+            mismatch = {
+                "classification": "DECLARED_RESIDUAL_ONLY_REOPENING",
+                "expected": True,
+                "fields": ["residual"],
+                "submission": policy_replay_submission_count,
+            }
+        replay_result: dict[str, JSONValue] = {
+            "accepted_consequence_count": matched,
+            "action_counts": {name: action_counts[name] for name in sorted(action_counts)},
+            "candidate_cancelled": True,
+            "candidate_cancellation_verified": True,
+            "candidate_selection_snapshot_sha256": snapshot_hash,
+            "matched_regenerated_mechanics_receipt_count": regenerated_receipts,
+            "matched_submission_count": matched_submission_count,
+            "matched_through_submission": matched_through_submission,
+            "mismatch": mismatch,
+            "policy_receipt_count": len(policy.receipts),
+            "reset_count": reset_count,
+            "state_counts": {name: state_counts[name] for name in sorted(state_counts)},
+            "status": (
+                "PASS_SEALED_TRACE_PREFIX_REOPENING"
+                if reopening_mode
+                else "PASS_SEALED_TRACE_REPLAY"
+            ),
+        }
+        result: dict[str, JSONValue] = {
+            "boundaries": boundaries,
             "candidate_next_submission": candidate,
             "cancellation_verification": cancellation,
-            "evidence_completeness": {
-                "official_recording_evaluated": False,
-                "receipt_complete": False,
-                "recording_verified": False,
-                "run_evidence_complete": False,
-                "trace_replay_does_not_repair_sdk_recording": True,
-            },
+            "evidence_completeness": evidence_completeness,
             "family_state_after_candidate_selection": family,
             "final_recorded_observation": _observation_dict(current),
-            "method": {
-                "consequence_order": (
-                    "select(observation[n]); compare selected/submitted/consequence; "
-                    "accept(observation[n+1]); compare regenerated durable receipt"
-                ),
-                "environment_boundary": "none",
-                "final_selection": "selected once, captured, cancelled as unsubmitted",
-                "initial_returned_action": "unavailable in trace schema; retained as None",
-                "policy": "arc3.mechanics.visual_causal.VisualCausalPolicy",
-                "trace_parser": "EventJournal plus ReplayEngine over sealed first-party blobs",
-            },
-            "replay_result": {
-                "accepted_consequence_count": matched,
-                "action_counts": {name: action_counts[name] for name in sorted(action_counts)},
-                "candidate_cancelled": True,
-                "candidate_cancellation_verified": True,
-                "candidate_selection_snapshot_sha256": snapshot_hash,
-                "matched_regenerated_mechanics_receipt_count": regenerated_receipts,
-                "matched_submission_count": matched,
-                "matched_through_submission": matched,
-                "mismatch": None,
-                "policy_receipt_count": len(policy.receipts),
-                "reset_count": reset_count,
-                "state_counts": {name: state_counts[name] for name in sorted(state_counts)},
-                "status": "PASS_SEALED_TRACE_REPLAY",
-            },
+            "method": method,
+            "replay_result": replay_result,
             "trace": {
                 "active_byte_length": 0,
                 "byte_length": trace_byte_length,
@@ -1148,6 +1342,87 @@ def replay_unfinished_mechanical_trace(
                 "tail_event_hash": named_tail_hash,
             },
         }
+        if reopening_mode:
+            assert reopening_observation is not None
+            assert reopening_historical_receipt is not None
+            assert reopening_regenerated_receipt is not None
+            assert reopening_consequence_event is not None
+            boundaries.update(
+                {
+                    "full_sealed_trace_integrity_verified": True,
+                    "historical_suffix_current_policy_replayed": False,
+                    "historical_suffix_policy_match_claimed": False,
+                    "historical_suffix_mechanics_receipt_semantics_verified": False,
+                    "historical_suffix_structure_and_linkage_verified": True,
+                    "reopening_prefix_only": True,
+                }
+            )
+            evidence_completeness["historical_suffix_current_policy_verified"] = False
+            method["consequence_order"] = (
+                "exact current-policy action and receipt equality through the submission "
+                "before reopening; exact boundary action and official consequence; one "
+                "declared residual-only receipt revision; sealed suffix integrity, action-state "
+                "structure, and receipt-consequence linkage without current-policy replay or "
+                "mechanics-receipt semantic validation"
+            )
+            method["historical_suffix"] = (
+                "verified as immutable structurally linked recorded evidence, not matched "
+                "current-policy behavior or current-policy receipt semantics"
+            )
+            replay_result.update(
+                {
+                    "historical_suffix_submission_count": (
+                        expected_submission_count - policy_replay_submission_count
+                    ),
+                    "historical_source_submission_count": expected_submission_count,
+                    "historical_suffix_integrity_verified": True,
+                    "historical_suffix_structure_and_linkage_verified": True,
+                    "exact_policy_match_through_submission": (policy_replay_submission_count - 1),
+                    "exact_policy_action_match_through_submission": (
+                        policy_replay_submission_count
+                    ),
+                    "reopening_submission": policy_replay_submission_count,
+                    "current_policy_accepted_consequence_count": matched,
+                    "reopening_receipt_divergence_count": 1,
+                    "sealed_trace_action_counts": {
+                        name: sealed_action_counts[name] for name in sorted(sealed_action_counts)
+                    },
+                    "sealed_trace_reset_count": sealed_reset_count,
+                    "sealed_trace_state_counts": {
+                        name: sealed_state_counts[name] for name in sorted(sealed_state_counts)
+                    },
+                    "sealed_trace_submission_count": expected_submission_count,
+                }
+            )
+            result["candidate_boundary_observation"] = _observation_dict(reopening_observation)
+            result["reopening_boundary"] = {
+                "consequence_event_hash": reopening_consequence_event.event_hash,
+                "consequence_event_id": reopening_consequence_event.event_id,
+                "current_policy_receipt": reopening_regenerated_receipt,
+                "current_policy_receipt_sha256": sha256_bytes(
+                    canonical_json_bytes(reopening_regenerated_receipt)
+                ),
+                "historical_receipt": reopening_historical_receipt,
+                "historical_receipt_sha256": sha256_bytes(
+                    canonical_json_bytes(reopening_historical_receipt)
+                ),
+                "matched_action_and_consequence_through_submission": (
+                    policy_replay_submission_count
+                ),
+                "matched_receipts_through_submission": policy_replay_submission_count - 1,
+                "receipt_delta_fields": ["residual"],
+                "candidate_differs_from_historical_suffix": True,
+                "candidate_plan_prefix": cast(
+                    str,
+                    expected_reopening_candidate_plan_prefix,
+                ),
+                "candidate_plan_signature": candidate["plan_signature"],
+                "historical_suffix_first_action": _action_dict(
+                    cast(ActionRequest, historical_suffix_first_action)
+                ),
+                "submission_count": policy_replay_submission_count,
+            }
+        return result
     except Exception:
         try:
             policy.cancel_unsubmitted_action()

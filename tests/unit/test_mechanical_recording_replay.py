@@ -4,6 +4,7 @@ import copy
 import hashlib
 import json
 from collections.abc import Callable
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -114,8 +115,9 @@ def _trace_observation_fixture(
     levels_completed: int,
     full_reset: bool,
     returned_action: ActionRequest | None,
+    available_actions: tuple[ActionName, ...] = (ActionName.ACTION1,),
 ) -> Observation:
-    available = () if state is GameStateName.GAME_OVER else (ActionName.ACTION1,)
+    available = () if state is GameStateName.GAME_OVER else available_actions
     return Observation(
         game_id=GameId(TRACE_GAME),
         frames=(GridFrame(((0,),)),),
@@ -135,10 +137,17 @@ def _build_sealed_trace(
     *,
     initial_full_reset: bool = True,
     include_reset_cycle: bool = False,
+    normal_submission_count: int = 1,
     omit_first_mechanical_receipt: bool = False,
     first_after_state: GameStateName | None = None,
     reset_recovery_state: GameStateName = GameStateName.NOT_FINISHED,
+    available_actions: tuple[ActionName, ...] = (ActionName.ACTION1,),
+    force_string_residuals: bool = False,
 ) -> dict[str, Any]:
+    if normal_submission_count < 1:
+        raise ValueError("normal_submission_count must be positive")
+    if include_reset_cycle and normal_submission_count != 1:
+        raise ValueError("reset and repeated-normal synthetic traces are separate fixtures")
     trace_path = tmp_path / "trace"
     journal = EventJournal(trace_path, run_id=TRACE_RUN, fsync_on_flush=False)
     sink = BaselineTraceSink(
@@ -161,10 +170,15 @@ def _build_sealed_trace(
         levels_completed=0,
         full_reset=initial_full_reset,
         returned_action=ActionRequest(ActionName.RESET),
+        available_actions=available_actions,
     )
     sink.record_observation(current)
 
-    def append_cycle(after_state: GameStateName, *, omit_mechanical: bool = False) -> None:
+    def append_cycle(
+        after_state: GameStateName,
+        *,
+        omit_mechanical: bool = False,
+    ) -> None:
         nonlocal current
         sink.record_candidates(current)
         selected = policy.select(current)
@@ -175,11 +189,16 @@ def _build_sealed_trace(
             levels_completed=current.levels_completed,
             full_reset=False,
             returned_action=selected,
+            available_actions=available_actions,
         )
         sink.record_consequence(current, selected, after)
         sink.record_observation(after)
         policy.accept_consequence(after)
         durable = policy.drain_durable_receipts()
+        if force_string_residuals and not isinstance(durable[0].get("residual"), str):
+            revised = dict(durable[0])
+            revised["residual"] = "synthetic-historical-reopening-residual"
+            durable = (revised,)
         if not omit_mechanical:
             sink.record_mechanical_receipts(after, durable)
         current = after
@@ -190,6 +209,9 @@ def _build_sealed_trace(
         )
     append_cycle(first_after_state, omit_mechanical=omit_first_mechanical_receipt)
     submission_count = 1
+    for _ in range(1, normal_submission_count):
+        append_cycle(GameStateName.NOT_FINISHED)
+        submission_count += 1
     if include_reset_cycle:
         append_cycle(reset_recovery_state)
         submission_count += 1
@@ -200,7 +222,11 @@ def _build_sealed_trace(
     tail_hash = events[-1].event_hash
     journal.close()
     policy.close()
+    consequences = [event for event in events if event.event_type == "consequence.received"]
     return {
+        "consequences": tuple(
+            {"event_hash": event.event_hash, "event_id": event.event_id} for event in consequences
+        ),
         "event_count": len(events),
         "manifest_hash": manifest_hash,
         "submission_count": submission_count,
@@ -214,6 +240,13 @@ def _trace_replay(
     *,
     manifest_hash: str | None = None,
     tail_hash: str | None = None,
+    reopening_submission_count: int | None = None,
+    reopening_consequence_event_id: str | None = None,
+    reopening_consequence_event_hash: str | None = None,
+    reopening_state: GameStateName | None = None,
+    reopening_levels_completed: int | None = None,
+    reopening_win_levels: int | None = None,
+    reopening_candidate_plan_prefix: str | None = None,
 ) -> dict[str, Any]:
     return replay_unfinished_mechanical_trace(
         trace["trace_path"],
@@ -228,7 +261,79 @@ def _trace_replay(
         expected_levels_completed=0,
         expected_win_levels=2,
         max_coordinate_candidates=8,
+        expected_reopening_submission_count=reopening_submission_count,
+        expected_reopening_consequence_event_id=reopening_consequence_event_id,
+        expected_reopening_consequence_event_hash=reopening_consequence_event_hash,
+        expected_reopening_state=reopening_state,
+        expected_reopening_levels_completed=reopening_levels_completed,
+        expected_reopening_win_levels=reopening_win_levels,
+        expected_reopening_candidate_plan_prefix=reopening_candidate_plan_prefix,
     )
+
+
+def _reopening_trace_replay(
+    trace: dict[str, Any],
+    *,
+    reopening_submission_count: int = 1,
+    reopening_consequence_event_id: str | None = None,
+    reopening_consequence_event_hash: str | None = None,
+    reopening_state: GameStateName = GameStateName.NOT_FINISHED,
+    reopening_levels_completed: int = 0,
+    reopening_win_levels: int = 2,
+    reopening_candidate_plan_prefix: str = "synthetic-reopening:",
+) -> dict[str, Any]:
+    consequence = trace["consequences"][reopening_submission_count - 1]
+    return _trace_replay(
+        trace,
+        reopening_submission_count=reopening_submission_count,
+        reopening_consequence_event_id=(reopening_consequence_event_id or consequence["event_id"]),
+        reopening_consequence_event_hash=(
+            reopening_consequence_event_hash or consequence["event_hash"]
+        ),
+        reopening_state=reopening_state,
+        reopening_levels_completed=reopening_levels_completed,
+        reopening_win_levels=reopening_win_levels,
+        reopening_candidate_plan_prefix=reopening_candidate_plan_prefix,
+    )
+
+
+class _ResidualRevisionPolicy(VisualCausalPolicy):
+    candidate_action: ActionName | None = ActionName.ACTION2
+    candidate_plan_signature: str | None = "synthetic-reopening:one-shot"
+    add_non_residual_drift = False
+    reopening_accept_count = 1
+
+    def __init__(self, *, max_coordinate_candidates: int) -> None:
+        super().__init__(max_coordinate_candidates=max_coordinate_candidates)
+        self._accepted_for_reopening_test = 0
+
+    def select(self, observation: Observation) -> ActionRequest:
+        if (
+            self._accepted_for_reopening_test == self.reopening_accept_count
+            and self.candidate_action is not None
+        ):
+            observation = replace(
+                observation,
+                available_actions=(self.candidate_action,),
+            )
+        selected = super().select(observation)
+        if self._accepted_for_reopening_test == self.reopening_accept_count:
+            self._pending_plan_signature = self.candidate_plan_signature
+        return selected
+
+    def accept_consequence(self, observation: Observation) -> None:
+        super().accept_consequence(observation)
+        self._accepted_for_reopening_test += 1
+
+    def drain_durable_receipts(self) -> tuple[dict[str, JSONValue], ...]:
+        receipts = super().drain_durable_receipts()
+        if self._accepted_for_reopening_test != self.reopening_accept_count:
+            return receipts
+        revised = dict(receipts[0])
+        revised["residual"] = "synthetic-current-policy-reopening-residual"
+        if self.add_non_residual_drift:
+            revised["synthetic_non_residual_drift"] = True
+        return (revised,)
 
 
 def test_trace_replay_matches_complete_cycles_and_cancels_candidate(tmp_path: Path) -> None:
@@ -257,6 +362,8 @@ def test_trace_replay_matches_complete_cycles_and_cancels_candidate(tmp_path: Pa
     candidate = receipt["candidate_next_submission"]
     assert isinstance(candidate, dict)
     assert candidate["action"] == {"coordinate": None, "name": "ACTION1"}
+    assert "plan_signature" in candidate
+    assert "pending_plan_signature" not in receipt["family_state_after_candidate_selection"]
     assert candidate["submitted"] is False
     cancellation = receipt["cancellation_verification"]
     assert isinstance(cancellation, dict)
@@ -450,6 +557,262 @@ def test_trace_replay_rejects_initial_observation_without_full_reset(tmp_path: P
 
     with pytest.raises(MechanicalReplayError, match="initial observation is not marked full_reset"):
         _trace_replay(trace)
+
+
+def test_trace_prefix_reopening_verifies_full_history_and_stages_only_the_new_candidate(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    trace = _build_sealed_trace(
+        tmp_path,
+        normal_submission_count=3,
+        available_actions=(ActionName.ACTION1, ActionName.ACTION2),
+        force_string_residuals=True,
+    )
+
+    class ResidualOnlyReopeningPolicy(_ResidualRevisionPolicy):
+        reopening_accept_count = 2
+
+    monkeypatch.setattr(
+        replay_module,
+        "VisualCausalPolicy",
+        ResidualOnlyReopeningPolicy,
+    )
+
+    receipt = _reopening_trace_replay(trace, reopening_submission_count=2)
+
+    replay = receipt["replay_result"]
+    assert isinstance(replay, dict)
+    assert replay["status"] == "PASS_SEALED_TRACE_PREFIX_REOPENING"
+    assert replay["matched_submission_count"] == 1
+    assert replay["matched_through_submission"] == 1
+    assert replay["accepted_consequence_count"] == 2
+    assert replay["exact_policy_match_through_submission"] == 1
+    assert replay["exact_policy_action_match_through_submission"] == 2
+    assert replay["reopening_submission"] == 2
+    assert replay["historical_source_submission_count"] == 3
+    assert replay["historical_suffix_submission_count"] == 1
+    assert replay["historical_suffix_integrity_verified"] is True
+    assert replay["sealed_trace_submission_count"] == 3
+    assert replay["mismatch"] == {
+        "classification": "DECLARED_RESIDUAL_ONLY_REOPENING",
+        "expected": True,
+        "fields": ["residual"],
+        "submission": 2,
+    }
+    assert receipt["boundaries"]["full_sealed_trace_integrity_verified"] is True
+    assert receipt["boundaries"]["historical_suffix_current_policy_replayed"] is False
+    assert receipt["boundaries"]["historical_suffix_policy_match_claimed"] is False
+    assert receipt["boundaries"]["historical_suffix_structure_and_linkage_verified"] is True
+    assert receipt["boundaries"]["historical_suffix_mechanics_receipt_semantics_verified"] is False
+    assert receipt["evidence_completeness"]["historical_suffix_current_policy_verified"] is False
+    assert receipt["candidate_next_submission"]["action"] == {
+        "coordinate": None,
+        "name": "ACTION2",
+    }
+    assert "plan_signature" in receipt["candidate_next_submission"]
+    assert receipt["candidate_next_submission"]["plan_signature"] == (
+        "synthetic-reopening:one-shot"
+    )
+    assert receipt["family_state_after_candidate_selection"]["pending_plan_signature"] == (
+        "synthetic-reopening:one-shot"
+    )
+    boundary = receipt["reopening_boundary"]
+    assert isinstance(boundary, dict)
+    assert boundary["consequence_event_id"] == trace["consequences"][1]["event_id"]
+    assert boundary["consequence_event_hash"] == trace["consequences"][1]["event_hash"]
+    assert boundary["matched_action_and_consequence_through_submission"] == 2
+    assert boundary["matched_receipts_through_submission"] == 1
+    assert boundary["receipt_delta_fields"] == ["residual"]
+    assert boundary["candidate_differs_from_historical_suffix"] is True
+    assert boundary["candidate_plan_prefix"] == "synthetic-reopening:"
+    assert boundary["candidate_plan_signature"] == "synthetic-reopening:one-shot"
+    assert boundary["historical_suffix_first_action"] == {
+        "coordinate": None,
+        "name": "ACTION1",
+    }
+
+
+def test_trace_prefix_reopening_requires_all_named_boundary_fields(tmp_path: Path) -> None:
+    trace = _build_sealed_trace(tmp_path, normal_submission_count=2)
+
+    with pytest.raises(
+        MechanicalReplayError,
+        match="requires every named reopening boundary field",
+    ):
+        _trace_replay(trace, reopening_submission_count=1)
+
+
+def test_trace_prefix_reopening_requires_the_named_candidate_plan_family(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    trace = _build_sealed_trace(
+        tmp_path,
+        normal_submission_count=2,
+        available_actions=(ActionName.ACTION1, ActionName.ACTION2),
+    )
+
+    class UnboundCandidatePolicy(_ResidualRevisionPolicy):
+        candidate_plan_signature = None
+
+    monkeypatch.setattr(replay_module, "VisualCausalPolicy", UnboundCandidatePolicy)
+
+    with pytest.raises(MechanicalReplayError, match="does not match the named plan family"):
+        _reopening_trace_replay(trace)
+
+
+def test_trace_prefix_reopening_rejects_preboundary_action_divergence(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    trace = _build_sealed_trace(
+        tmp_path,
+        normal_submission_count=3,
+        available_actions=(ActionName.ACTION1, ActionName.ACTION2),
+    )
+
+    class EarlyActionDivergencePolicy(_ResidualRevisionPolicy):
+        reopening_accept_count = 2
+
+        def select(self, observation: Observation) -> ActionRequest:
+            if self._accepted_for_reopening_test == 0:
+                observation = replace(
+                    observation,
+                    available_actions=(ActionName.ACTION2,),
+                )
+            return super().select(observation)
+
+    monkeypatch.setattr(
+        replay_module,
+        "VisualCausalPolicy",
+        EarlyActionDivergencePolicy,
+    )
+
+    with pytest.raises(MechanicalReplayError, match="policy divergence at sealed submission 1"):
+        _reopening_trace_replay(trace, reopening_submission_count=2)
+
+
+@pytest.mark.parametrize("reopening_submission_count", [0, 2])
+def test_trace_prefix_reopening_requires_a_nonempty_historical_suffix(
+    tmp_path: Path,
+    reopening_submission_count: int,
+) -> None:
+    trace = _build_sealed_trace(tmp_path, normal_submission_count=2)
+    consequence = trace["consequences"][0]
+
+    with pytest.raises(MechanicalReplayError, match="must precede the sealed suffix"):
+        _trace_replay(
+            trace,
+            reopening_submission_count=reopening_submission_count,
+            reopening_consequence_event_id=consequence["event_id"],
+            reopening_consequence_event_hash=consequence["event_hash"],
+            reopening_state=GameStateName.NOT_FINISHED,
+            reopening_levels_completed=0,
+            reopening_win_levels=2,
+            reopening_candidate_plan_prefix="synthetic-reopening:",
+        )
+
+
+@pytest.mark.parametrize(
+    ("override", "message"),
+    [
+        ({"reopening_consequence_event_id": "wrong-event-id"}, "named boundary"),
+        (
+            {"reopening_consequence_event_hash": "sha256:" + ("f" * 64)},
+            "named boundary",
+        ),
+        ({"reopening_levels_completed": 1}, "named boundary"),
+        ({"reopening_win_levels": 3}, "named boundary"),
+        (
+            {"reopening_state": GameStateName.GAME_OVER},
+            "requires a NOT_FINISHED consequence",
+        ),
+    ],
+)
+def test_trace_prefix_reopening_fails_closed_on_boundary_identity_or_state_drift(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    override: dict[str, Any],
+    message: str,
+) -> None:
+    trace = _build_sealed_trace(
+        tmp_path,
+        normal_submission_count=2,
+        available_actions=(ActionName.ACTION1, ActionName.ACTION2),
+    )
+
+    class ResidualOnlyReopeningPolicy(_ResidualRevisionPolicy):
+        pass
+
+    monkeypatch.setattr(
+        replay_module,
+        "VisualCausalPolicy",
+        ResidualOnlyReopeningPolicy,
+    )
+
+    with pytest.raises(MechanicalReplayError, match=message):
+        _reopening_trace_replay(trace, **override)
+
+
+def test_trace_prefix_reopening_rejects_non_residual_receipt_drift(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    trace = _build_sealed_trace(
+        tmp_path,
+        normal_submission_count=2,
+        available_actions=(ActionName.ACTION1, ActionName.ACTION2),
+    )
+
+    class NonResidualDriftPolicy(_ResidualRevisionPolicy):
+        add_non_residual_drift = True
+
+    monkeypatch.setattr(replay_module, "VisualCausalPolicy", NonResidualDriftPolicy)
+
+    with pytest.raises(MechanicalReplayError, match="differ only in its residual"):
+        _reopening_trace_replay(trace)
+
+
+def test_trace_prefix_reopening_rejects_the_historical_suffix_action_as_candidate(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    trace = _build_sealed_trace(
+        tmp_path,
+        normal_submission_count=2,
+        available_actions=(ActionName.ACTION1, ActionName.ACTION2),
+    )
+
+    class SameCandidatePolicy(_ResidualRevisionPolicy):
+        candidate_action = None
+
+    monkeypatch.setattr(replay_module, "VisualCausalPolicy", SameCandidatePolicy)
+
+    with pytest.raises(MechanicalReplayError, match="does not diverge"):
+        _reopening_trace_replay(trace)
+
+
+def test_trace_prefix_reopening_detects_tampering_inside_the_unreplayed_suffix(
+    tmp_path: Path,
+) -> None:
+    trace = _build_sealed_trace(tmp_path, normal_submission_count=2)
+    chunk = next(trace["trace_path"].glob("chunk-*.jsonl"))
+    lines = chunk.read_bytes().splitlines(keepends=True)
+    selected_indexes = [
+        index
+        for index, line in enumerate(lines)
+        if json.loads(line)["event_type"] == "action.selected"
+    ]
+    assert len(selected_indexes) == 2
+    suffix_index = selected_indexes[1]
+    tampered = lines[suffix_index].replace(b'"ACTION1"', b'"ACTION2"', 1)
+    assert tampered != lines[suffix_index]
+    lines[suffix_index] = tampered
+    chunk.write_bytes(b"".join(lines))
+
+    with pytest.raises(MechanicalReplayError, match="integrity verification failed"):
+        _reopening_trace_replay(trace)
 
 
 def test_replay_matches_recorded_policy_then_cancels_the_unsubmitted_candidate(

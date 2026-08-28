@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import ast
 import copy
+import json
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -435,6 +436,121 @@ def test_cli_accepts_an_explicit_sealed_trace_contract(tmp_path: Path) -> None:
     assert replay_cli.TRACE_SCHEMA == "arc3.build003.mechanical-sealed-trace-replay.v0.1"
 
 
+def test_cli_accepts_the_complete_sealed_trace_prefix_reopening_contract(
+    tmp_path: Path,
+) -> None:
+    args = replay_cli._parser().parse_args(
+        [
+            "--sealed-trace-root",
+            str(tmp_path / "trace"),
+            "--expected-trace-run-id",
+            "synthetic-run",
+            "--expected-trace-game-id",
+            "synthetic-game",
+            "--expected-trace-generator-commit",
+            "c" * 40,
+            "--expected-trace-manifest-hash",
+            "1" * 64,
+            "--expected-trace-tail-event-hash",
+            "2" * 64,
+            "--expected-trace-event-count",
+            "2198",
+            "--expected-trace-submission-count",
+            "366",
+            "--expected-trace-final-state",
+            "NOT_FINISHED",
+            "--expected-trace-levels-completed",
+            "4",
+            "--expected-trace-win-levels",
+            "6",
+            "--expected-trace-reopening-submission",
+            "359",
+            "--expected-trace-reopening-consequence-event-id",
+            "E-synthetic-reopening",
+            "--expected-trace-reopening-consequence-event-hash",
+            "3" * 64,
+            "--expected-trace-reopening-state",
+            "NOT_FINISHED",
+            "--expected-trace-reopening-levels-completed",
+            "4",
+            "--expected-trace-reopening-win-levels",
+            "6",
+            "--expected-trace-reopening-candidate-plan-prefix",
+            "affine-crossed-post-deposit-mediator-access:",
+            "--expected-commit",
+            "a" * 40,
+            "--expected-tree",
+            "b" * 40,
+            "--output",
+            str(tmp_path / "receipt.json"),
+            "--policy-profile",
+            replay_cli.POLICY_PROFILE,
+        ]
+    )
+
+    assert replay_cli._replay_mode(args) == "sealed-trace-prefix-reopening"
+    assert args.expected_trace_reopening_submission == 359
+    assert args.expected_trace_reopening_consequence_event_id == "E-synthetic-reopening"
+    assert args.expected_trace_reopening_state == "NOT_FINISHED"
+    assert args.expected_trace_reopening_candidate_plan_prefix == (
+        "affine-crossed-post-deposit-mediator-access:"
+    )
+    assert (
+        replay_cli.TRACE_REOPENING_SCHEMA
+        == "arc3.build003.mechanical-sealed-trace-prefix-reopening.v0.1"
+    )
+
+
+def test_cli_rejects_a_partial_sealed_trace_prefix_reopening_contract(
+    tmp_path: Path,
+) -> None:
+    args = replay_cli._parser().parse_args(
+        [
+            "--sealed-trace-root",
+            str(tmp_path / "trace"),
+            "--expected-trace-run-id",
+            "synthetic-run",
+            "--expected-trace-game-id",
+            "synthetic-game",
+            "--expected-trace-generator-commit",
+            "c" * 40,
+            "--expected-trace-manifest-hash",
+            "1" * 64,
+            "--expected-trace-tail-event-hash",
+            "2" * 64,
+            "--expected-trace-event-count",
+            "14",
+            "--expected-trace-submission-count",
+            "2",
+            "--expected-trace-final-state",
+            "NOT_FINISHED",
+            "--expected-trace-levels-completed",
+            "0",
+            "--expected-trace-win-levels",
+            "2",
+            "--expected-trace-reopening-submission",
+            "1",
+            "--expected-commit",
+            "a" * 40,
+            "--expected-tree",
+            "b" * 40,
+            "--output",
+            str(tmp_path / "receipt.json"),
+            "--policy-profile",
+            replay_cli.POLICY_PROFILE,
+        ]
+    )
+
+    with pytest.raises(
+        ValueError,
+        match=(
+            r"sealed reopening mode is missing required arguments: "
+            r".*--expected-trace-reopening-consequence-event-id"
+        ),
+    ):
+        replay_cli._replay_mode(args)
+
+
 def test_cli_trace_mode_rejects_missing_or_campaign_only_arguments(tmp_path: Path) -> None:
     common = [
         "--sealed-trace-root",
@@ -529,3 +645,161 @@ def test_cli_sealed_trace_binding_preserves_validated_game_and_generator_identit
     assert binding["game_id"] == "synthetic-game"
     assert binding["generator_commit"] == "c" * 40
     assert binding["recording_reconstructed"] is False
+
+
+def test_cli_sealed_trace_prefix_reopening_binding_names_the_divergence_boundary() -> None:
+    binding = replay_cli._sealed_trace_binding(
+        {
+            "reopening_boundary": {
+                "candidate_plan_prefix": "affine-crossed-post-deposit-mediator-access:",
+                "candidate_plan_signature": (
+                    "affine-crossed-post-deposit-mediator-access:synthetic"
+                ),
+                "consequence_event_hash": "sha256:" + ("3" * 64),
+                "consequence_event_id": "E-synthetic-reopening",
+                "submission_count": 359,
+            },
+            "trace": {
+                "event_count": 2198,
+                "game_id": "synthetic-game",
+                "manifest_hash": "sha256:" + ("1" * 64),
+                "path": "C:/synthetic-trace",
+                "run_id": "synthetic-run",
+                "submission_count": 366,
+                "tail_event_hash": "sha256:" + ("2" * 64),
+            },
+        },
+        generator_commit="c" * 40,
+        replay_mode="sealed-trace-prefix-reopening",
+    )
+
+    assert binding["mode"] == "sealed-trace-prefix-reopening"
+    assert binding["submission_count"] == 366
+    assert binding["reopening_submission_count"] == 359
+    assert binding["reopening_consequence_event_id"] == "E-synthetic-reopening"
+    assert binding["reopening_consequence_event_hash"] == "sha256:" + ("3" * 64)
+    assert binding["reopening_candidate_plan_prefix"] == (
+        "affine-crossed-post-deposit-mediator-access:"
+    )
+    assert binding["reopening_candidate_plan_signature"] == (
+        "affine-crossed-post-deposit-mediator-access:synthetic"
+    )
+
+
+def test_cli_main_emits_the_prefix_reopening_schema_and_count_contract(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    output = tmp_path / "prefix-reopening-receipt.json"
+    plan_prefix = "affine-crossed-post-deposit-mediator-access:"
+    plan_signature = plan_prefix + "synthetic"
+    source_binding = {
+        "clean": True,
+        "commit": "a" * 40,
+        "tree": "b" * 40,
+    }
+
+    def source_snapshot(**_kwargs: object) -> tuple[dict[str, object], dict[str, bytes]]:
+        return dict(source_binding), {"synthetic": b"source"}
+
+    def replay_trace(_path: Path, **kwargs: object) -> dict[str, object]:
+        assert kwargs["expected_reopening_submission_count"] == 359
+        assert kwargs["expected_reopening_candidate_plan_prefix"] == plan_prefix
+        return {
+            "boundaries": {"environment_actions_issued": False},
+            "candidate_next_submission": {
+                "action": {"coordinate": [53, 28], "name": "ACTION6"},
+                "plan_signature": plan_signature,
+                "submitted": False,
+            },
+            "reopening_boundary": {
+                "candidate_plan_prefix": plan_prefix,
+                "candidate_plan_signature": plan_signature,
+                "consequence_event_hash": "sha256:" + ("3" * 64),
+                "consequence_event_id": "E-synthetic-reopening",
+                "matched_action_and_consequence_through_submission": 359,
+                "submission_count": 359,
+            },
+            "replay_result": {
+                "matched_submission_count": 358,
+                "status": "PASS_SEALED_TRACE_PREFIX_REOPENING",
+            },
+            "trace": {
+                "event_count": 2198,
+                "game_id": "synthetic-game",
+                "manifest_hash": "sha256:" + ("1" * 64),
+                "path": str(tmp_path / "trace"),
+                "run_id": "synthetic-run",
+                "submission_count": 366,
+                "tail_event_hash": "sha256:" + ("2" * 64),
+            },
+        }
+
+    monkeypatch.setattr(replay_cli, "_BYTECODE_DISABLED_AT_STARTUP", True)
+    monkeypatch.setattr(replay_cli, "_DIRECT_SCRIPT_INVOCATION", True)
+    monkeypatch.setattr(replay_cli, "_source_snapshot", source_snapshot)
+    monkeypatch.setattr(
+        replay_cli,
+        "_repository_file_projection",
+        lambda: {"synthetic": "sha256:" + ("4" * 64)},
+    )
+    monkeypatch.setattr(replay_cli, "replay_unfinished_mechanical_trace", replay_trace)
+
+    assert (
+        replay_cli.main(
+            [
+                "--sealed-trace-root",
+                str(tmp_path / "trace"),
+                "--expected-trace-run-id",
+                "synthetic-run",
+                "--expected-trace-game-id",
+                "synthetic-game",
+                "--expected-trace-generator-commit",
+                "c" * 40,
+                "--expected-trace-manifest-hash",
+                "1" * 64,
+                "--expected-trace-tail-event-hash",
+                "2" * 64,
+                "--expected-trace-event-count",
+                "2198",
+                "--expected-trace-submission-count",
+                "366",
+                "--expected-trace-final-state",
+                "NOT_FINISHED",
+                "--expected-trace-levels-completed",
+                "4",
+                "--expected-trace-win-levels",
+                "6",
+                "--expected-trace-reopening-submission",
+                "359",
+                "--expected-trace-reopening-consequence-event-id",
+                "E-synthetic-reopening",
+                "--expected-trace-reopening-consequence-event-hash",
+                "3" * 64,
+                "--expected-trace-reopening-state",
+                "NOT_FINISHED",
+                "--expected-trace-reopening-levels-completed",
+                "4",
+                "--expected-trace-reopening-win-levels",
+                "6",
+                "--expected-trace-reopening-candidate-plan-prefix",
+                plan_prefix,
+                "--expected-commit",
+                "a" * 40,
+                "--expected-tree",
+                "b" * 40,
+                "--output",
+                str(output),
+                "--policy-profile",
+                replay_cli.POLICY_PROFILE,
+            ]
+        )
+        == 0
+    )
+    document = json.loads(output.read_bytes())
+    assert document["schema"] == replay_cli.TRACE_REOPENING_SCHEMA
+    payload = document["payload"]
+    assert payload["receipt_status"] == "PASS_SEALED_TRACE_PREFIX_REOPENING"
+    assert payload["replay_evidence_mode"] == "sealed-trace-prefix-reopening"
+    assert payload["sealed_trace_binding"]["reopening_candidate_plan_prefix"] == plan_prefix
+    assert payload["sealed_trace_binding"]["reopening_candidate_plan_signature"] == plan_signature
