@@ -737,6 +737,7 @@ def test_cli_main_emits_the_prefix_reopening_schema_and_count_contract(
 
     monkeypatch.setattr(replay_cli, "_BYTECODE_DISABLED_AT_STARTUP", True)
     monkeypatch.setattr(replay_cli, "_DIRECT_SCRIPT_INVOCATION", True)
+    monkeypatch.setattr(replay_cli.platform, "platform", lambda: "synthetic-platform")
     monkeypatch.setattr(replay_cli, "_source_snapshot", source_snapshot)
     monkeypatch.setattr(
         replay_cli,
@@ -801,5 +802,6 @@ def test_cli_main_emits_the_prefix_reopening_schema_and_count_contract(
     payload = document["payload"]
     assert payload["receipt_status"] == "PASS_SEALED_TRACE_PREFIX_REOPENING"
     assert payload["replay_evidence_mode"] == "sealed-trace-prefix-reopening"
+    assert payload["runtime"]["platform"] == "synthetic-platform"
     assert payload["sealed_trace_binding"]["reopening_candidate_plan_prefix"] == plan_prefix
     assert payload["sealed_trace_binding"]["reopening_candidate_plan_signature"] == plan_signature
