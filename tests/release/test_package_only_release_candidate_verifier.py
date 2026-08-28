@@ -351,7 +351,7 @@ def test_full_ci_workflow_preserves_long_windows_coverage_budget() -> None:
 
     timeout_lines = [line.strip() for line in workflow.splitlines() if "timeout-minutes:" in line]
 
-    assert timeout_lines == ["timeout-minutes: 90"]
+    assert timeout_lines == ["timeout-minutes: 95"]
     assert "uv run pytest -q --cov-report=xml" in workflow
     assert "uv run arc3 doctor" in workflow
 
