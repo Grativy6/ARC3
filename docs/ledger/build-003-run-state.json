@@ -7,7 +7,7 @@
   "build_status": "ACTIVE",
   "status": "IN_PROGRESS",
   "current_stage": "10",
-  "current_task": "preserve verified Campaign 43 failure evidence, freeze and verify the single observation-derived post-deposit mediator discriminator for Campaign 44, then continue authorized development-only play toward authoritative WIN",
+  "current_task": "bind the committed Campaign 44 one-shot mediator discriminator to an exact ledger head; pass clean-source, replay, integrity, package, action-semantics, sanitized-launch, and hosted gates; then continue authorized development-only play toward authoritative WIN",
   "implementation_branch": "build/003-bla-clef-mechanical-learner",
   "base": {
     "main_commit": "bea1eac99cb0f1b351526b1dc487d132ba1d40ef",
@@ -831,6 +831,18 @@
     "campaign43_candidate_completion_observed": false,
     "campaign44_candidate_hypothesis": "only after the exact crossed-delivery consequence certificate, derive the sole returned mediator from the observation and submit one ACTION6 at its current rounded center to test access or activation sufficiency",
     "campaign44_candidate_boundary": "require five endpoints, one mediator, zero targets, the exact returned protected raster, the active crossed resource lineage and sufficient reserve; WIN or level progress terminates the old-level plan, NOT_FINISHED rejects only mediator-access sufficiency with no repeat, and ambiguity, resource mismatch, unexpected raster, unavailable ACTION6, or GAME_OVER fails closed",
+    "campaign44_candidate_implementation_commit": "a688ec0a717ad867a96e349570673e0ca8372263",
+    "campaign44_candidate_implementation_tree": "368916da16c1a91514ca655a2a271c3f63f9907d",
+    "campaign44_candidate_implementation_status": "LOCAL CHECKPOINT COMMITTED; exact ledger-head replay, clean-source/static gates, hosted gates, and official consequence pending",
+    "campaign44_candidate_policy_status": "one observation-derived mediator-access action; cancelled selection is not attempted; submitted action records a non-epistemic attempted key across same-level RESET; only exact NOT_FINISHED records epistemic rejection; GAME_OVER, UNKNOWN, mismatch, ambiguity, or unavailable action fail closed; level progress clears old-level state; WIN is authoritative",
+    "campaign44_candidate_replay_contract": "verify all 2198 events and 366 action cycles for immutable integrity, action-state structure, and receipt-consequence linkage; exact current-policy actions and mechanics receipts through submission 358; exact historical action and official consequence at reopening submission 359; only declared residual-field revision there; seven historical suffix cycles structure/linkage checked but reopened-policy actions and mechanics-receipt semantics explicitly unclaimed; candidate must differ from suffix and bind affine-crossed-post-deposit-mediator-access:",
+    "campaign44_candidate_local_visual_verification": "PASS: exact Campaign 43 lifecycle 1/1 in 805.27 seconds; target-retained inverse fallback 1/1 in 631.58 seconds; full unchanged visual-policy module 144/144 in 4668.02 seconds",
+    "campaign44_candidate_local_replay_verification": "PASS: 59 replay and CLI cases in 23.47 seconds from explicit fresh C:\\a basetemp; default Windows pytest temp-root attempt preserved as FAILED_INFRASTRUCTURE with three passes and 56 setup errors",
+    "campaign44_candidate_source_quality": "PASS: Ruff format/lint, strict MyPy over policy/replay/CLI, Python compilation, JSON parsing, diff hygiene, and three independent read-only P0-P2 audits",
+    "campaign44_candidate_secret_and_policy_scan": "PASS on byte-stable tracked snapshot C:\\a\\arc3-b003-c44-precommit-snapshot-20260828-1715: 564 candidates, zero secret findings; 119 production-policy files, zero findings. Live OneDrive scan remains FAILED_INFRASTRUCTURE with 327 candidate-mutated-during-scan findings and is not relabeled",
+    "campaign44_candidate_environment_actions": 0,
+    "campaign44_candidate_completion_observed": false,
+    "campaign44_candidate_exact_ledger_head_status": "PENDING",
     "campaign28_pre_run_exposure_ledger": "C:\\a\\arc3-b003-play\\public-exposure.jsonl",
     "campaign28_pre_run_exposure_events": 51,
     "campaign28_pre_run_exposure_development_events": 51,
@@ -1199,7 +1211,7 @@
     "pull_request_merged": false,
     "external_message_sent_as_owner": false
   },
-  "next_action": "finish and freeze the bounded Campaign 44 one-shot observation-derived post-deposit mediator discriminator; from exact source, verify immutable integrity, action-state structure, and receipt-consequence linkage for all 2,198 Campaign 43 events and 366 action cycles, reproduce current-policy actions and receipts through submission 358, bind the exact action and official consequence at reopening submission 359 with only the declared residual-field revision, explicitly leave the seven historical suffix actions and mechanics-receipt semantics unreplayed by the reopened policy, bind the generic mediator-access plan family, and select then cancel only the mediator discriminator with zero environment actions; pass clean-source, integrity, package, action-semantics, sanitized launch-audit, and all five hosted workflows/nine jobs at the exact ledger head, then launch one authorized development-only fresh-life continuation and continue until observed WIN or an exact external boundary",
+  "next_action": "commit and push the Campaign 44 ledger-bound exact head; from a fresh clean exact clone, run the sealed Campaign 43 reopening-prefix replay and select then cancel only the generic mediator discriminator with zero environment actions; pass clean-source, manifest-bound integrity, package-only integrity, action-semantics, sanitized launch-audit, and all five hosted workflows/nine jobs; only then launch one authorized development-only fresh-life Campaign 44 continuation and continue until observed WIN or an exact external boundary",
   "notes": [
     "Update atomically after each meaningful task and preserve failed attempts.",
     "No synthetic or local result is completion unless the official target environment returns GameState.WIN.",
@@ -1245,6 +1257,7 @@
     "Campaign 32's 202-row official recording and 1208-event sealed trace agree on all 201 submissions, including two legal RESETs; the built-in public verifier passed all 327 artifacts and an independent audit matched every declared physical hash.",
     "The exposure ledger contains 61 development events through Campaign 32 and zero public-holdout events; last sequence 60, tail event hash sha256:b8052f2f277203808353b48575364fa83374244e8582bc3d30dc11f0ca51adb5, file SHA-256 02656761e355a7aceec9514a9848c5ae0ffe43eedd7f79db2e0e18c4996a83d9, and the sealed holdout remains unconsumed.",
     "Campaign 32's final snapshot retains hierarchy_preterminal_retry_count=1 after terminal NOT_FINISHED rejection and exact recovery. This is a bounded lifecycle bookkeeping defect, not progress or the cause of the official consequence; repair and regression coverage are required before another live campaign.",
-    "Campaign 43 is sealed FAILED_MECHANISM evidence rather than completion: exact 766c84e passed strict Campaign 42 replay, all bound local/sanitized gates, and all five hosted workflows/nine jobs before authorized development play; its recomputed crossed-lineage delivery matched the protected body and returned NOT_FINISHED at 4/6, the run later closed at the GAME_OVER score boundary after five legal resets, and zero WIN occurred. The unique post-deposit former-target mediator is the only reopened one-action residual for Campaign 44; the exposure ledger contains 83 development events and zero holdout events."
+    "Campaign 43 is sealed FAILED_MECHANISM evidence rather than completion: exact 766c84e passed strict Campaign 42 replay, all bound local/sanitized gates, and all five hosted workflows/nine jobs before authorized development play; its recomputed crossed-lineage delivery matched the protected body and returned NOT_FINISHED at 4/6, the run later closed at the GAME_OVER score boundary after five legal resets, and zero WIN occurred. The unique post-deposit former-target mediator is the only reopened one-action residual for Campaign 44; the exposure ledger contains 83 development events and zero holdout events.",
+    "Campaign 44 implementation checkpoint a688ec0a717ad867a96e349570673e0ca8372263 is local candidate evidence only: the full 144-test visual-policy module, 59 replay/CLI cases, source-quality gates, immutable tracked-byte secret scan, and 119-file production-policy scan passed, while the default pytest temp-root and live OneDrive secret scans remain explicit FAILED_INFRASTRUCTURE. Replay and a cancelled unsubmitted action issued zero environment actions and do not establish progress or completion."
   ]
 }
