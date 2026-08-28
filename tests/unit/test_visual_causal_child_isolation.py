@@ -639,7 +639,7 @@ def test_child_isolation_rejects_only_the_failed_layout_after_sibling_displaceme
     with pytest.raises(PolicyError, match="hierarchy lineage was lost"):
         policy.select(displaced)
 
-    policy._begin_reset_epoch()
+    policy._begin_reset_epoch(displaced)
     assert policy.snapshot()["hierarchy_lineage_lost"] is False
     assert policy.snapshot()["hierarchy_lineage_failure_count"] == 1
 

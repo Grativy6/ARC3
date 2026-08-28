@@ -947,17 +947,17 @@
     },
     {
       "path": "docs/ledger/build-003-run-state.json",
-      "sha256": "sha256:d96288fa615c7cf7f3e7599fca9853f195d9527bda2656be953d5aac1d0a2d63",
+      "sha256": "sha256:06b3aa161bc6651cd6b0e6c23e6c8322e94f80b5f250d4da56c6ec639bbc35ba",
       "status": "CURRENT_AT_INDEX_DRAFT"
     },
     {
       "path": "docs/ledger/build-003-DECISIONS.md",
-      "sha256": "sha256:61e5fdbbc34acb12b28b025863b148d48afdb5fef0908267252761b7b65f5fd5",
+      "sha256": "sha256:9e1d1c2c20d67784226b29d56a2e67cf709883a2818a65013a2d908c35adc40e",
       "status": "CURRENT_AT_INDEX_DRAFT"
     },
     {
       "path": "docs/ledger/build-003-OPEN-BURDENS.md",
-      "sha256": "sha256:bee91f6dff30b6860b3e322a702999af5cffddc9d2c2aa837791c66cc95dfdf4",
+      "sha256": "sha256:bb6c71c40049b20f2bc6c3efa9970f93be2c92556224ad225ebeb1db5326bf3e",
       "status": "CURRENT_AT_INDEX_DRAFT"
     },
     {
