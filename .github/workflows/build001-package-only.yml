@@ -20,7 +20,7 @@ jobs:
   package-only:
     name: Package-only / ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 80
+    timeout-minutes: 85
     strategy:
       fail-fast: false
       matrix:
