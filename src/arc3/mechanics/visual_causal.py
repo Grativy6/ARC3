@@ -301,6 +301,12 @@ class PlannedClick:
     carrier_source_paired_cargo_role_handoff_step: bool = False
     carrier_source_paired_cargo_role_restoration_actions: tuple[PlannedClick, ...] = ()
     carrier_source_paired_cargo_role_restoration_step: bool = False
+    carrier_source_paired_cargo_crossed_predecessor_family: bool = False
+    carrier_source_paired_cargo_crossed_predecessor_actions: tuple[PlannedClick, ...] = ()
+    carrier_source_paired_cargo_crossed_predecessor_step: bool = False
+    completes_carrier_source_paired_cargo_crossed_predecessor: bool = False
+    carrier_source_paired_cargo_crossed_delivery_step: bool = False
+    completes_carrier_source_paired_cargo_crossed_delivery: bool = False
     expected_deposited_source_protected_raster_hash: str | None = None
     expected_deposited_visible_endpoint_count: int | None = None
     expected_deposited_visible_mediator_count: int | None = None
@@ -351,6 +357,9 @@ class _HierarchyPlan:
     support_weights: tuple[int, ...]
     recovery_actions: tuple[PlannedClick, ...]
     carrier_source_attachment_replay_context: _CarrierSourceAttachmentReplayContext | None = None
+    carrier_source_crossed_delivery_replay_context: (
+        _CarrierSourceCrossedDeliveryReplayContext | None
+    ) = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -486,6 +495,67 @@ class _CarrierSourceAttachmentReplayContext:
     rejected_external_residual_relation_key: str
     signature_prefix: str
     terminal_expectation: str
+
+
+@dataclass(frozen=True, slots=True)
+class _CarrierSourceCrossedDeliveryReplayContext:
+    """Exact crossed endpoint state retained until its returned raster is observed."""
+
+    attachment_context: _CarrierSourceAttachmentReplayContext
+    carried_indexes: tuple[int, ...]
+    positions: tuple[tuple[str, tuple[int, int]], ...]
+    colors: tuple[tuple[str, int], ...]
+    protected_raster_hash: str
+    visible_endpoint_count: int
+    visible_mediator_count: int
+    delivery_plan_signature: str
+    delivery_action_count: int
+
+
+@dataclass(frozen=True, slots=True)
+class _EdgeResourceProgress:
+    """One observation-derived monotone border-fill candidate."""
+
+    edge_index: int
+    baseline: tuple[int, ...]
+    fill_color: int
+    filled_indexes: frozenset[int]
+    filled_index_history: tuple[frozenset[int], ...]
+    observed_actions: int
+
+
+@dataclass(frozen=True, slots=True)
+class _ResourceInterruptedPairedReplay:
+    """Minimal semantic key authorizing one fresh-life crossed continuation."""
+
+    level_index: int
+    context_key: str
+    setup_relation_key: str
+    setup_plan_signature: str
+    setup_action_count: int
+    crossed_forward_action_count: int
+    exhausted_edge_index: int
+    exhausted_edge_baseline: tuple[int, ...]
+    exhausted_edge_fill_color: int
+    exhausted_filled_index_history: tuple[frozenset[int], ...]
+    observed_actions: int
+    authorized_reset_epoch: int
+    setup_replay_started: bool = False
+
+
+@dataclass(frozen=True, slots=True)
+class _ActiveCrossedReplayResourceLineage:
+    """Consumed fresh-life authorization retained through forward and inverse play."""
+
+    level_index: int
+    context_key: str
+    edge_index: int
+    edge_baseline: tuple[int, ...]
+    edge_fill_color: int
+    exhausted_filled_index_history: tuple[frozenset[int], ...]
+    exhausted_after_actions: int
+    reset_epoch: int
+    forward_remaining_actions: int
 
 
 @dataclass(frozen=True, slots=True)
@@ -8648,10 +8718,14 @@ def _carrier_source_occlusion_hierarchy_plan(
     *,
     level_index: int,
     rejected_signatures: set[str],
+    required_replay_plan_signature: str | None = None,
+    required_replay_context_key: str | None = None,
     search_budget: _HierarchySearchBudget | None = None,
 ) -> _HierarchyPlan | None:
     """Find one exact reversible route onto the carrier-matched source disks."""
 
+    if (required_replay_plan_signature is None) != (required_replay_context_key is None):
+        return None
     if search_budget is None:
         search_budget = _HierarchySearchBudget(_MAX_HIERARCHY_SEARCH_BUDGET)
     supports = relation.supports
@@ -8781,6 +8855,16 @@ def _carrier_source_occlusion_hierarchy_plan(
                 "test the unique carrier-matched source-occlusion support hypothesis"
             ),
         )
+        attachment_context = plan.carrier_source_attachment_replay_context
+        if required_replay_plan_signature is not None:
+            if (
+                plan.signature == required_replay_plan_signature
+                and attachment_context is not None
+                and _carrier_source_attachment_context_key(attachment_context)
+                == required_replay_context_key
+            ):
+                return plan
+            continue
         if plan.signature not in rejected_signatures:
             return plan
     return None
@@ -9665,6 +9749,158 @@ def _child_isolation_protected_raster_hash(scene: VisualScene) -> str:
         )
     ).encode("ascii")
     return "sha256:" + hashlib.sha256(payload).hexdigest()
+
+
+def _frame_edge_signatures(frame: GridFrame) -> tuple[tuple[int, ...], ...]:
+    """Return the four visible borders without assigning any semantic role."""
+
+    cells = frame.cells
+    if not cells or not cells[0]:
+        return ()
+    width = len(cells[0])
+    if any(len(row) != width for row in cells):
+        return ()
+    return (
+        tuple(cells[0]),
+        tuple(row[-1] for row in cells),
+        tuple(reversed(cells[-1])),
+        tuple(row[0] for row in reversed(cells)),
+    )
+
+
+def _advance_edge_resource_progress(
+    baseline_edges: tuple[tuple[int, ...], ...],
+    candidates: tuple[_EdgeResourceProgress, ...],
+    before: GridFrame,
+    after: GridFrame,
+    *,
+    observed_actions: int,
+) -> tuple[_EdgeResourceProgress, ...]:
+    """Retain only borders that monotonically fill from the reset raster.
+
+    No edge, direction, palette value, capacity, or per-action increment is
+    assumed.  A candidate must add at least one baseline-different cell on
+    every observed action and may never rewrite or remove an earlier fill.
+    """
+
+    before_edges = _frame_edge_signatures(before)
+    after_edges = _frame_edge_signatures(after)
+    if (
+        len(baseline_edges) != 4
+        or len(before_edges) != 4
+        or len(after_edges) != 4
+        or any(
+            not baseline or not (len(baseline) == len(before_edge) == len(after_edge))
+            for baseline, before_edge, after_edge in zip(
+                baseline_edges,
+                before_edges,
+                after_edges,
+                strict=True,
+            )
+        )
+    ):
+        return ()
+
+    prior_by_edge = {candidate.edge_index: candidate for candidate in candidates}
+    result: list[_EdgeResourceProgress] = []
+    for edge_index, (baseline, before_edge, after_edge) in enumerate(
+        zip(baseline_edges, before_edges, after_edges, strict=True)
+    ):
+        prior = prior_by_edge.get(edge_index)
+        if observed_actions > 1 and prior is None:
+            continue
+        before_filled = frozenset(
+            index for index, value in enumerate(before_edge) if value != baseline[index]
+        )
+        after_filled = frozenset(
+            index for index, value in enumerate(after_edge) if value != baseline[index]
+        )
+        filled_index_history: tuple[frozenset[int], ...]
+        if prior is None:
+            if observed_actions != 1 or before_filled or not after_filled:
+                continue
+            fill_values = {after_edge[index] for index in after_filled}
+            if len(fill_values) != 1:
+                continue
+            fill_color = next(iter(fill_values))
+            filled_index_history = (after_filled,)
+        else:
+            if (
+                prior.observed_actions + 1 != observed_actions
+                or len(prior.filled_index_history) != prior.observed_actions
+                or prior.filled_index_history[-1] != prior.filled_indexes
+                or before_filled != prior.filled_indexes
+                or not before_filled < after_filled
+                or any(before_edge[index] != prior.fill_color for index in before_filled)
+            ):
+                continue
+            fill_color = prior.fill_color
+            filled_index_history = (*prior.filled_index_history, after_filled)
+        if any(after_edge[index] != fill_color for index in after_filled):
+            continue
+        if any(
+            before_edge[index] != after_edge[index]
+            for index in range(len(baseline))
+            if index not in after_filled - before_filled
+        ):
+            continue
+        result.append(
+            _EdgeResourceProgress(
+                edge_index=edge_index,
+                baseline=baseline,
+                fill_color=fill_color,
+                filled_indexes=after_filled,
+                filled_index_history=filled_index_history,
+                observed_actions=observed_actions,
+            )
+        )
+    return tuple(result)
+
+
+def _exhausted_edge_resource_candidate(
+    candidates: tuple[_EdgeResourceProgress, ...],
+) -> _EdgeResourceProgress | None:
+    """Return one uniquely full, repeatedly observed border-fill candidate."""
+
+    exhausted = tuple(
+        candidate
+        for candidate in candidates
+        if candidate.observed_actions >= 3
+        and candidate.filled_indexes == frozenset(range(len(candidate.baseline)))
+    )
+    return exhausted[0] if len(exhausted) == 1 else None
+
+
+def _matching_edge_resource_lineage(
+    candidates: tuple[_EdgeResourceProgress, ...],
+    *,
+    edge_index: int,
+    baseline: tuple[int, ...],
+    fill_color: int,
+    observed_actions: int,
+    exhausted_filled_index_history: tuple[frozenset[int], ...],
+) -> _EdgeResourceProgress | None:
+    """Require the exact learned prefix, not merely the same border and count."""
+
+    expected_history = exhausted_filled_index_history[:observed_actions]
+    if (
+        observed_actions <= 0
+        or len(exhausted_filled_index_history) < observed_actions
+        or len(expected_history) != observed_actions
+    ):
+        return None
+
+    matches = tuple(
+        candidate
+        for candidate in candidates
+        if candidate.edge_index == edge_index
+        and candidate.baseline == baseline
+        and candidate.fill_color == fill_color
+        and candidate.observed_actions == observed_actions
+        and candidate.filled_index_history == expected_history
+        and candidate.filled_indexes == expected_history[-1]
+    )
+    return matches[0] if len(matches) == 1 else None
 
 
 def _projected_mediator_occluded_endpoint_centers(
@@ -10712,6 +10948,8 @@ def _single_hierarchy_planned_click_is_safe(
         or planned.carrier_source_paired_cargo_restoration_step
         or planned.carrier_source_paired_cargo_role_handoff_step
         or planned.carrier_source_paired_cargo_role_restoration_step
+        or planned.carrier_source_paired_cargo_crossed_predecessor_step
+        or planned.carrier_source_paired_cargo_crossed_delivery_step
     )
     if paired_cargo_step:
         if not (
@@ -10719,6 +10957,8 @@ def _single_hierarchy_planned_click_is_safe(
             or _carrier_source_paired_cargo_restoration_step_is_compatible(planned)
             or _carrier_source_paired_cargo_role_handoff_step_is_compatible(planned)
             or _carrier_source_paired_cargo_role_restoration_step_is_compatible(planned)
+            or _carrier_source_paired_cargo_crossed_predecessor_step_is_compatible(planned)
+            or _carrier_source_paired_cargo_crossed_delivery_step_is_compatible(planned)
         ):
             return False
     elif planned.carrier_source_target_center_role_exchange_step:
@@ -10820,6 +11060,22 @@ def _single_hierarchy_planned_click_is_safe(
             for endpoint in scene.endpoints
             if endpoint.rounded_center == (planned.coordinate.x, planned.coordinate.y)
         )
+        active = tuple(endpoint for endpoint in scene.endpoints if endpoint.color == active_color)
+        if (
+            planned.carrier_source_paired_cargo_crossed_predecessor_family
+            and planned.carrier_source_paired_cargo_crossed_predecessor_step
+            and planned.completes_carrier_source_paired_cargo_crossed_predecessor
+            and planned.required_child_protected_raster_hash is not None
+            and planned.expected_child_protected_raster_hash is not None
+            and planned.expected_visible_endpoint_count is not None
+            and planned.expected_visible_mediator_count is not None
+            and len(active) == 1
+            and len(selected) == 1
+            and selected[0].color != active_color
+            and len(scene.endpoints) - 1 == planned.expected_visible_endpoint_count
+            and len(scene.mediators) + 1 == planned.expected_visible_mediator_count
+        ):
+            return True
         return len(selected) == 1 and _role_swap_remains_readable(
             scene,
             selected[0],
@@ -10889,6 +11145,12 @@ def _carrier_source_recovery_action_signature(planned: PlannedClick) -> tuple[ob
         planned.carrier_source_paired_cargo_role_handoff_step,
         planned.carrier_source_paired_cargo_role_restoration_actions,
         planned.carrier_source_paired_cargo_role_restoration_step,
+        planned.carrier_source_paired_cargo_crossed_predecessor_family,
+        planned.carrier_source_paired_cargo_crossed_predecessor_actions,
+        planned.carrier_source_paired_cargo_crossed_predecessor_step,
+        planned.completes_carrier_source_paired_cargo_crossed_predecessor,
+        planned.carrier_source_paired_cargo_crossed_delivery_step,
+        planned.completes_carrier_source_paired_cargo_crossed_delivery,
         planned.expected_deposited_source_protected_raster_hash,
         planned.expected_deposited_visible_endpoint_count,
         planned.expected_deposited_visible_mediator_count,
@@ -11955,8 +12217,16 @@ def _carrier_source_paired_cargo_plan_after_observed_restoration(
     carried_indexes: tuple[int, ...],
     rejected_signatures: set[str] | frozenset[str],
     include_terminal_role_handoff: bool = False,
+    include_crossed_predecessor: bool = False,
+    replayed_state: tuple[dict[str, tuple[int, int]], dict[str, int]] | None = None,
+    crossed_delivery: bool = False,
 ) -> _HierarchyPlan | None:
     """Derive one reversible route to the rejected external-chain supports."""
+
+    if (include_crossed_predecessor and not include_terminal_role_handoff) or crossed_delivery != (
+        replayed_state is not None
+    ):
+        return None
 
     hierarchy = context.hierarchy
     source_supports = context.carrier_source_supports
@@ -11967,7 +12237,7 @@ def _carrier_source_paired_cargo_plan_after_observed_restoration(
         level_index=context.level_index,
         rejected_external_relation_key=context.rejected_external_residual_relation_key,
     )
-    replayed = _carrier_source_replayed_attachment_state(
+    replayed = replayed_state or _carrier_source_replayed_attachment_state(
         context,
         restored_scene,
         carried_indexes=carried_indexes,
@@ -12063,18 +12333,11 @@ def _carrier_source_paired_cargo_plan_after_observed_restoration(
         for cell in region
         if context.scene.cells[cell[1]][cell[0]] != context.scene.background
     )
-    state_cache: dict[_BridgeProjectedStateKey, VisualScene | None] = {}
 
-    def safe_state(
+    def raster_safe_state(
         positions: dict[str, tuple[int, int]],
         colors: dict[str, int],
     ) -> VisualScene | None:
-        key: _BridgeProjectedStateKey = (
-            tuple(sorted(positions.items())),
-            tuple(sorted(colors.items())),
-        )
-        if key in state_cache:
-            return state_cache[key]
         dynamics, cargos, endpoint_footprints = footprints(positions)
         moving = frozenset().union(*dynamics, *cargos)
         mutable = baseline_mutable | moving
@@ -12100,11 +12363,9 @@ def _carrier_source_paired_cargo_plan_after_observed_restoration(
             )
         )
         if not geometry_safe:
-            state_cache[key] = None
             return None
         projected = project(positions, colors)
         if projected is None:
-            state_cache[key] = None
             return None
         raster_safe = bool(
             not any(
@@ -12116,12 +12377,110 @@ def _carrier_source_paired_cargo_plan_after_observed_restoration(
             and not any(
                 projected.cells[y][x] != baseline.cells[y][x] for x, y in protected_target_surface
             )
-            and sum(item.color == hierarchy.active_color for item in projected.endpoints) == 1
         )
-        state_cache[key] = projected if raster_safe else None
+        return projected if raster_safe else None
+
+    state_cache: dict[_BridgeProjectedStateKey, VisualScene | None] = {}
+
+    def safe_state(
+        positions: dict[str, tuple[int, int]],
+        colors: dict[str, int],
+    ) -> VisualScene | None:
+        key: _BridgeProjectedStateKey = (
+            tuple(sorted(positions.items())),
+            tuple(sorted(colors.items())),
+        )
+        if key in state_cache:
+            return state_cache[key]
+        projected = raster_safe_state(positions, colors)
+        if (
+            projected is None
+            or sum(item.color == hierarchy.active_color for item in projected.endpoints) != 1
+        ):
+            state_cache[key] = None
+        else:
+            state_cache[key] = projected
         return state_cache[key]
 
-    if safe_state(initial_positions, initial_colors) is None:
+    observed_endpoint_positions = dict(initial_positions)
+
+    def group_for_ref(endpoint_ref: str) -> _AffineChildGroup | None:
+        matches = tuple(
+            group
+            for group in hierarchy.children
+            if any(endpoint.object_ref == endpoint_ref for endpoint in group.endpoints)
+        )
+        return matches[0] if len(matches) == 1 else None
+
+    def latent_crossed_boundary_state(
+        positions: dict[str, tuple[int, int]],
+        colors: dict[str, int],
+        *,
+        expected_active_ref: str,
+    ) -> VisualScene | None:
+        """Certify only the final carried boundary whose active shell is occluded.
+
+        The exception is deliberately local to the crossed predecessor/delivery
+        boundary.  It requires the exact observation-derived endpoint geometry,
+        every certified carried support, one latent active identity, no visible
+        active endpoint, and one active-colored parsed mediator containing that
+        identity's translated shell.  The shell center is the one occluded cell;
+        ordinary route states still require a visible active endpoint through
+        ``safe_state``.
+        """
+
+        active_refs = tuple(ref for ref, color in colors.items() if color == hierarchy.active_color)
+        active_group = group_for_ref(expected_active_ref)
+        if (
+            positions != observed_endpoint_positions
+            or carried != frozenset(range(len(source_supports)))
+            or active_refs != (expected_active_ref,)
+            or active_group is None
+        ):
+            return None
+        projected = raster_safe_state(positions, colors)
+        if projected is None:
+            return None
+        active_endpoints = tuple(
+            item for item in active_group.endpoints if item.object_ref == expected_active_ref
+        )
+        if len(active_endpoints) != 1:
+            return None
+        active_center = positions[expected_active_ref]
+        active_shell = _translated_object_footprint(active_endpoints[0], center=active_center) - {
+            active_center
+        }
+        if not active_shell:
+            return None
+        latent_mediators = tuple(
+            item
+            for item in projected.mediators
+            if item.color == hierarchy.active_color
+            and active_shell <= frozenset(item.cells)
+            and active_center not in item.cells
+        )
+        if (
+            any(item.color == hierarchy.active_color for item in projected.endpoints)
+            or len(projected.endpoints) + 1 != len(observed_endpoint_positions)
+            or len(latent_mediators) != 1
+        ):
+            return None
+        return projected
+
+    initial_active_refs = tuple(
+        ref for ref, color in initial_colors.items() if color == hierarchy.active_color
+    )
+    initial_safe_state = safe_state(initial_positions, initial_colors)
+    if initial_safe_state is None and (
+        not crossed_delivery
+        or len(initial_active_refs) != 1
+        or latent_crossed_boundary_state(
+            initial_positions,
+            initial_colors,
+            expected_active_ref=initial_active_refs[0],
+        )
+        is None
+    ):
         return None
     search_budget = _HierarchySearchBudget(_MAX_HIERARCHY_SEARCH_BUDGET)
     layout_sets: list[tuple[_HierarchyChildLayout, ...]] = []
@@ -12177,10 +12536,27 @@ def _carrier_source_paired_cargo_plan_after_observed_restoration(
         active_ref: str,
         transitions: list[Transition],
     ) -> str | None:
+        def required_state() -> VisualScene | None:
+            observed = safe_state(positions, colors)
+            if observed is not None:
+                return observed
+            if (
+                crossed_delivery
+                and not transitions
+                and positions == initial_positions
+                and colors == initial_colors
+            ):
+                return latent_crossed_boundary_state(
+                    positions,
+                    colors,
+                    expected_active_ref=active_ref,
+                )
+            return None
+
         for mover, point in zip(layout.movers, layout.points, strict=True):
             mover_ref = mover.object_ref
             if mover_ref != active_ref:
-                required_scene = safe_state(positions, colors)
+                required_scene = required_state()
                 if required_scene is None:
                     return None
                 inverse_coordinate = positions[active_ref]
@@ -12200,7 +12576,7 @@ def _carrier_source_paired_cargo_plan_after_observed_restoration(
                         expected_scene,
                     )
                 )
-            required_scene = safe_state(positions, colors)
+            required_scene = required_state()
             if required_scene is None or positions[active_ref] == point:
                 return None
             inverse_coordinate = positions[active_ref]
@@ -12325,19 +12701,37 @@ def _carrier_source_paired_cargo_plan_after_observed_restoration(
     )
     base_suffix = hashlib.sha256(repr(identity).encode("ascii")).hexdigest()[:24]
     base_signature = f"affine-carrier-source-occlusion-hierarchy-recovery:{base_suffix}"
+    role_suffix = hashlib.sha256(
+        repr((identity, "paired-terminal-active-role-handoff-v1")).encode("ascii")
+    ).hexdigest()[:24]
+    role_signature = f"affine-carrier-source-occlusion-hierarchy-recovery:{role_suffix}"
     if include_terminal_role_handoff and base_signature not in rejected_signatures:
+        return None
+    if include_crossed_predecessor and role_signature not in rejected_signatures:
         return None
     suffix = (
         hashlib.sha256(
-            repr((identity, "paired-terminal-active-role-handoff-v1")).encode("ascii")
+            repr((identity, "paired-terminal-crossed-predecessor-v1")).encode("ascii")
         ).hexdigest()[:24]
-        if include_terminal_role_handoff
-        else base_suffix
+        if include_crossed_predecessor
+        else (
+            hashlib.sha256(
+                repr((identity, "paired-terminal-crossed-delivery-v1")).encode("ascii")
+            ).hexdigest()[:24]
+            if crossed_delivery
+            else role_suffix
+            if include_terminal_role_handoff
+            else base_suffix
+        )
     )
     signature = f"affine-carrier-source-occlusion-hierarchy-recovery:{suffix}"
     if signature in rejected_signatures:
         return None
-    plan_id = f"visual-carrier-source-paired-cargo:{suffix}"
+    plan_id = (
+        f"visual-carrier-source-paired-cargo-crossed-delivery:{suffix}"
+        if crossed_delivery
+        else f"visual-carrier-source-paired-cargo:{suffix}"
+    )
     restoration_plan_id = f"visual-carrier-source-paired-cargo-restoration:{suffix}"
 
     def certificate(scene: VisualScene) -> _HierarchyRasterCertificate:
@@ -12376,12 +12770,24 @@ def _carrier_source_paired_cargo_plan_after_observed_restoration(
                 expected_child_protected_raster_hash=expected.protected_raster_hash,
                 expected_visible_endpoint_count=expected.visible_endpoint_count,
                 expected_visible_mediator_count=expected.visible_mediator_count,
+                required_visible_active_endpoint_count=(
+                    0 if crossed_delivery and index == 0 and initial_safe_state is None else None
+                ),
                 required_carried_source_support_indexes=carried_indexes,
                 expected_carried_source_support_indexes=carried_indexes,
-                carrier_source_paired_cargo_step=True,
-                completes_carrier_source_paired_cargo=index + 1 == len(transitions),
+                carrier_source_paired_cargo_step=not crossed_delivery,
+                completes_carrier_source_paired_cargo=(
+                    not crossed_delivery and index + 1 == len(transitions)
+                ),
                 carrier_source_paired_cargo_initial_protected_raster_hash=(initial_boundary_hash),
                 carrier_source_paired_cargo_role_handoff_family=(include_terminal_role_handoff),
+                carrier_source_paired_cargo_crossed_predecessor_family=(
+                    include_crossed_predecessor
+                ),
+                carrier_source_paired_cargo_crossed_delivery_step=crossed_delivery,
+                completes_carrier_source_paired_cargo_crossed_delivery=(
+                    crossed_delivery and index + 1 == len(transitions)
+                ),
             )
         )
     for index, (purpose, _coordinate, inverse, group, required_scene, expected_scene) in enumerate(
@@ -12411,13 +12817,18 @@ def _carrier_source_paired_cargo_plan_after_observed_restoration(
                 carrier_source_paired_cargo_restoration_step=True,
                 completes_carrier_source_paired_cargo_restoration=(index + 1 == len(transitions)),
                 carrier_source_paired_cargo_role_handoff_family=(include_terminal_role_handoff),
+                carrier_source_paired_cargo_crossed_predecessor_family=(
+                    include_crossed_predecessor
+                ),
             )
         )
     role_handoff: PlannedClick | None = None
+    crossed_delivery_context: _CarrierSourceCrossedDeliveryReplayContext | None = None
     if include_terminal_role_handoff:
         terminal_positions = dict(initial_positions)
         terminal_colors = dict(initial_colors)
         active_ref = active_refs[0]
+        predecessor_by_ref: dict[str, str] = {}
         for purpose, coordinate, _inverse, _group, _required, _expected in transitions:
             if purpose is VisualActionPurpose.PROBE:
                 selected_refs = tuple(
@@ -12426,6 +12837,9 @@ def _carrier_source_paired_cargo_plan_after_observed_restoration(
                 if len(selected_refs) != 1 or selected_refs[0] == active_ref:
                     return None
                 selected_ref = selected_refs[0]
+                if selected_ref in predecessor_by_ref:
+                    return None
+                predecessor_by_ref[selected_ref] = active_ref
                 terminal_colors[active_ref], terminal_colors[selected_ref] = (
                     terminal_colors[selected_ref],
                     terminal_colors[active_ref],
@@ -12477,6 +12891,168 @@ def _carrier_source_paired_cargo_plan_after_observed_restoration(
             return None
         terminal_certificate = certificate(terminal_scene)
         handoff_certificate = certificate(handoff_scene)
+        crossed_predecessor: list[PlannedClick] = []
+        if include_crossed_predecessor:
+            if set(predecessor_by_ref) != set(initial_positions) or set(
+                predecessor_by_ref.values()
+            ) != set(initial_positions):
+                return None
+            crossed_positions = dict(terminal_positions)
+            crossed_colors = dict(handoff_colors)
+            crossed_active_ref = complementary_ref
+            crossed_plan_id = f"visual-carrier-source-paired-cargo-crossed-predecessor:{suffix}"
+
+            for _index in range(len(initial_positions)):
+                predecessor_ref = predecessor_by_ref.get(crossed_active_ref)
+                active_group = group_for_ref(crossed_active_ref)
+                predecessor_group = (
+                    group_for_ref(predecessor_ref) if predecessor_ref is not None else None
+                )
+                if (
+                    predecessor_ref is None
+                    or active_group is None
+                    or predecessor_group is None
+                    or crossed_positions[crossed_active_ref]
+                    == initial_positions[crossed_active_ref]
+                ):
+                    return None
+                crossed_required_scene: VisualScene | None = safe_state(
+                    crossed_positions,
+                    crossed_colors,
+                )
+                destination = initial_positions[crossed_active_ref]
+                crossed_positions[crossed_active_ref] = destination
+                crossed_expected_scene: VisualScene | None = safe_state(
+                    crossed_positions,
+                    crossed_colors,
+                )
+                if crossed_required_scene is None or crossed_expected_scene is None:
+                    return None
+                required = certificate(crossed_required_scene)
+                expected = certificate(crossed_expected_scene)
+                crossed_predecessor.append(
+                    PlannedClick(
+                        coordinate=Coordinate(*destination),
+                        purpose=VisualActionPurpose.PROGRESS,
+                        expectation=(
+                            "restore one observation-derived predecessor position while "
+                            "preserving the complementary active lineage"
+                        ),
+                        mechanic_ref=hierarchy.mechanic_ref,
+                        plan_id=crossed_plan_id,
+                        plan_signature=signature,
+                        target_center=hierarchy.target.rounded_center,
+                        mediator_color=active_group.mediator.color,
+                        arity=active_group.arity,
+                        expected_active_center=destination,
+                        required_child_protected_raster_hash=required.protected_raster_hash,
+                        expected_child_protected_raster_hash=expected.protected_raster_hash,
+                        expected_visible_endpoint_count=expected.visible_endpoint_count,
+                        expected_visible_mediator_count=expected.visible_mediator_count,
+                        required_carried_source_support_indexes=carried_indexes,
+                        expected_carried_source_support_indexes=carried_indexes,
+                        carrier_source_paired_cargo_initial_protected_raster_hash=(
+                            initial_boundary_hash
+                        ),
+                        carrier_source_paired_cargo_role_handoff_family=True,
+                        carrier_source_paired_cargo_crossed_predecessor_family=True,
+                        carrier_source_paired_cargo_crossed_predecessor_step=True,
+                    )
+                )
+                crossed_required_scene = crossed_expected_scene
+                selected_coordinate = crossed_positions[predecessor_ref]
+                if predecessor_ref == crossed_active_ref:
+                    return None
+                crossed_colors[crossed_active_ref], crossed_colors[predecessor_ref] = (
+                    crossed_colors[predecessor_ref],
+                    crossed_colors[crossed_active_ref],
+                )
+                crossed_expected_scene = safe_state(
+                    crossed_positions,
+                    crossed_colors,
+                )
+                if (
+                    crossed_expected_scene is None
+                    and len(crossed_predecessor) + 1 == 2 * len(initial_positions)
+                    and predecessor_ref == complementary_ref
+                ):
+                    crossed_expected_scene = latent_crossed_boundary_state(
+                        crossed_positions,
+                        crossed_colors,
+                        expected_active_ref=predecessor_ref,
+                    )
+                if crossed_expected_scene is None:
+                    return None
+                required = certificate(crossed_required_scene)
+                expected = certificate(crossed_expected_scene)
+                crossed_predecessor.append(
+                    PlannedClick(
+                        coordinate=Coordinate(*selected_coordinate),
+                        purpose=VisualActionPurpose.PROBE,
+                        expectation=(
+                            "follow the observed predecessor map without restoring the "
+                            "pre-handoff role lineage"
+                        ),
+                        mechanic_ref=hierarchy.mechanic_ref,
+                        plan_id=crossed_plan_id,
+                        plan_signature=signature,
+                        target_center=hierarchy.target.rounded_center,
+                        mediator_color=predecessor_group.mediator.color,
+                        arity=predecessor_group.arity,
+                        expected_active_center=selected_coordinate,
+                        required_child_protected_raster_hash=required.protected_raster_hash,
+                        expected_child_protected_raster_hash=expected.protected_raster_hash,
+                        expected_visible_endpoint_count=expected.visible_endpoint_count,
+                        expected_visible_mediator_count=expected.visible_mediator_count,
+                        required_carried_source_support_indexes=carried_indexes,
+                        expected_carried_source_support_indexes=carried_indexes,
+                        carrier_source_paired_cargo_initial_protected_raster_hash=(
+                            initial_boundary_hash
+                        ),
+                        carrier_source_paired_cargo_role_handoff_family=True,
+                        carrier_source_paired_cargo_crossed_predecessor_family=True,
+                        carrier_source_paired_cargo_crossed_predecessor_step=True,
+                        completes_carrier_source_paired_cargo_crossed_predecessor=(
+                            len(crossed_predecessor) + 1 == 2 * len(initial_positions)
+                        ),
+                    )
+                )
+                crossed_active_ref = predecessor_ref
+            if (
+                crossed_positions != initial_positions
+                or crossed_active_ref != complementary_ref
+                or len(crossed_predecessor) != 2 * len(initial_positions)
+            ):
+                return None
+            crossed_scene = latent_crossed_boundary_state(
+                crossed_positions,
+                crossed_colors,
+                expected_active_ref=crossed_active_ref,
+            )
+            if crossed_scene is None:
+                return None
+            crossed_certificate = certificate(crossed_scene)
+            delivery_preview = _carrier_source_paired_cargo_plan_after_observed_restoration(
+                context,
+                crossed_scene,
+                carried_indexes=carried_indexes,
+                rejected_signatures=set(rejected_signatures) | {signature},
+                replayed_state=(dict(crossed_positions), dict(crossed_colors)),
+                crossed_delivery=True,
+            )
+            if delivery_preview is None or not delivery_preview.actions:
+                return None
+            crossed_delivery_context = _CarrierSourceCrossedDeliveryReplayContext(
+                attachment_context=context,
+                carried_indexes=carried_indexes,
+                positions=tuple(sorted(crossed_positions.items())),
+                colors=tuple(sorted(crossed_colors.items())),
+                protected_raster_hash=crossed_certificate.protected_raster_hash,
+                visible_endpoint_count=crossed_certificate.visible_endpoint_count,
+                visible_mediator_count=crossed_certificate.visible_mediator_count,
+                delivery_plan_signature=delivery_preview.signature,
+                delivery_action_count=len(delivery_preview.actions),
+            )
         role_restoration = PlannedClick(
             coordinate=Coordinate(*terminal_positions[active_ref]),
             purpose=VisualActionPurpose.PROBE,
@@ -12497,6 +13073,7 @@ def _carrier_source_paired_cargo_plan_after_observed_restoration(
             carrier_source_paired_cargo_initial_protected_raster_hash=initial_boundary_hash,
             carrier_source_paired_cargo_role_handoff_family=True,
             carrier_source_paired_cargo_role_restoration_step=True,
+            carrier_source_paired_cargo_crossed_predecessor_family=(include_crossed_predecessor),
         )
         role_handoff = PlannedClick(
             coordinate=Coordinate(*complementary_coordinate),
@@ -12521,13 +13098,21 @@ def _carrier_source_paired_cargo_plan_after_observed_restoration(
             carrier_source_paired_cargo_role_handoff_family=True,
             carrier_source_paired_cargo_role_handoff_step=True,
             carrier_source_paired_cargo_role_restoration_actions=(
-                role_restoration,
-                *restoration,
+                ()
+                if include_crossed_predecessor
+                else (
+                    role_restoration,
+                    *restoration,
+                )
             ),
+            carrier_source_paired_cargo_crossed_predecessor_family=(include_crossed_predecessor),
+            carrier_source_paired_cargo_crossed_predecessor_actions=(tuple(crossed_predecessor)),
         )
     forward[-1] = replace(
         forward[-1],
-        carrier_source_paired_cargo_restoration_actions=tuple(restoration),
+        carrier_source_paired_cargo_restoration_actions=(
+            () if crossed_delivery else tuple(restoration)
+        ),
         carrier_source_paired_cargo_role_handoff=role_handoff,
     )
     return _HierarchyPlan(
@@ -12537,6 +13122,339 @@ def _carrier_source_paired_cargo_plan_after_observed_restoration(
         support_weights=tuple(1 for _item in target_supports),
         recovery_actions=tuple(restoration),
         carrier_source_attachment_replay_context=context,
+        carrier_source_crossed_delivery_replay_context=crossed_delivery_context,
+    )
+
+
+def _carrier_source_attachment_context_key(
+    context: _CarrierSourceAttachmentReplayContext,
+) -> str:
+    """Hash only the observed relation lineage needed after a fresh RESET."""
+
+    identity = (
+        context.level_index,
+        context.hierarchy.mechanic_ref,
+        context.rejected_external_residual_relation_key,
+        tuple(
+            (
+                support.child.mediator.object_ref,
+                tuple(endpoint.object_ref for endpoint in support.child.endpoints),
+                support.source.center,
+                tuple(sorted(support.source.palette)),
+                tuple(sorted(support.source.cells)),
+            )
+            for support in context.carrier_source_supports
+        ),
+    )
+    return (
+        "carrier-source-replay:" + hashlib.sha256(repr(identity).encode("ascii")).hexdigest()[:24]
+    )
+
+
+def _carrier_source_attachment_setup_plan_signature(
+    context: _CarrierSourceAttachmentReplayContext,
+) -> str | None:
+    """Regenerate the exact coordinate-free root-plan identity from its live context."""
+
+    try:
+        plan = _build_hierarchy_plan(
+            context.hierarchy,
+            context.layouts,
+            scene=context.scene,
+            move_order=context.move_order,
+            support_weights=context.support_weights,
+            carrier_source_supports=context.carrier_source_supports,
+            carrier_source_level_index=context.level_index,
+            carrier_source_rejected_external_relation_key=(
+                context.rejected_external_residual_relation_key
+            ),
+            signature_prefix=context.signature_prefix,
+            terminal_expectation=context.terminal_expectation,
+        )
+    except ValueError:
+        return None
+    return plan.signature
+
+
+def _carrier_source_crossed_delivery_after_observed_predecessor(
+    replay: _CarrierSourceCrossedDeliveryReplayContext,
+    restored_scene: VisualScene,
+    *,
+    rejected_signatures: set[str] | frozenset[str],
+) -> _HierarchyPlan | None:
+    """Recompute one crossed delivery only after its boundary is exact."""
+
+    if (
+        _child_isolation_protected_raster_hash(restored_scene) != replay.protected_raster_hash
+        or len(restored_scene.endpoints) != replay.visible_endpoint_count
+        or len(restored_scene.mediators) != replay.visible_mediator_count
+    ):
+        return None
+    positions = dict(replay.positions)
+    colors = dict(replay.colors)
+    endpoint_refs = {
+        endpoint.object_ref
+        for child in replay.attachment_context.hierarchy.children
+        for endpoint in child.endpoints
+    }
+    if (
+        set(positions) != endpoint_refs
+        or set(colors) != endpoint_refs
+        or sum(
+            color == replay.attachment_context.hierarchy.active_color for color in colors.values()
+        )
+        != 1
+    ):
+        return None
+    plan = _carrier_source_paired_cargo_plan_after_observed_restoration(
+        replay.attachment_context,
+        restored_scene,
+        carried_indexes=replay.carried_indexes,
+        rejected_signatures=rejected_signatures,
+        replayed_state=(positions, colors),
+        crossed_delivery=True,
+    )
+    if (
+        plan is None
+        or plan.signature != replay.delivery_plan_signature
+        or len(plan.actions) != replay.delivery_action_count
+    ):
+        return None
+    return plan
+
+
+def _carrier_source_crossed_replay_action_budget(
+    plan: _HierarchyPlan,
+    *,
+    rejected_signatures: set[str] | frozenset[str],
+) -> int | None:
+    """Bound the complete paired, handoff, predecessor, and delivery route."""
+
+    replay = plan.carrier_source_crossed_delivery_replay_context
+    if not plan.actions or replay is None:
+        return None
+    role_handoff = plan.actions[-1].carrier_source_paired_cargo_role_handoff
+    if (
+        role_handoff is None
+        or not _carrier_source_paired_cargo_role_handoff_step_is_compatible(role_handoff)
+        or not role_handoff.carrier_source_paired_cargo_crossed_predecessor_family
+        or not _carrier_source_paired_cargo_crossed_predecessor_actions_are_compatible(role_handoff)
+    ):
+        return None
+    predecessor = role_handoff.carrier_source_paired_cargo_crossed_predecessor_actions
+    endpoint_refs = {
+        endpoint.object_ref
+        for child in replay.attachment_context.hierarchy.children
+        for endpoint in child.endpoints
+    }
+    if (
+        not endpoint_refs
+        or set(dict(replay.positions)) != endpoint_refs
+        or set(dict(replay.colors)) != endpoint_refs
+        or replay.carried_indexes
+        != tuple(range(len(replay.attachment_context.carrier_source_supports)))
+        or plan.signature in rejected_signatures
+    ):
+        return None
+    if replay.delivery_action_count <= 0 or not replay.delivery_plan_signature:
+        return None
+    return len(plan.actions) + 1 + len(predecessor) + replay.delivery_action_count
+
+
+def _carrier_source_crossed_replay_action_budget_preview(
+    context: _CarrierSourceAttachmentReplayContext,
+    restored_scene: VisualScene,
+    *,
+    carried_indexes: tuple[int, ...],
+) -> int | None:
+    """Derive the exact later crossed budget while its fresh boundary is live."""
+
+    base = _carrier_source_paired_cargo_plan_after_observed_restoration(
+        context,
+        restored_scene,
+        carried_indexes=carried_indexes,
+        rejected_signatures=set(),
+    )
+    if base is None:
+        return None
+    role = _carrier_source_paired_cargo_plan_after_observed_restoration(
+        context,
+        restored_scene,
+        carried_indexes=carried_indexes,
+        rejected_signatures={base.signature},
+        include_terminal_role_handoff=True,
+    )
+    if role is None:
+        return None
+    crossed = _carrier_source_paired_cargo_plan_after_observed_restoration(
+        context,
+        restored_scene,
+        carried_indexes=carried_indexes,
+        rejected_signatures={base.signature, role.signature},
+        include_terminal_role_handoff=True,
+        include_crossed_predecessor=True,
+    )
+    if crossed is None:
+        return None
+    return _carrier_source_crossed_replay_action_budget(
+        crossed,
+        rejected_signatures={base.signature, role.signature},
+    )
+
+
+def _carrier_source_crossed_replay_context_endpoint_count(
+    context: _CarrierSourceAttachmentReplayContext,
+    *,
+    carried_indexes: tuple[int, ...],
+) -> int | None:
+    """Count one exact all-carried endpoint lineage without route enumeration."""
+
+    supports = context.carrier_source_supports
+    endpoint_refs = tuple(
+        endpoint.object_ref for child in context.hierarchy.children for endpoint in child.endpoints
+    )
+    if (
+        not supports
+        or carried_indexes != tuple(range(len(supports)))
+        or not endpoint_refs
+        or len(set(endpoint_refs)) != len(endpoint_refs)
+    ):
+        return None
+    return len(endpoint_refs)
+
+
+def _crossed_replay_action_budget_from_metadata(
+    *,
+    paired_action_count: int,
+    predecessor_action_count: int,
+    delivery_action_count: int,
+) -> int | None:
+    """Return the exact forward count from validated finite-plan metadata."""
+
+    if paired_action_count <= 0 or predecessor_action_count <= 0 or delivery_action_count <= 0:
+        return None
+    return paired_action_count + 1 + predecessor_action_count + delivery_action_count
+
+
+def _strict_crossed_replay_budget_closes(
+    *,
+    current_actions: int,
+    route_action_upper_bound: int | None,
+    exhausted_after_actions: int,
+) -> bool:
+    """Require every route action to finish strictly before learned exhaustion."""
+
+    return bool(
+        route_action_upper_bound is not None
+        and current_actions >= 0
+        and current_actions + route_action_upper_bound < exhausted_after_actions
+    )
+
+
+def _matching_resource_interrupted_paired_replay(
+    replay: _ResourceInterruptedPairedReplay | None,
+    *,
+    level_index: int,
+    context_key: str,
+    reset_epoch: int,
+    candidates: tuple[_EdgeResourceProgress, ...],
+    current_actions: int,
+) -> _EdgeResourceProgress | None:
+    """Match a fresh life to the exact prefix learned from the exhausted life."""
+
+    if (
+        replay is None
+        or replay.level_index != level_index
+        or replay.context_key != context_key
+        or replay.authorized_reset_epoch != reset_epoch
+        or not replay.setup_replay_started
+        or current_actions != replay.setup_action_count
+        or len(replay.exhausted_filled_index_history) != replay.observed_actions
+    ):
+        return None
+    return _matching_edge_resource_lineage(
+        candidates,
+        edge_index=replay.exhausted_edge_index,
+        baseline=replay.exhausted_edge_baseline,
+        fill_color=replay.exhausted_edge_fill_color,
+        observed_actions=current_actions,
+        exhausted_filled_index_history=replay.exhausted_filled_index_history,
+    )
+
+
+def _authorize_resource_interrupted_paired_replay(
+    replay: _ResourceInterruptedPairedReplay | None,
+    *,
+    level_index: int,
+    context_key: str,
+    reset_epoch: int,
+    candidates: tuple[_EdgeResourceProgress, ...],
+    current_actions: int,
+    forward_remaining_actions: int | None,
+) -> _ActiveCrossedReplayResourceLineage | None:
+    """Consume one exact-prefix token using the validated plan's exact count."""
+
+    current_resource = _matching_resource_interrupted_paired_replay(
+        replay,
+        level_index=level_index,
+        context_key=context_key,
+        reset_epoch=reset_epoch,
+        candidates=candidates,
+        current_actions=current_actions,
+    )
+    if (
+        replay is None
+        or current_resource is None
+        or forward_remaining_actions != replay.crossed_forward_action_count
+        or not _strict_crossed_replay_budget_closes(
+            current_actions=current_actions,
+            route_action_upper_bound=forward_remaining_actions,
+            exhausted_after_actions=replay.observed_actions,
+        )
+    ):
+        return None
+    assert forward_remaining_actions is not None
+    return _ActiveCrossedReplayResourceLineage(
+        level_index=replay.level_index,
+        context_key=replay.context_key,
+        edge_index=current_resource.edge_index,
+        edge_baseline=current_resource.baseline,
+        edge_fill_color=current_resource.fill_color,
+        exhausted_filled_index_history=replay.exhausted_filled_index_history,
+        exhausted_after_actions=replay.observed_actions,
+        reset_epoch=reset_epoch,
+        forward_remaining_actions=forward_remaining_actions,
+    )
+
+
+def _is_crossed_replay_forward_action(planned: PlannedClick) -> bool:
+    """Identify only actions in the consumed token's exact forward family."""
+
+    return bool(
+        planned.carrier_source_paired_cargo_crossed_delivery_step
+        or (
+            planned.carrier_source_paired_cargo_crossed_predecessor_family
+            and (
+                planned.carrier_source_paired_cargo_step
+                or planned.carrier_source_paired_cargo_role_handoff_step
+                or planned.carrier_source_paired_cargo_crossed_predecessor_step
+            )
+        )
+    )
+
+
+def _is_crossed_replay_inverse_action(
+    planned: PlannedClick,
+    *,
+    recovery_signature: str | None,
+) -> bool:
+    """Identify one exact inverse action issued only after crossed delivery."""
+
+    return bool(
+        recovery_signature is not None
+        and planned.plan_signature == recovery_signature
+        and planned.carrier_source_paired_cargo_restoration_step
+        and not _is_crossed_replay_forward_action(planned)
     )
 
 
@@ -12923,6 +13841,148 @@ def _carrier_source_paired_cargo_role_restoration_actions_are_compatible(
     )
 
 
+def _carrier_source_paired_cargo_crossed_predecessor_step_is_compatible(
+    planned: PlannedClick,
+) -> bool:
+    """Require one exact step in the handoff-preserving predecessor cycle."""
+
+    return bool(
+        planned.carrier_source_paired_cargo_role_handoff_family
+        and planned.carrier_source_paired_cargo_crossed_predecessor_family
+        and planned.carrier_source_paired_cargo_crossed_predecessor_step
+        and planned.plan_id.startswith("visual-carrier-source-paired-cargo-crossed-predecessor:")
+        and _carrier_source_paired_cargo_common_is_compatible(planned)
+        and not planned.carrier_source_paired_cargo_step
+        and not planned.completes_carrier_source_paired_cargo
+        and not planned.carrier_source_paired_cargo_restoration_actions
+        and not planned.carrier_source_paired_cargo_restoration_step
+        and not planned.completes_carrier_source_paired_cargo_restoration
+        and planned.carrier_source_paired_cargo_role_handoff is None
+        and not planned.carrier_source_paired_cargo_role_handoff_step
+        and not planned.carrier_source_paired_cargo_role_restoration_actions
+        and not planned.carrier_source_paired_cargo_role_restoration_step
+        and not planned.carrier_source_paired_cargo_crossed_predecessor_actions
+        and not planned.carrier_source_paired_cargo_crossed_delivery_step
+        and not planned.completes_carrier_source_paired_cargo_crossed_delivery
+        and (
+            not planned.completes_carrier_source_paired_cargo_crossed_predecessor
+            or planned.purpose is VisualActionPurpose.PROBE
+        )
+    )
+
+
+def _carrier_source_paired_cargo_crossed_predecessor_actions_are_compatible(
+    planned: PlannedClick,
+) -> bool:
+    """Validate one complete predecessor cycle from the exact handoff raster."""
+
+    actions = planned.carrier_source_paired_cargo_crossed_predecessor_actions
+    expected_indexes = planned.expected_carried_source_support_indexes
+    if (
+        len(actions) < 2
+        or len(actions) % 2
+        or not planned.carrier_source_paired_cargo_crossed_predecessor_family
+        or actions[0].required_child_protected_raster_hash
+        != planned.expected_child_protected_raster_hash
+        or actions[-1].expected_child_protected_raster_hash
+        == planned.carrier_source_paired_cargo_initial_protected_raster_hash
+    ):
+        return False
+    for index, action in enumerate(actions):
+        if (
+            not _carrier_source_paired_cargo_crossed_predecessor_step_is_compatible(action)
+            or action.plan_id != actions[0].plan_id
+            or action.plan_signature != planned.plan_signature
+            or action.mechanic_ref != planned.mechanic_ref
+            or action.target_center != planned.target_center
+            or action.required_carried_source_support_indexes != expected_indexes
+            or action.expected_carried_source_support_indexes != expected_indexes
+            or action.carrier_source_paired_cargo_initial_protected_raster_hash
+            != planned.carrier_source_paired_cargo_initial_protected_raster_hash
+            or action.completes_carrier_source_paired_cargo_crossed_predecessor
+            != (index + 1 == len(actions))
+            or action.purpose
+            is not (VisualActionPurpose.PROGRESS if index % 2 == 0 else VisualActionPurpose.PROBE)
+        ):
+            return False
+        if index and (
+            actions[index - 1].expected_child_protected_raster_hash
+            != action.required_child_protected_raster_hash
+        ):
+            return False
+    return True
+
+
+def _carrier_source_paired_cargo_crossed_delivery_step_is_compatible(
+    planned: PlannedClick,
+) -> bool:
+    """Require one post-receipt target-relative action from the crossed state."""
+
+    return bool(
+        planned.carrier_source_paired_cargo_crossed_delivery_step
+        and planned.plan_id.startswith("visual-carrier-source-paired-cargo-crossed-delivery:")
+        and _carrier_source_paired_cargo_common_is_compatible(planned)
+        and not planned.carrier_source_paired_cargo_step
+        and not planned.completes_carrier_source_paired_cargo
+        and not planned.carrier_source_paired_cargo_restoration_actions
+        and not planned.carrier_source_paired_cargo_restoration_step
+        and not planned.completes_carrier_source_paired_cargo_restoration
+        and not planned.carrier_source_paired_cargo_role_handoff_family
+        and planned.carrier_source_paired_cargo_role_handoff is None
+        and not planned.carrier_source_paired_cargo_role_handoff_step
+        and not planned.carrier_source_paired_cargo_role_restoration_actions
+        and not planned.carrier_source_paired_cargo_role_restoration_step
+        and not planned.carrier_source_paired_cargo_crossed_predecessor_family
+        and not planned.carrier_source_paired_cargo_crossed_predecessor_actions
+        and not planned.carrier_source_paired_cargo_crossed_predecessor_step
+        and not planned.completes_carrier_source_paired_cargo_crossed_predecessor
+        and (
+            not planned.completes_carrier_source_paired_cargo_crossed_delivery
+            or planned.purpose is VisualActionPurpose.PROGRESS
+        )
+    )
+
+
+def _carrier_source_crossed_delivery_recovery_is_compatible(
+    plan: _HierarchyPlan,
+) -> bool:
+    """Require a closed inverse for the one crossed delivery route."""
+
+    forward = plan.actions
+    recovery = plan.recovery_actions
+    if (
+        not forward
+        or len(recovery) != len(forward)
+        or not all(
+            _carrier_source_paired_cargo_crossed_delivery_step_is_compatible(action)
+            for action in forward
+        )
+        or not forward[-1].completes_carrier_source_paired_cargo_crossed_delivery
+        or not all(
+            _carrier_source_paired_cargo_restoration_step_is_compatible(action)
+            for action in recovery
+        )
+        or recovery[0].required_child_protected_raster_hash
+        != forward[-1].expected_child_protected_raster_hash
+        or recovery[-1].expected_child_protected_raster_hash
+        != forward[0].required_child_protected_raster_hash
+    ):
+        return False
+    return bool(
+        all(action.plan_signature == plan.signature for action in (*forward, *recovery))
+        and all(
+            recovery[index - 1].expected_child_protected_raster_hash
+            == action.required_child_protected_raster_hash
+            for index, action in enumerate(recovery)
+            if index
+        )
+        and all(
+            action.completes_carrier_source_paired_cargo_restoration == (index + 1 == len(recovery))
+            for index, action in enumerate(recovery)
+        )
+    )
+
+
 def _carrier_source_paired_cargo_role_handoff_step_is_compatible(
     planned: PlannedClick,
 ) -> bool:
@@ -12941,7 +14001,22 @@ def _carrier_source_paired_cargo_role_handoff_step_is_compatible(
         and not planned.completes_carrier_source_paired_cargo_restoration
         and planned.carrier_source_paired_cargo_role_handoff is None
         and not planned.carrier_source_paired_cargo_role_restoration_step
-        and _carrier_source_paired_cargo_role_restoration_actions_are_compatible(planned)
+        and not planned.carrier_source_paired_cargo_crossed_predecessor_step
+        and not planned.completes_carrier_source_paired_cargo_crossed_predecessor
+        and not planned.carrier_source_paired_cargo_crossed_delivery_step
+        and not planned.completes_carrier_source_paired_cargo_crossed_delivery
+        and (
+            (
+                planned.carrier_source_paired_cargo_crossed_predecessor_family
+                and not planned.carrier_source_paired_cargo_role_restoration_actions
+                and _carrier_source_paired_cargo_crossed_predecessor_actions_are_compatible(planned)
+            )
+            or (
+                not planned.carrier_source_paired_cargo_crossed_predecessor_family
+                and not planned.carrier_source_paired_cargo_crossed_predecessor_actions
+                and _carrier_source_paired_cargo_role_restoration_actions_are_compatible(planned)
+            )
+        )
     )
 
 
@@ -12958,6 +14033,11 @@ def _carrier_source_paired_cargo_step_is_compatible(planned: PlannedClick) -> bo
         and not planned.carrier_source_paired_cargo_role_handoff_step
         and not planned.carrier_source_paired_cargo_role_restoration_actions
         and not planned.carrier_source_paired_cargo_role_restoration_step
+        and not planned.carrier_source_paired_cargo_crossed_predecessor_actions
+        and not planned.carrier_source_paired_cargo_crossed_predecessor_step
+        and not planned.completes_carrier_source_paired_cargo_crossed_predecessor
+        and not planned.carrier_source_paired_cargo_crossed_delivery_step
+        and not planned.completes_carrier_source_paired_cargo_crossed_delivery
         and bool(restoration) == planned.completes_carrier_source_paired_cargo
         and bool(planned.carrier_source_paired_cargo_role_handoff)
         == (
@@ -13041,12 +14121,20 @@ def _hierarchy_planned_click_matching_candidate(
         or planned.carrier_source_paired_cargo_role_handoff_step
         or planned.carrier_source_paired_cargo_role_restoration_actions
         or planned.carrier_source_paired_cargo_role_restoration_step
+        or planned.carrier_source_paired_cargo_crossed_predecessor_family
+        or planned.carrier_source_paired_cargo_crossed_predecessor_actions
+        or planned.carrier_source_paired_cargo_crossed_predecessor_step
+        or planned.completes_carrier_source_paired_cargo_crossed_predecessor
+        or planned.carrier_source_paired_cargo_crossed_delivery_step
+        or planned.completes_carrier_source_paired_cargo_crossed_delivery
     )
     if paired_cargo_fields and not (
         _carrier_source_paired_cargo_step_is_compatible(planned)
         or _carrier_source_paired_cargo_restoration_step_is_compatible(planned)
         or _carrier_source_paired_cargo_role_handoff_step_is_compatible(planned)
         or _carrier_source_paired_cargo_role_restoration_step_is_compatible(planned)
+        or _carrier_source_paired_cargo_crossed_predecessor_step_is_compatible(planned)
+        or _carrier_source_paired_cargo_crossed_delivery_step_is_compatible(planned)
     ):
         return None
     if planned.carrier_source_delivery_step and not _carrier_source_delivery_step_is_compatible(
@@ -13427,7 +14515,28 @@ class VisualCausalPolicy:
         self._active_carrier_source_attachment_replay_context: (
             _CarrierSourceAttachmentReplayContext | None
         ) = None
+        self._active_crossed_delivery_replay_context: (
+            _CarrierSourceCrossedDeliveryReplayContext | None
+        ) = None
         self._active_carried_source_recovery_support_indexes: tuple[int, ...] = ()
+        self._active_carrier_source_setup_start_action_count: int | None = None
+        self._active_carrier_source_setup_action_count: int | None = None
+        self._active_carrier_source_crossed_forward_action_count: int | None = None
+        self._resource_interrupted_paired_replay: _ResourceInterruptedPairedReplay | None = None
+        self._active_crossed_replay_resource_lineage: _ActiveCrossedReplayResourceLineage | None = (
+            None
+        )
+        self._reset_epoch_index = 0
+        self._paired_role_handoff_observed_signature: str | None = None
+        self._paired_role_handoff_observed_context_key: str | None = None
+        self._paired_role_handoff_observed_setup_relation_key: str | None = None
+        self._paired_role_handoff_observed_setup_plan_signature: str | None = None
+        self._paired_role_handoff_observed_setup_action_count: int | None = None
+        self._paired_role_handoff_observed_crossed_forward_action_count: int | None = None
+        self._crossed_delivery_recovery_signature: str | None = None
+        self._episode_resource_baseline_edges: tuple[tuple[int, ...], ...] = ()
+        self._episode_resource_candidates: tuple[_EdgeResourceProgress, ...] = ()
+        self._episode_action6_count = 0
         self._failed_hierarchy_relation_keys: set[str] = set()
         self._failed_weighted_hierarchy_relation_keys: set[str] = set()
         self._failed_visible_node_hierarchy_relation_keys: set[str] = set()
@@ -13555,7 +14664,24 @@ class VisualCausalPolicy:
         self._active_hierarchy_support_weights = ()
         self._active_hierarchy_recovery_actions = ()
         self._active_carrier_source_attachment_replay_context = None
+        self._active_crossed_delivery_replay_context = None
         self._active_carried_source_recovery_support_indexes = ()
+        self._active_carrier_source_setup_start_action_count = None
+        self._active_carrier_source_setup_action_count = None
+        self._active_carrier_source_crossed_forward_action_count = None
+        self._resource_interrupted_paired_replay = None
+        self._active_crossed_replay_resource_lineage = None
+        self._reset_epoch_index = 0
+        self._paired_role_handoff_observed_signature = None
+        self._paired_role_handoff_observed_context_key = None
+        self._paired_role_handoff_observed_setup_relation_key = None
+        self._paired_role_handoff_observed_setup_plan_signature = None
+        self._paired_role_handoff_observed_setup_action_count = None
+        self._paired_role_handoff_observed_crossed_forward_action_count = None
+        self._crossed_delivery_recovery_signature = None
+        self._episode_resource_baseline_edges = _frame_edge_signatures(observation.frames[-1])
+        self._episode_resource_candidates = ()
+        self._episode_action6_count = 0
         self._failed_hierarchy_relation_keys.clear()
         self._failed_weighted_hierarchy_relation_keys.clear()
         self._failed_visible_node_hierarchy_relation_keys.clear()
@@ -13581,9 +14707,17 @@ class VisualCausalPolicy:
         self._last_probe_failed = False
         self._probe_ordinal = 0
 
-    def _begin_reset_epoch(self) -> None:
+    def _begin_reset_epoch(self, observation: Observation) -> None:
         """Clear episode-local search state while retaining learned evidence."""
 
+        self._reset_epoch_index += 1
+        interrupted_replay = self._resource_interrupted_paired_replay
+        if (
+            interrupted_replay is not None
+            and interrupted_replay.authorized_reset_epoch != self._reset_epoch_index
+        ):
+            self._resource_interrupted_paired_replay = None
+        self._active_crossed_replay_resource_lineage = None
         self._plan.clear()
         self._attempted_activation_refs.clear()
         self._marker_bootstrap_attempted = False
@@ -13597,13 +14731,125 @@ class VisualCausalPolicy:
         self._active_hierarchy_support_weights = ()
         self._active_hierarchy_recovery_actions = ()
         self._active_carrier_source_attachment_replay_context = None
+        self._active_crossed_delivery_replay_context = None
         self._active_carried_source_recovery_support_indexes = ()
+        self._active_carrier_source_setup_start_action_count = None
+        self._active_carrier_source_setup_action_count = None
+        self._active_carrier_source_crossed_forward_action_count = None
+        self._paired_role_handoff_observed_signature = None
+        self._paired_role_handoff_observed_context_key = None
+        self._paired_role_handoff_observed_setup_relation_key = None
+        self._paired_role_handoff_observed_setup_plan_signature = None
+        self._paired_role_handoff_observed_setup_action_count = None
+        self._paired_role_handoff_observed_crossed_forward_action_count = None
+        self._crossed_delivery_recovery_signature = None
+        self._episode_resource_baseline_edges = _frame_edge_signatures(observation.frames[-1])
+        self._episode_resource_candidates = ()
+        self._episode_action6_count = 0
         self._hierarchy_lineage_lost = None
         self._clear_child_isolation_execution()
         self._marker_structural_actions.clear()
         self._marker_structural_action_order.clear()
         self._episode_exploration_root = None
         self._last_probe_failed = False
+
+    def _clear_crossed_replay_execution(self) -> None:
+        """Fail closed without reopening an unrelated hierarchy continuation."""
+
+        self._plan.clear()
+        self._active_hierarchy_signature = None
+        self._active_hierarchy_relation_key = None
+        self._active_hierarchy_supports = ()
+        self._active_hierarchy_support_weights = ()
+        self._active_hierarchy_recovery_actions = ()
+        self._active_carrier_source_attachment_replay_context = None
+        self._active_crossed_delivery_replay_context = None
+        self._active_carried_source_recovery_support_indexes = ()
+        self._active_carrier_source_setup_start_action_count = None
+        self._active_carrier_source_setup_action_count = None
+        self._active_carrier_source_crossed_forward_action_count = None
+        self._active_crossed_replay_resource_lineage = None
+        self._crossed_delivery_recovery_signature = None
+        self._last_probe_failed = True
+
+    def _active_crossed_resource_matches(self, observation: Observation) -> bool:
+        """Revalidate reset, level, edge raster, and every learned fill prefix."""
+
+        lineage = self._active_crossed_replay_resource_lineage
+        if (
+            lineage is None
+            or observation.levels_completed != lineage.level_index
+            or self._reset_epoch_index != lineage.reset_epoch
+        ):
+            return False
+        current_resource = _matching_edge_resource_lineage(
+            self._episode_resource_candidates,
+            edge_index=lineage.edge_index,
+            baseline=lineage.edge_baseline,
+            fill_color=lineage.edge_fill_color,
+            observed_actions=self._episode_action6_count,
+            exhausted_filled_index_history=lineage.exhausted_filled_index_history,
+        )
+        edges = _frame_edge_signatures(observation.frames[-1])
+        if current_resource is None or not 0 <= lineage.edge_index < len(edges):
+            return False
+        current_edge = edges[lineage.edge_index]
+        if len(current_edge) != len(lineage.edge_baseline):
+            return False
+        return all(
+            value
+            == (
+                lineage.edge_fill_color
+                if index in current_resource.filled_indexes
+                else lineage.edge_baseline[index]
+            )
+            for index, value in enumerate(current_edge)
+        )
+
+    def _resource_setup_replay_prefix_matches(
+        self,
+        observation: Observation,
+        replay: _ResourceInterruptedPairedReplay,
+    ) -> bool:
+        """Revalidate one fresh setup against the exact learned meter prefix."""
+
+        if (
+            observation.levels_completed != replay.level_index
+            or self._reset_epoch_index != replay.authorized_reset_epoch
+            or self._episode_action6_count < 0
+            or self._episode_action6_count >= replay.observed_actions
+        ):
+            return False
+        edges = _frame_edge_signatures(observation.frames[-1])
+        if (
+            not 0 <= replay.exhausted_edge_index < len(edges)
+            or not 0 <= replay.exhausted_edge_index < len(self._episode_resource_baseline_edges)
+            or self._episode_resource_baseline_edges[replay.exhausted_edge_index]
+            != replay.exhausted_edge_baseline
+        ):
+            return False
+        current_edge = edges[replay.exhausted_edge_index]
+        if self._episode_action6_count == 0:
+            return current_edge == replay.exhausted_edge_baseline
+        current_resource = _matching_edge_resource_lineage(
+            self._episode_resource_candidates,
+            edge_index=replay.exhausted_edge_index,
+            baseline=replay.exhausted_edge_baseline,
+            fill_color=replay.exhausted_edge_fill_color,
+            observed_actions=self._episode_action6_count,
+            exhausted_filled_index_history=replay.exhausted_filled_index_history,
+        )
+        if current_resource is None or len(current_edge) != len(replay.exhausted_edge_baseline):
+            return False
+        return all(
+            value
+            == (
+                replay.exhausted_edge_fill_color
+                if index in current_resource.filled_indexes
+                else replay.exhausted_edge_baseline[index]
+            )
+            for index, value in enumerate(current_edge)
+        )
 
     def _clear_child_isolation_execution(self) -> None:
         self._active_child_isolation_relation_key = None
@@ -13632,6 +14878,9 @@ class VisualCausalPolicy:
         failure = (level_index, relation_key, plan_signature, phase)
         self._failed_hierarchy_lineages.add(failure)
         self._hierarchy_lineage_lost = failure
+        interrupted_replay = self._resource_interrupted_paired_replay
+        if interrupted_replay is not None and interrupted_replay.setup_replay_started:
+            self._resource_interrupted_paired_replay = None
 
     @staticmethod
     def _exploration_root_key(
@@ -13874,7 +15123,18 @@ class VisualCausalPolicy:
         self._active_carrier_source_attachment_replay_context = (
             plan.carrier_source_attachment_replay_context
         )
+        self._active_crossed_delivery_replay_context = (
+            plan.carrier_source_crossed_delivery_replay_context
+        )
         self._active_carried_source_recovery_support_indexes = ()
+        if plan.carrier_source_attachment_replay_context is not None:
+            self._active_carrier_source_setup_start_action_count = self._episode_action6_count
+            self._active_carrier_source_setup_action_count = None
+            self._active_carrier_source_crossed_forward_action_count = None
+        else:
+            self._active_carrier_source_setup_start_action_count = None
+            self._active_carrier_source_setup_action_count = None
+            self._active_carrier_source_crossed_forward_action_count = None
 
     def _install_child_isolation_plan(self, plan: _ChildIsolationPlan) -> None:
         self._plan.clear()
@@ -13892,6 +15152,8 @@ class VisualCausalPolicy:
 
     def select(self, observation: Observation) -> ActionRequest:
         if observation.state in {GameStateName.GAME_OVER, GameStateName.NOT_PLAYED}:
+            if self._active_crossed_replay_resource_lineage is not None:
+                self._clear_crossed_replay_execution()
             action = ActionRequest(ActionName.RESET)
             self._stage_pending(
                 observation,
@@ -13901,8 +15163,17 @@ class VisualCausalPolicy:
             )
             return action
         if observation.state is GameStateName.WIN:
+            if self._active_crossed_replay_resource_lineage is not None:
+                self._clear_crossed_replay_execution()
             raise PolicyError("the official environment already reports WIN")
         if observation.state is GameStateName.UNKNOWN:
+            interrupted_setup_replay = self._resource_interrupted_paired_replay
+            self._resource_interrupted_paired_replay = None
+            if (
+                interrupted_setup_replay is not None
+                or self._active_crossed_replay_resource_lineage is not None
+            ):
+                self._clear_crossed_replay_execution()
             raise PolicyError("cannot act on an unknown environment state")
         if observation.levels_completed < self._level_index:
             raise PolicyError("levels_completed regressed within one policy lifetime")
@@ -13913,11 +15184,132 @@ class VisualCausalPolicy:
                 "hierarchy lineage was lost after a nonmatching returned consequence; "
                 "no unrelated fallback is authorized"
             )
+        interrupted_setup_replay = self._resource_interrupted_paired_replay
+        if (
+            interrupted_setup_replay is not None
+            and not interrupted_setup_replay.setup_replay_started
+        ):
+            if (
+                self._episode_action6_count != 0
+                or interrupted_setup_replay.setup_action_count <= 0
+                or interrupted_setup_replay.crossed_forward_action_count <= 0
+                or interrupted_setup_replay.setup_action_count
+                + interrupted_setup_replay.crossed_forward_action_count
+                >= interrupted_setup_replay.observed_actions
+                or not self._resource_setup_replay_prefix_matches(
+                    observation,
+                    interrupted_setup_replay,
+                )
+            ):
+                self._resource_interrupted_paired_replay = None
+                self._plan.clear()
+                raise PolicyError(
+                    "fresh setup replay no longer matches its exact reset, baseline, or "
+                    "resource budget; no unrelated fallback is authorized"
+                )
+        elif interrupted_setup_replay is not None:
+            active_context = self._active_carrier_source_attachment_replay_context
+            context_matches = bool(
+                active_context is not None
+                and _carrier_source_attachment_context_key(active_context)
+                == interrupted_setup_replay.context_key
+            )
+            remaining_setup_actions = (
+                interrupted_setup_replay.setup_action_count - self._episode_action6_count
+            )
+            setup_matches = bool(
+                self._plan
+                and self._active_hierarchy_relation_key
+                == interrupted_setup_replay.setup_relation_key
+                and self._active_hierarchy_signature
+                == interrupted_setup_replay.setup_plan_signature
+                and context_matches
+                and self._resource_setup_replay_prefix_matches(
+                    observation,
+                    interrupted_setup_replay,
+                )
+                and remaining_setup_actions > 0
+                and len(self._plan) <= remaining_setup_actions
+                and self._episode_action6_count
+                + remaining_setup_actions
+                + interrupted_setup_replay.crossed_forward_action_count
+                < interrupted_setup_replay.observed_actions
+            )
+            if not setup_matches:
+                plan_signature = (
+                    self._plan[0].plan_signature
+                    if self._plan
+                    else interrupted_setup_replay.setup_plan_signature
+                )
+                self._latch_hierarchy_lineage_failure(
+                    level_index=observation.levels_completed,
+                    plan_signature=plan_signature,
+                    phase=f"resource-setup-precondition:{self._step_index}",
+                )
+                self._clear_crossed_replay_execution()
+                raise PolicyError(
+                    "fresh setup replay, exact meter prefix, or remaining action budget "
+                    "no longer matches; no further setup action is authorized"
+                )
         if self._active_carried_source_recovery_support_indexes and not self._plan:
             raise PolicyError(
                 "an exact carrier-source attachment remains active and requires an "
                 "observation-derived target-delivery continuation"
             )
+
+        active_crossed_lineage = self._active_crossed_replay_resource_lineage
+        if active_crossed_lineage is not None and not self._plan:
+            self._clear_crossed_replay_execution()
+            raise PolicyError(
+                "crossed resource lineage has no exact queued continuation; "
+                "no unrelated fallback is authorized"
+            )
+        if self._plan:
+            queued_crossed = self._plan[0]
+            crossed_forward = _is_crossed_replay_forward_action(queued_crossed)
+            crossed_inverse = _is_crossed_replay_inverse_action(
+                queued_crossed,
+                recovery_signature=self._crossed_delivery_recovery_signature,
+            )
+            crossed_family = bool(
+                crossed_forward
+                or crossed_inverse
+                or queued_crossed.carrier_source_paired_cargo_crossed_predecessor_family
+                or queued_crossed.carrier_source_paired_cargo_crossed_delivery_step
+            )
+            resource_matches = bool(
+                active_crossed_lineage is not None
+                and self._active_crossed_resource_matches(observation)
+            )
+            forward_budget_closes = bool(
+                active_crossed_lineage is not None
+                and crossed_forward
+                and active_crossed_lineage.forward_remaining_actions > 0
+                and _strict_crossed_replay_budget_closes(
+                    current_actions=self._episode_action6_count,
+                    route_action_upper_bound=(active_crossed_lineage.forward_remaining_actions),
+                    exhausted_after_actions=(active_crossed_lineage.exhausted_after_actions),
+                )
+            )
+            inverse_prefix_open = bool(
+                active_crossed_lineage is not None
+                and crossed_inverse
+                and active_crossed_lineage.forward_remaining_actions == 0
+                and self._episode_action6_count < active_crossed_lineage.exhausted_after_actions
+            )
+            if (active_crossed_lineage is not None or crossed_family) and not (
+                resource_matches and (forward_budget_closes or inverse_prefix_open)
+            ):
+                self._latch_hierarchy_lineage_failure(
+                    level_index=observation.levels_completed,
+                    plan_signature=queued_crossed.plan_signature,
+                    phase=f"crossed-resource-precondition:{self._step_index}",
+                )
+                self._clear_crossed_replay_execution()
+                raise PolicyError(
+                    "crossed resource lineage, exact meter prefix, or remaining action "
+                    "budget no longer matches; no further crossed action is authorized"
+                )
 
         if self._plan and ActionName.ACTION6 not in observation.available_actions:
             blocked_plan = self._plan[0]
@@ -13936,7 +15328,11 @@ class VisualCausalPolicy:
             self._active_hierarchy_support_weights = ()
             self._active_hierarchy_recovery_actions = ()
             self._active_carrier_source_attachment_replay_context = None
+            self._active_crossed_delivery_replay_context = None
             self._active_carried_source_recovery_support_indexes = ()
+            self._resource_interrupted_paired_replay = None
+            self._active_crossed_replay_resource_lineage = None
+            self._crossed_delivery_recovery_signature = None
             self._clear_child_isolation_execution()
             self._last_probe_failed = True
             if hierarchy_blocked:
@@ -13944,8 +15340,12 @@ class VisualCausalPolicy:
                     "queued hierarchy action became unavailable; no unrelated fallback "
                     "is authorized"
                 )
-        if ActionName.ACTION6 in observation.available_actions and not (
-            self._plan and self._plan[0].plan_signature.startswith(_HIERARCHY_PLAN_PREFIXES)
+        if (
+            ActionName.ACTION6 in observation.available_actions
+            and interrupted_setup_replay is None
+            and not (
+                self._plan and self._plan[0].plan_signature.startswith(_HIERARCHY_PLAN_PREFIXES)
+            )
         ):
             marker_scene = extract_visual_scene(observation.frames[-1])
             marker_groups = _embedded_marker_groups(marker_scene)
@@ -14104,7 +15504,10 @@ class VisualCausalPolicy:
             self._active_hierarchy_support_weights = ()
             self._active_hierarchy_recovery_actions = ()
             self._active_carrier_source_attachment_replay_context = None
+            self._active_crossed_delivery_replay_context = None
             self._active_carried_source_recovery_support_indexes = ()
+            self._active_crossed_replay_resource_lineage = None
+            self._crossed_delivery_recovery_signature = None
             self._clear_child_isolation_execution()
             raise PolicyError(
                 "queued hierarchy precondition no longer matches the returned frame; "
@@ -14169,6 +15572,7 @@ class VisualCausalPolicy:
                 hierarchy_plan: _HierarchyPlan | None = None
                 child_isolation_plan: _ChildIsolationPlan | None = None
                 hierarchy_relation_key: str | None = None
+                starting_resource_setup_replay = False
                 search_budget = _HierarchySearchBudget(_MAX_HIERARCHY_SEARCH_BUDGET)
                 try:
                     hierarchy = _unique_affine_hierarchy(
@@ -14362,6 +15766,10 @@ class VisualCausalPolicy:
                                                                 self._failed_external_own_composite_hierarchy_relation_keys
                                                             ),
                                                         )
+                                                        pending_setup_replay: (
+                                                            _ResourceInterruptedPairedReplay | None
+                                                        ) = None
+                                                        exact_setup_replay = False
                                                         if carrier_source_relation is None:
                                                             deferred_hierarchy_reason = (
                                                                 "the bridge, mixed, external, raw-matching, "
@@ -14370,9 +15778,32 @@ class VisualCausalPolicy:
                                                                 "identify one unique raw source and exact "
                                                                 "carrier-mask counterpart source pair"
                                                             )
+                                                        else:
+                                                            pending_setup_replay = self._resource_interrupted_paired_replay
+                                                            exact_setup_replay = bool(
+                                                                pending_setup_replay is not None
+                                                                and not pending_setup_replay.setup_replay_started
+                                                                and carrier_source_relation.relation_key
+                                                                == pending_setup_replay.setup_relation_key
+                                                                and self._episode_action6_count == 0
+                                                                and pending_setup_replay.setup_action_count
+                                                                + pending_setup_replay.crossed_forward_action_count
+                                                                < pending_setup_replay.observed_actions
+                                                            )
+                                                        if (
+                                                            carrier_source_relation is not None
+                                                            and pending_setup_replay is not None
+                                                            and not exact_setup_replay
+                                                        ):
+                                                            deferred_hierarchy_reason = (
+                                                                "the fresh resource replay token does not "
+                                                                "match the regenerated carrier-source relation"
+                                                            )
                                                         elif (
-                                                            carrier_source_relation.relation_key
+                                                            carrier_source_relation is not None
+                                                            and carrier_source_relation.relation_key
                                                             in self._failed_carrier_source_occlusion_hierarchy_relation_keys
+                                                            and not exact_setup_replay
                                                         ):
                                                             deferred_hierarchy_reason = (
                                                                 "all bounded observation-grounded hierarchy "
@@ -14381,7 +15812,11 @@ class VisualCausalPolicy:
                                                                 "rejected or operationally exhausted by "
                                                                 "official consequences"
                                                             )
-                                                        else:
+                                                        elif carrier_source_relation is not None:
+                                                            assert (
+                                                                pending_setup_replay is not None
+                                                                or not exact_setup_replay
+                                                            )
                                                             hierarchy_plan = _carrier_source_occlusion_hierarchy_plan(
                                                                 scene,
                                                                 hierarchy,
@@ -14391,6 +15826,20 @@ class VisualCausalPolicy:
                                                                 ),
                                                                 rejected_signatures=(
                                                                     self._failed_plan_signatures
+                                                                ),
+                                                                required_replay_plan_signature=(
+                                                                    pending_setup_replay.setup_plan_signature
+                                                                    if exact_setup_replay
+                                                                    and pending_setup_replay
+                                                                    is not None
+                                                                    else None
+                                                                ),
+                                                                required_replay_context_key=(
+                                                                    pending_setup_replay.context_key
+                                                                    if exact_setup_replay
+                                                                    and pending_setup_replay
+                                                                    is not None
+                                                                    else None
                                                                 ),
                                                                 search_budget=search_budget,
                                                             )
@@ -14402,6 +15851,9 @@ class VisualCausalPolicy:
                                                                 )
                                                             else:
                                                                 hierarchy_relation_key = carrier_source_relation.relation_key
+                                                                starting_resource_setup_replay = (
+                                                                    exact_setup_replay
+                                                                )
                                                     else:
                                                         hierarchy_plan = (
                                                             _external_own_composite_hierarchy_plan(
@@ -14600,6 +16052,13 @@ class VisualCausalPolicy:
                             hierarchy_plan,
                             relation_key=hierarchy_relation_key,
                         )
+                        if starting_resource_setup_replay:
+                            replay = self._resource_interrupted_paired_replay
+                            assert replay is not None and not replay.setup_replay_started
+                            self._resource_interrupted_paired_replay = replace(
+                                replay,
+                                setup_replay_started=True,
+                            )
                         planned = self._plan.popleft()
                         action = ActionRequest(ActionName.ACTION6, planned.coordinate)
                         self._stage_pending(
@@ -14650,6 +16109,10 @@ class VisualCausalPolicy:
                         )
                         return action
                 if deferred_hierarchy_reason is not None:
+                    replay = self._resource_interrupted_paired_replay
+                    if replay is not None and not replay.setup_replay_started:
+                        self._resource_interrupted_paired_replay = None
+                        self._plan.clear()
                     self._hierarchy_search_deferred_count += 1
                     self._last_hierarchy_search_residual = deferred_hierarchy_reason
                     self._last_probe_failed = True
@@ -14863,6 +16326,26 @@ class VisualCausalPolicy:
             raise PolicyError("mechanical policy received a consequence without a pending action")
         changed = _changed_cells(before.frames[-1], observation.frames[-1])
         level_progress = observation.levels_completed > before.levels_completed
+        resource_exhaustion_candidate: _EdgeResourceProgress | None = None
+        if (
+            action.name is ActionName.ACTION6
+            and before.state is GameStateName.NOT_FINISHED
+            and not level_progress
+        ):
+            if not self._episode_resource_baseline_edges:
+                self._episode_resource_baseline_edges = _frame_edge_signatures(before.frames[-1])
+            self._episode_action6_count += 1
+            self._episode_resource_candidates = _advance_edge_resource_progress(
+                self._episode_resource_baseline_edges,
+                self._episode_resource_candidates,
+                before.frames[-1],
+                observation.frames[-1],
+                observed_actions=self._episode_action6_count,
+            )
+            if observation.state is GameStateName.GAME_OVER:
+                resource_exhaustion_candidate = _exhausted_edge_resource_candidate(
+                    self._episode_resource_candidates
+                )
         state_change = observation.state is not before.state
         observed = (
             "official level progress"
@@ -14881,6 +16364,10 @@ class VisualCausalPolicy:
         post_receipt_paired_cargo_indexes: tuple[int, ...] = ()
         post_receipt_paired_cargo_restoration: tuple[PlannedClick, ...] = ()
         post_receipt_paired_cargo_role_handoff_family = False
+        post_receipt_crossed_delivery_context: _CarrierSourceCrossedDeliveryReplayContext | None = (
+            None
+        )
+        post_receipt_resource_interrupted_replay: _ResourceInterruptedPairedReplay | None = None
         mechanic: AffineMechanic | None = None
         before_scene = extract_visual_scene(before.frames[-1])
         after_scene = extract_visual_scene(observation.frames[-1])
@@ -15006,6 +16493,16 @@ class VisualCausalPolicy:
             and carrier_source_recovery_candidate is not None
             and carrier_source_recovery_candidate.carrier_source_paired_cargo_role_restoration_step
         )
+        carrier_source_paired_cargo_crossed_predecessor_action = bool(
+            carrier_source_occlusion_hierarchy_recovery_action
+            and carrier_source_recovery_candidate is not None
+            and carrier_source_recovery_candidate.carrier_source_paired_cargo_crossed_predecessor_step
+        )
+        carrier_source_paired_cargo_crossed_delivery_action = bool(
+            carrier_source_occlusion_hierarchy_recovery_action
+            and carrier_source_recovery_candidate is not None
+            and carrier_source_recovery_candidate.carrier_source_paired_cargo_crossed_delivery_step
+        )
         carrier_source_untouched_action = bool(
             carrier_source_untouched_discriminator_action
             or carrier_source_untouched_restoration_action
@@ -15013,6 +16510,18 @@ class VisualCausalPolicy:
                 carrier_source_occlusion_hierarchy_recovery_action
                 and carrier_source_recovery_candidate is not None
                 and carrier_source_recovery_candidate.carrier_source_untouched_role_exchange_step
+            )
+        )
+        paired_resource_exhaustion_candidate = bool(
+            resource_exhaustion_candidate is not None
+            and carrier_source_recovery_candidate is not None
+            and (
+                carrier_source_paired_cargo_action
+                or carrier_source_paired_cargo_restoration_action
+                or carrier_source_paired_cargo_role_handoff_action
+                or carrier_source_paired_cargo_role_restoration_action
+                or carrier_source_paired_cargo_crossed_predecessor_action
+                or carrier_source_paired_cargo_crossed_delivery_action
             )
         )
         hierarchy_recovery_action = (
@@ -15154,10 +16663,13 @@ class VisualCausalPolicy:
                 or carrier_source_paired_cargo_restoration_action
                 or carrier_source_paired_cargo_role_handoff_action
                 or carrier_source_paired_cargo_role_restoration_action
+                or carrier_source_paired_cargo_crossed_predecessor_action
+                or carrier_source_paired_cargo_crossed_delivery_action
                 or (hierarchy_target_readable and hierarchy_parent_target_preserved)
             )
         )
         returned_protected_raster_hash = _child_isolation_protected_raster_hash(after_scene)
+        before_protected_raster_hash = _child_isolation_protected_raster_hash(before_scene)
         hierarchy_primary_raster_matches = bool(
             hierarchy_raster_common_boundary
             and expected_child_protected_raster_hash is not None
@@ -15166,6 +16678,43 @@ class VisualCausalPolicy:
             and self._pending_expected_visible_mediator_count is not None
             and len(after_scene.endpoints) == self._pending_expected_visible_endpoint_count
             and len(after_scene.mediators) == self._pending_expected_visible_mediator_count
+        )
+        paired_resource_exhausted_before_effect = bool(
+            paired_resource_exhaustion_candidate
+            and resource_exhaustion_candidate is not None
+            and resource_exhaustion_candidate.observed_actions == self._episode_action6_count
+            and len(resource_exhaustion_candidate.filled_index_history)
+            == resource_exhaustion_candidate.observed_actions
+            and carrier_source_recovery_candidate_is_current
+            and carrier_source_recovery_candidate is not None
+            and carrier_source_recovery_candidate.required_child_protected_raster_hash
+            == before_protected_raster_hash
+            and returned_protected_raster_hash == before_protected_raster_hash
+            and len(after_scene.endpoints) == len(before_scene.endpoints)
+            and len(after_scene.mediators) == len(before_scene.mediators)
+            and observation.levels_completed == before.levels_completed
+            and observation.state is GameStateName.GAME_OVER
+        )
+        paired_resource_exhaustion = bool(
+            paired_resource_exhaustion_candidate
+            and (hierarchy_primary_raster_matches or paired_resource_exhausted_before_effect)
+            and observation.state is GameStateName.GAME_OVER
+        )
+        resource_interrupted_role_replay = bool(
+            paired_resource_exhaustion
+            and carrier_source_recovery_candidate is not None
+            and carrier_source_recovery_candidate.carrier_source_paired_cargo_role_handoff_family
+            and not carrier_source_recovery_candidate.carrier_source_paired_cargo_crossed_predecessor_family
+            and self._pending_plan_signature is not None
+            and self._paired_role_handoff_observed_signature == self._pending_plan_signature
+            and self._paired_role_handoff_observed_context_key is not None
+            and self._paired_role_handoff_observed_setup_relation_key is not None
+            and self._paired_role_handoff_observed_setup_plan_signature is not None
+            and self._paired_role_handoff_observed_setup_action_count is not None
+            and self._paired_role_handoff_observed_crossed_forward_action_count is not None
+            and self._paired_role_handoff_observed_setup_action_count
+            + self._paired_role_handoff_observed_crossed_forward_action_count
+            < self._episode_action6_count
         )
         carried_source_recovery_alternative_matches = bool(
             hierarchy_raster_common_boundary
@@ -15264,6 +16813,8 @@ class VisualCausalPolicy:
             and not carrier_source_paired_cargo_restoration_action
             and not carrier_source_paired_cargo_role_handoff_action
             and not carrier_source_paired_cargo_role_restoration_action
+            and not carrier_source_paired_cargo_crossed_predecessor_action
+            and not carrier_source_paired_cargo_crossed_delivery_action
             and observation.state is GameStateName.GAME_OVER
         )
         hierarchy_visible_counts_certified = bool(
@@ -15797,7 +17348,47 @@ class VisualCausalPolicy:
                 )
             )
         )
+        crossed_resource_lineage_mismatch = False
+        crossed_forward_action = bool(
+            carrier_source_recovery_candidate is not None
+            and _is_crossed_replay_forward_action(carrier_source_recovery_candidate)
+        )
+        crossed_inverse_action = bool(
+            carrier_source_recovery_candidate is not None
+            and _is_crossed_replay_inverse_action(
+                carrier_source_recovery_candidate,
+                recovery_signature=self._crossed_delivery_recovery_signature,
+            )
+        )
+        if (
+            (crossed_forward_action or crossed_inverse_action)
+            and not level_progress
+            and observation.state is GameStateName.NOT_FINISHED
+        ):
+            active_lineage = self._active_crossed_replay_resource_lineage
+            crossed_resource_lineage_mismatch = bool(
+                active_lineage is None
+                or not hierarchy_raster_certified
+                or not self._active_crossed_resource_matches(observation)
+                or (crossed_forward_action and active_lineage.forward_remaining_actions <= 0)
+                or (crossed_inverse_action and active_lineage.forward_remaining_actions != 0)
+            )
+            if not crossed_resource_lineage_mismatch and crossed_forward_action:
+                assert active_lineage is not None
+                self._active_crossed_replay_resource_lineage = replace(
+                    active_lineage,
+                    forward_remaining_actions=(active_lineage.forward_remaining_actions - 1),
+                )
+            elif crossed_resource_lineage_mismatch:
+                if self._pending_plan_signature is not None:
+                    self._latch_hierarchy_lineage_failure(
+                        level_index=before.levels_completed,
+                        plan_signature=self._pending_plan_signature,
+                        phase=f"crossed-resource-consequence:{self._step_index}",
+                    )
+                self._clear_crossed_replay_execution()
         if plan_prediction_failed and hierarchy_action:
+            self._active_crossed_replay_resource_lineage = None
             relation_key = child_isolation_relation_key or hierarchy_relation_key
             if relation_key is not None and self._pending_plan_signature is not None:
                 self._latch_hierarchy_lineage_failure(
@@ -15809,9 +17400,11 @@ class VisualCausalPolicy:
             self._marker_reacquire_after_local_solve = False
             self._affine_reacquire_target_center = None
         if observation.state in {GameStateName.GAME_OVER, GameStateName.NOT_PLAYED}:
+            self._resource_interrupted_paired_replay = None
+            self._active_crossed_replay_resource_lineage = None
             if hierarchy_terminal_game_over_observed:
                 self._preterminal_hierarchy_retry_signature = None
-            if self._pending_plan_signature is not None:
+            if self._pending_plan_signature is not None and not paired_resource_exhaustion:
                 if hierarchy_preterminal_game_over_observed:
                     if self._preterminal_hierarchy_retry_signature == self._pending_plan_signature:
                         self._preterminal_hierarchy_retry_signature = None
@@ -15921,14 +17514,55 @@ class VisualCausalPolicy:
                 or carrier_source_paired_cargo_restoration_action
                 or carrier_source_paired_cargo_role_handoff_action
                 or carrier_source_paired_cargo_role_restoration_action
+                or carrier_source_paired_cargo_crossed_predecessor_action
+                or carrier_source_paired_cargo_crossed_delivery_action
             ):
                 self._preterminal_hierarchy_retry_signature = None
-                if self._pending_plan_signature is not None:
-                    self._failed_plan_signatures.add(self._pending_plan_signature)
-                residual = (
-                    "the exact paired-cargo placement, active-role handoff, or inverse "
-                    "returned official GAME_OVER"
-                )
+                if paired_resource_exhaustion:
+                    if (
+                        resource_interrupted_role_replay
+                        and self._paired_role_handoff_observed_context_key is not None
+                        and resource_exhaustion_candidate is not None
+                    ):
+                        setup_relation_key = self._paired_role_handoff_observed_setup_relation_key
+                        setup_plan_signature = (
+                            self._paired_role_handoff_observed_setup_plan_signature
+                        )
+                        setup_action_count = self._paired_role_handoff_observed_setup_action_count
+                        crossed_forward_action_count = (
+                            self._paired_role_handoff_observed_crossed_forward_action_count
+                        )
+                        assert setup_relation_key is not None
+                        assert setup_plan_signature is not None
+                        assert setup_action_count is not None
+                        assert crossed_forward_action_count is not None
+                        post_receipt_resource_interrupted_replay = _ResourceInterruptedPairedReplay(
+                            level_index=before.levels_completed,
+                            context_key=self._paired_role_handoff_observed_context_key,
+                            setup_relation_key=setup_relation_key,
+                            setup_plan_signature=setup_plan_signature,
+                            setup_action_count=setup_action_count,
+                            crossed_forward_action_count=crossed_forward_action_count,
+                            exhausted_edge_index=(resource_exhaustion_candidate.edge_index),
+                            exhausted_edge_baseline=(resource_exhaustion_candidate.baseline),
+                            exhausted_edge_fill_color=(resource_exhaustion_candidate.fill_color),
+                            exhausted_filled_index_history=(
+                                resource_exhaustion_candidate.filled_index_history
+                            ),
+                            observed_actions=(resource_exhaustion_candidate.observed_actions),
+                            authorized_reset_epoch=self._reset_epoch_index + 1,
+                        )
+                    residual = (
+                        "the exact paired-cargo placement, active-role handoff, or inverse "
+                        "returned official GAME_OVER"
+                    )
+                else:
+                    if self._pending_plan_signature is not None:
+                        self._failed_plan_signatures.add(self._pending_plan_signature)
+                    residual = (
+                        "the exact paired-cargo placement, active-role handoff, or inverse "
+                        "returned official GAME_OVER"
+                    )
             elif carrier_source_delivery_action:
                 if hierarchy_relation_key is not None:
                     self._failed_carrier_source_occlusion_hierarchy_relation_keys.add(
@@ -15956,13 +17590,19 @@ class VisualCausalPolicy:
                     "was falsified by an exact child-at-target official GAME_OVER "
                     "consequence for this structural child stratum"
                 )
-            if self._episode_exploration_root is not None:
+            if self._episode_exploration_root is not None and not paired_resource_exhaustion:
                 if self._episode_exploration_root in self._failed_exploration_roots:
                     pass
                 elif len(self._failed_exploration_roots) < self._MAX_FAILED_EXPLORATION_ROOTS:
                     self._failed_exploration_roots.add(self._episode_exploration_root)
                 else:
                     self._exploration_root_capacity_exhausted = True
+            self._paired_role_handoff_observed_signature = None
+            self._paired_role_handoff_observed_context_key = None
+            self._paired_role_handoff_observed_setup_relation_key = None
+            self._paired_role_handoff_observed_setup_plan_signature = None
+            self._paired_role_handoff_observed_setup_action_count = None
+            self._paired_role_handoff_observed_crossed_forward_action_count = None
             self._plan.clear()
             self._marker_stage_pending_switch = None
             self._marker_reacquire_after_local_solve = False
@@ -15973,9 +17613,14 @@ class VisualCausalPolicy:
             self._active_hierarchy_support_weights = ()
             self._active_hierarchy_recovery_actions = ()
             self._active_carrier_source_attachment_replay_context = None
+            self._active_crossed_delivery_replay_context = None
             self._active_carried_source_recovery_support_indexes = ()
+            self._active_carrier_source_setup_start_action_count = None
+            self._active_carrier_source_setup_action_count = None
+            self._active_carrier_source_crossed_forward_action_count = None
+            self._crossed_delivery_recovery_signature = None
             self._clear_child_isolation_execution()
-            self._last_probe_failed = True
+            self._last_probe_failed = not paired_resource_exhaustion
         elif observation.state is GameStateName.WIN:
             self._preterminal_hierarchy_retry_signature = None
             self._plan.clear()
@@ -15988,13 +17633,26 @@ class VisualCausalPolicy:
             self._active_hierarchy_support_weights = ()
             self._active_hierarchy_recovery_actions = ()
             self._active_carrier_source_attachment_replay_context = None
+            self._active_crossed_delivery_replay_context = None
             self._active_carried_source_recovery_support_indexes = ()
+            self._active_carrier_source_setup_start_action_count = None
+            self._active_carrier_source_setup_action_count = None
+            self._active_carrier_source_crossed_forward_action_count = None
+            self._resource_interrupted_paired_replay = None
+            self._active_crossed_replay_resource_lineage = None
+            self._paired_role_handoff_observed_signature = None
+            self._paired_role_handoff_observed_context_key = None
+            self._paired_role_handoff_observed_setup_relation_key = None
+            self._paired_role_handoff_observed_setup_plan_signature = None
+            self._paired_role_handoff_observed_setup_action_count = None
+            self._paired_role_handoff_observed_crossed_forward_action_count = None
+            self._crossed_delivery_recovery_signature = None
             self._clear_child_isolation_execution()
             self._last_probe_failed = False
         elif level_progress:
             self._begin_level(observation)
         elif reset_recovered:
-            self._begin_reset_epoch()
+            self._begin_reset_epoch(observation)
         elif observation.state is GameStateName.UNKNOWN:
             if self._pending_plan_signature is not None:
                 if hierarchy_action:
@@ -16009,7 +17667,20 @@ class VisualCausalPolicy:
             self._active_hierarchy_support_weights = ()
             self._active_hierarchy_recovery_actions = ()
             self._active_carrier_source_attachment_replay_context = None
+            self._active_crossed_delivery_replay_context = None
             self._active_carried_source_recovery_support_indexes = ()
+            self._active_carrier_source_setup_start_action_count = None
+            self._active_carrier_source_setup_action_count = None
+            self._active_carrier_source_crossed_forward_action_count = None
+            self._resource_interrupted_paired_replay = None
+            self._active_crossed_replay_resource_lineage = None
+            self._paired_role_handoff_observed_signature = None
+            self._paired_role_handoff_observed_context_key = None
+            self._paired_role_handoff_observed_setup_relation_key = None
+            self._paired_role_handoff_observed_setup_plan_signature = None
+            self._paired_role_handoff_observed_setup_action_count = None
+            self._paired_role_handoff_observed_crossed_forward_action_count = None
+            self._crossed_delivery_recovery_signature = None
             self._clear_child_isolation_execution()
             self._last_probe_failed = True
             if residual is None:
@@ -16078,6 +17749,56 @@ class VisualCausalPolicy:
             )
         elif hierarchy_recovery_action and not self._plan and hierarchy_raster_certified:
             if (
+                carrier_source_paired_cargo_crossed_predecessor_action
+                and carrier_source_recovery_candidate is not None
+                and carrier_source_recovery_candidate.completes_carrier_source_paired_cargo_crossed_predecessor
+            ):
+                crossed_context = self._active_crossed_delivery_replay_context
+                if crossed_context is not None:
+                    post_receipt_crossed_delivery_context = crossed_context
+                    self._last_probe_failed = False
+                    residual = (
+                        "the handoff-preserving predecessor cycle restored the exact "
+                        "carried geometry with crossed active lineage; one target-relative "
+                        "delivery is recomputed only from this returned boundary"
+                    )
+                else:
+                    self._active_crossed_replay_resource_lineage = None
+                    self._last_probe_failed = True
+                    residual = (
+                        "the exact crossed predecessor boundary had no retained "
+                        "observation-lineage delivery context"
+                    )
+            elif (
+                carrier_source_paired_cargo_crossed_delivery_action
+                and carrier_source_recovery_candidate is not None
+                and carrier_source_recovery_candidate.completes_carrier_source_paired_cargo_crossed_delivery
+            ):
+                active_lineage = self._active_crossed_replay_resource_lineage
+                delivery_lineage_complete = bool(
+                    active_lineage is not None
+                    and active_lineage.forward_remaining_actions == 0
+                    and self._active_crossed_resource_matches(observation)
+                    and self._episode_action6_count < active_lineage.exhausted_after_actions
+                )
+                if self._pending_plan_signature is not None and delivery_lineage_complete:
+                    self._failed_plan_signatures.add(self._pending_plan_signature)
+                    self._crossed_delivery_recovery_signature = self._pending_plan_signature
+                recovery_actions = self._active_hierarchy_recovery_actions
+                self._plan.clear()
+                if recovery_actions and delivery_lineage_complete:
+                    self._plan.extend(recovery_actions)
+                    self._last_probe_failed = False
+                else:
+                    self._clear_crossed_replay_execution()
+                self._active_crossed_delivery_replay_context = None
+                self._resource_interrupted_paired_replay = None
+                residual = (
+                    "the one recomputed crossed delivery matched its protected raster "
+                    "but remained NOT_FINISHED; only its certified inverse prefix is "
+                    "authorized before the learned resource boundary"
+                )
+            elif (
                 carrier_source_paired_cargo_action
                 and carrier_source_recovery_candidate is not None
                 and carrier_source_recovery_candidate.completes_carrier_source_paired_cargo
@@ -16112,12 +17833,63 @@ class VisualCausalPolicy:
                 carrier_source_paired_cargo_role_handoff_action
                 and carrier_source_recovery_candidate is not None
             ):
-                if _carrier_source_paired_cargo_role_restoration_actions_are_compatible(
-                    carrier_source_recovery_candidate
+                attachment_context = self._active_carrier_source_attachment_replay_context
+                setup_plan_signature = (
+                    _carrier_source_attachment_setup_plan_signature(attachment_context)
+                    if attachment_context is not None
+                    else None
+                )
+                setup_relation_key = self._active_hierarchy_relation_key
+                setup_action_count = self._active_carrier_source_setup_action_count
+                crossed_forward_action_count = (
+                    self._active_carrier_source_crossed_forward_action_count
+                )
+                if (
+                    carrier_source_recovery_candidate.carrier_source_paired_cargo_crossed_predecessor_family
+                    and _carrier_source_paired_cargo_crossed_predecessor_actions_are_compatible(
+                        carrier_source_recovery_candidate
+                    )
+                    and self._active_crossed_delivery_replay_context is not None
+                    and attachment_context is not None
+                ):
+                    post_receipt_paired_cargo_restoration = carrier_source_recovery_candidate.carrier_source_paired_cargo_crossed_predecessor_actions
+                    self._paired_role_handoff_observed_signature = self._pending_plan_signature
+                    self._paired_role_handoff_observed_context_key = (
+                        _carrier_source_attachment_context_key(attachment_context)
+                    )
+                    self._last_probe_failed = False
+                elif (
+                    not carrier_source_recovery_candidate.carrier_source_paired_cargo_crossed_predecessor_family
+                    and _carrier_source_paired_cargo_role_restoration_actions_are_compatible(
+                        carrier_source_recovery_candidate
+                    )
+                    and attachment_context is not None
+                    and setup_plan_signature is not None
+                    and setup_plan_signature == self._active_hierarchy_signature
+                    and setup_relation_key is not None
+                    and setup_relation_key.startswith("affine-carrier-source-occlusion-relation:")
+                    and setup_action_count is not None
+                    and setup_action_count > 0
+                    and crossed_forward_action_count is not None
+                    and crossed_forward_action_count > 0
                 ):
                     post_receipt_paired_cargo_restoration = carrier_source_recovery_candidate.carrier_source_paired_cargo_role_restoration_actions
+                    self._paired_role_handoff_observed_signature = self._pending_plan_signature
+                    self._paired_role_handoff_observed_context_key = (
+                        _carrier_source_attachment_context_key(attachment_context)
+                    )
+                    self._paired_role_handoff_observed_setup_relation_key = setup_relation_key
+                    self._paired_role_handoff_observed_setup_plan_signature = setup_plan_signature
+                    self._paired_role_handoff_observed_setup_action_count = setup_action_count
+                    self._paired_role_handoff_observed_crossed_forward_action_count = (
+                        crossed_forward_action_count
+                    )
                     self._last_probe_failed = False
                 else:
+                    self._paired_role_handoff_observed_setup_relation_key = None
+                    self._paired_role_handoff_observed_setup_plan_signature = None
+                    self._paired_role_handoff_observed_setup_action_count = None
+                    self._paired_role_handoff_observed_crossed_forward_action_count = None
                     self._last_probe_failed = True
                 residual = (
                     "the complementary paired-terminal active-role handoff was exact, but "
@@ -16132,7 +17904,24 @@ class VisualCausalPolicy:
                     self._failed_plan_signatures.add(self._pending_plan_signature)
                 attachment_context = self._active_carrier_source_attachment_replay_context
                 carried_indexes = self._active_carried_source_recovery_support_indexes
-                if (
+                if self._pending_plan_signature == self._crossed_delivery_recovery_signature:
+                    self._preterminal_hierarchy_retry_signature = None
+                    self._active_hierarchy_signature = None
+                    self._active_hierarchy_relation_key = None
+                    self._active_hierarchy_supports = ()
+                    self._active_hierarchy_support_weights = ()
+                    self._active_hierarchy_recovery_actions = ()
+                    self._active_carrier_source_attachment_replay_context = None
+                    self._active_crossed_delivery_replay_context = None
+                    self._active_carried_source_recovery_support_indexes = ()
+                    self._active_crossed_replay_resource_lineage = None
+                    self._crossed_delivery_recovery_signature = None
+                    self._last_probe_failed = True
+                    residual = (
+                        "the certified crossed-delivery inverse completed without WIN; "
+                        "no further interaction is authorized"
+                    )
+                elif (
                     not carrier_source_recovery_candidate.carrier_source_paired_cargo_role_handoff_family
                     and attachment_context is not None
                     and len(carried_indexes) == len(attachment_context.carrier_source_supports)
@@ -16144,8 +17933,8 @@ class VisualCausalPolicy:
                 else:
                     self._last_probe_failed = True
                 residual = (
-                    "the exact paired-cargo inverse restored the observed carried-source boundary "
-                    "after paired placement remained NOT_FINISHED"
+                    "the exact paired-cargo inverse restored the observed carried-source "
+                    "boundary after paired placement remained NOT_FINISHED"
                 )
             elif carrier_source_detachment_action and carrier_source_recovery_candidate is not None:
                 if hierarchy_relation_key is not None:
@@ -16160,7 +17949,9 @@ class VisualCausalPolicy:
                     self._active_hierarchy_support_weights = ()
                     self._active_hierarchy_recovery_actions = ()
                     self._active_carrier_source_attachment_replay_context = None
+                    self._active_crossed_delivery_replay_context = None
                     self._active_carried_source_recovery_support_indexes = ()
+                    self._crossed_delivery_recovery_signature = None
                     self._last_probe_failed = False
                     residual = (
                         "the exact inverse detached the endpoint group while the delivered "
@@ -16185,6 +17976,7 @@ class VisualCausalPolicy:
                     else:
                         post_receipt_untouched_context = attachment_context
                         self._active_carrier_source_attachment_replay_context = None
+                        self._active_crossed_delivery_replay_context = None
                     self._last_probe_failed = True
                     residual = (
                         "the exact inverse restored the pre-delivery raster with the source "
@@ -16284,7 +18076,9 @@ class VisualCausalPolicy:
                 self._active_hierarchy_support_weights = ()
                 self._active_hierarchy_recovery_actions = ()
                 self._active_carrier_source_attachment_replay_context = None
+                self._active_crossed_delivery_replay_context = None
                 self._active_carried_source_recovery_support_indexes = ()
+                self._crossed_delivery_recovery_signature = None
                 self._last_probe_failed = False
                 residual = (
                     "exact pre-hypothesis hierarchy and both filled source disks restored after "
@@ -16358,7 +18152,9 @@ class VisualCausalPolicy:
                 self._active_hierarchy_support_weights = ()
                 self._active_hierarchy_recovery_actions = ()
                 self._active_carrier_source_attachment_replay_context = None
+                self._active_crossed_delivery_replay_context = None
                 self._active_carried_source_recovery_support_indexes = ()
+                self._crossed_delivery_recovery_signature = None
                 self._last_probe_failed = True
             if hierarchy_supports_observed:
                 residual = (
@@ -16456,7 +18252,9 @@ class VisualCausalPolicy:
                 self._active_hierarchy_support_weights = ()
                 self._active_hierarchy_recovery_actions = ()
                 self._active_carrier_source_attachment_replay_context = None
+                self._active_crossed_delivery_replay_context = None
                 self._active_carried_source_recovery_support_indexes = ()
+                self._crossed_delivery_recovery_signature = None
             if child_isolation_action:
                 self._clear_child_isolation_execution()
             self._last_probe_failed = True
@@ -16483,11 +18281,15 @@ class VisualCausalPolicy:
         )
         self._receipts.append(receipt)
         self._durable_receipts.append(receipt.to_dict())
+        if post_receipt_resource_interrupted_replay is not None:
+            self._resource_interrupted_paired_replay = post_receipt_resource_interrupted_replay
 
         # A completed action receipt is immutable.  Only after preserving the exact
         # observed consequence may a finite consequence-gated continuation become
         # executable or even be derived from its retained replay context.
-        if post_receipt_attachment_continuation:
+        if crossed_resource_lineage_mismatch:
+            self._clear_crossed_replay_execution()
+        elif post_receipt_attachment_continuation:
             self._plan.extend(post_receipt_attachment_continuation)
             self._last_probe_failed = False
         elif (
@@ -16519,21 +18321,147 @@ class VisualCausalPolicy:
         elif post_receipt_paired_cargo_restoration:
             self._plan.extend(post_receipt_paired_cargo_restoration)
             self._last_probe_failed = False
-        elif post_receipt_paired_cargo_context is not None:
-            paired_cargo_plan = _carrier_source_paired_cargo_plan_after_observed_restoration(
-                post_receipt_paired_cargo_context,
-                after_scene,
-                carried_indexes=post_receipt_paired_cargo_indexes,
-                rejected_signatures=self._failed_plan_signatures,
-                include_terminal_role_handoff=(post_receipt_paired_cargo_role_handoff_family),
+        elif post_receipt_crossed_delivery_context is not None:
+            active_lineage = self._active_crossed_replay_resource_lineage
+            context_key = _carrier_source_attachment_context_key(
+                post_receipt_crossed_delivery_context.attachment_context
             )
-            if paired_cargo_plan is not None:
+            current_resource_matches = bool(
+                active_lineage is not None and self._active_crossed_resource_matches(observation)
+            )
+            crossed_delivery_plan = (
+                _carrier_source_crossed_delivery_after_observed_predecessor(
+                    post_receipt_crossed_delivery_context,
+                    after_scene,
+                    rejected_signatures=self._failed_plan_signatures,
+                )
+                if active_lineage is not None
+                and active_lineage.level_index == observation.levels_completed
+                and active_lineage.context_key == context_key
+                and active_lineage.reset_epoch == self._reset_epoch_index
+                and current_resource_matches
+                else None
+            )
+            budget_closes = bool(
+                crossed_delivery_plan is not None
+                and active_lineage is not None
+                and active_lineage.forward_remaining_actions == len(crossed_delivery_plan.actions)
+                and _strict_crossed_replay_budget_closes(
+                    current_actions=self._episode_action6_count,
+                    route_action_upper_bound=(active_lineage.forward_remaining_actions),
+                    exhausted_after_actions=active_lineage.exhausted_after_actions,
+                )
+            )
+            self._active_crossed_delivery_replay_context = None
+            if (
+                crossed_delivery_plan is not None
+                and budget_closes
+                and _carrier_source_crossed_delivery_recovery_is_compatible(crossed_delivery_plan)
+            ):
+                self._plan.extend(crossed_delivery_plan.actions)
+                self._active_hierarchy_signature = crossed_delivery_plan.signature
+                self._active_hierarchy_supports = crossed_delivery_plan.supports
+                self._active_hierarchy_support_weights = crossed_delivery_plan.support_weights
+                self._active_hierarchy_recovery_actions = crossed_delivery_plan.recovery_actions
+                self._active_carrier_source_attachment_replay_context = (
+                    post_receipt_crossed_delivery_context.attachment_context
+                )
+                self._last_probe_failed = False
+            else:
+                self._clear_crossed_replay_execution()
+        elif post_receipt_paired_cargo_context is not None:
+            interrupted_replay = self._resource_interrupted_paired_replay
+            context_key = _carrier_source_attachment_context_key(post_receipt_paired_cargo_context)
+            setup_start = self._active_carrier_source_setup_start_action_count
+            if (
+                self._active_carrier_source_setup_action_count is None
+                and setup_start is not None
+                and self._episode_action6_count > setup_start
+            ):
+                self._active_carrier_source_setup_action_count = (
+                    self._episode_action6_count - setup_start
+                )
+            if self._active_carrier_source_crossed_forward_action_count is None:
+                if interrupted_replay is not None and interrupted_replay.setup_replay_started:
+                    self._active_carrier_source_crossed_forward_action_count = (
+                        interrupted_replay.crossed_forward_action_count
+                    )
+                else:
+                    self._active_carrier_source_crossed_forward_action_count = (
+                        _carrier_source_crossed_replay_action_budget_preview(
+                            post_receipt_paired_cargo_context,
+                            after_scene,
+                            carried_indexes=post_receipt_paired_cargo_indexes,
+                        )
+                    )
+            endpoint_count = _carrier_source_crossed_replay_context_endpoint_count(
+                post_receipt_paired_cargo_context,
+                carried_indexes=post_receipt_paired_cargo_indexes,
+            )
+            replay_prefix_matches = bool(
+                endpoint_count is not None
+                and _matching_resource_interrupted_paired_replay(
+                    interrupted_replay,
+                    level_index=observation.levels_completed,
+                    context_key=context_key,
+                    reset_epoch=self._reset_epoch_index,
+                    candidates=self._episode_resource_candidates,
+                    current_actions=self._episode_action6_count,
+                )
+                is not None
+            )
+            paired_cargo_plan = (
+                _carrier_source_paired_cargo_plan_after_observed_restoration(
+                    post_receipt_paired_cargo_context,
+                    after_scene,
+                    carried_indexes=post_receipt_paired_cargo_indexes,
+                    rejected_signatures=self._failed_plan_signatures,
+                    include_terminal_role_handoff=(
+                        replay_prefix_matches or post_receipt_paired_cargo_role_handoff_family
+                    ),
+                    include_crossed_predecessor=replay_prefix_matches,
+                )
+                if interrupted_replay is None or replay_prefix_matches
+                else None
+            )
+            replay_action_budget = (
+                _carrier_source_crossed_replay_action_budget(
+                    paired_cargo_plan,
+                    rejected_signatures=self._failed_plan_signatures,
+                )
+                if replay_prefix_matches and paired_cargo_plan is not None
+                else None
+            )
+            authorized_lineage = _authorize_resource_interrupted_paired_replay(
+                interrupted_replay,
+                level_index=observation.levels_completed,
+                context_key=context_key,
+                reset_epoch=self._reset_epoch_index,
+                candidates=self._episode_resource_candidates,
+                current_actions=self._episode_action6_count,
+                forward_remaining_actions=replay_action_budget,
+            )
+            install_plan = bool(
+                paired_cargo_plan is not None
+                and (interrupted_replay is None or authorized_lineage is not None)
+            )
+            if install_plan and paired_cargo_plan is not None:
                 self._plan.extend(paired_cargo_plan.actions)
                 self._active_carrier_source_attachment_replay_context = (
                     post_receipt_paired_cargo_context
                 )
+                self._active_crossed_delivery_replay_context = (
+                    paired_cargo_plan.carrier_source_crossed_delivery_replay_context
+                )
+                if interrupted_replay is not None and authorized_lineage is not None:
+                    self._active_crossed_replay_resource_lineage = authorized_lineage
+                    self._resource_interrupted_paired_replay = None
                 self._last_probe_failed = False
             else:
+                self._active_crossed_delivery_replay_context = None
+                self._active_crossed_replay_resource_lineage = None
+                if interrupted_replay is not None:
+                    self._resource_interrupted_paired_replay = None
                 self._last_probe_failed = True
 
         self._previous_observation = observation
@@ -16556,6 +18484,7 @@ class VisualCausalPolicy:
         action = self._pending_action
         prediction = self._pending_mechanic_prediction
         carrier_source_candidate = self._pending_carrier_source_recovery_candidate
+        interrupted_setup_replay = self._resource_interrupted_paired_replay is not None
         interrupted_untouched_continuation = bool(
             carrier_source_candidate is not None
             and (
@@ -16566,6 +18495,8 @@ class VisualCausalPolicy:
                 or carrier_source_candidate.carrier_source_paired_cargo_restoration_step
                 or carrier_source_candidate.carrier_source_paired_cargo_role_handoff_step
                 or carrier_source_candidate.carrier_source_paired_cargo_role_restoration_step
+                or carrier_source_candidate.carrier_source_paired_cargo_crossed_predecessor_step
+                or carrier_source_candidate.carrier_source_paired_cargo_crossed_delivery_step
             )
         )
         learner = self._mechanical_learner
@@ -16583,7 +18514,15 @@ class VisualCausalPolicy:
             raise PolicyError("policy and learner pending prediction identities disagree")
         learner.cancel_unsubmitted_prediction(prediction_id)
         self._clear_pending_action_state()
+        if interrupted_setup_replay:
+            self._resource_interrupted_paired_replay = None
+            self._clear_crossed_replay_execution()
+            return
         self._active_carrier_source_attachment_replay_context = None
+        self._active_crossed_delivery_replay_context = None
+        self._resource_interrupted_paired_replay = None
+        self._active_crossed_replay_resource_lineage = None
+        self._crossed_delivery_recovery_signature = None
         if interrupted_untouched_continuation:
             self._plan.clear()
             self._last_probe_failed = True
@@ -16643,6 +18582,22 @@ class VisualCausalPolicy:
             "exploration_root_capacity_exhausted": (self._exploration_root_capacity_exhausted),
             "failed_exploration_root_count": len(self._failed_exploration_roots),
             "failed_plan_count": len(self._failed_plan_signatures),
+            "edge_resource_candidate_count": len(self._episode_resource_candidates),
+            "episode_action6_count": self._episode_action6_count,
+            "resource_interrupted_paired_replay_active": (
+                self._resource_interrupted_paired_replay is not None
+            ),
+            "resource_interrupted_observed_actions": (
+                self._resource_interrupted_paired_replay.observed_actions
+                if self._resource_interrupted_paired_replay is not None
+                else None
+            ),
+            "crossed_delivery_boundary_active": (
+                self._active_crossed_delivery_replay_context is not None
+            ),
+            "crossed_delivery_recovery_active": (
+                self._crossed_delivery_recovery_signature is not None
+            ),
             "hierarchy_preterminal_retry_count": int(
                 self._preterminal_hierarchy_retry_signature is not None
             ),

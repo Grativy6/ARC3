@@ -3474,6 +3474,47 @@ def _campaign36_first_carried_source_recovery_frame() -> GridFrame:
     return GridFrame.from_rows(tuple(tuple(raw[y * 64 : (y + 1) * 64]) for y in range(64)))
 
 
+_CAMPAIGN42_RESET_ZLIB_B64 = (
+    "eJzNl42ugyAMhSsM74iG93/cFQGhUv7E3eyYkaXynVIFNkB4KSKRSfEd4Dt87vE9Pic5g4f5cB/KODVwEaO2e3zAVWLQz6uI"
+    "pwaoKt+hIZ7LP5SN1p/zGq+GAcUpr/1nQCmvk/YOP6I/vK78nrRN3H1o/j3H4f0u4K6l498zHHnOIHaoj7PAr2fb5PkC1mDS"
+    "ev7Is/HVj+Hu+zv9f4jXqvqqThm/kC+8nfg9BkapaBB5t27aBiZpn6x/Ov9k/dPPnxeuAP9Nsrf5n7bTGCAYSMkZlHhHLcvB"
+    "LygpX5xBgQd4WWw2v5quvyXCaxiejimvNQwbPMt3FwDblvN2AJ048lvOd2ueh1Gezh7k1RDPz95uvrB6/i1/YfUM8IWpyfz/"
+    "NlzPuA+0eGO4nmU+S3/hj8LDPhYjFZ4UgA9+8RuZ9Tl2Qlnj7QBS/PriaaR2fgn5K5Hq+cd3r0Tc+a1hUJZ4hr9rIOZ4McAz"
+    "h8j0/FuF+EOoj3wAmoVKKA=="
+)
+_CAMPAIGN42_FRESH_CARRIED_BOUNDARY_ZLIB_B64 = "eNq11+G2gyAIAGCw6Nppx/d/3LGulRoK5omd9aP1YSTZIheDsnC3IPkAesffc7znqRZv+uN3qvM8wf+eQNszf3BKEtg9XTxNsB9DY9HjpfG7Iih85Y+SoM1JS0AKH0rQEX/8KeOTbFVOlQQFB+8rXE5QcvZ+oMyKX5Kt4uUCFhvfT0Dcv9h4M6ZBPk1jfOYEkPWvN96F4Rwf8vb3xpuYv7jXD8Xd442LSMA4Pw+rRyp91/gYbr6n/pM/u/4Xf1Q/pv3tnBvgDzxmjd/tMW/8w089fL4SRG+6lwIAEiLex48pV2hNR2APWJzsNT7iyh4Uf1ufkvoPP9V8qPu9/34J8vKyS8f+ZNsmzB/74vImOus69ltt/sXxsViVG55U/nssNLzK9xPo6F9sPF8MHmnII414RBrxqD1fx7jiVc5+iDe9gTc8WnitfjANzv/eZd9ch7IXDHH+AWZTAlfx1vGjlxIYec1budULL5Hu8s7w/lkeF/d8AaICSyM="
+_CAMPAIGN42_PRE_EXHAUSTION_ZLIB_B64 = "eNq91wGugyAMAFAKq9Noev/jfkTYFy20wFzNFsN8xeoggDYGZmFvgfwF+Iy/53jOYyme9Ol3LPM8wdFCuPb5xPGUQO/xn58ThGtwLFo8139TkMAXfwgJStztfDFmieeN4Zzz3HufYD9v5i/nIHgI5xJ4++Pa/xZuYNP0/46fvH6fwPOsfjPPBX5NsMeGW95gvJ8H/l0FP52+BX8twHzopLyBa8KYYOqr5xUTdD+QIY5gaqNHflUQBhHxHMUEEAcx8VxMAIlSX/XVuUPuH7DS/6LixfoVzx/SJPbF6q21P/KQzTUDPpvflJ4+4+Yyv+o80T4zh+jqP/iB+omoMPB1HrzHfn9782ZdG/yde7+qPeD3vdF7YKdhdf0grJ8EDzjkJS54kde9zHGQ17yG4yB/zut4oX6n7p312hXssX/jV7Mqzntt/2n/yK/mNbzktVzrmU3k0WJsOUF1Ex5b/gA860vl"
+_CAMPAIGN42_EXHAUSTED_ZLIB_B64 = (
+    "eJy1142ygiAQBWCI9pajw/s/7l0RjJ+FPVhuU2Pad4BSEnrEoqIeTZH8AbrHtxn3+VZKAT/26Tj1eRlw7PG0XvOJUxaAe/rw"
+    "PCB8ZuCRmvFS+1NVjr+thR9KQI+7nS/GLHF7spxzzNlzwL49zZ/O2eBt2NbAix91+1vowIa0/4rPLICfHMC8GL95vzu8Dthr"
+    "o63cYdhLAWh1/F/2qvh6AOakAA8dqANjAMTbuGcMuFjmO052wBfSfypL+0XkZU5qwMFJCjiuXCXAJir2QC07OIa0n7rfHYDO"
+    "u+MHvv/Y/c73r5Y4evmv7Q7/4fn0dMEX8xvo/XndVPMr5r3fZ+ZQl9oP/nw3P37vfefCx7xlLx+BfPPLmzX9jyK+5exX2Lfn"
+    "3ffe4F467dkT6EdzDuAVrnmNK17lY6/z0f03wkce4YP7V4jf5zHeGb+DWxc9egd7rN8EDtzB0nHuiOcP2H5aPwoBIO95lKNe"
+    "WETm698hkhehcc8/PitL6g=="
+)
+_CAMPAIGN42_EDGE_HISTORY_ZLIB_B64 = "eNqlzDEBAAAMg7A+8W95HgY/2Vrqr/7qr/7qr/7q/xZEQAREQAREQAREQAREQAREQAREQARoggiIgAiIgAiIgAiIgAiIgAiIgAiIAE0QAREQAREQAREQAREQAREQAREQARGgCSIgAiIgAiIgAvF3xK8mIQ=="
+
+
+def _campaign42_frame(encoded: str, expected_sha256: str) -> GridFrame:
+    """Decode one frozen public-development Campaign 42 observation."""
+
+    raw = zlib.decompress(base64.b64decode(encoded))
+    assert len(raw) == 64 * 64
+    assert hashlib.sha256(raw).hexdigest() == expected_sha256
+    return GridFrame.from_rows(tuple(tuple(raw[y * 64 : (y + 1) * 64]) for y in range(64)))
+
+
+def _campaign42_edge_history() -> tuple[tuple[int, ...], ...]:
+    """Decode RESET plus 60 exact status-edge observations from Campaign 42."""
+
+    raw = zlib.decompress(base64.b64decode(_CAMPAIGN42_EDGE_HISTORY_ZLIB_B64))
+    assert len(raw) == 61 * 64
+    assert hashlib.sha256(raw).hexdigest() == (
+        "225cb83b7cd4d0cc13ed81429985edbbfffb03c570ec0969481d6a922dfc4a0e"
+    )
+    return tuple(tuple(raw[index * 64 : (index + 1) * 64]) for index in range(61))
+
+
 @dataclass
 class _ProjectedWeightedHierarchyEnvironment:
     """Replay generic endpoint placement against one frozen public observation."""
@@ -8393,7 +8434,7 @@ def test_carrier_source_occlusion_game_over_lifecycle() -> None:
     assert cancel_policy._active_carrier_source_attachment_replay_context is None
 
     _reset_environment, reset_epoch_observation, reset_epoch_policy = prepared()
-    reset_epoch_policy._begin_reset_epoch()
+    reset_epoch_policy._begin_reset_epoch(reset_epoch_observation)
     assert reset_epoch_policy._active_carrier_source_attachment_replay_context is None
     level_policy = prepared()[2]
     level_policy._begin_level(replace(reset_epoch_observation, levels_completed=5))
@@ -9337,7 +9378,8 @@ def test_visible_node_failure_survives_reset_and_clears_on_level_progress() -> N
     relation_key = "affine-hierarchy-relation:visible-node-retention"
     policy._failed_visible_node_hierarchy_relation_keys.add(relation_key)
 
-    policy._begin_reset_epoch()
+    same_level = _observation((8, 32), (32, 32), (20, 10), levels_completed=4)
+    policy._begin_reset_epoch(same_level)
 
     assert policy._failed_visible_node_hierarchy_relation_keys == {relation_key}
     next_level = _observation((8, 32), (32, 32), (20, 10), levels_completed=5)
@@ -10566,3 +10608,1184 @@ def test_isolated_same_color_cells_on_distinct_legs_remain_static() -> None:
     )
     assert blockers.isdisjoint(observed_dynamic)
     assert all(scene.cells[y][x] == 9 for x, y in blockers)
+
+
+def _campaign43_observation(
+    frame: GridFrame,
+    *,
+    state: GameStateName = GameStateName.NOT_FINISHED,
+    levels_completed: int = 4,
+    returned_action: ActionRequest | None = None,
+) -> Observation:
+    return Observation(
+        game_id=GameId("synthetic-campaign43-sealed-replay"),
+        frames=(frame,),
+        state=state,
+        levels_completed=levels_completed,
+        win_levels=6,
+        available_actions=(
+            (ActionName.RESET,)
+            if state in {GameStateName.GAME_OVER, GameStateName.NOT_PLAYED}
+            else (ActionName.ACTION6,)
+        ),
+        returned_action=returned_action,
+    )
+
+
+def _campaign43_with_edge(
+    observation: Observation,
+    edge: tuple[int, ...],
+    *,
+    state: GameStateName | None = None,
+    levels_completed: int | None = None,
+) -> Observation:
+    rows = [list(row) for row in observation.frames[-1].cells]
+    assert len(rows) == len(edge)
+    for y, value in enumerate(edge):
+        rows[y][0] = value
+    returned_state = observation.state if state is None else state
+    return replace(
+        observation,
+        frames=(GridFrame.from_rows(rows),),
+        state=returned_state,
+        levels_completed=(
+            observation.levels_completed if levels_completed is None else levels_completed
+        ),
+        available_actions=(
+            (ActionName.RESET,)
+            if returned_state in {GameStateName.GAME_OVER, GameStateName.NOT_PLAYED}
+            else (ActionName.ACTION6,)
+        ),
+    )
+
+
+def _campaign43_edge_progress(
+    action_count: int,
+) -> tuple[
+    tuple[tuple[int, ...], ...],
+    tuple[visual_causal._EdgeResourceProgress, ...],
+]:
+    history = _campaign42_edge_history()
+
+    def frame(edge: tuple[int, ...]) -> GridFrame:
+        rows = [[5 for _x in range(64)] for _y in range(64)]
+        for y, value in enumerate(edge):
+            rows[y][0] = value
+        return GridFrame.from_rows(rows)
+
+    baseline = visual_causal._frame_edge_signatures(frame(history[0]))
+    candidates: tuple[visual_causal._EdgeResourceProgress, ...] = ()
+    for observed_actions in range(1, action_count + 1):
+        candidates = visual_causal._advance_edge_resource_progress(
+            baseline,
+            candidates,
+            frame(history[observed_actions - 1]),
+            frame(history[observed_actions]),
+            observed_actions=observed_actions,
+        )
+    return baseline, candidates
+
+
+def test_campaign43_edge_resource_inference_is_exact_and_equivariant() -> None:
+    history = _campaign42_edge_history()
+
+    def edge_frame(edge: tuple[int, ...]) -> GridFrame:
+        rows = [[5 for _x in range(64)] for _y in range(64)]
+        for y, value in enumerate(edge):
+            rows[y][0] = value
+        return GridFrame.from_rows(rows)
+
+    def rotate(frame: GridFrame) -> GridFrame:
+        return GridFrame.from_rows(
+            tuple(tuple(row) for row in zip(*reversed(frame.cells), strict=True))
+        )
+
+    def remap(frame: GridFrame) -> GridFrame:
+        palette = {0: 7, 1: 3, 5: 9}
+        return GridFrame.from_rows(
+            tuple(tuple(palette.get(value, value) for value in row) for row in frame.cells)
+        )
+
+    original_frames = tuple(edge_frame(edge) for edge in history)
+    for quarter_turns in range(4):
+        transformed = original_frames
+        for _turn in range(quarter_turns):
+            transformed = tuple(rotate(frame) for frame in transformed)
+        transformed = tuple(remap(frame) for frame in transformed)
+        baseline = visual_causal._frame_edge_signatures(transformed[0])
+        candidates: tuple[visual_causal._EdgeResourceProgress, ...] = ()
+        for observed_actions in range(1, 61):
+            candidates = visual_causal._advance_edge_resource_progress(
+                baseline,
+                candidates,
+                transformed[observed_actions - 1],
+                transformed[observed_actions],
+                observed_actions=observed_actions,
+            )
+        exhausted = visual_causal._exhausted_edge_resource_candidate(candidates)
+        assert exhausted is not None
+        assert exhausted.observed_actions == 60
+        assert exhausted.filled_indexes == frozenset(range(64))
+
+    _baseline, before_exhaustion = _campaign43_edge_progress(59)
+    assert visual_causal._exhausted_edge_resource_candidate(before_exhaustion) is None
+    four = GridFrame.from_rows([[0] * 4 for _row in range(4)])
+    five = GridFrame.from_rows([[0] * 5 for _row in range(5)])
+    assert (
+        visual_causal._advance_edge_resource_progress(
+            visual_causal._frame_edge_signatures(four),
+            (),
+            four,
+            five,
+            observed_actions=1,
+        )
+        == ()
+    )
+
+
+def test_campaign43_crossed_replay_budget_is_linear_and_strict() -> None:
+    route_bound = visual_causal._crossed_replay_action_budget_from_metadata(
+        paired_action_count=10,
+        predecessor_action_count=10,
+        delivery_action_count=10,
+    )
+    assert route_bound == 31
+    assert visual_causal._strict_crossed_replay_budget_closes(
+        current_actions=23,
+        route_action_upper_bound=route_bound,
+        exhausted_after_actions=60,
+    )
+    assert not visual_causal._strict_crossed_replay_budget_closes(
+        current_actions=29,
+        route_action_upper_bound=route_bound,
+        exhausted_after_actions=60,
+    )
+    assert (
+        visual_causal._crossed_replay_action_budget_from_metadata(
+            paired_action_count=0,
+            predecessor_action_count=10,
+            delivery_action_count=10,
+        )
+        is None
+    )
+
+
+def test_campaign43_resource_replay_authority_fails_closed_before_planning() -> None:
+    _baseline, candidates = _campaign43_edge_progress(23)
+    assert len(candidates) == 1
+    candidate = candidates[0]
+    _full_baseline, exhausted_candidates = _campaign43_edge_progress(60)
+    exhausted_candidate = visual_causal._exhausted_edge_resource_candidate(exhausted_candidates)
+    assert exhausted_candidate is not None
+    context_key = "carrier-source-replay:test-lineage"
+    token = visual_causal._ResourceInterruptedPairedReplay(
+        level_index=4,
+        context_key=context_key,
+        setup_relation_key="carrier-source-relation:test-lineage",
+        setup_plan_signature="carrier-source-plan:test-lineage",
+        setup_action_count=23,
+        crossed_forward_action_count=31,
+        exhausted_edge_index=candidate.edge_index,
+        exhausted_edge_baseline=candidate.baseline,
+        exhausted_edge_fill_color=candidate.fill_color,
+        exhausted_filled_index_history=exhausted_candidate.filled_index_history,
+        observed_actions=60,
+        authorized_reset_epoch=1,
+        setup_replay_started=True,
+    )
+
+    def authorize(
+        replay: visual_causal._ResourceInterruptedPairedReplay,
+        *,
+        current_candidates: tuple[visual_causal._EdgeResourceProgress, ...] = candidates,
+        reset_epoch: int = 1,
+    ) -> visual_causal._ActiveCrossedReplayResourceLineage | None:
+        return visual_causal._authorize_resource_interrupted_paired_replay(
+            replay,
+            level_index=4,
+            context_key=context_key,
+            reset_epoch=reset_epoch,
+            candidates=current_candidates,
+            current_actions=23,
+            forward_remaining_actions=31,
+        )
+
+    authorized = authorize(token)
+    assert authorized is not None
+    assert authorized.exhausted_after_actions == 60
+    assert authorized.forward_remaining_actions == 31
+    assert candidate.filled_index_history == (exhausted_candidate.filled_index_history[:23])
+
+    # A fresh HUD may be monotone and reach the same count/current fill while
+    # still taking a different per-action trajectory.  That is not the learned
+    # life and must not consume the token.
+    expected_history = exhausted_candidate.filled_index_history[:23]
+    additions = [
+        set(filled - (expected_history[index - 1] if index else frozenset()))
+        for index, filled in enumerate(expected_history)
+    ]
+    first_index = next(index for index, added in enumerate(additions) if len(added) == 1)
+    later_index = next(index for index, added in enumerate(additions) if len(added) > 1)
+    first_cell = next(iter(additions[first_index]))
+    later_cell = next(iter(additions[later_index]))
+    additions[first_index].remove(first_cell)
+    additions[first_index].add(later_cell)
+    additions[later_index].remove(later_cell)
+    additions[later_index].add(first_cell)
+    altered_history: list[frozenset[int]] = []
+    filled: set[int] = set()
+    for added in additions:
+        assert added
+        filled.update(added)
+        altered_history.append(frozenset(filled))
+    assert altered_history[-1] == expected_history[-1]
+    assert tuple(altered_history) != expected_history
+
+    def edge_frame(filled_indexes: frozenset[int]) -> GridFrame:
+        signature = tuple(
+            candidate.fill_color if index in filled_indexes else candidate.baseline[index]
+            for index in range(len(candidate.baseline))
+        )
+        rows = [[5 for _x in range(64)] for _y in range(64)]
+        assert candidate.edge_index == 3
+        for index, value in enumerate(signature):
+            rows[63 - index][0] = value
+        return GridFrame.from_rows(rows)
+
+    altered_baseline_frame = edge_frame(frozenset())
+    altered_baseline = visual_causal._frame_edge_signatures(altered_baseline_frame)
+    altered_candidates: tuple[visual_causal._EdgeResourceProgress, ...] = ()
+    altered_before = altered_baseline_frame
+    for observed_actions, filled_indexes in enumerate(altered_history, start=1):
+        altered_after = edge_frame(filled_indexes)
+        altered_candidates = visual_causal._advance_edge_resource_progress(
+            altered_baseline,
+            altered_candidates,
+            altered_before,
+            altered_after,
+            observed_actions=observed_actions,
+        )
+        altered_before = altered_after
+    altered = next(item for item in altered_candidates if item.edge_index == candidate.edge_index)
+    assert altered.filled_indexes == candidate.filled_indexes
+    assert altered.filled_index_history != candidate.filled_index_history
+    assert authorize(token, current_candidates=(altered,)) is None
+    assert authorize(token, current_candidates=()) is None
+    assert (
+        authorize(
+            replace(
+                token,
+                exhausted_edge_fill_color=token.exhausted_edge_fill_color + 1,
+            )
+        )
+        is None
+    )
+    assert authorize(replace(token, observed_actions=54)) is None
+    assert authorize(token, reset_epoch=2) is None
+    assert authorize(replace(token, context_key="carrier-source-replay:wrong")) is None
+
+    second_reset_policy = VisualCausalPolicy(max_coordinate_candidates=8)
+    second_reset_policy._resource_interrupted_paired_replay = token
+    second_reset_policy._reset_epoch_index = 1
+    second_reset_policy._begin_reset_epoch(
+        _campaign43_observation(GridFrame.from_rows([[5] * 3 for _row in range(3)]))
+    )
+    assert second_reset_policy._reset_epoch_index == 2
+    assert second_reset_policy._resource_interrupted_paired_replay is None
+
+
+def test_campaign43_terminal_resource_token_uses_retained_semantic_key() -> None:
+    pre_exhaustion = _campaign42_frame(
+        _CAMPAIGN42_PRE_EXHAUSTION_ZLIB_B64,
+        "a5026a60c0a75825f993af82909a8c8350965cba05e1192fda967f02539dc299",
+    )
+    exhausted = _campaign42_frame(
+        _CAMPAIGN42_EXHAUSTED_ZLIB_B64,
+        "0ad746eafde656e293955433ad4b1ad99e7234b7274c0a29e6ce5215737233d9",
+    )
+    before_scene = extract_visual_scene(pre_exhaustion)
+    after_scene = extract_visual_scene(exhausted)
+    action = ActionRequest(ActionName.ACTION6, Coordinate(60, 24))
+    signature = "affine-carrier-source-occlusion-hierarchy-recovery:semantic-key"
+    context_key = "carrier-source-replay:retained-semantic-key"
+    candidate = visual_causal.PlannedClick(
+        coordinate=Coordinate(60, 24),
+        purpose=VisualActionPurpose.PROGRESS,
+        expectation="continue one exact observed paired inverse",
+        mechanic_ref="visual-affine:test",
+        plan_id="visual-carrier-source-paired-cargo-restoration:semantic-key",
+        plan_signature=signature,
+        target_center=(32, 32),
+        mediator_color=1,
+        arity=2,
+        expected_active_center=(60, 24),
+        required_child_protected_raster_hash=(
+            visual_causal._child_isolation_protected_raster_hash(before_scene)
+        ),
+        expected_child_protected_raster_hash=(
+            "sha256:6772d79b4f32ae85083e957c8ba6eab9ce59564543b275e3171bbb4f6913cd96"
+        ),
+        expected_visible_endpoint_count=len(after_scene.endpoints),
+        expected_visible_mediator_count=len(after_scene.mediators),
+        required_carried_source_support_indexes=(0, 1),
+        expected_carried_source_support_indexes=(0, 1),
+        carrier_source_paired_cargo_initial_protected_raster_hash=(
+            visual_causal._child_isolation_protected_raster_hash(before_scene)
+        ),
+        carrier_source_paired_cargo_restoration_step=True,
+        carrier_source_paired_cargo_role_handoff_family=True,
+    )
+    baseline_edges, resource_at_59 = _campaign43_edge_progress(59)
+    terminal_before = _campaign43_observation(pre_exhaustion)
+    terminal_after = _campaign43_observation(
+        exhausted,
+        state=GameStateName.GAME_OVER,
+        returned_action=action,
+    )
+
+    def staged_policy() -> VisualCausalPolicy:
+        policy = VisualCausalPolicy(max_coordinate_candidates=8)
+        policy._level_index = 4
+        policy._ensure_learner(terminal_before)
+        policy._active_hierarchy_relation_key = "carrier-source:test"
+        policy._active_hierarchy_signature = "carrier-source-root:test"
+        policy._active_carrier_source_attachment_replay_context = None
+        policy._active_carried_source_recovery_support_indexes = (0, 1)
+        policy._paired_role_handoff_observed_signature = signature
+        policy._paired_role_handoff_observed_context_key = context_key
+        policy._paired_role_handoff_observed_setup_relation_key = "carrier-source:test"
+        policy._paired_role_handoff_observed_setup_plan_signature = "carrier-source-root:test"
+        policy._paired_role_handoff_observed_setup_action_count = 23
+        policy._paired_role_handoff_observed_crossed_forward_action_count = 31
+        policy._episode_resource_baseline_edges = baseline_edges
+        policy._episode_resource_candidates = resource_at_59
+        policy._episode_action6_count = 59
+        policy._stage_pending(
+            terminal_before,
+            action,
+            purpose=candidate.purpose,
+            prediction=candidate.expectation,
+            mechanic_refs=(candidate.mechanic_ref,),
+            plan_signature=candidate.plan_signature,
+            target_center=candidate.target_center,
+            mediator_color=candidate.mediator_color,
+            arity=candidate.arity,
+            expected_active_center=candidate.expected_active_center,
+            expected_child_protected_raster_hash=(candidate.expected_child_protected_raster_hash),
+            expected_visible_endpoint_count=candidate.expected_visible_endpoint_count,
+            expected_visible_mediator_count=candidate.expected_visible_mediator_count,
+            carrier_source_recovery_candidate=candidate,
+        )
+        return policy
+
+    wrong_signature = staged_policy()
+    wrong_signature._paired_role_handoff_observed_signature = signature + ":wrong"
+    wrong_signature.accept_consequence(terminal_after)
+    assert wrong_signature._resource_interrupted_paired_replay is None
+
+    wrong_context = staged_policy()
+    wrong_context._paired_role_handoff_observed_context_key = None
+    wrong_context.accept_consequence(terminal_after)
+    assert wrong_context._resource_interrupted_paired_replay is None
+
+    wrong_body = staged_policy()
+    wrong_rows = [list(row) for row in exhausted.cells]
+    wrong_rows[10][10] = 9 if wrong_rows[10][10] != 9 else 8
+    wrong_body.accept_consequence(
+        replace(terminal_after, frames=(GridFrame.from_rows(wrong_rows),))
+    )
+    assert wrong_body._resource_interrupted_paired_replay is None
+
+    policy = staged_policy()
+    policy.accept_consequence(terminal_after)
+    token = policy._resource_interrupted_paired_replay
+    assert token is not None
+    assert token.context_key == context_key
+    assert token.setup_relation_key == "carrier-source:test"
+    assert token.setup_plan_signature == "carrier-source-root:test"
+    assert token.setup_action_count == 23
+    assert token.crossed_forward_action_count == 31
+    assert len(token.exhausted_filled_index_history) == token.observed_actions == 60
+    _baseline, fresh_candidates = _campaign43_edge_progress(23)
+    assert (
+        visual_causal._matching_resource_interrupted_paired_replay(
+            token,
+            level_index=4,
+            context_key=context_key + ":wrong",
+            reset_epoch=1,
+            candidates=fresh_candidates,
+            current_actions=23,
+        )
+        is None
+    )
+
+
+def test_campaign43_started_setup_cancel_and_unknown_clear_all_execution() -> None:
+    (
+        _frame,
+        scene,
+        hierarchy,
+        _bridge,
+        _mixed,
+        _external,
+        _raw_matching,
+        _external_own,
+        relation,
+        setup_plan,
+    ) = _carrier_source_occlusion_fixture()
+    _exhausted_baseline, exhausted_candidates = _campaign43_edge_progress(60)
+    exhausted_resource = visual_causal._exhausted_edge_resource_candidate(exhausted_candidates)
+    assert exhausted_resource is not None
+    edge_history = _campaign42_edge_history()
+    bootstrap_environment = _ProjectedWeightedHierarchyEnvironment(
+        scene,
+        hierarchy,
+        carrier_source_supports=relation.supports,
+    )
+    policy = VisualCausalPolicy(max_coordinate_candidates=8)
+    policy._level_index = 3
+    policy._last_active_color = hierarchy.active_color
+    bootstrap_observation = replace(
+        bootstrap_environment.observation(),
+        levels_completed=3,
+    )
+    policy._ensure_learner(bootstrap_observation)
+    policy._install_hierarchy_plan(setup_plan, relation_key=relation.relation_key)
+    for expected in setup_plan.actions[:2]:
+        bootstrap_action = policy.select(bootstrap_observation)
+        assert bootstrap_action == ActionRequest(ActionName.ACTION6, expected.coordinate)
+        bootstrap_observation = replace(
+            bootstrap_environment.step(bootstrap_action),
+            levels_completed=3,
+        )
+        policy.accept_consequence(bootstrap_observation)
+    assert policy._affine_ledger_ref is not None
+    assert policy.mechanical_learner is not None
+
+    level_four_environment = _ProjectedWeightedHierarchyEnvironment(
+        scene,
+        hierarchy,
+        carrier_source_supports=relation.supports,
+    )
+    level_four_observation = level_four_environment.observation()
+    policy._begin_level(level_four_observation)
+    policy._install_hierarchy_plan(setup_plan, relation_key=relation.relation_key)
+    level_four_action = policy.select(level_four_observation)
+    assert level_four_action == ActionRequest(ActionName.ACTION6, setup_plan.actions[0].coordinate)
+    policy.accept_consequence(level_four_environment.step(level_four_action))
+    assert policy.mechanical_learner.ledger.get(policy._affine_ledger_ref).status in {
+        visual_causal.MechanicStatus.SUPPORTED,
+        visual_causal.MechanicStatus.STABLE_WITHIN_SCOPE,
+    }
+
+    environment = _ProjectedWeightedHierarchyEnvironment(
+        scene,
+        hierarchy,
+        carrier_source_supports=relation.supports,
+    )
+    reset_observation = _campaign43_with_edge(environment.observation(), edge_history[0])
+    reset_edges = visual_causal._frame_edge_signatures(reset_observation.frames[-1])
+    assert reset_edges[exhausted_resource.edge_index] == exhausted_resource.baseline
+    reset_scene = extract_visual_scene(reset_observation.frames[-1])
+    reset_hierarchy = visual_causal._unique_affine_hierarchy(
+        reset_scene,
+        active_color=hierarchy.active_color,
+    )
+    assert reset_hierarchy is not None
+    reset_bridge = visual_causal._composite_bridge_relation(
+        reset_scene,
+        reset_hierarchy,
+        level_index=4,
+    )
+    reset_mixed = visual_causal._residual_linked_hierarchy_relation(
+        reset_scene,
+        reset_hierarchy,
+        level_index=4,
+    )
+    assert reset_bridge is not None
+    assert reset_mixed is not None
+    reset_external = visual_causal._external_residual_linked_hierarchy_relation(
+        reset_scene,
+        reset_hierarchy,
+        level_index=4,
+        rejected_mixed_relation_keys={reset_mixed.relation_key},
+    )
+    assert reset_external is not None
+    reset_raw_matching = visual_causal._raw_matching_composite_hierarchy_relation(
+        reset_scene,
+        reset_hierarchy,
+        level_index=4,
+        rejected_mixed_relation_keys={reset_mixed.relation_key},
+        rejected_external_relation_keys={reset_external.relation_key},
+    )
+    assert reset_raw_matching is not None
+    reset_external_own = visual_causal._external_own_composite_hierarchy_relation(
+        reset_scene,
+        reset_hierarchy,
+        level_index=4,
+        rejected_bridge_relation_keys={reset_bridge.relation_key},
+        rejected_mixed_relation_keys={reset_mixed.relation_key},
+        rejected_external_relation_keys={reset_external.relation_key},
+        rejected_raw_matching_relation_keys={reset_raw_matching.relation_key},
+    )
+    assert reset_external_own is not None
+    reset_relation = visual_causal._carrier_source_occlusion_hierarchy_relation(
+        reset_scene,
+        reset_hierarchy,
+        level_index=4,
+        rejected_bridge_relation_keys={reset_bridge.relation_key},
+        rejected_mixed_relation_keys={reset_mixed.relation_key},
+        rejected_external_relation_keys={reset_external.relation_key},
+        rejected_raw_matching_relation_keys={reset_raw_matching.relation_key},
+        rejected_external_own_relation_keys={reset_external_own.relation_key},
+    )
+    assert reset_relation is not None
+    reset_setup_plan = visual_causal._carrier_source_occlusion_hierarchy_plan(
+        reset_scene,
+        reset_hierarchy,
+        reset_relation,
+        level_index=4,
+        rejected_signatures=set(),
+    )
+    assert reset_setup_plan is not None
+    reset_setup_context = reset_setup_plan.carrier_source_attachment_replay_context
+    assert reset_setup_context is not None
+    policy._begin_reset_epoch(reset_observation)
+    assert policy._reset_epoch_index == 1
+    _seed_carrier_source_occlusion_prerequisites(
+        policy,
+        reset_scene,
+        reset_hierarchy,
+        reset_bridge,
+        reset_mixed,
+        reset_external,
+        reset_raw_matching,
+        reset_external_own,
+    )
+    policy._failed_carrier_source_occlusion_hierarchy_relation_keys.add(reset_relation.relation_key)
+    policy._failed_plan_signatures.add(reset_setup_plan.signature)
+    policy._episode_resource_baseline_edges = reset_edges
+    policy._episode_resource_candidates = ()
+    policy._episode_action6_count = 0
+    policy._resource_interrupted_paired_replay = visual_causal._ResourceInterruptedPairedReplay(
+        level_index=4,
+        context_key=visual_causal._carrier_source_attachment_context_key(reset_setup_context),
+        setup_relation_key=reset_relation.relation_key,
+        setup_plan_signature=reset_setup_plan.signature,
+        setup_action_count=23,
+        crossed_forward_action_count=31,
+        exhausted_edge_index=exhausted_resource.edge_index,
+        exhausted_edge_baseline=exhausted_resource.baseline,
+        exhausted_edge_fill_color=exhausted_resource.fill_color,
+        exhausted_filled_index_history=exhausted_resource.filled_index_history,
+        observed_actions=60,
+        authorized_reset_epoch=1,
+    )
+    failed_plans = set(policy._failed_plan_signatures)
+    failed_relations = set(policy._failed_carrier_source_occlusion_hierarchy_relation_keys)
+
+    selected = policy.select(reset_observation)
+    assert selected == ActionRequest(ActionName.ACTION6, reset_setup_plan.actions[0].coordinate)
+    assert tuple(policy._plan) == reset_setup_plan.actions[1:]
+    replay = policy._resource_interrupted_paired_replay
+    assert replay is not None and replay.setup_replay_started
+    assert policy._active_hierarchy_signature == reset_setup_plan.signature
+    assert policy._active_hierarchy_relation_key == reset_relation.relation_key
+    assert policy._active_carrier_source_attachment_replay_context == reset_setup_context
+    assert policy._active_carrier_source_setup_start_action_count == 0
+
+    unknown_policy = copy.deepcopy(policy)
+
+    def assert_execution_cleared(candidate: VisualCausalPolicy) -> None:
+        assert candidate._resource_interrupted_paired_replay is None
+        assert tuple(candidate._plan) == ()
+        assert candidate._active_hierarchy_signature is None
+        assert candidate._active_hierarchy_relation_key is None
+        assert candidate._active_hierarchy_supports == ()
+        assert candidate._active_hierarchy_support_weights == ()
+        assert candidate._active_hierarchy_recovery_actions == ()
+        assert candidate._active_carrier_source_attachment_replay_context is None
+        assert candidate._active_crossed_delivery_replay_context is None
+        assert candidate._active_carried_source_recovery_support_indexes == ()
+        assert candidate._active_carrier_source_setup_start_action_count is None
+        assert candidate._active_carrier_source_setup_action_count is None
+        assert candidate._active_carrier_source_crossed_forward_action_count is None
+        assert candidate._active_crossed_replay_resource_lineage is None
+        assert candidate._crossed_delivery_recovery_signature is None
+        assert candidate._failed_plan_signatures == failed_plans
+        assert (
+            candidate._failed_carrier_source_occlusion_hierarchy_relation_keys == failed_relations
+        )
+
+    policy.cancel_unsubmitted_action()
+    assert policy._pending_action is None
+    assert_execution_cleared(policy)
+
+    first_return = _campaign43_with_edge(environment.step(selected), edge_history[1])
+    unknown_policy.accept_consequence(first_return)
+    assert unknown_policy._pending_action is None
+    assert unknown_policy._resource_interrupted_paired_replay is not None
+    assert unknown_policy._plan
+    unknown_observation = replace(
+        first_return,
+        state=GameStateName.UNKNOWN,
+        available_actions=(),
+    )
+    with pytest.raises(PolicyError, match="unknown environment state"):
+        unknown_policy.select(unknown_observation)
+    assert unknown_policy._pending_action is None
+    assert_execution_cleared(unknown_policy)
+
+
+def test_campaign43_crossed_route_resource_lifecycle_and_interrupts() -> None:
+    (
+        _frame,
+        scene,
+        hierarchy,
+        _bridge,
+        _mixed,
+        _external,
+        _raw_matching,
+        _external_own,
+        relation,
+        historical_plan,
+    ) = _carrier_source_occlusion_fixture()
+    context = historical_plan.carrier_source_attachment_replay_context
+    assert context is not None
+    carried_frame = _campaign42_frame(
+        _CAMPAIGN42_FRESH_CARRIED_BOUNDARY_ZLIB_B64,
+        "1d8f6011f2925697eaac7835edd6656fc56b107e34ae0177b0b88ec77c84a837",
+    )
+    carried_scene = extract_visual_scene(carried_frame)
+    replayed_state = visual_causal._carrier_source_replayed_attachment_state(
+        context,
+        carried_scene,
+        carried_indexes=(0, 1),
+    )
+    assert replayed_state is not None
+    replayed_positions, replayed_colors = replayed_state
+    base_plan = visual_causal._carrier_source_paired_cargo_plan_after_observed_restoration(
+        context,
+        carried_scene,
+        carried_indexes=(0, 1),
+        rejected_signatures=set(),
+    )
+    assert base_plan is not None
+    role_plan = visual_causal._carrier_source_paired_cargo_plan_after_observed_restoration(
+        context,
+        carried_scene,
+        carried_indexes=(0, 1),
+        rejected_signatures={base_plan.signature},
+        include_terminal_role_handoff=True,
+    )
+    assert role_plan is not None
+    crossed_plan = visual_causal._carrier_source_paired_cargo_plan_after_observed_restoration(
+        context,
+        carried_scene,
+        carried_indexes=(0, 1),
+        rejected_signatures={base_plan.signature, role_plan.signature},
+        include_terminal_role_handoff=True,
+        include_crossed_predecessor=True,
+    )
+    assert crossed_plan is not None
+    role_handoff = crossed_plan.actions[-1].carrier_source_paired_cargo_role_handoff
+    assert role_handoff is not None
+    predecessor = role_handoff.carrier_source_paired_cargo_crossed_predecessor_actions
+    assert tuple((item.coordinate.x, item.coordinate.y, item.purpose) for item in predecessor) == (
+        (20, 42, VisualActionPurpose.PROGRESS),
+        (21, 15, VisualActionPurpose.PROBE),
+        (8, 38, VisualActionPurpose.PROGRESS),
+        (60, 28, VisualActionPurpose.PROBE),
+        (23, 58, VisualActionPurpose.PROGRESS),
+        (50, 34, VisualActionPurpose.PROBE),
+        (53, 36, VisualActionPurpose.PROGRESS),
+        (49, 22, VisualActionPurpose.PROBE),
+        (60, 24, VisualActionPurpose.PROGRESS),
+        (20, 42, VisualActionPurpose.PROBE),
+    )
+    assert visual_causal._carrier_source_paired_cargo_crossed_predecessor_actions_are_compatible(
+        role_handoff
+    )
+
+    environment = _ProjectedWeightedHierarchyEnvironment(
+        scene,
+        hierarchy,
+        carrier_source_supports=relation.supports,
+        carried_source_support_indexes=frozenset({0, 1}),
+    )
+    environment.positions = dict(replayed_positions)
+    environment.colors = dict(replayed_colors)
+    observation = environment.observation()
+    assert all(
+        observation.frames[-1].cells[y][x] == carried_frame.cells[y][x]
+        for y in range(64)
+        for x in range(1, 64)
+    )
+    for planned in (*crossed_plan.actions, role_handoff, *predecessor):
+        required_scene = extract_visual_scene(observation.frames[-1])
+        assert visual_causal._child_isolation_protected_raster_hash(required_scene) == (
+            planned.required_child_protected_raster_hash
+        )
+        if planned.completes_carrier_source_paired_cargo_crossed_predecessor:
+            assert visual_causal._single_hierarchy_planned_click_is_safe(
+                required_scene,
+                planned,
+                active_color=hierarchy.active_color,
+            )
+            assert not visual_causal._single_hierarchy_planned_click_is_safe(
+                required_scene,
+                replace(
+                    planned,
+                    completes_carrier_source_paired_cargo_crossed_predecessor=False,
+                ),
+                active_color=hierarchy.active_color,
+            )
+            assert not visual_causal._single_hierarchy_planned_click_is_safe(
+                required_scene,
+                replace(
+                    planned,
+                    carrier_source_paired_cargo_crossed_predecessor_family=False,
+                ),
+                active_color=hierarchy.active_color,
+            )
+        observation = environment.step(ActionRequest(ActionName.ACTION6, planned.coordinate))
+        returned_scene = extract_visual_scene(observation.frames[-1])
+        assert visual_causal._child_isolation_protected_raster_hash(returned_scene) == (
+            planned.expected_child_protected_raster_hash
+        )
+        assert len(returned_scene.endpoints) == planned.expected_visible_endpoint_count
+        assert len(returned_scene.mediators) == planned.expected_visible_mediator_count
+
+    crossed_scene = extract_visual_scene(observation.frames[-1])
+    assert visual_causal._child_isolation_protected_raster_hash(crossed_scene) == (
+        "sha256:4e3796a95d67139f9ceeb7e814d89be65d16b430e8f10f291acc71349893ac41"
+    )
+    assert (len(crossed_scene.endpoints), len(crossed_scene.mediators)) == (4, 1)
+    crossed_context = crossed_plan.carrier_source_crossed_delivery_replay_context
+    assert crossed_context is not None
+    delivery_plan = visual_causal._carrier_source_crossed_delivery_after_observed_predecessor(
+        crossed_context,
+        crossed_scene,
+        rejected_signatures={
+            base_plan.signature,
+            role_plan.signature,
+            crossed_plan.signature,
+        },
+    )
+    assert delivery_plan is not None
+    assert visual_causal._carrier_source_crossed_delivery_recovery_is_compatible(delivery_plan)
+    assert delivery_plan.actions[0].required_visible_active_endpoint_count == 0
+    assert visual_causal._single_hierarchy_planned_click_is_safe(
+        crossed_scene,
+        delivery_plan.actions[0],
+        active_color=hierarchy.active_color,
+    )
+    assert not visual_causal._single_hierarchy_planned_click_is_safe(
+        crossed_scene,
+        replace(
+            delivery_plan.actions[0],
+            required_visible_active_endpoint_count=None,
+        ),
+        active_color=hierarchy.active_color,
+    )
+    corrupt_rows = [list(row) for row in crossed_scene.cells]
+    corrupt_x, corrupt_y = next(iter(sorted(hierarchy.target.cells)))
+    corrupt_rows[corrupt_y][corrupt_x] = crossed_scene.background
+    assert (
+        visual_causal._carrier_source_crossed_delivery_after_observed_predecessor(
+            crossed_context,
+            extract_visual_scene(GridFrame.from_rows(corrupt_rows)),
+            rejected_signatures=set(),
+        )
+        is None
+    )
+
+    # Classify the exact C42 terminal as a resource interruption only when both
+    # the status edge and the projected gameplay body match.
+    pre_exhaustion = _campaign42_frame(
+        _CAMPAIGN42_PRE_EXHAUSTION_ZLIB_B64,
+        "a5026a60c0a75825f993af82909a8c8350965cba05e1192fda967f02539dc299",
+    )
+    exhausted = _campaign42_frame(
+        _CAMPAIGN42_EXHAUSTED_ZLIB_B64,
+        "0ad746eafde656e293955433ad4b1ad99e7234b7274c0a29e6ce5215737233d9",
+    )
+    terminal_action = ActionRequest(ActionName.ACTION6, Coordinate(60, 24))
+    terminal_signature = (
+        "affine-carrier-source-occlusion-hierarchy-recovery:"
+        + hashlib.sha256(
+            (str(pre_exhaustion.digest) + str(exhausted.digest)).encode("ascii")
+        ).hexdigest()[:24]
+    )
+    exhausted_scene = extract_visual_scene(exhausted)
+    terminal_candidate = visual_causal.PlannedClick(
+        coordinate=Coordinate(60, 24),
+        purpose=VisualActionPurpose.PROGRESS,
+        expectation="continue one exact observed paired inverse",
+        mechanic_ref=hierarchy.mechanic_ref,
+        plan_id="visual-carrier-source-paired-cargo-restoration:" + terminal_signature[-24:],
+        plan_signature=terminal_signature,
+        target_center=hierarchy.target.rounded_center,
+        mediator_color=hierarchy.children[0].mediator.color,
+        arity=hierarchy.children[0].arity,
+        expected_active_center=(60, 24),
+        required_child_protected_raster_hash=(
+            visual_causal._child_isolation_protected_raster_hash(
+                extract_visual_scene(pre_exhaustion)
+            )
+        ),
+        expected_child_protected_raster_hash=(
+            visual_causal._child_isolation_protected_raster_hash(exhausted_scene)
+        ),
+        expected_visible_endpoint_count=len(exhausted_scene.endpoints),
+        expected_visible_mediator_count=len(exhausted_scene.mediators),
+        required_carried_source_support_indexes=(0, 1),
+        expected_carried_source_support_indexes=(0, 1),
+        carrier_source_paired_cargo_initial_protected_raster_hash=(
+            visual_causal._child_isolation_protected_raster_hash(carried_scene)
+        ),
+        carrier_source_paired_cargo_restoration_step=True,
+        carrier_source_paired_cargo_role_handoff_family=True,
+    )
+    baseline_edges, resource_at_59 = _campaign43_edge_progress(59)
+    terminal_before = _campaign43_observation(pre_exhaustion)
+    terminal_after = _campaign43_observation(
+        exhausted,
+        state=GameStateName.GAME_OVER,
+        returned_action=terminal_action,
+    )
+    resource_policy = VisualCausalPolicy(max_coordinate_candidates=8)
+    resource_policy._level_index = 4
+    resource_policy._last_active_color = hierarchy.active_color
+    resource_policy._ensure_learner(terminal_before)
+    resource_policy._active_hierarchy_relation_key = relation.relation_key
+    resource_policy._active_hierarchy_signature = historical_plan.signature
+    resource_policy._active_carrier_source_attachment_replay_context = None
+    resource_policy._active_carried_source_recovery_support_indexes = (0, 1)
+    resource_policy._paired_role_handoff_observed_signature = terminal_signature
+    resource_policy._paired_role_handoff_observed_context_key = (
+        visual_causal._carrier_source_attachment_context_key(context)
+    )
+    resource_policy._paired_role_handoff_observed_setup_relation_key = relation.relation_key
+    resource_policy._paired_role_handoff_observed_setup_plan_signature = historical_plan.signature
+    resource_policy._paired_role_handoff_observed_setup_action_count = 23
+    resource_policy._paired_role_handoff_observed_crossed_forward_action_count = 31
+    resource_policy._episode_resource_baseline_edges = baseline_edges
+    resource_policy._episode_resource_candidates = resource_at_59
+    resource_policy._episode_action6_count = 59
+    resource_policy._stage_pending(
+        terminal_before,
+        terminal_action,
+        purpose=terminal_candidate.purpose,
+        prediction=terminal_candidate.expectation,
+        mechanic_refs=(terminal_candidate.mechanic_ref,),
+        plan_signature=terminal_candidate.plan_signature,
+        target_center=terminal_candidate.target_center,
+        mediator_color=terminal_candidate.mediator_color,
+        arity=terminal_candidate.arity,
+        expected_active_center=terminal_candidate.expected_active_center,
+        expected_child_protected_raster_hash=(
+            terminal_candidate.expected_child_protected_raster_hash
+        ),
+        expected_visible_endpoint_count=terminal_candidate.expected_visible_endpoint_count,
+        expected_visible_mediator_count=terminal_candidate.expected_visible_mediator_count,
+        carrier_source_recovery_candidate=terminal_candidate,
+    )
+    wrong_signature_policy = copy.deepcopy(resource_policy)
+    wrong_signature_policy._paired_role_handoff_observed_signature = terminal_signature + ":wrong"
+    wrong_signature_policy.accept_consequence(terminal_after)
+    assert wrong_signature_policy._resource_interrupted_paired_replay is None
+    resource_policy.accept_consequence(terminal_after)
+    assert terminal_signature not in resource_policy._failed_plan_signatures
+    assert relation.relation_key not in (
+        resource_policy._failed_carrier_source_occlusion_hierarchy_relation_keys
+    )
+    assert resource_policy._resource_interrupted_paired_replay is not None
+    assert resource_policy.receipts[-1].residual == (
+        "the exact paired-cargo placement, active-role handoff, or inverse returned "
+        "official GAME_OVER"
+    )
+    assert resource_policy.receipts[-1].causal_action_receipt.resource_and_failure_risk.summary == (
+        "No readable resource quantity; preserve official failure and bound probes."
+    )
+    reset_action = resource_policy.select(terminal_after)
+    reset_frame = _campaign42_frame(
+        _CAMPAIGN42_RESET_ZLIB_B64,
+        "5bb3cf829bc9e7960dd3309ca2ea709d3108a3776df8a012318f3df8fcfb03cb",
+    )
+    reset_observation = _campaign43_observation(
+        reset_frame,
+        returned_action=reset_action,
+    )
+    resource_policy.accept_consequence(reset_observation)
+    assert resource_policy._resource_interrupted_paired_replay is not None
+    assert resource_policy.snapshot()["episode_action6_count"] == 0
+
+    resource_policy._failed_plan_signatures.update({base_plan.signature, role_plan.signature})
+    replay = resource_policy._resource_interrupted_paired_replay
+    assert replay is not None
+    resource_policy._resource_interrupted_paired_replay = replace(
+        replay,
+        setup_replay_started=True,
+    )
+    (
+        resource_policy._episode_resource_baseline_edges,
+        resource_policy._episode_resource_candidates,
+    ) = _campaign43_edge_progress(22)
+    resource_policy._episode_action6_count = 22
+    edge_history = _campaign42_edge_history()
+    fresh_before = _campaign43_with_edge(
+        _campaign43_observation(carried_frame),
+        edge_history[22],
+    )
+    fresh_after = _campaign43_with_edge(
+        _campaign43_observation(carried_frame),
+        edge_history[23],
+    )
+    fresh_scene = extract_visual_scene(fresh_after.frames[-1])
+    fresh_signature = (
+        terminal_signature[:-24] + hashlib.sha256(b"fresh-carried-restoration").hexdigest()[:24]
+    )
+    fresh_candidate = replace(
+        terminal_candidate,
+        coordinate=Coordinate(23, 58),
+        plan_signature=fresh_signature,
+        plan_id="visual-carrier-source-paired-cargo-restoration:" + fresh_signature[-24:],
+        expected_active_center=(23, 58),
+        required_child_protected_raster_hash=(
+            visual_causal._child_isolation_protected_raster_hash(
+                extract_visual_scene(fresh_before.frames[-1])
+            )
+        ),
+        expected_child_protected_raster_hash=(
+            visual_causal._child_isolation_protected_raster_hash(fresh_scene)
+        ),
+        expected_visible_endpoint_count=len(fresh_scene.endpoints),
+        expected_visible_mediator_count=len(fresh_scene.mediators),
+        carrier_source_paired_cargo_restoration_step=True,
+        completes_carrier_source_paired_cargo_restoration=True,
+        carrier_source_paired_cargo_role_handoff_family=False,
+    )
+
+    def accept_fresh_reconstruction(policy: VisualCausalPolicy) -> None:
+        policy._active_hierarchy_relation_key = relation.relation_key
+        policy._active_carrier_source_attachment_replay_context = context
+        policy._active_carried_source_recovery_support_indexes = (0, 1)
+        policy._stage_pending(
+            fresh_before,
+            ActionRequest(ActionName.ACTION6, fresh_candidate.coordinate),
+            purpose=fresh_candidate.purpose,
+            prediction=fresh_candidate.expectation,
+            mechanic_refs=(fresh_candidate.mechanic_ref,),
+            plan_signature=fresh_candidate.plan_signature,
+            target_center=fresh_candidate.target_center,
+            mediator_color=fresh_candidate.mediator_color,
+            arity=fresh_candidate.arity,
+            expected_active_center=fresh_candidate.expected_active_center,
+            expected_child_protected_raster_hash=(
+                fresh_candidate.expected_child_protected_raster_hash
+            ),
+            expected_visible_endpoint_count=fresh_candidate.expected_visible_endpoint_count,
+            expected_visible_mediator_count=fresh_candidate.expected_visible_mediator_count,
+            carrier_source_recovery_candidate=fresh_candidate,
+        )
+        policy.accept_consequence(fresh_after)
+
+    accept_fresh_reconstruction(resource_policy)
+    assert tuple(resource_policy._plan) == crossed_plan.actions
+    assert resource_policy._active_crossed_delivery_replay_context is not None
+    assert resource_policy._resource_interrupted_paired_replay is None
+    assert resource_policy._active_crossed_replay_resource_lineage is not None
+
+    # Account for the observation-derived 23-action fresh prefix, then execute
+    # the exact 10 + handoff + 10 crossed family through policy receipts.
+    (
+        resource_policy._episode_resource_baseline_edges,
+        (resource_policy._episode_resource_candidates),
+    ) = _campaign43_edge_progress(23)
+    resource_policy._episode_action6_count = 23
+    history = _campaign42_edge_history()
+    environment = _ProjectedWeightedHierarchyEnvironment(
+        scene,
+        hierarchy,
+        carrier_source_supports=relation.supports,
+        carried_source_support_indexes=frozenset({0, 1}),
+    )
+    environment.positions = dict(replayed_positions)
+    environment.colors = dict(replayed_colors)
+    live_observation = _campaign43_with_edge(environment.observation(), history[23])
+    active_lineage = resource_policy._active_crossed_replay_resource_lineage
+    assert active_lineage is not None
+    assert active_lineage.forward_remaining_actions == 31
+    assert resource_policy._episode_action6_count + active_lineage.forward_remaining_actions == 54
+
+    second_reset_active_policy = copy.deepcopy(resource_policy)
+    second_reset_active_policy._begin_reset_epoch(live_observation)
+    assert second_reset_active_policy._active_crossed_replay_resource_lineage is None
+    assert second_reset_active_policy.snapshot()["pending_plan_actions"] == 0
+
+    divergent_policy = copy.deepcopy(resource_policy)
+    divergent_environment = copy.deepcopy(environment)
+    divergent_action = divergent_policy.select(live_observation)
+    divergent_observation = divergent_environment.step(divergent_action)
+    divergent_observation = _campaign43_with_edge(divergent_observation, history[25])
+    divergent_policy.accept_consequence(divergent_observation)
+    assert divergent_policy._active_crossed_replay_resource_lineage is None
+    assert divergent_policy.snapshot()["pending_plan_actions"] == 0
+    with pytest.raises(PolicyError, match="hierarchy lineage was lost"):
+        divergent_policy.select(divergent_observation)
+
+    mid_route_terminal_policy = copy.deepcopy(resource_policy)
+    mid_route_terminal_environment = copy.deepcopy(environment)
+    mid_route_terminal_action = mid_route_terminal_policy.select(live_observation)
+    mid_route_terminal_observation = mid_route_terminal_environment.step(mid_route_terminal_action)
+    mid_route_terminal_observation = _campaign43_with_edge(
+        mid_route_terminal_observation,
+        history[24],
+        state=GameStateName.GAME_OVER,
+    )
+    mid_route_terminal_policy.accept_consequence(mid_route_terminal_observation)
+    assert mid_route_terminal_policy._resource_interrupted_paired_replay is None
+    assert mid_route_terminal_policy._active_crossed_replay_resource_lineage is None
+    assert mid_route_terminal_policy.snapshot()["pending_plan_actions"] == 0
+
+    crossed_route_actions = len(crossed_plan.actions) + 1 + len(predecessor)
+    direct_crossed_route = (*crossed_plan.actions, role_handoff, *predecessor)
+    for route_index in range(crossed_route_actions):
+        queued = resource_policy._plan[0]
+        assert queued == direct_crossed_route[route_index]
+        queued_scene = extract_visual_scene(live_observation.frames[-1])
+        assert (
+            visual_causal._hierarchy_planned_click_matching_candidate(
+                queued_scene,
+                queued,
+                active_color=hierarchy.active_color,
+                required_carried_source_support_indexes=(0, 1),
+            )
+            is not None
+        )
+        live_action = resource_policy.select(live_observation)
+        live_observation = environment.step(live_action)
+        next_count = resource_policy._episode_action6_count + 1
+        live_observation = _campaign43_with_edge(live_observation, history[next_count])
+        resource_policy.accept_consequence(live_observation)
+    assert resource_policy._episode_action6_count == 44
+    assert tuple(resource_policy._plan) == delivery_plan.actions
+    assert resource_policy._resource_interrupted_paired_replay is None
+    active_lineage = resource_policy._active_crossed_replay_resource_lineage
+    assert active_lineage is not None
+    assert active_lineage.forward_remaining_actions == len(delivery_plan.actions)
+    assert resource_policy._active_hierarchy_recovery_actions == delivery_plan.recovery_actions
+    assert 44 + len(delivery_plan.actions) < 60
+
+    delivery_terminal_policy: VisualCausalPolicy | None = None
+    delivery_terminal_environment: _ProjectedWeightedHierarchyEnvironment | None = None
+    delivery_terminal_observation: Observation | None = None
+    for _delivery_index in range(len(delivery_plan.actions)):
+        if len(resource_policy._plan) == 1:
+            delivery_terminal_policy = copy.deepcopy(resource_policy)
+            delivery_terminal_environment = copy.deepcopy(environment)
+            delivery_terminal_observation = live_observation
+        live_action = resource_policy.select(live_observation)
+        live_observation = environment.step(live_action)
+        live_observation = _campaign43_with_edge(
+            live_observation,
+            history[resource_policy._episode_action6_count + 1],
+        )
+        resource_policy.accept_consequence(live_observation)
+    assert resource_policy._episode_action6_count == 54
+    assert tuple(resource_policy._plan) == delivery_plan.recovery_actions
+    assert resource_policy.snapshot()["crossed_delivery_recovery_active"] is True
+    active_lineage = resource_policy._active_crossed_replay_resource_lineage
+    assert active_lineage is not None
+    assert active_lineage.forward_remaining_actions == 0
+    assert "only its certified inverse prefix" in resource_policy.receipts[-1].residual
+
+    assert delivery_terminal_policy is not None
+    assert delivery_terminal_environment is not None
+    assert delivery_terminal_observation is not None
+    win_policy = copy.deepcopy(delivery_terminal_policy)
+    win_environment = copy.deepcopy(delivery_terminal_environment)
+    win_action = win_policy.select(delivery_terminal_observation)
+    win_observation = win_environment.step(win_action)
+    win_observation = _campaign43_with_edge(
+        win_observation,
+        history[54],
+        state=GameStateName.WIN,
+    )
+    win_policy.accept_consequence(win_observation)
+    assert win_policy.snapshot()["pending_plan_actions"] == 0
+    assert win_policy.snapshot()["crossed_delivery_boundary_active"] is False
+    assert win_policy._active_crossed_replay_resource_lineage is None
+
+    progress_policy = copy.deepcopy(delivery_terminal_policy)
+    progress_environment = copy.deepcopy(delivery_terminal_environment)
+    progress_action = progress_policy.select(delivery_terminal_observation)
+    progress_observation = progress_environment.step(progress_action)
+    progress_observation = _campaign43_with_edge(
+        progress_observation,
+        history[54],
+        levels_completed=5,
+    )
+    progress_policy.accept_consequence(progress_observation)
+    assert progress_policy.snapshot()["pending_plan_actions"] == 0
+    assert progress_policy.snapshot()["active_level_index"] == 5
+
+    non_resource_policy: VisualCausalPolicy | None = None
+    non_resource_environment: _ProjectedWeightedHierarchyEnvironment | None = None
+    non_resource_observation: Observation | None = None
+    for recovery_index in range(6):
+        assert resource_policy._active_crossed_replay_resource_lineage is not None
+        if recovery_index == 5:
+            non_resource_policy = copy.deepcopy(resource_policy)
+            non_resource_environment = copy.deepcopy(environment)
+            non_resource_observation = live_observation
+        recovery_action = resource_policy.select(live_observation)
+        live_observation = environment.step(recovery_action)
+        next_count = resource_policy._episode_action6_count + 1
+        live_observation = _campaign43_with_edge(
+            live_observation,
+            history[next_count],
+            state=(GameStateName.GAME_OVER if next_count == 60 else None),
+        )
+        failed_before = set(resource_policy._failed_plan_signatures)
+        relation_failures_before = set(
+            resource_policy._failed_carrier_source_occlusion_hierarchy_relation_keys
+        )
+        resource_policy.accept_consequence(live_observation)
+    assert resource_policy._episode_action6_count == 60
+    assert resource_policy._failed_plan_signatures == failed_before
+    assert (
+        resource_policy._failed_carrier_source_occlusion_hierarchy_relation_keys
+        == relation_failures_before
+    )
+    assert resource_policy.receipts[-1].residual == (
+        "the exact paired-cargo placement, active-role handoff, or inverse returned "
+        "official GAME_OVER"
+    )
+    assert resource_policy._last_probe_failed is False
+    assert resource_policy.snapshot()["pending_plan_actions"] == 0
+    assert resource_policy._resource_interrupted_paired_replay is None
+    assert resource_policy._active_crossed_replay_resource_lineage is None
+
+    assert non_resource_policy is not None
+    assert non_resource_environment is not None
+    assert non_resource_observation is not None
+    non_resource_action = non_resource_policy.select(non_resource_observation)
+    non_resource_after = non_resource_environment.step(non_resource_action)
+    non_resource_after = _campaign43_with_edge(
+        non_resource_after,
+        history[60],
+        state=GameStateName.GAME_OVER,
+    )
+    corrupt_rows = [list(row) for row in non_resource_after.frames[-1].cells]
+    corrupt_rows[corrupt_y][corrupt_x] = crossed_scene.background
+    non_resource_after = replace(
+        non_resource_after,
+        frames=(GridFrame.from_rows(corrupt_rows),),
+    )
+    rejected_signature = non_resource_policy._pending_plan_signature
+    assert rejected_signature is not None
+    non_resource_policy._failed_plan_signatures.discard(rejected_signature)
+    non_resource_policy.accept_consequence(non_resource_after)
+    assert rejected_signature in non_resource_policy._failed_plan_signatures
