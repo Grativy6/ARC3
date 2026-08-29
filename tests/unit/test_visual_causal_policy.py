@@ -3422,6 +3422,63 @@ def _campaign26_weighted_origin_frame() -> GridFrame:
     return GridFrame.from_rows(tuple(tuple(raw[y * 64 : (y + 1) * 64]) for y in range(64)))
 
 
+_CAMPAIGN48_LEVEL_FIVE_INITIAL_ZLIB_B64 = (
+    "eNrVl4mSgyAMhkNprILH+79t8aiQcAWd3e3SqWPR788BBAqPcsNk88/hW3jSW+O9CJDXcnzf9xkFqBj54D3keKw3R0OOF+AIcI/H"
+    "NM54mRQuOCf5jI0YRy8QGAV4SgSW7TonnBba55lpjH8IrpwXOTAQnPqfEoB55gIDynlw/FyJX683auOV2np1qFrjtdZq5Xbz7la5"
+    "ntrU9bzWT//6bj3sqWR1t8864556/FSgik1T06KJRmU6BP6KPwJ4XONXB/AOf1aQn+Rf7kOc7rqW+v06vj7mjggc+08JJwKE9/uf"
+    "uHwAQIGPFloXXE8HMMsPA3egY3hyBw9415AJdCjmMcLLAx/xjRPnn/Poz0+/y2sqUOGthXJpZvyyAMUtnZTRZkH5xfFAzbNJXbbP"
+    "+cTuxbYGykfvx4taZc8fsjNEmW8+CUIzzgL8Gt4Wqo0gfkurXXYgMvm3tNoWjj1Kkn9jQn4cITcBPw8MtW9WAY+P/gdbAGe/ofE7"
+    "PjR/8uECpPXLZPNPkhHYF9cfkkuNjL9aQU/+ca9+XlNg/3+v8m/EaUiL"
+)
+
+
+def _campaign48_level_five_initial_frame() -> GridFrame:
+    """Decode the official Campaign 48 initial Level 5 public observation.
+
+    The uncompressed 64x64 bytes have SHA-256
+    ``77ce3b5a91ff94f8e57304f4d951cd219d14f37a5dd31f63e91065280186de9f``.
+    It is recording line 397 after the observed Level 4 transition.  No game
+    source or environment is consulted by this frozen regression fixture.
+    """
+
+    raw = zlib.decompress(base64.b64decode(_CAMPAIGN48_LEVEL_FIVE_INITIAL_ZLIB_B64))
+    assert len(raw) == 64 * 64
+    assert hashlib.sha256(raw).hexdigest() == (
+        "77ce3b5a91ff94f8e57304f4d951cd219d14f37a5dd31f63e91065280186de9f"
+    )
+    return GridFrame.from_rows(tuple(tuple(raw[y * 64 : (y + 1) * 64]) for y in range(64)))
+
+
+@lru_cache(maxsize=1)
+def _campaign48_marker_plan_fixture() -> tuple[
+    GridFrame,
+    VisualScene,
+    visual_causal._AffineHierarchy,
+    visual_causal._CompositeBridgeRelation,
+    visual_causal._HierarchyPlan,
+]:
+    frame = _campaign48_level_five_initial_frame()
+    scene = extract_visual_scene(frame)
+    pair = visual_causal._marker_multi_source_composite_cargo_relation(
+        scene,
+        active_color=0,
+        level_index=5,
+        search_budget=visual_causal._HierarchySearchBudget(
+            visual_causal._MAX_HIERARCHY_SEARCH_BUDGET
+        ),
+    )
+    assert pair is not None
+    hierarchy, relation = pair
+    plan = visual_causal._same_child_composite_cargo_plan(
+        scene,
+        hierarchy,
+        relation,
+        rejected_signatures=set(),
+    )
+    assert plan is not None
+    return frame, scene, hierarchy, relation, plan
+
+
 _CAMPAIGN35_RESIDUAL_FOREGROUND_AFTER_A3_ZLIB_B64 = (
     "eNrdl2FvxCAIhhGPTtPF//9zZ12bswqVyvXDRpPmwvm8CIhJCXejk2FnxC+gZ/he4zmeJHuSP/4nGT8L/HoSrXP8gVMlo"
     "OfpjdcCZQ3Z7A7Pxb9laYDH/AwErnEaCdAANwncsK/8tPZdvYc4CQINDiEIOC/Q4pkPhjQFfqneA55PYNHhZQOsf9Hhf8oi"
@@ -12779,6 +12836,229 @@ def test_campaign44_target_retained_fallback_preserves_crossed_inverse_failure()
     terminal_policy._failed_plan_signatures.discard(rejected_signature)
     terminal_policy.accept_consequence(corrupt_observation)
     assert rejected_signature in terminal_policy._failed_plan_signatures
+
+
+def test_campaign48_marker_relation_charges_global_search_budget() -> None:
+    scene = extract_visual_scene(_campaign48_level_five_initial_frame())
+    budget = visual_causal._HierarchySearchBudget(1)
+
+    with pytest.raises(
+        visual_causal._HierarchySearchExhausted,
+        match="deterministic search budget exhausted",
+    ):
+        visual_causal._marker_multi_source_composite_cargo_relation(
+            scene,
+            active_color=0,
+            level_index=5,
+            search_budget=budget,
+        )
+
+    assert budget.remaining == 0
+
+
+def test_campaign48_marker_multi_source_cargo_builds_exact_reoriented_route() -> None:
+    _frame, scene, hierarchy, relation, plan = _campaign48_marker_plan_fixture()
+
+    assert tuple(child.mediator.rounded_center for child in hierarchy.children) == (
+        (12, 16),
+        (49, 50),
+    )
+    assert tuple(
+        frozenset(endpoint.rounded_center for endpoint in child.endpoints)
+        for child in hierarchy.children
+    ) == (frozenset({(11, 11), (4, 19), (22, 19)}), frozenset({(49, 43), (50, 57)}))
+    assert tuple(
+        tuple(source.center for source in example.sources)
+        for _child, example in relation.assignments
+    ) == (((11, 33), (16, 45), (34, 17)), ((25, 55), (32, 44), (45, 30)))
+    assert tuple(example.target.rounded_center for _child, example in relation.assignments) == (
+        (51, 12),
+        (11, 55),
+    )
+    assert hierarchy.target.rounded_center == (29, 31)
+    assert visual_causal._same_child_composite_cargo_relation_is_well_formed(
+        scene,
+        hierarchy,
+        relation,
+    )
+
+    coordinates = tuple((action.coordinate.x, action.coordinate.y) for action in plan.actions)
+    assert len(coordinates) == 34
+    assert coordinates == (
+        (10, 27),
+        (22, 19),
+        (17, 35),
+        (4, 19),
+        (6, 37),
+        (10, 27),
+        (14, 39),
+        (17, 35),
+        (22, 46),
+        (6, 37),
+        (12, 50),
+        (29, 20),
+        (14, 39),
+        (34, 11),
+        (22, 46),
+        (39, 20),
+        (56, 15),
+        (34, 11),
+        (51, 6),
+        (29, 20),
+        (46, 15),
+        (50, 57),
+        (28, 60),
+        (49, 43),
+        (22, 50),
+        (29, 39),
+        (28, 60),
+        (35, 49),
+        (48, 35),
+        (29, 39),
+        (42, 25),
+        (8, 50),
+        (48, 35),
+        (14, 60),
+    )
+    assert all(
+        visual_causal._same_child_composite_cargo_step_is_compatible(action)
+        for action in plan.actions
+    )
+    assert plan.actions[-1].completes_hierarchy is True
+
+    positions = {
+        endpoint.object_ref: endpoint.rounded_center
+        for child in hierarchy.children
+        for endpoint in child.endpoints
+    }
+    colors = {
+        endpoint.object_ref: endpoint.color
+        for child in hierarchy.children
+        for endpoint in child.endpoints
+    }
+    projected = scene
+    for planned in plan.actions:
+        assert visual_causal._hierarchy_planned_click_is_safe(
+            projected,
+            planned,
+            active_color=hierarchy.active_color,
+        )
+        certificate = planned.same_child_composite_cargo_certificate
+        assert certificate is not None
+        coordinate = (planned.coordinate.x, planned.coordinate.y)
+        active_ref = next(ref for ref, color in colors.items() if color == 0)
+        if planned.purpose is VisualActionPurpose.PROBE:
+            selected_ref = next(ref for ref, center in positions.items() if center == coordinate)
+            colors[active_ref], colors[selected_ref] = colors[selected_ref], colors[active_ref]
+        else:
+            positions[active_ref] = coordinate
+        projected = visual_causal._same_child_composite_cargo_projected_scene(
+            scene,
+            hierarchy,
+            relation,
+            positions=positions,
+            colors=colors,
+            collected_source_keys=frozenset(certificate.expected_collected_source_keys),
+        )
+        assert visual_causal._child_isolation_protected_raster_hash(projected) == (
+            planned.expected_child_protected_raster_hash
+        )
+        assert len(projected.endpoints) == planned.expected_visible_endpoint_count
+
+    assert all(
+        projected.cells[y][x] == child.mediator.color
+        for child, example in relation.assignments
+        for x, y in example.target.cells
+    )
+    assert all(projected.cells[y][x] == scene.cells[y][x] for x, y in hierarchy.target.cells)
+    assert all(
+        projected.cells[y][x] == scene.background
+        for _child, example in relation.assignments
+        for source in example.sources
+        for x, y in source.cells
+    )
+
+
+def test_campaign48_policy_selects_marker_cargo_before_coordinate_probe() -> None:
+    frame, scene, hierarchy, relation, plan = _campaign48_marker_plan_fixture()
+    observation = Observation(
+        game_id=GameId("synthetic-campaign48-marker-cargo"),
+        frames=(frame,),
+        state=GameStateName.NOT_FINISHED,
+        levels_completed=5,
+        win_levels=6,
+        available_actions=(ActionName.ACTION6,),
+    )
+    policy = VisualCausalPolicy(max_coordinate_candidates=8)
+    learner = policy._ensure_learner(observation)
+    mechanic = learner.ledger.open(
+        action=ActionName.ACTION6,
+        scope=visual_causal.MechanicScope(
+            visual_causal.ScopeCeiling.GAME,
+            game_scope=learner.game_scope,
+        ),
+        consequence=visual_causal._affine_base_consequence(),
+        composition_mode=visual_causal.CompositionMode.BASE,
+        created_step=0,
+        created_from_event_ids=("E-CAMPAIGN48-TRANSFER",),
+        provenance=visual_causal.EvidenceProvenance.OBSERVED_THIS_GAME,
+        mechanic_id="M-CAMPAIGN48-AFFINE",
+    )
+    for index in range(2):
+        learner.ledger.confirm_transfer(
+            mechanic.ref,
+            channels=(visual_causal.ConsequenceChannel.OTHER_OBJECT_EFFECTS,),
+            source_event_ids=(f"E-CAMPAIGN48-SUPPORT-{index}",),
+            context_key=f"campaign48-support-{index}",
+            observed_step=index + 1,
+            receipt_id=f"R-CAMPAIGN48-SUPPORT-{index}",
+        )
+    assert learner.ledger.get(mechanic.ref).status is visual_causal.MechanicStatus.SUPPORTED
+    policy._affine_ledger_ref = mechanic.ref
+    policy._level_index = 5
+    policy._last_active_color = 0
+
+    first_action = policy.select(observation)
+    assert first_action == ActionRequest(ActionName.ACTION6, plan.actions[0].coordinate)
+    assert policy._active_hierarchy_relation_key == relation.relation_key
+    assert policy._pending_carrier_source_recovery_candidate == plan.actions[0]
+    assert len(policy._plan) == 33
+
+    positions = {
+        endpoint.object_ref: endpoint.rounded_center
+        for child in hierarchy.children
+        for endpoint in child.endpoints
+    }
+    colors = {
+        endpoint.object_ref: endpoint.color
+        for child in hierarchy.children
+        for endpoint in child.endpoints
+    }
+    first_planned = plan.actions[0]
+    first_certificate = first_planned.same_child_composite_cargo_certificate
+    assert first_certificate is not None
+    active_ref = next(ref for ref, color in colors.items() if color == 0)
+    positions[active_ref] = (first_action.coordinate.x, first_action.coordinate.y)
+    projected = visual_causal._same_child_composite_cargo_projected_scene(
+        scene,
+        hierarchy,
+        relation,
+        positions=positions,
+        colors=colors,
+        collected_source_keys=frozenset(first_certificate.expected_collected_source_keys),
+    )
+    returned = replace(
+        observation,
+        frames=(GridFrame.from_rows(projected.cells),),
+        returned_action=first_action,
+        full_reset=False,
+    )
+    policy.accept_consequence(returned)
+    assert policy._hierarchy_lineage_lost is None
+    assert policy.select(returned) == ActionRequest(
+        ActionName.ACTION6,
+        plan.actions[1].coordinate,
+    )
 
 
 def test_campaign47_same_child_composite_cargo_uses_one_bounded_detour() -> None:

@@ -306,6 +306,7 @@ class _SameChildCompositeCargoCertificate:
     support_center: tuple[int, int]
     target_center: tuple[int, int]
     source_keys: tuple[_CompositeCargoSourceKey, ...]
+    endpoint_marker_color: int
     required_collected_source_keys: tuple[_CompositeCargoSourceKey, ...]
     expected_collected_source_keys: tuple[_CompositeCargoSourceKey, ...]
     required_mediator_center: tuple[int, int]
@@ -459,11 +460,11 @@ class _CompositeFilledDisk:
 
 @dataclass(frozen=True, slots=True)
 class _CompositeBridgeExample:
-    """Two carrier-sharing disks and their exact residual-color ring."""
+    """Carrier-sharing disks and their exact residual-color ring."""
 
     carrier_color: int
-    sources: tuple[_CompositeFilledDisk, _CompositeFilledDisk]
-    residual_colors: tuple[int, int]
+    sources: tuple[_CompositeFilledDisk, ...]
+    residual_colors: tuple[int, ...]
     target: VisualObject
 
     @property
@@ -824,6 +825,7 @@ _MAX_WEIGHTED_HIERARCHY_MOVE_ORDERS = 22
 _WEIGHTED_HIERARCHY_SUPPORT_LOOKAHEAD = 1
 _MAX_SAME_CHILD_COMPOSITE_CARGO_ROUTES = 8
 _MAX_SAME_CHILD_COMPOSITE_CARGO_PATTERNS = 8
+_MAX_SAME_CHILD_COMPOSITE_CARGO_REORIENTED_PATTERNS = 64
 _HIERARCHY_PLAN_PREFIXES = (
     "affine-hierarchy:",
     "affine-hierarchy-recovery:",
@@ -1384,6 +1386,12 @@ _COMPOSITE_TARGET_OFFSETS = frozenset(
         (1, 3),
     }
 )
+_COMPOUND_MARKER_ENDPOINT_OFFSETS = frozenset(
+    (dx, dy)
+    for dy in range(-2, 3)
+    for dx in range(-2, 3)
+    if abs(dx) + abs(dy) <= 2 and (dx, dy) != (0, 0)
+)
 
 
 def _proxy_visual_object(
@@ -1589,8 +1597,8 @@ def _bridge_projection_offset(value: int) -> int:
 def _bridge_target_matches_sources(
     scene: VisualScene,
     *,
-    sources: tuple[_CompositeFilledDisk, _CompositeFilledDisk],
-    residual_colors: tuple[int, int],
+    sources: tuple[_CompositeFilledDisk, ...],
+    residual_colors: tuple[int, ...],
     target: VisualObject,
 ) -> bool:
     """Require the ring sectors to be the radial residual projection of the disks."""
@@ -1674,6 +1682,369 @@ def _composite_bridge_examples(
         )
     )
     return tuple(examples)
+
+
+def _compound_marker_endpoint_candidates(
+    scene: VisualScene,
+    *,
+    active_color: int,
+) -> tuple[VisualObject, ...]:
+    """Return one exact marker-centered endpoint family, including a merged active glyph."""
+
+    candidates_by_marker: dict[int, list[VisualObject]] = {}
+    for center_y in range(2, scene.height - 2):
+        for center_x in range(2, scene.width - 2):
+            center_color = scene.cells[center_y][center_x]
+            outer_colors = {
+                scene.cells[center_y + dy][center_x + dx]
+                for dx, dy in _COMPOUND_MARKER_ENDPOINT_OFFSETS
+            }
+            if (
+                len(outer_colors) != 1
+                or center_color == scene.background
+                or center_color in outer_colors
+                or scene.background in outer_colors
+            ):
+                continue
+            outer_color = next(iter(outer_colors))
+            cells = tuple(
+                sorted(
+                    (
+                        (center_x + dx, center_y + dy)
+                        for dx, dy in _COMPOUND_MARKER_ENDPOINT_OFFSETS
+                    ),
+                    key=lambda cell: (cell[1], cell[0]),
+                )
+            )
+            candidates_by_marker.setdefault(center_color, []).append(
+                _proxy_visual_object(
+                    scene,
+                    marker_color=outer_color,
+                    cells=cells,
+                    center=(center_x, center_y),
+                    center_cell=center_color,
+                    role=VisualObjectRole.ENDPOINT_CANDIDATE,
+                    identity_kind="compound-marker-endpoint",
+                )
+            )
+
+    families: list[tuple[VisualObject, ...]] = []
+    for endpoints in candidates_by_marker.values():
+        outer_counts = Counter(endpoint.color for endpoint in endpoints)
+        if (
+            4 <= len(endpoints) <= 12
+            and outer_counts[active_color] == 1
+            and len(outer_counts) == 2
+            and sum(outer_counts.values()) == len(endpoints)
+        ):
+            families.append(tuple(sorted(endpoints, key=lambda item: item.object_ref)))
+    return families[0] if len(families) == 1 else ()
+
+
+def _compound_marker_mediator_candidate(
+    scene: VisualScene,
+    endpoints: tuple[VisualObject, ...],
+    *,
+    carrier_color: int,
+) -> VisualObject | None:
+    """Recover an exact carrier disk even when it joins the active same-color endpoint."""
+
+    center = (
+        sum(endpoint.rounded_center[0] for endpoint in endpoints) // len(endpoints),
+        sum(endpoint.rounded_center[1] for endpoint in endpoints) // len(endpoints),
+    )
+    cells = tuple(
+        sorted(
+            ((center[0] + dx, center[1] + dy) for dx, dy in _COMPOSITE_MEDIATOR_OFFSETS),
+            key=lambda cell: (cell[1], cell[0]),
+        )
+    )
+    if any(
+        not (0 <= x < scene.width and 0 <= y < scene.height) or scene.cells[y][x] != carrier_color
+        for x, y in cells
+    ):
+        return None
+    return _proxy_visual_object(
+        scene,
+        marker_color=carrier_color,
+        cells=cells,
+        center=center,
+        center_cell=carrier_color,
+        role=VisualObjectRole.MEDIATOR_CANDIDATE,
+        identity_kind="compound-marker-mediator",
+    )
+
+
+def _unique_compound_marker_children(
+    scene: VisualScene,
+    *,
+    active_color: int,
+    search_budget: _HierarchySearchBudget,
+) -> tuple[_AffineChildGroup, ...] | None:
+    """Partition one marker family by exact centroid disks and connector evidence."""
+
+    endpoints = _compound_marker_endpoint_candidates(scene, active_color=active_color)
+    if not endpoints:
+        return None
+    candidate_groups: list[_AffineChildGroup] = []
+    for arity in range(2, min(6, len(endpoints) - 1) + 1):
+        for endpoint_group in itertools.combinations(endpoints, arity):
+            search_budget.consume()
+            mediator = _compound_marker_mediator_candidate(
+                scene,
+                endpoint_group,
+                carrier_color=active_color,
+            )
+            if mediator is None:
+                continue
+            child = _AffineChildGroup(mediator=mediator, endpoints=endpoint_group)
+            connector = _hierarchy_connector_evidence(scene, child)
+            if connector is not None:
+                candidate_groups.append(child)
+    if not candidate_groups:
+        return None
+
+    all_refs = frozenset(endpoint.object_ref for endpoint in endpoints)
+    solutions: dict[tuple[tuple[str, ...], ...], tuple[_AffineChildGroup, ...]] = {}
+
+    def search(
+        remaining: frozenset[str],
+        chosen: tuple[_AffineChildGroup, ...],
+    ) -> None:
+        search_budget.consume()
+        if len(solutions) > 1:
+            return
+        if not remaining:
+            if len(chosen) < 2:
+                return
+            ordered = tuple(
+                sorted(
+                    chosen,
+                    key=lambda child: (
+                        child.mediator.rounded_center,
+                        tuple(endpoint.object_ref for endpoint in child.endpoints),
+                    ),
+                )
+            )
+            identity = tuple(
+                tuple(sorted(endpoint.object_ref for endpoint in child.endpoints))
+                for child in ordered
+            )
+            solutions.setdefault(identity, ordered)
+            return
+        pivot = min(remaining)
+        for child in candidate_groups:
+            refs = frozenset(endpoint.object_ref for endpoint in child.endpoints)
+            if pivot not in refs or not refs <= remaining:
+                continue
+            search(remaining - refs, (*chosen, child))
+
+    search(all_refs, ())
+    if len(solutions) != 1:
+        return None
+    children = next(iter(solutions.values()))
+    active_children = tuple(
+        child
+        for child in children
+        if any(endpoint.color == active_color for endpoint in child.endpoints)
+    )
+    if len(active_children) != 1:
+        return None
+    first = active_children[0]
+    return (
+        first,
+        *(child for child in children if child is not first),
+    )
+
+
+def _multi_source_composite_bridge_examples(
+    scene: VisualScene,
+    *,
+    carrier_color: int,
+) -> tuple[_CompositeBridgeExample, ...]:
+    """Return exact three-or-more-source residual projections onto sparse rings."""
+
+    disks = tuple(
+        disk
+        for disk in _composite_filled_disks(scene)
+        if carrier_color in disk.palette and len(disk.palette) == 2
+    )
+    examples: list[_CompositeBridgeExample] = []
+    for target, signature in _composite_sparse_targets(scene):
+        if not 3 <= len(signature) <= 6:
+            continue
+        selected: list[_CompositeFilledDisk] = []
+        for residual_color in sorted(signature):
+            matches = tuple(
+                disk for disk in disks if disk.palette == frozenset({carrier_color, residual_color})
+            )
+            if len(matches) != 1:
+                selected = []
+                break
+            selected.append(matches[0])
+        if len(selected) != len(signature) or len(set(selected)) != len(selected):
+            continue
+        sources = tuple(sorted(selected, key=lambda item: item.center))
+        residual_colors = tuple(next(iter(source.palette - {carrier_color})) for source in sources)
+        residual_union = frozenset(
+            offset
+            for source, residual_color in zip(sources, residual_colors, strict=True)
+            for offset in source.offsets(residual_color)
+        )
+        carrier_union = frozenset(
+            offset for source in sources for offset in source.offsets(carrier_color)
+        )
+        if (
+            residual_union != _COMPOSITE_MEDIATOR_OFFSETS
+            or carrier_union != _COMPOSITE_MEDIATOR_OFFSETS
+            or not _bridge_target_matches_sources(
+                scene,
+                sources=sources,
+                residual_colors=residual_colors,
+                target=target,
+            )
+        ):
+            continue
+        examples.append(
+            _CompositeBridgeExample(
+                carrier_color=carrier_color,
+                sources=sources,
+                residual_colors=residual_colors,
+                target=target,
+            )
+        )
+    return tuple(
+        sorted(
+            examples,
+            key=lambda example: (
+                example.target.rounded_center,
+                tuple(source.center for source in example.sources),
+            ),
+        )
+    )
+
+
+def _marker_multi_source_composite_cargo_relation(
+    scene: VisualScene,
+    *,
+    active_color: int,
+    level_index: int,
+    search_budget: _HierarchySearchBudget,
+) -> tuple[_AffineHierarchy, _CompositeBridgeRelation] | None:
+    """Build one exact marker hierarchy and unique multi-source sink assignment."""
+
+    children = _unique_compound_marker_children(
+        scene,
+        active_color=active_color,
+        search_budget=search_budget,
+    )
+    examples = _multi_source_composite_bridge_examples(scene, carrier_color=active_color)
+    if (
+        children is None
+        or len(children) != len(examples)
+        or len(children) < 2
+        or len({source.center for example in examples for source in example.sources})
+        != sum(len(example.sources) for example in examples)
+    ):
+        return None
+    example_target_centers = {example.target.rounded_center for example in examples}
+    unmatched_targets = tuple(
+        target
+        for target, _signature in _composite_sparse_targets(scene)
+        if target.rounded_center not in example_target_centers
+    )
+    if len(unmatched_targets) != 1:
+        return None
+
+    permutation_items: list[tuple[_CompositeBridgeExample, ...]] = []
+    for assignment in itertools.permutations(examples):
+        search_budget.consume()
+        permutation_items.append(assignment)
+    permutations = tuple(permutation_items)
+
+    def metric_score(
+        assignment: tuple[_CompositeBridgeExample, ...],
+        *,
+        metric: str,
+    ) -> float:
+        parts: list[float] = []
+        for child, example in zip(children, assignment, strict=True):
+            source_count = len(example.sources)
+            delta_x = (
+                abs(
+                    source_count * child.mediator.rounded_center[0]
+                    - sum(source.center[0] for source in example.sources)
+                )
+                / source_count
+            )
+            delta_y = (
+                abs(
+                    source_count * child.mediator.rounded_center[1]
+                    - sum(source.center[1] for source in example.sources)
+                )
+                / source_count
+            )
+            if metric == "euclidean":
+                parts.append(math.hypot(delta_x, delta_y))
+            elif metric == "manhattan":
+                parts.append(delta_x + delta_y)
+            else:
+                parts.append(delta_x * delta_x + delta_y * delta_y)
+        return math.fsum(parts)
+
+    winners: list[tuple[_CompositeBridgeExample, ...]] = []
+    for metric in ("euclidean", "manhattan", "squared-euclidean"):
+        ranked = sorted(
+            ((metric_score(items, metric=metric), items) for items in permutations),
+            key=lambda item: (
+                item[0],
+                tuple(example.target.rounded_center for example in item[1]),
+            ),
+        )
+        if len(ranked) > 1 and math.isclose(
+            ranked[0][0],
+            ranked[1][0],
+            rel_tol=1e-12,
+            abs_tol=1e-12,
+        ):
+            return None
+        winners.append(ranked[0][1])
+    if any(winner != winners[0] for winner in winners[1:]):
+        return None
+
+    assignments = tuple(zip(children, winners[0], strict=True))
+    identity = (
+        "marker-multi-source-composite-cargo-v1",
+        level_index,
+        tuple(
+            (
+                _child_structure_signature(scene, child),
+                tuple(source.center for source in example.sources),
+                example.residual_colors,
+                example.target.rounded_center,
+                tuple(sorted((x, y, scene.cells[y][x]) for x, y in example.target.cells)),
+            )
+            for child, example in assignments
+        ),
+        (
+            unmatched_targets[0].rounded_center,
+            tuple(sorted((x, y, scene.cells[y][x]) for x, y in unmatched_targets[0].cells)),
+        ),
+    )
+    digest = hashlib.sha256(repr(identity).encode("ascii")).hexdigest()[:24]
+    hierarchy = _AffineHierarchy(
+        target=unmatched_targets[0],
+        children=children,
+        active_color=active_color,
+        mechanic_ref=f"affine-marker-multi-source-mechanic:{digest}",
+    )
+    return (
+        hierarchy,
+        _CompositeBridgeRelation(
+            assignments=assignments,
+            relation_key=f"affine-marker-multi-source-relation:{digest}",
+        ),
+    )
 
 
 def _embedded_marker_groups(scene: VisualScene) -> tuple[_EmbeddedMarkerGroup, ...]:
@@ -5681,6 +6052,27 @@ def _same_child_composite_cargo_source_keys(
     )
 
 
+def _same_child_composite_cargo_endpoint_marker_color(
+    hierarchy: _AffineHierarchy,
+) -> int | None:
+    """Return the one center-cell marker shared by every observed endpoint glyph."""
+
+    marker_colors = {
+        endpoint.center_cell for child in hierarchy.children for endpoint in child.endpoints
+    }
+    return next(iter(marker_colors)) if len(marker_colors) == 1 else None
+
+
+def _same_child_composite_cargo_visible_endpoints(
+    scene: VisualScene,
+    *,
+    marker_color: int,
+) -> tuple[VisualObject, ...]:
+    """Exclude carrier-source fragments that the base shape parser labels as endpoints."""
+
+    return tuple(endpoint for endpoint in scene.endpoints if endpoint.center_cell == marker_color)
+
+
 def _same_child_composite_cargo_delivered_child_indexes(
     hierarchy: _AffineHierarchy,
     relation: _CompositeBridgeRelation,
@@ -5712,6 +6104,7 @@ def _same_child_composite_cargo_relation_is_well_formed(
     if (
         len(relation.assignments) < 2
         or tuple(child for child, _example in relation.assignments) != hierarchy.children
+        or _same_child_composite_cargo_endpoint_marker_color(hierarchy) is None
         or len({example.target.rounded_center for _child, example in relation.assignments})
         != len(relation.assignments)
     ):
@@ -5720,9 +6113,9 @@ def _same_child_composite_cargo_relation_is_well_formed(
     for child, example in relation.assignments:
         if (
             example.carrier_color != child.mediator.color
-            or len(example.sources) != 2
-            or len(example.residual_colors) != 2
-            or example.residual_colors[0] == example.residual_colors[1]
+            or not 2 <= len(example.sources) <= 6
+            or len(example.residual_colors) != len(example.sources)
+            or len(set(example.residual_colors)) != len(example.residual_colors)
             or frozenset(scene.cells[y][x] for x, y in example.target.cells)
             != frozenset(example.residual_colors)
             or not _bridge_target_matches_sources(
@@ -5754,9 +6147,20 @@ def _same_child_composite_cargo_relation_is_well_formed(
                 return False
             carrier_masks.append(source.offsets(example.carrier_color))
             source_surfaces.append(surface)
+        residual_union = frozenset(
+            offset
+            for source, residual_color in zip(
+                example.sources,
+                example.residual_colors,
+                strict=True,
+            )
+            for offset in source.offsets(residual_color)
+        )
+        carrier_union = frozenset(offset for mask in carrier_masks for offset in mask)
         if (
-            carrier_masks[0] & carrier_masks[1]
-            or carrier_masks[0] | carrier_masks[1] != _COMPOSITE_MEDIATOR_OFFSETS
+            residual_union != _COMPOSITE_MEDIATOR_OFFSETS
+            or carrier_union != _COMPOSITE_MEDIATOR_OFFSETS
+            or (len(carrier_masks) == 2 and bool(carrier_masks[0] & carrier_masks[1]))
         ):
             return False
     return len(frozenset(cell for surface in source_surfaces for cell in surface)) == sum(
@@ -5778,11 +6182,12 @@ def _same_child_composite_cargo_projected_scene(
     The child's observed mediator supplies the carrier-colored disk.  Contact with
     an uncollected assigned source exposes that source's residual mask.  Once the
     child leaves the source, the source is removed from its original location and
-    its residual mask remains over the moving mediator.  Two witnessed
-    complementary masks therefore replace the carrier disk without inventing a
-    color, shape, source, or destination.  Once both assigned masks reach their
-    exact ring, the observed carrier color consumes that ring locally; this earns
-    continuation for the other child but does not imply level or game completion.
+    its residual mask remains over the moving mediator.  The witnessed masks
+    therefore replace the carrier disk without inventing a color, shape, source,
+    or destination.  Later observed source layers cover any interior overlap;
+    exact target sectors remain uniquely owned.  Once every assigned mask reaches
+    its exact ring, the observed carrier color consumes that ring locally; this
+    earns continuation for the other child but does not imply level completion.
     """
 
     if not _same_child_composite_cargo_relation_is_well_formed(scene, hierarchy, relation):
@@ -5815,9 +6220,9 @@ def _same_child_composite_cargo_projected_scene(
     consumable_cells = frozenset(
         cell
         for _child, example in relation.assignments
-        for surface in (*example.sources, example.target)
-        for cell in surface.cells
-    )
+        for source in example.sources
+        for cell in source.cells
+    ) | frozenset(cell for _child, example in relation.assignments for cell in example.target.cells)
     protected_static = (
         frozenset(
             (x, y)
@@ -5875,8 +6280,8 @@ def _same_child_composite_cargo_projected_scene(
                 if not (0 < cell[0] < scene.width - 1 and 0 < cell[1] < scene.height - 1):
                     raise ValueError("same-child composite cargo residual left the board")
                 prior = overlays.get(cell)
-                if prior is not None and prior != residual_color:
-                    raise ValueError("same-child composite cargo residual masks overlap")
+                if prior is not None and prior != residual_color and len(example.sources) == 2:
+                    raise ValueError("paired same-child cargo residual masks overlap")
                 overlays[cell] = residual_color
     for (x, y), color in overlays.items():
         rows[y][x] = color
@@ -9042,9 +9447,16 @@ def _same_child_composite_cargo_projected_state_is_safe_uncached(
         )
     except ValueError:
         return None
-    observed_endpoint_signatures = _endpoint_state_signature(projected.endpoints)
+    marker_color = _same_child_composite_cargo_endpoint_marker_color(hierarchy)
+    if marker_color is None:
+        return None
+    visible_endpoints = _same_child_composite_cargo_visible_endpoints(
+        projected,
+        marker_color=marker_color,
+    )
+    observed_endpoint_signatures = _endpoint_state_signature(visible_endpoints)
     expected_endpoint_signatures = _endpoint_state_signature(
-        scene.endpoints,
+        tuple(endpoint for child in hierarchy.children for endpoint in child.endpoints),
         positions=positions,
         colors=colors,
     )
@@ -9053,7 +9465,7 @@ def _same_child_composite_cargo_projected_state_is_safe_uncached(
     ):
         return None
     active = tuple(
-        endpoint for endpoint in projected.endpoints if endpoint.color == hierarchy.active_color
+        endpoint for endpoint in visible_endpoints if endpoint.color == hierarchy.active_color
     )
     if len(active) > 1:
         return None
@@ -9112,12 +9524,12 @@ def _same_child_composite_cargo_projected_state_is_safe(
 def _same_child_composite_cargo_support_variants(
     example: _CompositeBridgeExample,
     *,
-    source_order: tuple[int, int],
+    source_order: tuple[int, ...],
 ) -> tuple[tuple[tuple[int, int], ...], ...]:
     """Return the direct route and two bounded, geometry-derived detours.
 
     The detours are not board-specific coordinates.  They offset the midpoint
-    of the second-source-to-target segment along its normalized perpendicular.
+    of the final-source-to-target segment along its normalized perpendicular.
     The clearance is four witnessed source radii, which is large enough to move
     the carried composite disk around one equally scaled foreground object while
     remaining tied to the observed cargo geometry.
@@ -9126,9 +9538,9 @@ def _same_child_composite_cargo_support_variants(
     sources = tuple(example.sources[index].center for index in source_order)
     target = example.target.rounded_center
     direct = (*sources, target)
-    second_source = sources[-1]
-    delta_x = target[0] - second_source[0]
-    delta_y = target[1] - second_source[1]
+    final_source = sources[-1]
+    delta_x = target[0] - final_source[0]
+    delta_y = target[1] - final_source[1]
     scale = max(abs(delta_x), abs(delta_y))
     source = example.sources[source_order[-1]]
     source_radius = max(
@@ -9146,20 +9558,20 @@ def _same_child_composite_cargo_support_variants(
         return magnitude if value >= 0 else -magnitude
 
     midpoint = (
-        (second_source[0] + target[0]) // 2,
-        (second_source[1] + target[1]) // 2,
+        (final_source[0] + target[0]) // 2,
+        (final_source[1] + target[1]) // 2,
     )
     perpendicular = (rounded_scaled(delta_y), rounded_scaled(-delta_x))
     waypoint_candidates = {
         (midpoint[0] + sign * perpendicular[0], midpoint[1] + sign * perpendicular[1])
         for sign in (-1, 1)
     }
-    waypoint_candidates -= {second_source, target, *sources}
+    waypoint_candidates -= {final_source, target, *sources}
     ordered_waypoints = tuple(
         sorted(
             waypoint_candidates,
             key=lambda waypoint: (
-                _distance(second_source, waypoint) + _distance(waypoint, target),
+                _distance(final_source, waypoint) + _distance(waypoint, target),
                 waypoint,
             ),
         )
@@ -9184,13 +9596,107 @@ def _same_child_composite_cargo_route_key(
     )
 
 
+def _same_child_composite_cargo_reoriented_layout_patterns(
+    scene: VisualScene,
+    hierarchy: _AffineHierarchy,
+    relation: _CompositeBridgeRelation,
+    *,
+    child_index: int,
+    source_order: tuple[int, ...],
+    static_cells: frozenset[tuple[int, int]],
+    search_budget: _HierarchySearchBudget,
+) -> tuple[tuple[_HierarchyChildLayout, ...], ...]:
+    """Find bounded routes whose formation may change between exact supports.
+
+    Three or more sequential movers can be unable to translate one fixed
+    formation onto a nearby source without an intermediate endpoint collision
+    or premature mediator overlap.  Each stage therefore draws from the same
+    finite observation-derived radius/rotation family used by the base affine
+    planner, while every complete route still undergoes exact action-by-action
+    raster preflight before it can be selected.
+    """
+
+    child, example = relation.assignments[child_index]
+    if set(source_order) != set(range(len(example.sources))):
+        return ()
+    supports = (
+        *(example.sources[source_index].center for source_index in source_order),
+        example.target.rounded_center,
+    )
+    all_source_cells = frozenset(
+        cell
+        for _assigned_child, assigned_example in relation.assignments
+        for source in assigned_example.sources
+        for cell in source.cells
+    )
+    layout_sets: list[tuple[_HierarchyChildLayout, ...]] = []
+    for support in supports:
+        raw_layouts = _hierarchy_child_layouts(
+            scene,
+            hierarchy,
+            child,
+            support=support,
+            active_ref=None,
+            static_cells=static_cells,
+            target_regions=(),
+            endpoint_target_regions=(),
+            ignored_refs=frozenset(),
+            search_budget=search_budget,
+            result_limit=512,
+        )
+        source_at_support = next(
+            (
+                example.sources[source_index]
+                for source_index in source_order
+                if example.sources[source_index].center == support
+            ),
+            None,
+        )
+        expected_source_surface = (
+            frozenset(source_at_support.cells) if source_at_support is not None else frozenset()
+        )
+        valid_layouts: list[_HierarchyChildLayout] = []
+        for layout in raw_layouts:
+            endpoint_footprints = tuple(
+                _translated_object_footprint(endpoint, center=point)
+                for endpoint, point in zip(layout.movers, layout.points, strict=True)
+            )
+            if (
+                any(footprint & all_source_cells for footprint in endpoint_footprints)
+                or layout.dynamic_footprint & all_source_cells != expected_source_surface
+            ):
+                continue
+            valid_layouts.append(layout)
+            if len(valid_layouts) == 32:
+                break
+        if not valid_layouts:
+            return ()
+        layout_sets.append(tuple(valid_layouts))
+
+    routes: dict[
+        tuple[tuple[tuple[int, int], tuple[tuple[str, tuple[int, int]], ...]], ...],
+        tuple[_HierarchyChildLayout, ...],
+    ] = {}
+    for layout_indexes in _fair_index_products(
+        tuple(len(layouts) for layouts in layout_sets),
+        limit=64,
+    ):
+        route = tuple(
+            layout_sets[index][layout_index] for index, layout_index in enumerate(layout_indexes)
+        )
+        routes.setdefault(_same_child_composite_cargo_route_key(route), route)
+        if len(routes) == _MAX_SAME_CHILD_COMPOSITE_CARGO_REORIENTED_PATTERNS:
+            break
+    return tuple(routes.values())
+
+
 def _same_child_composite_cargo_layout_patterns(
     scene: VisualScene,
     hierarchy: _AffineHierarchy,
     relation: _CompositeBridgeRelation,
     *,
     child_index: int,
-    source_order: tuple[int, int],
+    source_order: tuple[int, ...],
     static_cells: frozenset[tuple[int, int]],
     search_budget: _HierarchySearchBudget,
 ) -> tuple[tuple[_HierarchyChildLayout, ...], ...]:
@@ -9199,6 +9705,16 @@ def _same_child_composite_cargo_layout_patterns(
     child, example = relation.assignments[child_index]
     if set(source_order) != set(range(len(example.sources))):
         return ()
+    if child.arity >= 3 and len(example.sources) >= 3:
+        return _same_child_composite_cargo_reoriented_layout_patterns(
+            scene,
+            hierarchy,
+            relation,
+            child_index=child_index,
+            source_order=source_order,
+            static_cells=static_cells,
+            search_budget=search_budget,
+        )
     support_variants = _same_child_composite_cargo_support_variants(
         example,
         source_order=source_order,
@@ -9363,13 +9879,15 @@ def _same_child_composite_cargo_step_is_compatible(planned: PlannedClick) -> boo
     required = certificate.required_collected_source_keys
     expected = certificate.expected_collected_source_keys
     newly_collected = set(expected) - set(required)
+    child_source_count = sum(key[0] == certificate.child_index for key in source_keys)
     return bool(
         planned.plan_signature.startswith("affine-same-child-composite-cargo:")
         and certificate.relation_key
         and certificate.child_index >= 0
-        and certificate.stage_index in range(3)
+        and certificate.stage_index in range(child_source_count + 1)
         and planned.target_center == certificate.target_center
         and len(source_keys) >= 4
+        and 0 <= certificate.endpoint_marker_color <= 15
         and tuple(sorted(set(source_keys))) == source_keys
         and tuple(sorted(set(required))) == required
         and tuple(sorted(set(expected))) == expected
@@ -9404,7 +9922,7 @@ def _same_child_composite_cargo_step_is_compatible(planned: PlannedClick) -> boo
             not certificate.completes_relation
             or (
                 expected == source_keys
-                and certificate.stage_index == 2
+                and certificate.stage_index == child_source_count
                 and certificate.support_center == certificate.target_center
             )
         )
@@ -9466,9 +9984,16 @@ def _same_child_composite_cargo_move_order(
             continue
         for mover_ref in move_refs:
             if mover_ref != trial_active_ref:
+                marker_color = _same_child_composite_cargo_endpoint_marker_color(hierarchy)
+                if marker_color is None:
+                    valid = False
+                    break
                 selected = tuple(
                     endpoint
-                    for endpoint in trial_scene.endpoints
+                    for endpoint in _same_child_composite_cargo_visible_endpoints(
+                        trial_scene,
+                        marker_color=marker_color,
+                    )
                     if endpoint.rounded_center == trial_positions[mover_ref]
                 )
                 if len(selected) != 1 or selected[0].color == hierarchy.active_color:
@@ -9541,7 +10066,7 @@ def _build_same_child_composite_cargo_plan(
     relation: _CompositeBridgeRelation,
     *,
     child_order: tuple[int, ...],
-    source_orders: tuple[tuple[int, int], ...],
+    source_orders: tuple[tuple[int, ...], ...],
     layout_routes: tuple[tuple[_HierarchyChildLayout, ...], ...],
     static_cells: frozenset[tuple[int, int]],
     search_budget: _HierarchySearchBudget,
@@ -9626,6 +10151,17 @@ def _build_same_child_composite_cargo_plan(
             raise ValueError("same-child composite cargo route lost its required scene")
         current_required_scene = required_scene
         child, example = relation.assignments[child_index]
+        endpoint_marker_color = _same_child_composite_cargo_endpoint_marker_color(hierarchy)
+        if endpoint_marker_color is None:
+            raise ValueError("same-child composite cargo endpoint marker is ambiguous")
+        required_visible_endpoints = _same_child_composite_cargo_visible_endpoints(
+            current_required_scene,
+            marker_color=endpoint_marker_color,
+        )
+        expected_visible_endpoints = _same_child_composite_cargo_visible_endpoints(
+            expected_scene,
+            marker_color=endpoint_marker_color,
+        )
         certificate = _SameChildCompositeCargoCertificate(
             relation_key=relation.relation_key,
             child_index=child_index,
@@ -9633,18 +10169,18 @@ def _build_same_child_composite_cargo_plan(
             support_center=support_center,
             target_center=example.target.rounded_center,
             source_keys=source_keys,
+            endpoint_marker_color=endpoint_marker_color,
             required_collected_source_keys=tuple(sorted(required_collected)),
             expected_collected_source_keys=tuple(sorted(expected_collected)),
             required_mediator_center=required_mediator_center,
             expected_mediator_center=expected_mediator_center,
-            required_visible_endpoint_count=len(current_required_scene.endpoints),
+            required_visible_endpoint_count=len(required_visible_endpoints),
             required_visible_mediator_count=len(current_required_scene.mediators),
             required_visible_active_endpoint_count=sum(
-                endpoint.color == hierarchy.active_color
-                for endpoint in current_required_scene.endpoints
+                endpoint.color == hierarchy.active_color for endpoint in required_visible_endpoints
             ),
             expected_visible_active_endpoint_count=sum(
-                endpoint.color == hierarchy.active_color for endpoint in expected_scene.endpoints
+                endpoint.color == hierarchy.active_color for endpoint in expected_visible_endpoints
             ),
             completes_relation=completes_relation,
         )
@@ -9834,14 +10370,17 @@ def _same_child_composite_cargo_plan(
     rejected_signatures: set[str],
     search_budget: _HierarchySearchBudget | None = None,
 ) -> _HierarchyPlan | None:
-    """Find one bounded route that accumulates both witnessed sources per child."""
+    """Find one bounded route that accumulates every witnessed source per child."""
 
     if not _same_child_composite_cargo_relation_is_well_formed(scene, hierarchy, relation):
         return None
     if search_budget is None:
         search_budget = _HierarchySearchBudget(_MAX_HIERARCHY_SEARCH_BUDGET)
     active = tuple(
-        endpoint for endpoint in scene.endpoints if endpoint.color == hierarchy.active_color
+        endpoint
+        for child in hierarchy.children
+        for endpoint in child.endpoints
+        if endpoint.color == hierarchy.active_color
     )
     if len(active) != 1:
         return None
@@ -9870,7 +10409,11 @@ def _same_child_composite_cargo_plan(
     static_cells = occupied - initial_dynamic - source_cells - assigned_target_cells
     child_count = len(relation.assignments)
     child_orders = tuple(itertools.permutations(range(child_count)))
-    source_order_options = tuple(itertools.product(((0, 1), (1, 0)), repeat=child_count))
+    per_child_source_orders = tuple(
+        (((0, 1), (1, 0)) if len(example.sources) == 2 else (tuple(range(len(example.sources))),))
+        for _child, example in relation.assignments
+    )
+    source_order_options = tuple(itertools.product(*per_child_source_orders))
     route_specs = tuple(
         itertools.islice(
             itertools.product(child_orders, source_order_options),
@@ -9878,7 +10421,7 @@ def _same_child_composite_cargo_plan(
         )
     )
     pattern_cache: dict[
-        tuple[int, tuple[int, int]],
+        tuple[int, tuple[int, ...]],
         tuple[tuple[_HierarchyChildLayout, ...], ...],
     ] = {}
     state_cache: dict[_SameChildCompositeCargoProjectedStateKey, VisualScene | None] = {}
@@ -12346,10 +12889,14 @@ def _single_hierarchy_planned_click_is_safe(
         )
     cargo_certificate = planned.same_child_composite_cargo_certificate
     if cargo_certificate is not None:
-        active = tuple(endpoint for endpoint in scene.endpoints if endpoint.color == active_color)
+        visible_endpoints = _same_child_composite_cargo_visible_endpoints(
+            scene,
+            marker_color=cargo_certificate.endpoint_marker_color,
+        )
+        active = tuple(endpoint for endpoint in visible_endpoints if endpoint.color == active_color)
         selected = tuple(
             endpoint
-            for endpoint in scene.endpoints
+            for endpoint in visible_endpoints
             if endpoint.rounded_center == (planned.coordinate.x, planned.coordinate.y)
         )
         action_precondition = bool(
@@ -12369,7 +12916,7 @@ def _single_hierarchy_planned_click_is_safe(
             and planned.required_child_protected_raster_hash is not None
             and _child_isolation_protected_raster_hash(scene)
             == planned.required_child_protected_raster_hash
-            and len(scene.endpoints) == cargo_certificate.required_visible_endpoint_count
+            and len(visible_endpoints) == cargo_certificate.required_visible_endpoint_count
             and len(scene.mediators) == cargo_certificate.required_visible_mediator_count
             and len(active) == cargo_certificate.required_visible_active_endpoint_count
         )
@@ -17685,6 +18232,73 @@ class VisualCausalPolicy:
                 self._affine_ledger_ref
             ).status in {MechanicStatus.SUPPORTED, MechanicStatus.STABLE_WITHIN_SCOPE}
             if self._last_active_color is not None and transferable:
+                marker_search_budget = _HierarchySearchBudget(_MAX_HIERARCHY_SEARCH_BUDGET)
+                try:
+                    marker_cargo_pair = _marker_multi_source_composite_cargo_relation(
+                        scene,
+                        active_color=self._last_active_color,
+                        level_index=observation.levels_completed,
+                        search_budget=marker_search_budget,
+                    )
+                except _HierarchySearchExhausted as exc:
+                    self._hierarchy_search_deferred_count += 1
+                    self._last_hierarchy_search_residual = str(exc)
+                    self._last_probe_failed = True
+                    raise PolicyError(
+                        f"{exc}; no unrelated coordinate fallback is authorized"
+                    ) from exc
+                if marker_cargo_pair is not None:
+                    marker_hierarchy, marker_cargo_relation = marker_cargo_pair
+                    try:
+                        marker_cargo_plan = _same_child_composite_cargo_plan(
+                            scene,
+                            marker_hierarchy,
+                            marker_cargo_relation,
+                            rejected_signatures=self._failed_plan_signatures,
+                            search_budget=marker_search_budget,
+                        )
+                    except _HierarchySearchExhausted as exc:
+                        marker_cargo_plan = None
+                        marker_cargo_residual = str(exc)
+                    else:
+                        marker_cargo_residual = (
+                            "the exact marker-group multi-source relation has no bounded "
+                            "parser-safe accumulation route"
+                        )
+                    if marker_cargo_plan is None:
+                        self._hierarchy_search_deferred_count += 1
+                        self._last_hierarchy_search_residual = marker_cargo_residual
+                        self._last_probe_failed = True
+                        raise PolicyError(
+                            f"{marker_cargo_residual}; no unrelated coordinate fallback "
+                            "is authorized"
+                        )
+                    self._install_hierarchy_plan(
+                        marker_cargo_plan,
+                        relation_key=marker_cargo_relation.relation_key,
+                    )
+                    planned = self._plan.popleft()
+                    action = ActionRequest(ActionName.ACTION6, planned.coordinate)
+                    self._stage_pending(
+                        observation,
+                        action,
+                        purpose=planned.purpose,
+                        prediction=planned.expectation,
+                        mechanic_refs=(planned.mechanic_ref,),
+                        plan_signature=planned.plan_signature,
+                        target_center=planned.target_center,
+                        mediator_color=planned.mediator_color,
+                        arity=planned.arity,
+                        completes_hierarchy=planned.completes_hierarchy,
+                        expected_active_center=planned.expected_active_center,
+                        expected_child_protected_raster_hash=(
+                            planned.expected_child_protected_raster_hash
+                        ),
+                        expected_visible_endpoint_count=(planned.expected_visible_endpoint_count),
+                        expected_visible_mediator_count=(planned.expected_visible_mediator_count),
+                        carrier_source_recovery_candidate=planned,
+                    )
+                    return action
                 hierarchy: _AffineHierarchy | None = None
                 hierarchy_plan: _HierarchyPlan | None = None
                 child_isolation_plan: _ChildIsolationPlan | None = None
