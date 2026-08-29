@@ -9421,6 +9421,11 @@ def _same_child_composite_cargo_projected_state_is_safe_uncached(
         for child_index, (_child, example) in enumerate(relation.assignments)
         for source_index, source in enumerate(example.sources)
     }
+    assigned_target_cells = frozenset(
+        cell for _child, example in relation.assignments for cell in example.target.cells
+    )
+    if any(footprint & assigned_target_cells for _endpoint_ref, footprint in endpoint_footprints):
+        return None
     for source_key, surface in source_surfaces.items():
         if source_key in collected_source_keys:
             continue

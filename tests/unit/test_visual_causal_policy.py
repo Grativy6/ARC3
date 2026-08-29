@@ -12883,29 +12883,28 @@ def test_campaign48_marker_multi_source_cargo_builds_exact_reoriented_route() ->
     )
 
     coordinates = tuple((action.coordinate.x, action.coordinate.y) for action in plan.actions)
-    assert len(coordinates) == 34
+    assert len(coordinates) == 33
     assert coordinates == (
         (10, 27),
         (22, 19),
         (17, 35),
         (4, 19),
         (6, 37),
-        (10, 27),
-        (14, 39),
+        (11, 41),
         (17, 35),
-        (22, 46),
-        (6, 37),
-        (12, 50),
-        (29, 20),
-        (14, 39),
+        (22, 43),
+        (10, 27),
+        (15, 51),
         (34, 11),
-        (22, 46),
+        (22, 43),
         (39, 20),
-        (56, 15),
-        (34, 11),
-        (51, 6),
+        (11, 41),
         (29, 20),
         (46, 15),
+        (34, 11),
+        (51, 6),
+        (39, 20),
+        (56, 15),
         (50, 57),
         (28, 60),
         (49, 43),
@@ -12936,6 +12935,9 @@ def test_campaign48_marker_multi_source_cargo_builds_exact_reoriented_route() ->
         for child in hierarchy.children
         for endpoint in child.endpoints
     }
+    assigned_target_cells = frozenset(
+        cell for _child, example in relation.assignments for cell in example.target.cells
+    )
     projected = scene
     for planned in plan.actions:
         assert visual_causal._hierarchy_planned_click_is_safe(
@@ -12952,6 +12954,17 @@ def test_campaign48_marker_multi_source_cargo_builds_exact_reoriented_route() ->
             colors[active_ref], colors[selected_ref] = colors[selected_ref], colors[active_ref]
         else:
             positions[active_ref] = coordinate
+        assert all(
+            not (
+                visual_causal._translated_object_footprint(
+                    endpoint,
+                    center=positions[endpoint.object_ref],
+                )
+                & assigned_target_cells
+            )
+            for child in hierarchy.children
+            for endpoint in child.endpoints
+        )
         projected = visual_causal._same_child_composite_cargo_projected_scene(
             scene,
             hierarchy,
@@ -12976,6 +12989,73 @@ def test_campaign48_marker_multi_source_cargo_builds_exact_reoriented_route() ->
         for _child, example in relation.assignments
         for source in example.sources
         for x, y in source.cells
+    )
+
+
+def test_campaign49_marker_route_rejects_endpoint_overlap_with_assigned_target() -> None:
+    _frame, scene, hierarchy, relation, _plan = _campaign48_marker_plan_fixture()
+    refs_by_center = {
+        endpoint.rounded_center: endpoint.object_ref
+        for child in hierarchy.children
+        for endpoint in child.endpoints
+    }
+    positions = {
+        endpoint.object_ref: endpoint.rounded_center
+        for child in hierarchy.children
+        for endpoint in child.endpoints
+    }
+    colors = {
+        endpoint.object_ref: endpoint.color
+        for child in hierarchy.children
+        for endpoint in child.endpoints
+    }
+    positions[refs_by_center[(11, 11)]] = (14, 39)
+    positions[refs_by_center[(22, 19)]] = (22, 46)
+    positions[refs_by_center[(4, 19)]] = (12, 50)
+    colors[refs_by_center[(11, 11)]] = 3
+    colors[refs_by_center[(22, 19)]] = 3
+    colors[refs_by_center[(4, 19)]] = 0
+
+    overlapping_endpoint = visual_causal._translated_object_footprint(
+        hierarchy.children[0].endpoints[2],
+        center=(12, 50),
+    )
+    other_target_cells = frozenset(relation.assignments[1][1].target.cells)
+    assert overlapping_endpoint & other_target_cells == {(12, 52)}
+
+    initial_dynamic = frozenset(
+        cell
+        for child in hierarchy.children
+        for cell in visual_causal._hierarchy_dynamic_footprint(scene, child)
+    )
+    source_cells = frozenset(
+        cell
+        for _child, example in relation.assignments
+        for source in example.sources
+        for cell in source.cells
+    )
+    assigned_target_cells = frozenset(
+        cell for _child, example in relation.assignments for cell in example.target.cells
+    )
+    occupied = frozenset(
+        (x, y)
+        for y, row in enumerate(scene.cells)
+        for x, value in enumerate(row)
+        if value != scene.background
+    )
+    static_cells = occupied - initial_dynamic - source_cells - assigned_target_cells
+
+    assert (
+        visual_causal._same_child_composite_cargo_projected_state_is_safe_uncached(
+            scene,
+            hierarchy,
+            relation,
+            positions=positions,
+            colors=colors,
+            collected_source_keys=frozenset({(0, 0)}),
+            static_cells=static_cells,
+        )
+        is None
     )
 
 
@@ -13022,7 +13102,7 @@ def test_campaign48_policy_selects_marker_cargo_before_coordinate_probe() -> Non
     assert first_action == ActionRequest(ActionName.ACTION6, plan.actions[0].coordinate)
     assert policy._active_hierarchy_relation_key == relation.relation_key
     assert policy._pending_carrier_source_recovery_candidate == plan.actions[0]
-    assert len(policy._plan) == 33
+    assert len(policy._plan) == 32
 
     positions = {
         endpoint.object_ref: endpoint.rounded_center
