@@ -407,9 +407,9 @@ def test_cli_accepts_an_explicit_sealed_trace_contract(tmp_path: Path) -> None:
             "--expected-trace-tail-event-hash",
             "2" * 64,
             "--expected-trace-event-count",
-            "950",
+            "2168",
             "--expected-trace-submission-count",
-            "158",
+            "361",
             "--expected-trace-final-state",
             "NOT_FINISHED",
             "--expected-trace-levels-completed",
@@ -417,7 +417,7 @@ def test_cli_accepts_an_explicit_sealed_trace_contract(tmp_path: Path) -> None:
             "--expected-trace-win-levels",
             "6",
             "--expected-trace-candidate-plan-prefix",
-            "affine-crossed-post-access-composite-exit:",
+            "affine-crossed-post-access-composite-marker:",
             "--expected-commit",
             "a" * 40,
             "--expected-tree",
@@ -432,11 +432,11 @@ def test_cli_accepts_an_explicit_sealed_trace_contract(tmp_path: Path) -> None:
     assert replay_cli._replay_mode(args) == "sealed-trace"
     assert args.campaign_audit is None
     assert args.sealed_trace_root == trace_root
-    assert args.expected_trace_event_count == 950
-    assert args.expected_trace_submission_count == 158
+    assert args.expected_trace_event_count == 2168
+    assert args.expected_trace_submission_count == 361
     assert args.expected_trace_generator_commit == "c" * 40
     assert args.expected_trace_candidate_plan_prefix == (
-        "affine-crossed-post-access-composite-exit:"
+        "affine-crossed-post-access-composite-marker:"
     )
     assert replay_cli.TRACE_SCHEMA == "arc3.build003.mechanical-sealed-trace-replay.v0.1"
 
@@ -632,17 +632,23 @@ def test_cli_preserves_the_campaign_recording_contract(tmp_path: Path) -> None:
 
 
 def test_cli_sealed_trace_binding_preserves_validated_game_and_generator_identity() -> None:
+    plan_prefix = "affine-crossed-post-access-composite-marker:"
+    plan_signature = plan_prefix + "synthetic"
     binding = replay_cli._sealed_trace_binding(
         {
+            "candidate_plan_binding": {
+                "plan_prefix": plan_prefix,
+                "plan_signature": plan_signature,
+            },
             "trace": {
-                "event_count": 950,
+                "event_count": 2168,
                 "game_id": "synthetic-game",
                 "manifest_hash": "sha256:" + ("1" * 64),
                 "path": "C:/synthetic-trace",
                 "run_id": "synthetic-run",
-                "submission_count": 158,
+                "submission_count": 361,
                 "tail_event_hash": "sha256:" + ("2" * 64),
-            }
+            },
         },
         generator_commit="c" * 40,
     )
@@ -650,6 +656,8 @@ def test_cli_sealed_trace_binding_preserves_validated_game_and_generator_identit
     assert binding["game_id"] == "synthetic-game"
     assert binding["generator_commit"] == "c" * 40
     assert binding["recording_reconstructed"] is False
+    assert binding["candidate_plan_prefix"] == plan_prefix
+    assert binding["candidate_plan_signature"] == plan_signature
 
 
 def test_cli_sealed_trace_prefix_reopening_binding_names_the_divergence_boundary() -> None:
@@ -810,3 +818,123 @@ def test_cli_main_emits_the_prefix_reopening_schema_and_count_contract(
     assert payload["runtime"]["platform"] == "synthetic-platform"
     assert payload["sealed_trace_binding"]["reopening_candidate_plan_prefix"] == plan_prefix
     assert payload["sealed_trace_binding"]["reopening_candidate_plan_signature"] == plan_signature
+
+
+def test_cli_main_emits_the_full_trace_marker_candidate_binding(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    output = tmp_path / "full-trace-marker-receipt.json"
+    plan_prefix = "affine-crossed-post-access-composite-marker:"
+    plan_signature = plan_prefix + "synthetic"
+    source_binding = {
+        "clean": True,
+        "commit": "a" * 40,
+        "tree": "b" * 40,
+    }
+
+    def source_snapshot(**_kwargs: object) -> tuple[dict[str, object], dict[str, bytes]]:
+        return dict(source_binding), {"synthetic": b"source"}
+
+    def replay_trace(_path: Path, **kwargs: object) -> dict[str, object]:
+        assert kwargs["expected_candidate_plan_prefix"] == plan_prefix
+        assert kwargs["expected_reopening_submission_count"] is None
+        assert kwargs["expected_reopening_candidate_plan_prefix"] is None
+        return {
+            "boundaries": {"environment_actions_issued": False},
+            "candidate_next_submission": {
+                "action": {"coordinate": [53, 28], "name": "ACTION6"},
+                "pending_plan_actions_after_selection": 0,
+                "plan_signature": plan_signature,
+                "submitted": False,
+            },
+            "candidate_plan_binding": {
+                "plan_prefix": plan_prefix,
+                "plan_signature": plan_signature,
+            },
+            "cancellation_verification": {
+                "learner_pending_after": 0,
+                "policy_receipt_count_after": 361,
+                "policy_receipt_count_before": 361,
+                "verified": True,
+            },
+            "replay_result": {
+                "matched_regenerated_mechanics_receipt_count": 361,
+                "matched_submission_count": 361,
+                "mismatch": None,
+                "status": "PASS_SEALED_TRACE_REPLAY",
+            },
+            "trace": {
+                "event_count": 2168,
+                "game_id": "synthetic-game",
+                "manifest_hash": "sha256:" + ("1" * 64),
+                "path": str(tmp_path / "trace"),
+                "run_id": "synthetic-run",
+                "submission_count": 361,
+                "tail_event_hash": "sha256:" + ("2" * 64),
+            },
+        }
+
+    monkeypatch.setattr(replay_cli, "_BYTECODE_DISABLED_AT_STARTUP", True)
+    monkeypatch.setattr(replay_cli, "_DIRECT_SCRIPT_INVOCATION", True)
+    monkeypatch.setattr(replay_cli.platform, "platform", lambda: "synthetic-platform")
+    monkeypatch.setattr(replay_cli, "_source_snapshot", source_snapshot)
+    monkeypatch.setattr(
+        replay_cli,
+        "_repository_file_projection",
+        lambda: {"synthetic": "sha256:" + ("4" * 64)},
+    )
+    monkeypatch.setattr(replay_cli, "replay_unfinished_mechanical_trace", replay_trace)
+
+    assert (
+        replay_cli.main(
+            [
+                "--sealed-trace-root",
+                str(tmp_path / "trace"),
+                "--expected-trace-run-id",
+                "synthetic-run",
+                "--expected-trace-game-id",
+                "synthetic-game",
+                "--expected-trace-generator-commit",
+                "c" * 40,
+                "--expected-trace-manifest-hash",
+                "1" * 64,
+                "--expected-trace-tail-event-hash",
+                "2" * 64,
+                "--expected-trace-event-count",
+                "2168",
+                "--expected-trace-submission-count",
+                "361",
+                "--expected-trace-final-state",
+                "NOT_FINISHED",
+                "--expected-trace-levels-completed",
+                "4",
+                "--expected-trace-win-levels",
+                "6",
+                "--expected-trace-candidate-plan-prefix",
+                plan_prefix,
+                "--expected-commit",
+                "a" * 40,
+                "--expected-tree",
+                "b" * 40,
+                "--output",
+                str(output),
+                "--policy-profile",
+                replay_cli.POLICY_PROFILE,
+            ]
+        )
+        == 0
+    )
+    document = json.loads(output.read_bytes())
+    assert document["schema"] == replay_cli.TRACE_SCHEMA
+    payload = document["payload"]
+    assert payload["receipt_status"] == "PASS_SEALED_TRACE_REPLAY"
+    assert payload["replay_evidence_mode"] == "sealed-trace"
+    assert payload["boundaries"]["environment_actions_issued"] is False
+    assert payload["candidate_next_submission"]["action"] == {
+        "coordinate": [53, 28],
+        "name": "ACTION6",
+    }
+    assert payload["candidate_next_submission"]["submitted"] is False
+    assert payload["sealed_trace_binding"]["candidate_plan_prefix"] == plan_prefix
+    assert payload["sealed_trace_binding"]["candidate_plan_signature"] == plan_signature

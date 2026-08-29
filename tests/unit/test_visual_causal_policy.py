@@ -11934,6 +11934,10 @@ def test_campaign43_crossed_route_resource_lifecycle_and_interrupts() -> None:
     composite_not_finished_observation = composite_not_finished_environment.step(
         composite_not_finished_action
     )
+    composite_not_finished_observation = replace(
+        composite_not_finished_observation,
+        frames=(GridFrame.from_rows(post_access_scene.cells),),
+    )
     composite_not_finished_observation = _campaign43_with_edge(
         composite_not_finished_observation,
         history[56],
@@ -11946,16 +11950,95 @@ def test_campaign43_crossed_route_resource_lifecycle_and_interrupts() -> None:
     assert (
         composite_not_finished_policy.snapshot()["post_access_composite_exit_rejected_count"] == 1
     )
-    assert composite_not_finished_policy.snapshot()["pending_plan_actions"] == 0
-    assert composite_not_finished_policy._active_crossed_replay_resource_lineage is None
+    assert composite_not_finished_policy.snapshot()["pending_plan_actions"] == 1
+    assert composite_not_finished_policy.snapshot()["post_access_composite_marker_active"] is True
+    active_marker_lineage = composite_not_finished_policy._active_crossed_replay_resource_lineage
+    assert active_marker_lineage is not None
+    assert active_marker_lineage.forward_remaining_actions == 0
     assert "only this composite-exit sufficiency hypothesis is rejected" in (
         composite_not_finished_policy.receipts[-1].residual
     )
+    composite_returned_scene = extract_visual_scene(composite_not_finished_observation.frames[-1])
+    assert visual_causal._child_isolation_protected_raster_hash(composite_returned_scene) == (
+        visual_causal._child_isolation_protected_raster_hash(post_access_scene)
+    )
+    marker_candidate = composite_not_finished_policy._plan[0]
+    marker_certificate = marker_candidate.post_access_composite_marker_certificate
+    assert marker_certificate is not None
+    assert marker_certificate.parent_access_hypothesis_key == access_certificate.hypothesis_key
+    assert marker_certificate.parent_composite_hypothesis_key == (
+        composite_certificate.hypothesis_key
+    )
+    assert marker_certificate.common_center == composite_certificate.common_center
+    assert marker_certificate.marker_coordinate != marker_certificate.common_center
+    assert marker_candidate.coordinate == Coordinate(*marker_certificate.marker_coordinate)
+    assert visual_causal._unique_post_access_composite_marker(composite_returned_scene) == (
+        marker_certificate.marker_color,
+        marker_certificate.marker_coordinate,
+    )
+    assert marker_certificate.marker_coordinate == (53, 28)
+    assert marker_certificate.marker_color == 4
+    assert (
+        composite_returned_scene.cells[marker_certificate.common_center[1]][
+            marker_certificate.common_center[0]
+        ]
+        == 0
+    )
+    assert marker_certificate.parent_resource_action_count == 55
+    assert marker_certificate.resource_action_count == 56
+    assert marker_certificate.exhausted_after_actions == 60
+    assert visual_causal._single_hierarchy_planned_click_is_safe(
+        composite_returned_scene,
+        marker_candidate,
+        active_color=hierarchy.active_color,
+    )
+    assert not visual_causal._single_hierarchy_planned_click_is_safe(
+        composite_returned_scene,
+        replace(
+            marker_candidate,
+            coordinate=Coordinate(*marker_certificate.common_center),
+        ),
+        active_color=hierarchy.active_color,
+    )
+
+    cancelled_marker_policy = copy.deepcopy(composite_not_finished_policy)
+    cancelled_marker_action = cancelled_marker_policy.select(composite_not_finished_observation)
+    assert cancelled_marker_action.coordinate == marker_candidate.coordinate
+    cancelled_marker_policy.cancel_unsubmitted_action()
+    assert cancelled_marker_policy.snapshot()["post_access_composite_marker_attempted_count"] == 0
+    assert cancelled_marker_policy.snapshot()["pending_plan_actions"] == 0
+    assert cancelled_marker_policy._active_crossed_replay_resource_lineage is None
     with pytest.raises(PolicyError, match="one-shot post-access composite-exit"):
-        composite_not_finished_policy.select(composite_not_finished_observation)
-    restored_not_finished_policy = copy.deepcopy(composite_not_finished_policy)
-    with pytest.raises(PolicyError, match="one-shot post-access composite-exit"):
-        restored_not_finished_policy.select(composite_not_finished_observation)
+        cancelled_marker_policy.select(composite_not_finished_observation)
+
+    marker_not_finished_policy = copy.deepcopy(composite_not_finished_policy)
+    marker_not_finished_action = marker_not_finished_policy.select(
+        composite_not_finished_observation
+    )
+    marker_not_finished_observation = _campaign43_with_edge(
+        replace(
+            composite_not_finished_observation,
+            returned_action=marker_not_finished_action,
+            full_reset=False,
+        ),
+        history[57],
+    )
+    marker_not_finished_policy.accept_consequence(marker_not_finished_observation)
+    assert marker_not_finished_policy.snapshot()["post_access_composite_marker_closed"] is True
+    assert (
+        marker_not_finished_policy.snapshot()["post_access_composite_marker_attempted_count"] == 1
+    )
+    assert marker_not_finished_policy.snapshot()["post_access_composite_marker_rejected_count"] == 1
+    assert marker_not_finished_policy.snapshot()["pending_plan_actions"] == 0
+    assert marker_not_finished_policy._active_crossed_replay_resource_lineage is None
+    assert "only this marker-access sufficiency hypothesis is rejected" in (
+        marker_not_finished_policy.receipts[-1].residual
+    )
+    with pytest.raises(PolicyError, match="one-shot post-access composite-marker"):
+        marker_not_finished_policy.select(marker_not_finished_observation)
+    restored_not_finished_policy = copy.deepcopy(marker_not_finished_policy)
+    with pytest.raises(PolicyError, match="one-shot post-access composite-marker"):
+        restored_not_finished_policy.select(marker_not_finished_observation)
     assert (
         visual_causal._post_deposit_mediator_access_plan(
             extract_visual_scene(delivery_terminal_observation.frames[-1]),
@@ -11983,6 +12066,129 @@ def test_campaign43_crossed_route_resource_lifecycle_and_interrupts() -> None:
                 composite_not_finished_policy._failed_post_access_composite_exit_hypothesis_keys
                 | composite_not_finished_policy._attempted_post_access_composite_exit_hypothesis_keys
             ),
+        )
+        is None
+    )
+    assert (
+        visual_causal._post_access_composite_marker_plan(
+            post_access_scene,
+            composite_returned_scene,
+            composite_certificate=composite_certificate,
+            resource_lineage=active_marker_lineage,
+            current_actions=56,
+            excluded_hypothesis_keys=(
+                marker_not_finished_policy._failed_post_access_composite_marker_hypothesis_keys
+                | marker_not_finished_policy._attempted_post_access_composite_marker_hypothesis_keys
+            ),
+        )
+        is None
+    )
+    ambiguous_marker_rows = [list(row) for row in composite_returned_scene.cells]
+    ambiguous_endpoint = composite_returned_scene.endpoints[0]
+    ambiguous_x, ambiguous_y = ambiguous_endpoint.rounded_center
+    ambiguous_marker_rows[ambiguous_y][ambiguous_x] = 9
+    ambiguous_marker_scene = extract_visual_scene(GridFrame.from_rows(ambiguous_marker_rows))
+    assert visual_causal._unique_post_access_composite(ambiguous_marker_scene) is not None
+    assert visual_causal._unique_post_access_composite_marker(ambiguous_marker_scene) is None
+
+    missing_marker_rows = [list(row) for row in composite_returned_scene.cells]
+    marker_x, marker_y = marker_certificate.marker_coordinate
+    missing_marker_rows[marker_y][marker_x] = composite_returned_scene.mediators[0].color
+    missing_marker_scene = extract_visual_scene(GridFrame.from_rows(missing_marker_rows))
+    assert visual_causal._unique_post_access_composite(missing_marker_scene) is not None
+    assert visual_causal._unique_post_access_composite_marker(missing_marker_scene) is None
+
+    marker_prefix_mismatch_policy = copy.deepcopy(composite_not_finished_policy)
+    marker_prefix_mismatch_observation = _campaign43_with_edge(
+        composite_not_finished_observation,
+        history[55],
+    )
+    with pytest.raises(PolicyError, match="crossed resource lineage"):
+        marker_prefix_mismatch_policy.select(marker_prefix_mismatch_observation)
+    assert marker_prefix_mismatch_policy._active_crossed_replay_resource_lineage is None
+    assert marker_prefix_mismatch_policy.snapshot()["pending_plan_actions"] == 0
+
+    marker_unavailable_policy = copy.deepcopy(composite_not_finished_policy)
+    marker_unavailable_observation = replace(
+        composite_not_finished_observation,
+        available_actions=(),
+    )
+    with pytest.raises(PolicyError, match="queued hierarchy action became unavailable"):
+        marker_unavailable_policy.select(marker_unavailable_observation)
+    assert marker_unavailable_policy._active_crossed_replay_resource_lineage is None
+    assert marker_unavailable_policy.snapshot()["pending_plan_actions"] == 0
+
+    marker_win_policy = copy.deepcopy(composite_not_finished_policy)
+    marker_win_action = marker_win_policy.select(composite_not_finished_observation)
+    marker_win_observation = replace(
+        _campaign43_with_edge(
+            replace(
+                composite_not_finished_observation,
+                returned_action=marker_win_action,
+                full_reset=False,
+            ),
+            history[57],
+        ),
+        state=GameStateName.WIN,
+        available_actions=(),
+    )
+    marker_win_policy.accept_consequence(marker_win_observation)
+    assert marker_win_policy.snapshot()["post_access_composite_marker_attempted_count"] == 1
+    assert marker_win_policy.snapshot()["post_access_composite_marker_rejected_count"] == 0
+    assert marker_win_policy.snapshot()["pending_plan_actions"] == 0
+    assert marker_win_policy._active_crossed_replay_resource_lineage is None
+
+    marker_unknown_policy = copy.deepcopy(composite_not_finished_policy)
+    marker_unknown_action = marker_unknown_policy.select(composite_not_finished_observation)
+    marker_unknown_observation = replace(
+        _campaign43_with_edge(
+            replace(
+                composite_not_finished_observation,
+                returned_action=marker_unknown_action,
+                full_reset=False,
+            ),
+            history[57],
+        ),
+        state=GameStateName.UNKNOWN,
+    )
+    marker_unknown_policy.accept_consequence(marker_unknown_observation)
+    assert marker_unknown_policy.snapshot()["post_access_composite_marker_attempted_count"] == 1
+    assert marker_unknown_policy.snapshot()["post_access_composite_marker_rejected_count"] == 0
+    assert marker_unknown_policy.snapshot()["pending_plan_actions"] == 0
+    assert marker_unknown_policy._active_crossed_replay_resource_lineage is None
+
+    marker_game_over_policy = copy.deepcopy(composite_not_finished_policy)
+    marker_game_over_action = marker_game_over_policy.select(composite_not_finished_observation)
+    marker_game_over_observation = replace(
+        _campaign43_with_edge(
+            replace(
+                composite_not_finished_observation,
+                returned_action=marker_game_over_action,
+                full_reset=False,
+            ),
+            history[57],
+        ),
+        state=GameStateName.GAME_OVER,
+        available_actions=(ActionName.RESET,),
+    )
+    marker_game_over_policy.accept_consequence(marker_game_over_observation)
+    assert marker_candidate.plan_signature in marker_game_over_policy._failed_plan_signatures
+    assert marker_game_over_policy.snapshot()["post_access_composite_marker_attempted_count"] == 1
+    assert marker_game_over_policy.snapshot()["post_access_composite_marker_rejected_count"] == 0
+    assert marker_game_over_policy.snapshot()["pending_plan_actions"] == 0
+    assert marker_game_over_policy._active_crossed_replay_resource_lineage is None
+    assert marker_game_over_policy.receipts[-1].residual == (
+        "the one-shot post-access composite-marker discriminator returned official GAME_OVER"
+    )
+    assert marker_game_over_policy.select(marker_game_over_observation).name is ActionName.RESET
+    assert (
+        visual_causal._post_access_composite_marker_plan(
+            post_access_scene,
+            composite_returned_scene,
+            composite_certificate=replace(composite_certificate, resource_action_count=58),
+            resource_lineage=active_marker_lineage,
+            current_actions=59,
+            excluded_hypothesis_keys=set(),
         )
         is None
     )

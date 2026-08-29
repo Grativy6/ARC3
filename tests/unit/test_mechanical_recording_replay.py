@@ -116,11 +116,12 @@ def _trace_observation_fixture(
     full_reset: bool,
     returned_action: ActionRequest | None,
     available_actions: tuple[ActionName, ...] = (ActionName.ACTION1,),
+    frames: tuple[GridFrame, ...] | None = None,
 ) -> Observation:
     available = () if state is GameStateName.GAME_OVER else available_actions
     return Observation(
         game_id=GameId(TRACE_GAME),
-        frames=(GridFrame(((0,),)),),
+        frames=frames or (GridFrame(((0,),)),),
         state=state,
         levels_completed=levels_completed,
         win_levels=2,
@@ -143,6 +144,8 @@ def _build_sealed_trace(
     reset_recovery_state: GameStateName = GameStateName.NOT_FINISHED,
     available_actions: tuple[ActionName, ...] = (ActionName.ACTION1,),
     force_string_residuals: bool = False,
+    initial_frames: tuple[GridFrame, ...] | None = None,
+    after_frames: tuple[GridFrame, ...] | None = None,
 ) -> dict[str, Any]:
     if normal_submission_count < 1:
         raise ValueError("normal_submission_count must be positive")
@@ -165,12 +168,14 @@ def _build_sealed_trace(
         observation_level_scoping=True,
     )
     policy = VisualCausalPolicy(max_coordinate_candidates=8)
+    recorded_receipts: list[dict[str, JSONValue]] = []
     current = _trace_observation_fixture(
         state=GameStateName.NOT_FINISHED,
         levels_completed=0,
         full_reset=initial_full_reset,
         returned_action=ActionRequest(ActionName.RESET),
         available_actions=available_actions,
+        frames=initial_frames,
     )
     sink.record_observation(current)
 
@@ -190,6 +195,7 @@ def _build_sealed_trace(
             full_reset=False,
             returned_action=selected,
             available_actions=available_actions,
+            frames=after_frames,
         )
         sink.record_consequence(current, selected, after)
         sink.record_observation(after)
@@ -199,6 +205,7 @@ def _build_sealed_trace(
             revised = dict(durable[0])
             revised["residual"] = "synthetic-historical-reopening-residual"
             durable = (revised,)
+        recorded_receipts.extend(durable)
         if not omit_mechanical:
             sink.record_mechanical_receipts(after, durable)
         current = after
@@ -229,6 +236,7 @@ def _build_sealed_trace(
         ),
         "event_count": len(events),
         "manifest_hash": manifest_hash,
+        "mechanical_receipts": tuple(recorded_receipts),
         "submission_count": submission_count,
         "tail_hash": tail_hash,
         "trace_path": trace_path,
@@ -247,6 +255,7 @@ def _trace_replay(
     reopening_levels_completed: int | None = None,
     reopening_win_levels: int | None = None,
     reopening_candidate_plan_prefix: str | None = None,
+    candidate_plan_prefix: str | None = None,
 ) -> dict[str, Any]:
     return replay_unfinished_mechanical_trace(
         trace["trace_path"],
@@ -268,6 +277,7 @@ def _trace_replay(
         expected_reopening_levels_completed=reopening_levels_completed,
         expected_reopening_win_levels=reopening_win_levels,
         expected_reopening_candidate_plan_prefix=reopening_candidate_plan_prefix,
+        expected_candidate_plan_prefix=candidate_plan_prefix,
     )
 
 
@@ -385,6 +395,95 @@ def test_trace_replay_matches_complete_cycles_and_cancels_candidate(tmp_path: Pa
     assert trace_receipt["replayed_from_immutable_copy"] is True
     assert trace_receipt["projection_file_count"] > 0
     assert str(trace_receipt["projection_sha256"]).startswith("sha256:")
+
+
+def test_trace_replay_binds_and_cancels_one_full_trace_final_candidate(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    trace = _build_sealed_trace(
+        tmp_path,
+        available_actions=(ActionName.ACTION1, ActionName.ACTION2),
+    )
+    plan_prefix = "affine-crossed-post-access-composite-marker:"
+    plan_signature = plan_prefix + "synthetic"
+
+    class FinalCandidatePolicy(VisualCausalPolicy):
+        def __init__(self, *, max_coordinate_candidates: int) -> None:
+            super().__init__(max_coordinate_candidates=max_coordinate_candidates)
+            self._accepted_for_candidate_test = 0
+
+        def select(self, observation: Observation) -> ActionRequest:
+            final_selection = self._accepted_for_candidate_test == 1
+            if final_selection:
+                observation = replace(
+                    observation,
+                    available_actions=(ActionName.ACTION2,),
+                )
+            selected = super().select(observation)
+            if final_selection:
+                self._pending_plan_signature = plan_signature
+            return selected
+
+        def accept_consequence(self, observation: Observation) -> None:
+            super().accept_consequence(observation)
+            self._accepted_for_candidate_test += 1
+
+    monkeypatch.setattr(replay_module, "VisualCausalPolicy", FinalCandidatePolicy)
+
+    receipt = _trace_replay(trace, candidate_plan_prefix=plan_prefix)
+
+    candidate = receipt["candidate_next_submission"]
+    assert candidate["action"] == {"coordinate": None, "name": "ACTION2"}
+    assert candidate["plan_signature"] == plan_signature
+    assert candidate["pending_plan_actions_after_selection"] == 0
+    assert candidate["submitted"] is False
+    assert receipt["candidate_plan_binding"] == {
+        "plan_prefix": plan_prefix,
+        "plan_signature": plan_signature,
+    }
+    assert receipt["family_state_after_candidate_selection"]["pending_plan_signature"] == (
+        plan_signature
+    )
+    cancellation = receipt["cancellation_verification"]
+    assert cancellation["verified"] is True
+    assert cancellation["learner_pending_after"] == 0
+    assert cancellation["policy_receipt_count_before"] == 1
+    assert cancellation["policy_receipt_count_after"] == 1
+    assert receipt["boundaries"]["environment_actions_issued"] is False
+    replay = receipt["replay_result"]
+    assert replay["matched_submission_count"] == 1
+    assert replay["matched_regenerated_mechanics_receipt_count"] == 1
+    assert replay["mismatch"] is None
+
+    with pytest.raises(MechanicalReplayError, match="does not match the named plan family"):
+        _trace_replay(trace, candidate_plan_prefix="different-final-candidate:")
+
+
+def test_trace_replay_attributes_receipts_to_stable_final_frames(tmp_path: Path) -> None:
+    transient_before = GridFrame(((9,),))
+    transient_after = GridFrame(((8,),))
+    stable = GridFrame(((0,),))
+    trace = _build_sealed_trace(
+        tmp_path,
+        initial_frames=(transient_before, stable),
+        after_frames=(transient_after, stable),
+    )
+
+    historical_receipts = trace["mechanical_receipts"]
+    assert len(historical_receipts) == 1
+    historical = historical_receipts[0]
+    assert transient_before.digest != transient_after.digest
+    assert historical["changed_cells"] == 0
+    assert historical["before_frame_hash"] == str(stable.digest)
+    assert historical["after_frame_hash"] == str(stable.digest)
+
+    receipt = _trace_replay(trace)
+
+    assert receipt["replay_result"]["matched_regenerated_mechanics_receipt_count"] == 1
+    assert receipt["final_recorded_observation"]["frame_count"] == 2
+    assert receipt["final_recorded_observation"]["frame_sha256"] == str(stable.digest)
+    assert receipt["trace"]["replayed_frame_count"] == 4
 
 
 def test_trace_replay_preserves_missing_initial_returned_action_boundary(

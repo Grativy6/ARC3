@@ -271,6 +271,26 @@ class _PostAccessCompositeExitCertificate:
 
 
 @dataclass(frozen=True, slots=True)
+class _PostAccessCompositeMarkerCertificate:
+    """Exact no-op and resource lineage for one embedded-marker discriminator."""
+
+    hypothesis_key: str
+    parent_access_hypothesis_key: str
+    parent_composite_hypothesis_key: str
+    common_center: tuple[int, int]
+    marker_coordinate: tuple[int, int]
+    marker_color: int
+    mediator_signature: _VisualObjectStateSignature
+    target_signature: _VisualObjectStateSignature
+    endpoint_signature: _EndpointStateSignature
+    protected_raster_hash: str
+    parent_protected_raster_hash: str
+    parent_resource_action_count: int
+    resource_action_count: int
+    exhausted_after_actions: int
+
+
+@dataclass(frozen=True, slots=True)
 class PlannedClick:
     """One bounded action in a causally justified local plan."""
 
@@ -338,6 +358,7 @@ class PlannedClick:
     completes_carrier_source_paired_cargo_crossed_delivery: bool = False
     post_deposit_mediator_access_certificate: _PostDepositMediatorAccessCertificate | None = None
     post_access_composite_exit_certificate: _PostAccessCompositeExitCertificate | None = None
+    post_access_composite_marker_certificate: _PostAccessCompositeMarkerCertificate | None = None
     expected_deposited_source_protected_raster_hash: str | None = None
     expected_deposited_visible_endpoint_count: int | None = None
     expected_deposited_visible_mediator_count: int | None = None
@@ -776,6 +797,7 @@ _HIERARCHY_PLAN_PREFIXES = (
     "affine-carrier-source-occlusion-hierarchy-recovery:",
     "affine-crossed-post-deposit-mediator-access:",
     "affine-crossed-post-access-composite-exit:",
+    "affine-crossed-post-access-composite-marker:",
     "affine-child-isolation:",
     "affine-child-recovery:",
 )
@@ -11003,6 +11025,22 @@ def _single_hierarchy_planned_click_is_safe(
             == composite_certificate.protected_raster_hash
             and len(scene.endpoints) == composite_certificate.visible_endpoint_count
         )
+    marker_certificate = planned.post_access_composite_marker_certificate
+    if marker_certificate is not None:
+        composite = _unique_post_access_composite(scene)
+        marker = _unique_post_access_composite_marker(scene)
+        return bool(
+            _post_access_composite_marker_step_is_compatible(planned)
+            and composite is not None
+            and composite[2] == marker_certificate.common_center
+            and _visual_object_state_signature(composite[0])
+            == marker_certificate.mediator_signature
+            and _visual_object_state_signature(composite[1]) == marker_certificate.target_signature
+            and _endpoint_state_signature(scene.endpoints) == marker_certificate.endpoint_signature
+            and _child_isolation_protected_raster_hash(scene)
+            == marker_certificate.protected_raster_hash
+            and marker == (marker_certificate.marker_color, marker_certificate.marker_coordinate)
+        )
     paired_cargo_step = bool(
         planned.carrier_source_paired_cargo_step
         or planned.carrier_source_paired_cargo_restoration_step
@@ -13767,6 +13805,173 @@ def _post_access_composite_exit_plan(
     return planned if _post_access_composite_exit_step_is_compatible(planned) else None
 
 
+def _unique_post_access_composite_marker(
+    scene: VisualScene,
+) -> tuple[int, tuple[int, int]] | None:
+    """Return one endpoint-marker-colored cell embedded in the composite bounds."""
+
+    composite = _unique_post_access_composite(scene)
+    if composite is None or not scene.endpoints:
+        return None
+    mediator, target, common_center = composite
+    marker_colors = {
+        endpoint.center_cell
+        for endpoint in scene.endpoints
+        if endpoint.center_cell not in {scene.background, endpoint.color}
+    }
+    if len(marker_colors) != 1:
+        return None
+    marker_color = next(iter(marker_colors))
+    min_x = max(mediator.min_x, target.min_x)
+    max_x = min(mediator.max_x, target.max_x)
+    min_y = max(mediator.min_y, target.min_y)
+    max_y = min(mediator.max_y, target.max_y)
+    marker_cells = tuple(
+        (x, y)
+        for y in range(min_y, max_y + 1)
+        for x in range(min_x, max_x + 1)
+        if scene.cells[y][x] == marker_color
+    )
+    if len(marker_cells) != 1 or marker_cells[0] == common_center:
+        return None
+    return marker_color, marker_cells[0]
+
+
+def _post_access_composite_marker_step_is_compatible(planned: PlannedClick) -> bool:
+    """Validate one marker action after the exact common-center no-op."""
+
+    certificate = planned.post_access_composite_marker_certificate
+    return bool(
+        certificate is not None
+        and planned.plan_signature.startswith("affine-crossed-post-access-composite-marker:")
+        and planned.coordinate == Coordinate(*certificate.marker_coordinate)
+        and planned.target_center == certificate.marker_coordinate
+        and planned.mediator_color == certificate.marker_color
+        and planned.arity == 1
+        and planned.required_child_protected_raster_hash == certificate.protected_raster_hash
+        and certificate.marker_coordinate != certificate.common_center
+        and certificate.parent_protected_raster_hash == certificate.protected_raster_hash
+        and certificate.parent_resource_action_count + 1 == certificate.resource_action_count
+        and certificate.resource_action_count > 0
+        and certificate.resource_action_count + 1 < certificate.exhausted_after_actions
+        and planned.post_deposit_mediator_access_certificate is None
+        and planned.post_access_composite_exit_certificate is None
+        and not planned.carrier_source_paired_cargo_crossed_delivery_step
+        and not planned.carrier_source_paired_cargo_restoration_step
+    )
+
+
+def _post_access_composite_marker_plan(
+    before_scene: VisualScene,
+    returned_scene: VisualScene,
+    *,
+    composite_certificate: _PostAccessCompositeExitCertificate | None,
+    resource_lineage: _ActiveCrossedReplayResourceLineage | None,
+    current_actions: int,
+    excluded_hypothesis_keys: set[str] | frozenset[str],
+) -> PlannedClick | None:
+    """Derive one embedded-marker test from an exact common-center no-op."""
+
+    if (
+        composite_certificate is None
+        or resource_lineage is None
+        or resource_lineage.forward_remaining_actions != 0
+        or resource_lineage.exhausted_after_actions != composite_certificate.exhausted_after_actions
+        or current_actions != composite_certificate.resource_action_count + 1
+        or not _strict_crossed_replay_budget_closes(
+            current_actions=current_actions,
+            route_action_upper_bound=1,
+            exhausted_after_actions=resource_lineage.exhausted_after_actions,
+        )
+    ):
+        return None
+    before_composite = _unique_post_access_composite(before_scene)
+    returned_composite = _unique_post_access_composite(returned_scene)
+    if (
+        before_composite is None
+        or returned_composite is None
+        or before_composite[2] != composite_certificate.common_center
+        or returned_composite[2] != composite_certificate.common_center
+        or _visual_object_state_signature(before_composite[0])
+        != composite_certificate.mediator_signature
+        or _visual_object_state_signature(before_composite[1])
+        != composite_certificate.target_signature
+        or _visual_object_state_signature(returned_composite[0])
+        != composite_certificate.mediator_signature
+        or _visual_object_state_signature(returned_composite[1])
+        != composite_certificate.target_signature
+        or _endpoint_state_signature(before_scene.endpoints)
+        != _endpoint_state_signature(returned_scene.endpoints)
+        or len(returned_scene.endpoints) != composite_certificate.visible_endpoint_count
+    ):
+        return None
+    before_protected_raster_hash = _child_isolation_protected_raster_hash(before_scene)
+    protected_raster_hash = _child_isolation_protected_raster_hash(returned_scene)
+    if not (
+        before_protected_raster_hash
+        == protected_raster_hash
+        == composite_certificate.protected_raster_hash
+    ):
+        return None
+    marker = _unique_post_access_composite_marker(returned_scene)
+    if marker is None:
+        return None
+    marker_color, marker_coordinate = marker
+    endpoint_signature = _endpoint_state_signature(returned_scene.endpoints)
+    identity = (
+        composite_certificate.parent_access_hypothesis_key,
+        composite_certificate.hypothesis_key,
+        composite_certificate.common_center,
+        marker_coordinate,
+        marker_color,
+        composite_certificate.mediator_signature,
+        composite_certificate.target_signature,
+        endpoint_signature,
+        before_protected_raster_hash,
+        protected_raster_hash,
+        composite_certificate.resource_action_count,
+        current_actions,
+        resource_lineage.exhausted_after_actions,
+    )
+    digest = hashlib.sha256(repr(identity).encode("ascii")).hexdigest()[:24]
+    hypothesis_key = f"post-access-composite-marker:{digest}"
+    if hypothesis_key in excluded_hypothesis_keys:
+        return None
+    certificate = _PostAccessCompositeMarkerCertificate(
+        hypothesis_key=hypothesis_key,
+        parent_access_hypothesis_key=composite_certificate.parent_access_hypothesis_key,
+        parent_composite_hypothesis_key=composite_certificate.hypothesis_key,
+        common_center=composite_certificate.common_center,
+        marker_coordinate=marker_coordinate,
+        marker_color=marker_color,
+        mediator_signature=composite_certificate.mediator_signature,
+        target_signature=composite_certificate.target_signature,
+        endpoint_signature=endpoint_signature,
+        protected_raster_hash=protected_raster_hash,
+        parent_protected_raster_hash=before_protected_raster_hash,
+        parent_resource_action_count=composite_certificate.resource_action_count,
+        resource_action_count=current_actions,
+        exhausted_after_actions=resource_lineage.exhausted_after_actions,
+    )
+    planned = PlannedClick(
+        coordinate=Coordinate(*marker_coordinate),
+        purpose=VisualActionPurpose.PROBE,
+        expectation=(
+            "test whether the unique endpoint-marker-colored cell exposed inside the "
+            "post-access composite has a distinct access or completion transition"
+        ),
+        mechanic_ref="visual-post-access-composite-marker",
+        plan_id=f"visual-post-access-composite-marker:{digest}",
+        plan_signature=f"affine-crossed-post-access-composite-marker:{digest}",
+        target_center=marker_coordinate,
+        mediator_color=marker_color,
+        arity=1,
+        required_child_protected_raster_hash=protected_raster_hash,
+        post_access_composite_marker_certificate=certificate,
+    )
+    return planned if _post_access_composite_marker_step_is_compatible(planned) else None
+
+
 def _carrier_source_recovery_consequence_alternative_is_compatible(
     planned: PlannedClick,
     alternative: PlannedClick,
@@ -14849,6 +15054,9 @@ class VisualCausalPolicy:
         self._attempted_post_access_composite_exit_hypothesis_keys: set[str] = set()
         self._failed_post_access_composite_exit_hypothesis_keys: set[str] = set()
         self._post_access_composite_exit_closed: str | None = None
+        self._attempted_post_access_composite_marker_hypothesis_keys: set[str] = set()
+        self._failed_post_access_composite_marker_hypothesis_keys: set[str] = set()
+        self._post_access_composite_marker_closed: str | None = None
         self._episode_resource_baseline_edges: tuple[tuple[int, ...], ...] = ()
         self._episode_resource_candidates: tuple[_EdgeResourceProgress, ...] = ()
         self._episode_action6_count = 0
@@ -15000,6 +15208,9 @@ class VisualCausalPolicy:
         self._attempted_post_access_composite_exit_hypothesis_keys.clear()
         self._failed_post_access_composite_exit_hypothesis_keys.clear()
         self._post_access_composite_exit_closed = None
+        self._attempted_post_access_composite_marker_hypothesis_keys.clear()
+        self._failed_post_access_composite_marker_hypothesis_keys.clear()
+        self._post_access_composite_marker_closed = None
         self._episode_resource_baseline_edges = _frame_edge_signatures(observation.frames[-1])
         self._episode_resource_candidates = ()
         self._episode_action6_count = 0
@@ -15066,6 +15277,7 @@ class VisualCausalPolicy:
         self._crossed_delivery_recovery_signature = None
         self._post_deposit_mediator_access_closed = None
         self._post_access_composite_exit_closed = None
+        self._post_access_composite_marker_closed = None
         self._episode_resource_baseline_edges = _frame_edge_signatures(observation.frames[-1])
         self._episode_resource_candidates = ()
         self._episode_action6_count = 0
@@ -15505,13 +15717,39 @@ class VisualCausalPolicy:
         queued_composite_certificate = (
             self._plan[0].post_access_composite_exit_certificate if self._plan else None
         )
+        queued_marker_certificate = (
+            self._plan[0].post_access_composite_marker_certificate if self._plan else None
+        )
         access_closed_into_exact_composite = bool(
             self._post_deposit_mediator_access_closed is not None
-            and queued_composite_certificate is not None
-            and queued_composite_certificate.parent_access_hypothesis_key
-            == self._post_deposit_mediator_access_closed
+            and (
+                (
+                    queued_composite_certificate is not None
+                    and queued_composite_certificate.parent_access_hypothesis_key
+                    == self._post_deposit_mediator_access_closed
+                )
+                or (
+                    queued_marker_certificate is not None
+                    and queued_marker_certificate.parent_access_hypothesis_key
+                    == self._post_deposit_mediator_access_closed
+                )
+            )
         )
-        if self._post_access_composite_exit_closed is not None:
+        composite_closed_into_exact_marker = bool(
+            self._post_access_composite_exit_closed is not None
+            and queued_marker_certificate is not None
+            and queued_marker_certificate.parent_composite_hypothesis_key
+            == self._post_access_composite_exit_closed
+        )
+        if self._post_access_composite_marker_closed is not None:
+            raise PolicyError(
+                "the one-shot post-access composite-marker sufficiency hypothesis "
+                "was rejected; no repeated or unrelated continuation is authorized"
+            )
+        if (
+            self._post_access_composite_exit_closed is not None
+            and not composite_closed_into_exact_marker
+        ):
             raise PolicyError(
                 "the one-shot post-access composite-exit sufficiency hypothesis "
                 "was rejected; no repeated or unrelated continuation is authorized"
@@ -15618,11 +15856,13 @@ class VisualCausalPolicy:
             )
             access_certificate = queued_crossed.post_deposit_mediator_access_certificate
             composite_certificate = queued_crossed.post_access_composite_exit_certificate
+            marker_certificate = queued_crossed.post_access_composite_marker_certificate
             crossed_family = bool(
                 crossed_forward
                 or crossed_inverse
                 or access_certificate is not None
                 or composite_certificate is not None
+                or marker_certificate is not None
                 or queued_crossed.carrier_source_paired_cargo_crossed_predecessor_family
                 or queued_crossed.carrier_source_paired_cargo_crossed_delivery_step
             )
@@ -15674,6 +15914,20 @@ class VisualCausalPolicy:
                     exhausted_after_actions=(active_crossed_lineage.exhausted_after_actions),
                 )
             )
+            marker_prefix_open = bool(
+                active_crossed_lineage is not None
+                and marker_certificate is not None
+                and _post_access_composite_marker_step_is_compatible(queued_crossed)
+                and active_crossed_lineage.forward_remaining_actions == 0
+                and self._episode_action6_count == marker_certificate.resource_action_count
+                and active_crossed_lineage.exhausted_after_actions
+                == marker_certificate.exhausted_after_actions
+                and _strict_crossed_replay_budget_closes(
+                    current_actions=self._episode_action6_count,
+                    route_action_upper_bound=1,
+                    exhausted_after_actions=(active_crossed_lineage.exhausted_after_actions),
+                )
+            )
             if (active_crossed_lineage is not None or crossed_family) and not (
                 resource_matches
                 and (
@@ -15681,6 +15935,7 @@ class VisualCausalPolicy:
                     or inverse_prefix_open
                     or access_prefix_open
                     or composite_prefix_open
+                    or marker_prefix_open
                 )
             ):
                 self._latch_hierarchy_lineage_failure(
@@ -16751,6 +17006,7 @@ class VisualCausalPolicy:
             None
         )
         post_receipt_post_access_composite_exit: tuple[PlannedClick, ...] = ()
+        post_receipt_post_access_composite_marker: tuple[PlannedClick, ...] = ()
         post_receipt_resource_interrupted_replay: _ResourceInterruptedPairedReplay | None = None
         mechanic: AffineMechanic | None = None
         before_scene = extract_visual_scene(before.frames[-1])
@@ -16895,6 +17151,11 @@ class VisualCausalPolicy:
         post_access_composite_exit_action = bool(
             carrier_source_recovery_candidate is not None
             and carrier_source_recovery_candidate.post_access_composite_exit_certificate is not None
+        )
+        post_access_composite_marker_action = bool(
+            carrier_source_recovery_candidate is not None
+            and carrier_source_recovery_candidate.post_access_composite_marker_certificate
+            is not None
         )
         carrier_source_untouched_action = bool(
             carrier_source_untouched_discriminator_action
@@ -17763,6 +18024,11 @@ class VisualCausalPolicy:
             if carrier_source_recovery_candidate is not None
             else None
         )
+        marker_certificate = (
+            carrier_source_recovery_candidate.post_access_composite_marker_certificate
+            if carrier_source_recovery_candidate is not None
+            else None
+        )
         if post_deposit_mediator_access_action and access_certificate is not None:
             # A submitted discriminator is one-shot even when its consequence
             # is GAME_OVER, UNKNOWN, or loses the exact resource lineage.  This
@@ -17777,18 +18043,36 @@ class VisualCausalPolicy:
             self._attempted_post_access_composite_exit_hypothesis_keys.add(
                 composite_certificate.hypothesis_key
             )
+        if post_access_composite_marker_action and marker_certificate is not None:
+            self._attempted_post_access_composite_marker_hypothesis_keys.add(
+                marker_certificate.hypothesis_key
+            )
         if (
             (
                 crossed_forward_action
                 or crossed_inverse_action
                 or access_certificate is not None
                 or composite_certificate is not None
+                or marker_certificate is not None
             )
             and not level_progress
             and observation.state is GameStateName.NOT_FINISHED
         ):
             active_lineage = self._active_crossed_replay_resource_lineage
-            if composite_certificate is not None:
+            if marker_certificate is not None:
+                assert carrier_source_recovery_candidate is not None
+                crossed_resource_lineage_mismatch = bool(
+                    active_lineage is None
+                    or not _post_access_composite_marker_step_is_compatible(
+                        carrier_source_recovery_candidate
+                    )
+                    or not self._active_crossed_resource_matches(observation)
+                    or active_lineage.forward_remaining_actions != 0
+                    or active_lineage.exhausted_after_actions
+                    != marker_certificate.exhausted_after_actions
+                    or self._episode_action6_count != marker_certificate.resource_action_count + 1
+                )
+            elif composite_certificate is not None:
                 assert carrier_source_recovery_candidate is not None
                 crossed_resource_lineage_mismatch = bool(
                     active_lineage is None
@@ -18029,6 +18313,11 @@ class VisualCausalPolicy:
                     "the one-shot post-access composite-exit discriminator returned "
                     f"official {observation.state.value}"
                 )
+            elif post_access_composite_marker_action:
+                residual = (
+                    "the one-shot post-access composite-marker discriminator returned "
+                    f"official {observation.state.value}"
+                )
             elif carrier_source_detachment_action:
                 if hierarchy_relation_key is not None:
                     self._failed_carrier_source_occlusion_hierarchy_relation_keys.add(
@@ -18197,12 +18486,47 @@ class VisualCausalPolicy:
                     composite_certificate.hypothesis_key
                 )
                 self._post_access_composite_exit_closed = composite_certificate.hypothesis_key
-                self._clear_crossed_replay_execution()
+                active_lineage = self._active_crossed_replay_resource_lineage
+                marker_plan = _post_access_composite_marker_plan(
+                    before_scene,
+                    after_scene,
+                    composite_certificate=composite_certificate,
+                    resource_lineage=active_lineage,
+                    current_actions=self._episode_action6_count,
+                    excluded_hypothesis_keys=(
+                        self._failed_post_access_composite_marker_hypothesis_keys
+                        | self._attempted_post_access_composite_marker_hypothesis_keys
+                    ),
+                )
+                if marker_plan is None:
+                    self._clear_crossed_replay_execution()
+                else:
+                    post_receipt_post_access_composite_marker = (marker_plan,)
+                    self._last_probe_failed = False
                 residual = (
                     "the newly formed mediator-target composite received its one exact "
                     "lineage-bound exit action, but the official environment remained "
                     "NOT_FINISHED; only this composite-exit sufficiency hypothesis is "
                     "rejected and no repeat is authorized"
+                )
+        elif post_access_composite_marker_action:
+            if marker_certificate is None or crossed_resource_lineage_mismatch:
+                self._clear_crossed_replay_execution()
+                residual = (
+                    "the one-shot post-access composite-marker discriminator lost its exact "
+                    "transition or resource lineage and failed closed"
+                )
+            else:
+                self._failed_post_access_composite_marker_hypothesis_keys.add(
+                    marker_certificate.hypothesis_key
+                )
+                self._post_access_composite_marker_closed = marker_certificate.hypothesis_key
+                self._clear_crossed_replay_execution()
+                residual = (
+                    "the unique endpoint-marker-colored cell inside the post-access "
+                    "composite received its one exact lineage-bound action, but the official "
+                    "environment remained NOT_FINISHED; only this marker-access sufficiency "
+                    "hypothesis is rejected and no repeat is authorized"
                 )
         elif marker_bootstrap:
             self._plan.clear()
@@ -18839,6 +19163,9 @@ class VisualCausalPolicy:
         elif post_receipt_post_access_composite_exit:
             self._plan.extend(post_receipt_post_access_composite_exit)
             self._last_probe_failed = False
+        elif post_receipt_post_access_composite_marker:
+            self._plan.extend(post_receipt_post_access_composite_marker)
+            self._last_probe_failed = False
         elif post_receipt_attachment_continuation:
             self._plan.extend(post_receipt_attachment_continuation)
             self._last_probe_failed = False
@@ -19049,6 +19376,7 @@ class VisualCausalPolicy:
                 or carrier_source_candidate.carrier_source_paired_cargo_crossed_delivery_step
                 or carrier_source_candidate.post_deposit_mediator_access_certificate is not None
                 or carrier_source_candidate.post_access_composite_exit_certificate is not None
+                or carrier_source_candidate.post_access_composite_marker_certificate is not None
             )
         )
         learner = self._mechanical_learner
@@ -19191,6 +19519,27 @@ class VisualCausalPolicy:
             ),
             "post_access_composite_exit_rejected_count": len(
                 self._failed_post_access_composite_exit_hypothesis_keys
+            ),
+            "post_access_composite_marker_active": bool(
+                (
+                    self._pending_plan_signature is not None
+                    and self._pending_plan_signature.startswith(
+                        "affine-crossed-post-access-composite-marker:"
+                    )
+                )
+                or any(
+                    planned.post_access_composite_marker_certificate is not None
+                    for planned in self._plan
+                )
+            ),
+            "post_access_composite_marker_closed": (
+                self._post_access_composite_marker_closed is not None
+            ),
+            "post_access_composite_marker_attempted_count": len(
+                self._attempted_post_access_composite_marker_hypothesis_keys
+            ),
+            "post_access_composite_marker_rejected_count": len(
+                self._failed_post_access_composite_marker_hypothesis_keys
             ),
             "hierarchy_preterminal_retry_count": int(
                 self._preterminal_hierarchy_retry_signature is not None
