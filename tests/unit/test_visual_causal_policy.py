@@ -12948,6 +12948,8 @@ def test_campaign47_exact_reset_token_installs_fresh_composite_plan() -> None:
     }
     returned = observation
     for _action_index in range(29):
+        corrupt_policy = copy.deepcopy(execution_policy) if _action_index == 8 else None
+        corrupt_before = returned
         planned = execution_policy._plan[0]
         certificate = planned.same_child_composite_cargo_certificate
         assert certificate is not None
@@ -12967,6 +12969,40 @@ def test_campaign47_exact_reset_token_installs_fresh_composite_plan() -> None:
             colors=colors,
             collected_source_keys=frozenset(certificate.expected_collected_source_keys),
         )
+        if _action_index == 8:
+            delivered_child, delivered_example = relation.assignments[0]
+            assert certificate.expected_mediator_center == delivered_example.target.rounded_center
+            assert all(
+                projected.cells[y][x] == delivered_child.mediator.color
+                for x, y in delivered_example.target.cells
+            )
+            assert all(
+                projected.cells[y][x] == scene.cells[y][x]
+                for x, y in relation.assignments[1][1].target.cells
+            )
+            assert all(
+                projected.cells[y][x] == scene.cells[y][x] for x, y in hierarchy.target.cells
+            )
+            assert planned.expected_child_protected_raster_hash == (
+                "sha256:56f655764bb357ed3c8b0d00797f76a17a0b212797d8af371ac30e3b61e225de"
+            )
+
+            assert corrupt_policy is not None
+            corrupt_action = corrupt_policy.select(corrupt_before)
+            assert corrupt_action == selected_action
+            corrupt_rows = [list(row) for row in projected.cells]
+            corrupt_x, corrupt_y = next(iter(hierarchy.target.cells))
+            corrupt_rows[corrupt_y][corrupt_x] = scene.background
+            corrupt_policy.accept_consequence(
+                replace(
+                    corrupt_before,
+                    frames=(GridFrame.from_rows(corrupt_rows),),
+                    available_actions=(ActionName.ACTION6,),
+                    full_reset=False,
+                    returned_action=corrupt_action,
+                )
+            )
+            assert corrupt_policy._hierarchy_lineage_lost is not None
         returned = replace(
             returned,
             frames=(GridFrame.from_rows(projected.cells),),
@@ -12976,6 +13012,12 @@ def test_campaign47_exact_reset_token_installs_fresh_composite_plan() -> None:
         )
         execution_policy.accept_consequence(returned)
         assert execution_policy._hierarchy_lineage_lost is None
+        if _action_index == 8:
+            assert len(execution_policy._plan) == 21
+            assert (
+                execution_policy._plan[0].required_child_protected_raster_hash
+                == planned.expected_child_protected_raster_hash
+            )
     assert execution_policy.snapshot()["episode_action6_count"] == 29
     assert len(execution_policy._plan) == 1
     assert execution_policy._plan[0].completes_hierarchy is True

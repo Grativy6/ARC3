@@ -5681,6 +5681,27 @@ def _same_child_composite_cargo_source_keys(
     )
 
 
+def _same_child_composite_cargo_delivered_child_indexes(
+    hierarchy: _AffineHierarchy,
+    relation: _CompositeBridgeRelation,
+    *,
+    positions: dict[str, tuple[int, int]],
+    collected_source_keys: frozenset[_CompositeCargoSourceKey],
+) -> frozenset[int]:
+    """Identify exact local deliveries without inferring a global terminal result."""
+
+    mediator_centers = _same_child_composite_cargo_mediator_centers(hierarchy, positions)
+    return frozenset(
+        child_index
+        for child_index, (_child, example) in enumerate(relation.assignments)
+        if mediator_centers[child_index] == example.target.rounded_center
+        and all(
+            (child_index, source_index) in collected_source_keys
+            for source_index, _source in enumerate(example.sources)
+        )
+    )
+
+
 def _same_child_composite_cargo_relation_is_well_formed(
     scene: VisualScene,
     hierarchy: _AffineHierarchy,
@@ -5759,7 +5780,9 @@ def _same_child_composite_cargo_projected_scene(
     child leaves the source, the source is removed from its original location and
     its residual mask remains over the moving mediator.  Two witnessed
     complementary masks therefore replace the carrier disk without inventing a
-    color, shape, source, or destination.
+    color, shape, source, or destination.  Once both assigned masks reach their
+    exact ring, the observed carrier color consumes that ring locally; this earns
+    continuation for the other child but does not imply level or game completion.
     """
 
     if not _same_child_composite_cargo_relation_is_well_formed(scene, hierarchy, relation):
@@ -5857,6 +5880,16 @@ def _same_child_composite_cargo_projected_scene(
                 overlays[cell] = residual_color
     for (x, y), color in overlays.items():
         rows[y][x] = color
+    delivered_child_indexes = _same_child_composite_cargo_delivered_child_indexes(
+        hierarchy,
+        relation,
+        positions=positions,
+        collected_source_keys=collected_source_keys,
+    )
+    for child_index in delivered_child_indexes:
+        child, example = relation.assignments[child_index]
+        for x, y in example.target.cells:
+            rows[y][x] = child.mediator.color
     return extract_visual_scene(GridFrame.from_rows(rows))
 
 
@@ -9024,10 +9057,21 @@ def _same_child_composite_cargo_projected_state_is_safe_uncached(
     )
     if len(active) > 1:
         return None
-    target_cells = frozenset(
-        cell for _child, example in relation.assignments for cell in example.target.cells
-    ) | frozenset(hierarchy.target.cells)
-    if any(projected.cells[y][x] != scene.cells[y][x] for x, y in target_cells):
+    delivered_child_indexes = _same_child_composite_cargo_delivered_child_indexes(
+        hierarchy,
+        relation,
+        positions=positions,
+        collected_source_keys=collected_source_keys,
+    )
+    assigned_targets_match = all(
+        projected.cells[y][x]
+        == (child.mediator.color if child_index in delivered_child_indexes else scene.cells[y][x])
+        for child_index, (child, example) in enumerate(relation.assignments)
+        for x, y in example.target.cells
+    )
+    if not assigned_targets_match or any(
+        projected.cells[y][x] != scene.cells[y][x] for x, y in hierarchy.target.cells
+    ):
         return None
     return projected
 
