@@ -7,7 +7,7 @@
   "build_status": "ACTIVE",
   "status": "IN_PROGRESS",
   "current_stage": "10",
-  "current_task": "bind the committed Campaign 44 one-shot mediator discriminator to an exact ledger head; pass clean-source, replay, integrity, package, action-semantics, sanitized-launch, and hosted gates; then continue authorized development-only play toward authoritative WIN",
+  "current_task": "prove the ledger-bound Campaign 45 post-access composite-exit candidate at one exact head through sealed replay, clean-source, integrity, package, action-semantics, checked-in sanitized-launch, and hosted gates; then continue authorized development-only play toward authoritative WIN",
   "implementation_branch": "build/003-bla-clef-mechanical-learner",
   "base": {
     "main_commit": "bea1eac99cb0f1b351526b1dc487d132ba1d40ef",
