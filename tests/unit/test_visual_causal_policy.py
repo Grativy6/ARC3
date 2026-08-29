@@ -11878,16 +11878,84 @@ def test_campaign43_crossed_route_resource_lifecycle_and_interrupts() -> None:
     }
     assert access_not_finished_policy.snapshot()["post_deposit_mediator_access_closed"] is True
     assert access_not_finished_policy.snapshot()["post_deposit_mediator_access_rejected_count"] == 1
-    assert access_not_finished_policy.snapshot()["pending_plan_actions"] == 0
-    assert access_not_finished_policy._active_crossed_replay_resource_lineage is None
+    assert access_not_finished_policy.snapshot()["pending_plan_actions"] == 1
+    assert access_not_finished_policy.snapshot()["post_access_composite_exit_active"] is True
+    active_post_access_lineage = access_not_finished_policy._active_crossed_replay_resource_lineage
+    assert active_post_access_lineage is not None
+    assert active_post_access_lineage.forward_remaining_actions == 0
     assert "only mediator-access sufficiency is rejected" in (
         access_not_finished_policy.receipts[-1].residual
     )
+    post_access_scene = extract_visual_scene(access_not_finished_observation.frames[-1])
+    assert (
+        len(post_access_scene.endpoints),
+        len(post_access_scene.mediators),
+        len(post_access_scene.targets),
+    ) == (4, 1, 1)
+    assert post_access_scene.mediators[0].rounded_center == (
+        post_access_scene.targets[0].rounded_center
+    )
+    composite_candidate = access_not_finished_policy._plan[0]
+    composite_certificate = composite_candidate.post_access_composite_exit_certificate
+    assert composite_certificate is not None
+    assert composite_certificate.parent_access_hypothesis_key == access_certificate.hypothesis_key
+    assert composite_candidate.coordinate == Coordinate(*composite_certificate.common_center)
+    assert composite_certificate.mediator_signature == (
+        visual_causal._visual_object_state_signature(post_access_scene.mediators[0])
+    )
+    assert composite_certificate.target_signature == (
+        visual_causal._visual_object_state_signature(post_access_scene.targets[0])
+    )
+    assert composite_certificate.visible_endpoint_count == 4
+    assert composite_certificate.parent_visible_endpoint_count == 5
+    assert composite_certificate.resource_action_count == 55
+    assert composite_certificate.exhausted_after_actions == 60
+    assert visual_causal._single_hierarchy_planned_click_is_safe(
+        post_access_scene,
+        composite_candidate,
+        active_color=hierarchy.active_color,
+    )
+
+    cancelled_composite_policy = copy.deepcopy(access_not_finished_policy)
+    cancelled_composite_action = cancelled_composite_policy.select(access_not_finished_observation)
+    assert cancelled_composite_action.coordinate == composite_candidate.coordinate
+    cancelled_composite_policy.cancel_unsubmitted_action()
+    assert cancelled_composite_policy.snapshot()["post_access_composite_exit_attempted_count"] == 0
+    assert cancelled_composite_policy.snapshot()["pending_plan_actions"] == 0
+    assert cancelled_composite_policy._active_crossed_replay_resource_lineage is None
     with pytest.raises(PolicyError, match="one-shot post-deposit mediator-access"):
-        access_not_finished_policy.select(access_not_finished_observation)
-    restored_not_finished_policy = copy.deepcopy(access_not_finished_policy)
-    with pytest.raises(PolicyError, match="one-shot post-deposit mediator-access"):
-        restored_not_finished_policy.select(access_not_finished_observation)
+        cancelled_composite_policy.select(access_not_finished_observation)
+
+    composite_not_finished_policy = copy.deepcopy(access_not_finished_policy)
+    composite_not_finished_environment = copy.deepcopy(access_not_finished_environment)
+    composite_not_finished_action = composite_not_finished_policy.select(
+        access_not_finished_observation
+    )
+    composite_not_finished_observation = composite_not_finished_environment.step(
+        composite_not_finished_action
+    )
+    composite_not_finished_observation = _campaign43_with_edge(
+        composite_not_finished_observation,
+        history[56],
+    )
+    composite_not_finished_policy.accept_consequence(composite_not_finished_observation)
+    assert composite_not_finished_policy.snapshot()["post_access_composite_exit_closed"] is True
+    assert (
+        composite_not_finished_policy.snapshot()["post_access_composite_exit_attempted_count"] == 1
+    )
+    assert (
+        composite_not_finished_policy.snapshot()["post_access_composite_exit_rejected_count"] == 1
+    )
+    assert composite_not_finished_policy.snapshot()["pending_plan_actions"] == 0
+    assert composite_not_finished_policy._active_crossed_replay_resource_lineage is None
+    assert "only this composite-exit sufficiency hypothesis is rejected" in (
+        composite_not_finished_policy.receipts[-1].residual
+    )
+    with pytest.raises(PolicyError, match="one-shot post-access composite-exit"):
+        composite_not_finished_policy.select(composite_not_finished_observation)
+    restored_not_finished_policy = copy.deepcopy(composite_not_finished_policy)
+    with pytest.raises(PolicyError, match="one-shot post-access composite-exit"):
+        restored_not_finished_policy.select(composite_not_finished_observation)
     assert (
         visual_causal._post_deposit_mediator_access_plan(
             extract_visual_scene(delivery_terminal_observation.frames[-1]),
@@ -11903,6 +11971,117 @@ def test_campaign43_crossed_route_resource_lifecycle_and_interrupts() -> None:
             ),
         )
         is None
+    )
+    assert (
+        visual_causal._post_access_composite_exit_plan(
+            returned_scene,
+            post_access_scene,
+            access_certificate=access_certificate,
+            resource_lineage=active_post_access_lineage,
+            current_actions=55,
+            excluded_hypothesis_keys=(
+                composite_not_finished_policy._failed_post_access_composite_exit_hypothesis_keys
+                | composite_not_finished_policy._attempted_post_access_composite_exit_hypothesis_keys
+            ),
+        )
+        is None
+    )
+
+    composite_win_policy = copy.deepcopy(access_not_finished_policy)
+    composite_win_environment = copy.deepcopy(access_not_finished_environment)
+    composite_win_action = composite_win_policy.select(access_not_finished_observation)
+    composite_win_observation = replace(
+        _campaign43_with_edge(
+            composite_win_environment.step(composite_win_action),
+            history[56],
+        ),
+        state=GameStateName.WIN,
+        available_actions=(),
+    )
+    composite_win_policy.accept_consequence(composite_win_observation)
+    assert composite_win_policy.snapshot()["post_access_composite_exit_attempted_count"] == 1
+    assert composite_win_policy.snapshot()["post_access_composite_exit_rejected_count"] == 0
+    assert composite_win_policy.snapshot()["pending_plan_actions"] == 0
+    assert composite_win_policy._active_crossed_replay_resource_lineage is None
+
+    composite_progress_policy = copy.deepcopy(access_not_finished_policy)
+    composite_progress_environment = copy.deepcopy(access_not_finished_environment)
+    composite_progress_action = composite_progress_policy.select(access_not_finished_observation)
+    composite_progress_observation = replace(
+        _campaign43_with_edge(
+            composite_progress_environment.step(composite_progress_action),
+            history[56],
+        ),
+        levels_completed=5,
+    )
+    composite_progress_policy.accept_consequence(composite_progress_observation)
+    assert composite_progress_policy.snapshot()["active_level_index"] == 5
+    assert composite_progress_policy.snapshot()["post_access_composite_exit_attempted_count"] == 0
+    assert composite_progress_policy.snapshot()["pending_plan_actions"] == 0
+    assert composite_progress_policy._active_crossed_replay_resource_lineage is None
+
+    composite_mismatch_policy = copy.deepcopy(access_not_finished_policy)
+    composite_mismatch_environment = copy.deepcopy(access_not_finished_environment)
+    composite_mismatch_action = composite_mismatch_policy.select(access_not_finished_observation)
+    composite_mismatch_observation = _campaign43_with_edge(
+        composite_mismatch_environment.step(composite_mismatch_action),
+        history[57],
+    )
+    composite_mismatch_policy.accept_consequence(composite_mismatch_observation)
+    assert composite_mismatch_policy.snapshot()["post_access_composite_exit_attempted_count"] == 1
+    assert composite_mismatch_policy.snapshot()["post_access_composite_exit_rejected_count"] == 0
+    assert composite_mismatch_policy.snapshot()["pending_plan_actions"] == 0
+    assert composite_mismatch_policy._active_crossed_replay_resource_lineage is None
+    assert "lost its exact transition or resource lineage" in (
+        composite_mismatch_policy.receipts[-1].residual
+    )
+
+    composite_unknown_policy = copy.deepcopy(access_not_finished_policy)
+    composite_unknown_environment = copy.deepcopy(access_not_finished_environment)
+    composite_unknown_action = composite_unknown_policy.select(access_not_finished_observation)
+    composite_unknown_observation = replace(
+        _campaign43_with_edge(
+            composite_unknown_environment.step(composite_unknown_action),
+            history[56],
+        ),
+        state=GameStateName.UNKNOWN,
+    )
+    composite_unknown_policy.accept_consequence(composite_unknown_observation)
+    assert composite_unknown_policy.snapshot()["post_access_composite_exit_attempted_count"] == 1
+    assert composite_unknown_policy.snapshot()["post_access_composite_exit_rejected_count"] == 0
+    assert composite_unknown_policy.snapshot()["pending_plan_actions"] == 0
+    assert composite_unknown_policy._active_crossed_replay_resource_lineage is None
+
+    composite_game_over_policy = copy.deepcopy(access_not_finished_policy)
+    composite_game_over_environment = copy.deepcopy(access_not_finished_environment)
+    composite_game_over_action = composite_game_over_policy.select(access_not_finished_observation)
+    composite_game_over_observation = replace(
+        _campaign43_with_edge(
+            composite_game_over_environment.step(composite_game_over_action),
+            history[56],
+        ),
+        state=GameStateName.GAME_OVER,
+        available_actions=(ActionName.RESET,),
+    )
+    composite_game_over_policy.accept_consequence(composite_game_over_observation)
+    assert composite_candidate.plan_signature in composite_game_over_policy._failed_plan_signatures
+    assert composite_game_over_policy.snapshot()["post_access_composite_exit_attempted_count"] == 1
+    assert composite_game_over_policy.snapshot()["post_access_composite_exit_rejected_count"] == 0
+    assert composite_game_over_policy.snapshot()["pending_plan_actions"] == 0
+    assert composite_game_over_policy._active_crossed_replay_resource_lineage is None
+    assert composite_game_over_policy.receipts[-1].residual == (
+        "the one-shot post-access composite-exit discriminator returned official GAME_OVER"
+    )
+    assert composite_game_over_policy.select(composite_game_over_observation).name is (
+        ActionName.RESET
+    )
+    attempted_composite_before_reset = set(
+        composite_game_over_policy._attempted_post_access_composite_exit_hypothesis_keys
+    )
+    composite_game_over_policy._begin_reset_epoch(delivery_terminal_observation)
+    assert (
+        composite_game_over_policy._attempted_post_access_composite_exit_hypothesis_keys
+        == attempted_composite_before_reset
     )
 
     consequence_mismatch_policy = copy.deepcopy(resource_policy)

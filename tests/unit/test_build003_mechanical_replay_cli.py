@@ -416,6 +416,8 @@ def test_cli_accepts_an_explicit_sealed_trace_contract(tmp_path: Path) -> None:
             "4",
             "--expected-trace-win-levels",
             "6",
+            "--expected-trace-candidate-plan-prefix",
+            "affine-crossed-post-access-composite-exit:",
             "--expected-commit",
             "a" * 40,
             "--expected-tree",
@@ -433,6 +435,9 @@ def test_cli_accepts_an_explicit_sealed_trace_contract(tmp_path: Path) -> None:
     assert args.expected_trace_event_count == 950
     assert args.expected_trace_submission_count == 158
     assert args.expected_trace_generator_commit == "c" * 40
+    assert args.expected_trace_candidate_plan_prefix == (
+        "affine-crossed-post-access-composite-exit:"
+    )
     assert replay_cli.TRACE_SCHEMA == "arc3.build003.mechanical-sealed-trace-replay.v0.1"
 
 

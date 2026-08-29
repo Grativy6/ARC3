@@ -552,6 +552,11 @@ def _sealed_trace_binding(
         binding["reopening_submission_count"] = reopening.get("submission_count")
         binding["reopening_candidate_plan_prefix"] = reopening.get("candidate_plan_prefix")
         binding["reopening_candidate_plan_signature"] = reopening.get("candidate_plan_signature")
+    candidate_plan_binding = replay.get("candidate_plan_binding")
+    if candidate_plan_binding is not None:
+        candidate_plan = _object(candidate_plan_binding, field="candidate_plan_binding")
+        binding["candidate_plan_prefix"] = candidate_plan.get("plan_prefix")
+        binding["candidate_plan_signature"] = candidate_plan.get("plan_signature")
     return binding
 
 
@@ -586,6 +591,7 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--expected-trace-reopening-levels-completed", type=int)
     parser.add_argument("--expected-trace-reopening-win-levels", type=int)
     parser.add_argument("--expected-trace-reopening-candidate-plan-prefix")
+    parser.add_argument("--expected-trace-candidate-plan-prefix")
     parser.add_argument("--expected-commit", required=True)
     parser.add_argument("--expected-tree", required=True)
     parser.add_argument("--output", type=Path, required=True)
@@ -631,13 +637,16 @@ _TRACE_REOPENING_MODE_ARGUMENTS = (
         "--expected-trace-reopening-candidate-plan-prefix",
     ),
 )
+_TRACE_FINAL_CANDIDATE_ARGUMENTS = (
+    ("expected_trace_candidate_plan_prefix", "--expected-trace-candidate-plan-prefix"),
+)
 
 
 def _replay_mode(args: argparse.Namespace) -> str:
     campaign_mode = args.campaign_audit is not None
     required = _CAMPAIGN_MODE_ARGUMENTS if campaign_mode else _TRACE_MODE_ARGUMENTS
     forbidden = (
-        _TRACE_MODE_ARGUMENTS + _TRACE_REOPENING_MODE_ARGUMENTS
+        _TRACE_MODE_ARGUMENTS + _TRACE_REOPENING_MODE_ARGUMENTS + _TRACE_FINAL_CANDIDATE_ARGUMENTS
         if campaign_mode
         else _CAMPAIGN_MODE_ARGUMENTS
     )
@@ -671,6 +680,10 @@ def _replay_mode(args: argparse.Namespace) -> str:
         ]
         raise ValueError(
             "sealed reopening mode is missing required arguments: " + ", ".join(missing_reopening)
+        )
+    if all(reopening_supplied) and args.expected_trace_candidate_plan_prefix is not None:
+        raise ValueError(
+            "sealed reopening mode cannot also bind a final sealed-trace candidate plan"
         )
     return "sealed-trace-prefix-reopening" if all(reopening_supplied) else "sealed-trace"
 
@@ -753,6 +766,7 @@ def main(argv: list[str] | None = None) -> int:
                 expected_reopening_candidate_plan_prefix=(
                     args.expected_trace_reopening_candidate_plan_prefix
                 ),
+                expected_candidate_plan_prefix=(args.expected_trace_candidate_plan_prefix),
             )
             expected_submission_count = (
                 args.expected_trace_reopening_submission

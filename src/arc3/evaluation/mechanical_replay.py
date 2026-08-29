@@ -737,6 +737,7 @@ def replay_unfinished_mechanical_trace(
     expected_reopening_levels_completed: int | None = None,
     expected_reopening_win_levels: int | None = None,
     expected_reopening_candidate_plan_prefix: str | None = None,
+    expected_candidate_plan_prefix: str | None = None,
 ) -> dict[str, JSONValue]:
     """Replay one sealed trace or an explicitly bound reopening prefix.
 
@@ -789,6 +790,15 @@ def replay_unfinished_mechanical_trace(
         expected_reopening_candidate_plan_prefix,
     )
     reopening_mode = any(value is not None for value in reopening_values)
+    if expected_candidate_plan_prefix is not None and (
+        not isinstance(expected_candidate_plan_prefix, str)
+        or not expected_candidate_plan_prefix.strip()
+    ):
+        raise MechanicalReplayError("expected candidate plan prefix must be non-empty")
+    if reopening_mode and expected_candidate_plan_prefix is not None:
+        raise MechanicalReplayError(
+            "sealed reopening and final-candidate plan bindings are mutually exclusive"
+        )
     if reopening_mode and any(value is None for value in reopening_values):
         raise MechanicalReplayError(
             "sealed reopening replay requires every named reopening boundary field"
@@ -1236,7 +1246,7 @@ def replay_unfinished_mechanical_trace(
         candidate, cancellation, family, snapshot_hash = _stage_and_cancel_candidate(
             policy,
             candidate_observation,
-            include_plan_signature=reopening_mode,
+            include_plan_signature=(reopening_mode or expected_candidate_plan_prefix is not None),
         )
         if reopening_mode:
             candidate_plan_signature = candidate.get("plan_signature")
@@ -1253,6 +1263,14 @@ def replay_unfinished_mechanical_trace(
             ):
                 raise MechanicalReplayError(
                     "sealed reopening candidate does not diverge from the historical suffix"
+                )
+        elif expected_candidate_plan_prefix is not None:
+            candidate_plan_signature = candidate.get("plan_signature")
+            if not isinstance(
+                candidate_plan_signature, str
+            ) or not candidate_plan_signature.startswith(expected_candidate_plan_prefix):
+                raise MechanicalReplayError(
+                    "sealed trace candidate does not match the named plan family"
                 )
         final_projection, final_byte_length = _sealed_trace_projection(path)
         if final_projection != trace_projection or final_byte_length != trace_byte_length:
@@ -1342,6 +1360,11 @@ def replay_unfinished_mechanical_trace(
                 "tail_event_hash": named_tail_hash,
             },
         }
+        if expected_candidate_plan_prefix is not None:
+            result["candidate_plan_binding"] = {
+                "plan_prefix": expected_candidate_plan_prefix,
+                "plan_signature": candidate.get("plan_signature"),
+            }
         if reopening_mode:
             assert reopening_observation is not None
             assert reopening_historical_receipt is not None
