@@ -61,7 +61,7 @@ def test_package_only_plan_has_no_public_inventory_or_gameplay(tmp_path: Path) -
     assert "scripts.package_only_pytest" in by_id["package-safe-test-suite"].argv
     assert "--select-in-process-tests" in by_id["package-safe-test-suite"].argv
     assert "--build001-boundary-policy" in by_id["package-safe-test-suite"].argv
-    assert by_id["package-safe-test-suite"].timeout_seconds == 4500.0
+    assert by_id["package-safe-test-suite"].timeout_seconds == 4800.0
     assert (
         by_id["package-safe-test-suite"].argv[
             by_id["package-safe-test-suite"].argv.index("--expected-commit") + 1
@@ -341,8 +341,8 @@ def test_package_workflow_preserves_outer_timeout_reserve(tmp_path: Path) -> Non
         spec.timeout_seconds for spec in specs if spec.check_id == "package-safe-test-suite"
     )
 
-    assert timeout_lines == ["timeout-minutes: 85"]
-    assert 85 * 60 - guarded_timeout == 600.0
+    assert timeout_lines == ["timeout-minutes: 90"]
+    assert 90 * 60 - guarded_timeout == 600.0
 
 
 def test_full_ci_workflow_preserves_long_windows_coverage_budget() -> None:
