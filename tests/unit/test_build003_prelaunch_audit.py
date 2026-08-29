@@ -14,6 +14,9 @@ from scripts import evaluate_public
 _COMMIT = "a" * 40
 _TREE = "b" * 40
 _GAME_ID = "r11l-495a7899"
+_MANIFEST = audit.ROOT / "docs/evaluation/public-game-partitions.v0.1.json"
+_SYNTHETIC_MANIFEST_BYTES = 17
+_SYNTHETIC_MANIFEST_SHA256 = "sha256:" + "f" * 64
 
 
 def _prospective_argv(
@@ -76,15 +79,14 @@ def _request(
     ledger = canonical_ledger if exposure_ledger is None else exposure_ledger
     ledger.parent.mkdir(parents=True, exist_ok=True)
     ledger.write_bytes(b"stable-exposure\n")
-    manifest = audit.ROOT / "docs/evaluation/public-game-partitions.v0.1.json"
-    manifest_hash = audit._sha256_file(manifest)
+    manifest = _MANIFEST
     evaluation_id = "build003-r11l-seed7-campaign-test"
     run_root = output_root / evaluation_id
     request = audit.AuditRequest(
         source_root=audit.ROOT,
         expected_commit=_COMMIT,
         expected_tree=_TREE,
-        expected_manifest_sha256=manifest_hash,
+        expected_manifest_sha256=_SYNTHETIC_MANIFEST_SHA256,
         expected_game_id=_GAME_ID,
         expected_run_root=run_root,
         neutral_cwd=neutral,
@@ -104,7 +106,7 @@ def _patch_success_dependencies(
     monkeypatch: pytest.MonkeyPatch,
     request: audit.AuditRequest,
     ledger: Path,
-) -> None:
+) -> list[Path]:
     source = audit.SourceIdentity(audit.ROOT, _COMMIT, _TREE)
     target_identity: dict[str, object] = {
         "aggregate_sha256": "sha256:" + "c" * 64,
@@ -118,12 +120,9 @@ def _patch_success_dependencies(
         "game_id": _GAME_ID,
         "source_semantically_inspected": False,
     }
-    manifest_bytes = (
-        (audit.ROOT / "docs/evaluation/public-game-partitions.v0.1.json").stat().st_size
-    )
     snapshot = audit.ManifestCacheSnapshot(
         manifest={
-            "bytes": manifest_bytes,
+            "bytes": _SYNTHETIC_MANIFEST_BYTES,
             "entry_count": 25,
             "partition_counts": {"development": 12, "public-holdout": 10, "smoke": 3},
             "path": str(audit.ROOT / "docs/evaluation/public-game-partitions.v0.1.json"),
@@ -187,6 +186,31 @@ def _patch_success_dependencies(
     monkeypatch.setattr(audit, "_exposure_snapshot", lambda *_args, **_kwargs: exposure)
     monkeypatch.setattr(audit, "_target_identity", lambda **_kwargs: target_identity)
     monkeypatch.setattr(audit, "_environment_names_now", lambda: frozenset())
+    real_require_stable_file = audit._require_stable_file
+    manifest_checks: list[Path] = []
+
+    def require_stable_fixture(
+        path: Path,
+        *,
+        expected_length: int,
+        expected_sha256: str,
+        label: str,
+    ) -> None:
+        if path == _MANIFEST:
+            assert label == "public partition manifest"
+            assert expected_length == _SYNTHETIC_MANIFEST_BYTES
+            assert expected_sha256 == _SYNTHETIC_MANIFEST_SHA256
+            manifest_checks.append(path)
+            return
+        real_require_stable_file(
+            path,
+            expected_length=expected_length,
+            expected_sha256=expected_sha256,
+            label=label,
+        )
+
+    monkeypatch.setattr(audit, "_require_stable_file", require_stable_fixture)
+    return manifest_checks
 
 
 def test_producer_parses_without_evaluation_and_seals_read_only_receipt(
@@ -194,7 +218,7 @@ def test_producer_parses_without_evaluation_and_seals_read_only_receipt(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     request, neutral, ledger = _request(tmp_path)
-    _patch_success_dependencies(monkeypatch, request, ledger)
+    manifest_checks = _patch_success_dependencies(monkeypatch, request, ledger)
     monkeypatch.chdir(neutral)
 
     receipt = audit.produce_audit(
@@ -227,6 +251,7 @@ def test_producer_parses_without_evaluation_and_seals_read_only_receipt(
     assert isinstance(prospective, dict)
     assert prospective["run_root_absent_before_and_after"] is True
     assert prospective["credential_or_submission_parser_options"] == []
+    assert manifest_checks == [_MANIFEST, _MANIFEST]
     assert list(neutral.iterdir()) == []
     assert not request.expected_run_root.exists()
 
