@@ -73,7 +73,7 @@ from arc3.types import JSONValue
 _LEDGER_SCHEMA = "arc3.build-001.stage-10-invocation.v0.1"
 _INTEGRITY_INPUTS_SCHEMA = "arc3.build-001.stage-10-integrity-authority-inputs.v0.1"
 _PREAUTH_FAILURE_SCHEMA = "arc3.build-001.stage-10-preauthorization-failure.v0.1"
-_RUNTIME_IDENTITY_SCHEMA = "arc3.build-001.stage-10-runtime-identity.v0.2"
+_RUNTIME_IDENTITY_SCHEMA = "arc3.build-001.stage-10-runtime-identity.v0.3"
 _WINDOWS_PROCESS_LAUNCH_STRATEGY = "direct-base-with-pyvenv-launcher"
 _POSIX_PROCESS_LAUNCH_STRATEGY = "lexical-launcher"
 _WINDOWS_CREATE_NEW_PROCESS_GROUP = int(getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0))
@@ -170,6 +170,7 @@ print(json.dumps({
     "python_version": list(sys.version_info[:3]),
     "stage10_origin": str(Path(stage10.origin).resolve()) if stage10 and stage10.origin else None,
     "sys_base_prefix_lexical": os.path.abspath(sys.base_prefix),
+    "sys_base_prefix_resolved": str(Path(sys.base_prefix).resolve()),
     "sys_prefix_lexical": os.path.abspath(sys.prefix),
     "sys_prefix_resolved": str(Path(sys.prefix).resolve()),
     "runtime_surface": runtime_surface,
@@ -391,6 +392,31 @@ def _source_identity(source_root: Path, frozen_commit: str) -> dict[str, JSONVal
     }
 
 
+def _runtime_probe_observations_exact(
+    launcher_observed: Mapping[str, object],
+    direct_observed: Mapping[str, object],
+) -> bool:
+    """Compare runtime probes while preserving resolved interpreter identity."""
+
+    if set(launcher_observed) != set(direct_observed):
+        return False
+    permitted_variance = {
+        "python_base_executable_lexical",
+        "python_base_executable_resolved",
+        "sys_base_prefix_lexical",
+        "sys_base_prefix_resolved",
+    }
+    if any(
+        launcher_observed.get(name) != direct_observed.get(name)
+        for name in launcher_observed
+        if name not in permitted_variance
+    ):
+        return False
+    launcher_base = launcher_observed.get("sys_base_prefix_resolved")
+    direct_base = direct_observed.get("sys_base_prefix_resolved")
+    return isinstance(launcher_base, str) and launcher_base == direct_base
+
+
 def _runtime_identity(source_root: Path, python: Path) -> dict[str, object]:
     launcher = Path(os.path.abspath(python))
     resolved_executable = launcher.resolve()
@@ -477,10 +503,8 @@ def _runtime_identity(source_root: Path, python: Path) -> dict[str, object]:
         and version_value[:2] == [3, 12]
         and all(isinstance(item, int) and not isinstance(item, bool) for item in version_value)
     )
-    probe_comparison_keys = set(launcher_observed) - {
-        "python_base_executable_lexical",
-        "python_base_executable_resolved",
-    }
+    launcher_base_prefix = launcher_observed.get("sys_base_prefix_resolved")
+    direct_base_prefix = observed.get("sys_base_prefix_resolved")
     predicates = {
         "arc3_import_origin_exact": observed.get("arc3_origin") == str(expected_arc3),
         "actual_process_executable_exists": actual_process_executable.is_file(),
@@ -491,10 +515,13 @@ def _runtime_identity(source_root: Path, python: Path) -> dict[str, object]:
             else launcher_observed.get("python_executable_resolved")
             == str(actual_process_executable)
         ),
-        "direct_process_probe_exact": all(
-            observed.get(name) == launcher_observed.get(name) for name in probe_comparison_keys
-        )
-        and set(observed) == set(launcher_observed),
+        "direct_process_base_prefix_resolved_exact": (
+            isinstance(launcher_base_prefix, str) and launcher_base_prefix == direct_base_prefix
+        ),
+        "direct_process_probe_exact": _runtime_probe_observations_exact(
+            launcher_observed,
+            observed,
+        ),
         "direct_process_pyvenv_launcher_exact": (
             observed.get("python_base_executable_lexical") == str(launcher)
             and observed.get("python_base_executable_resolved") == str(resolved_executable)

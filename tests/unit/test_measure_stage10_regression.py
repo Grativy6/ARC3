@@ -1102,6 +1102,32 @@ def test_runtime_identity_preserves_lexical_symlink_launcher(tmp_path: Path) -> 
     assert identity["resolved_executable_path"] == str(Path(sys.executable).resolve())
 
 
+def test_runtime_probe_comparison_accepts_only_lexical_base_prefix_alias() -> None:
+    launcher = {
+        "python_base_executable_lexical": "C:/runtime/python.exe",
+        "python_base_executable_resolved": "C:/runtime/python.exe",
+        "sys_base_prefix_lexical": "C:/runtime/stable-alias",
+        "sys_base_prefix_resolved": "C:/runtime/versioned-target",
+        "stable_field": "same",
+    }
+    direct = launcher | {
+        "python_base_executable_lexical": "C:/venv/Scripts/python.exe",
+        "sys_base_prefix_lexical": "C:/runtime/versioned-target",
+    }
+
+    assert harness._runtime_probe_observations_exact(launcher, direct) is True
+
+    resolved_mismatch = direct | {"sys_base_prefix_resolved": "C:/runtime/other"}
+    assert harness._runtime_probe_observations_exact(launcher, resolved_mismatch) is False
+
+    unrelated_mismatch = direct | {"stable_field": "different"}
+    assert harness._runtime_probe_observations_exact(launcher, unrelated_mismatch) is False
+
+    missing_field = dict(direct)
+    del missing_field["stable_field"]
+    assert harness._runtime_probe_observations_exact(launcher, missing_field) is False
+
+
 def test_bound_process_executable_rejects_hash_drift(tmp_path: Path) -> None:
     launcher = tmp_path / "venv" / ("Scripts" if os.name == "nt" else "bin") / "python"
     launcher.parent.mkdir(parents=True)
