@@ -201,6 +201,12 @@ type _BridgeProjectedStateKey = tuple[
     tuple[tuple[str, tuple[int, int]], ...],
     tuple[tuple[str, int], ...],
 ]
+type _CompositeCargoSourceKey = tuple[int, int]
+type _SameChildCompositeCargoProjectedStateKey = tuple[
+    tuple[tuple[str, tuple[int, int]], ...],
+    tuple[tuple[str, int], ...],
+    tuple[_CompositeCargoSourceKey, ...],
+]
 type _ChildStructureSignature = tuple[
     int,
     int,
@@ -291,6 +297,27 @@ class _PostAccessCompositeMarkerCertificate:
 
 
 @dataclass(frozen=True, slots=True)
+class _SameChildCompositeCargoCertificate:
+    """Exact per-action lineage for one complementary-source accumulation route."""
+
+    relation_key: str
+    child_index: int
+    stage_index: int
+    support_center: tuple[int, int]
+    target_center: tuple[int, int]
+    source_keys: tuple[_CompositeCargoSourceKey, ...]
+    required_collected_source_keys: tuple[_CompositeCargoSourceKey, ...]
+    expected_collected_source_keys: tuple[_CompositeCargoSourceKey, ...]
+    required_mediator_center: tuple[int, int]
+    expected_mediator_center: tuple[int, int]
+    required_visible_endpoint_count: int
+    required_visible_mediator_count: int
+    required_visible_active_endpoint_count: int
+    expected_visible_active_endpoint_count: int
+    completes_relation: bool
+
+
+@dataclass(frozen=True, slots=True)
 class PlannedClick:
     """One bounded action in a causally justified local plan."""
 
@@ -359,6 +386,7 @@ class PlannedClick:
     post_deposit_mediator_access_certificate: _PostDepositMediatorAccessCertificate | None = None
     post_access_composite_exit_certificate: _PostAccessCompositeExitCertificate | None = None
     post_access_composite_marker_certificate: _PostAccessCompositeMarkerCertificate | None = None
+    same_child_composite_cargo_certificate: _SameChildCompositeCargoCertificate | None = None
     expected_deposited_source_protected_raster_hash: str | None = None
     expected_deposited_visible_endpoint_count: int | None = None
     expected_deposited_visible_mediator_count: int | None = None
@@ -596,6 +624,24 @@ class _ResourceInterruptedPairedReplay:
 
 
 @dataclass(frozen=True, slots=True)
+class _PostMarkerResourceResetBridge:
+    """Exact no-op resource bridge authorizing one fresh reset epoch."""
+
+    level_index: int
+    marker_hypothesis_key: str
+    no_op_coordinate: Coordinate
+    protected_raster_hash: str
+    edge_index: int
+    edge_baseline: tuple[int, ...]
+    edge_fill_color: int
+    exhausted_filled_index_history: tuple[frozenset[int], ...]
+    armed_after_actions: int
+    exhausted_after_actions: int
+    authorized_reset_epoch: int
+    game_over_observed: bool = False
+
+
+@dataclass(frozen=True, slots=True)
 class _ActiveCrossedReplayResourceLineage:
     """Consumed fresh-life authorization retained through forward and inverse play."""
 
@@ -776,6 +822,8 @@ _HIERARCHY_SEQUENCE_EVALUATION_COST = 1_024
 _HIERARCHY_TRANSIENT_SEQUENCE_EVALUATION_COST = 32
 _MAX_WEIGHTED_HIERARCHY_MOVE_ORDERS = 22
 _WEIGHTED_HIERARCHY_SUPPORT_LOOKAHEAD = 1
+_MAX_SAME_CHILD_COMPOSITE_CARGO_ROUTES = 8
+_MAX_SAME_CHILD_COMPOSITE_CARGO_PATTERNS = 8
 _HIERARCHY_PLAN_PREFIXES = (
     "affine-hierarchy:",
     "affine-hierarchy-recovery:",
@@ -798,6 +846,7 @@ _HIERARCHY_PLAN_PREFIXES = (
     "affine-crossed-post-deposit-mediator-access:",
     "affine-crossed-post-access-composite-exit:",
     "affine-crossed-post-access-composite-marker:",
+    "affine-same-child-composite-cargo:",
     "affine-child-isolation:",
     "affine-child-recovery:",
 )
@@ -5620,6 +5669,197 @@ def _carrier_source_carried_projected_scene(
     return extract_visual_scene(GridFrame.from_rows(rows))
 
 
+def _same_child_composite_cargo_source_keys(
+    relation: _CompositeBridgeRelation,
+) -> tuple[_CompositeCargoSourceKey, ...]:
+    """Return the finite source identity carried by one bridge relation."""
+
+    return tuple(
+        (child_index, source_index)
+        for child_index, (_child, example) in enumerate(relation.assignments)
+        for source_index, _source in enumerate(example.sources)
+    )
+
+
+def _same_child_composite_cargo_relation_is_well_formed(
+    scene: VisualScene,
+    hierarchy: _AffineHierarchy,
+    relation: _CompositeBridgeRelation,
+) -> bool:
+    """Revalidate the exact complementary-source evidence consumed by the route."""
+
+    if (
+        len(relation.assignments) < 2
+        or tuple(child for child, _example in relation.assignments) != hierarchy.children
+        or len({example.target.rounded_center for _child, example in relation.assignments})
+        != len(relation.assignments)
+    ):
+        return False
+    source_surfaces: list[frozenset[tuple[int, int]]] = []
+    for child, example in relation.assignments:
+        if (
+            example.carrier_color != child.mediator.color
+            or len(example.sources) != 2
+            or len(example.residual_colors) != 2
+            or example.residual_colors[0] == example.residual_colors[1]
+            or frozenset(scene.cells[y][x] for x, y in example.target.cells)
+            != frozenset(example.residual_colors)
+            or not _bridge_target_matches_sources(
+                scene,
+                sources=example.sources,
+                residual_colors=example.residual_colors,
+                target=example.target,
+            )
+        ):
+            return False
+        carrier_masks: list[frozenset[tuple[int, int]]] = []
+        for source, residual_color in zip(
+            example.sources,
+            example.residual_colors,
+            strict=True,
+        ):
+            residuals = source.palette - {example.carrier_color}
+            surface = frozenset(source.cells)
+            if (
+                residuals != {residual_color}
+                or source.offsets(residual_color) == frozenset()
+                or source.offsets(example.carrier_color) == frozenset()
+                or surface
+                != _translated_object_footprint(
+                    child.mediator,
+                    center=source.center,
+                )
+            ):
+                return False
+            carrier_masks.append(source.offsets(example.carrier_color))
+            source_surfaces.append(surface)
+        if (
+            carrier_masks[0] & carrier_masks[1]
+            or carrier_masks[0] | carrier_masks[1] != _COMPOSITE_MEDIATOR_OFFSETS
+        ):
+            return False
+    return len(frozenset(cell for surface in source_surfaces for cell in surface)) == sum(
+        len(surface) for surface in source_surfaces
+    )
+
+
+def _same_child_composite_cargo_projected_scene(
+    scene: VisualScene,
+    hierarchy: _AffineHierarchy,
+    relation: _CompositeBridgeRelation,
+    *,
+    positions: dict[str, tuple[int, int]],
+    colors: dict[str, int],
+    collected_source_keys: frozenset[_CompositeCargoSourceKey],
+) -> VisualScene:
+    """Project complementary residual masks accumulated on their assigned child.
+
+    The child's observed mediator supplies the carrier-colored disk.  Contact with
+    an uncollected assigned source exposes that source's residual mask.  Once the
+    child leaves the source, the source is removed from its original location and
+    its residual mask remains over the moving mediator.  Two witnessed
+    complementary masks therefore replace the carrier disk without inventing a
+    color, shape, source, or destination.
+    """
+
+    if not _same_child_composite_cargo_relation_is_well_formed(scene, hierarchy, relation):
+        raise ValueError("same-child composite cargo requires one exact bridge relation")
+    source_keys = frozenset(_same_child_composite_cargo_source_keys(relation))
+    if not collected_source_keys <= source_keys:
+        raise ValueError("same-child composite cargo contains an unknown source key")
+    endpoint_refs = {
+        endpoint.object_ref for child in hierarchy.children for endpoint in child.endpoints
+    }
+    if set(positions) != endpoint_refs or set(colors) != endpoint_refs:
+        raise ValueError("same-child composite cargo requires the complete endpoint state")
+
+    base_rows = [list(row) for row in scene.cells]
+    for child_index, source_index in sorted(collected_source_keys):
+        source = relation.assignments[child_index][1].sources[source_index]
+        for x, y in source.cells:
+            base_rows[y][x] = scene.background
+    source_stripped_scene = extract_visual_scene(GridFrame.from_rows(base_rows))
+    projected = _hierarchy_projected_scene(
+        source_stripped_scene,
+        hierarchy,
+        positions=positions,
+        colors=colors,
+    )
+    rows = [list(row) for row in projected.cells]
+    initial_dynamic = frozenset(
+        cell for child in hierarchy.children for cell in _hierarchy_dynamic_footprint(scene, child)
+    )
+    consumable_cells = frozenset(
+        cell
+        for _child, example in relation.assignments
+        for surface in (*example.sources, example.target)
+        for cell in surface.cells
+    )
+    protected_static = (
+        frozenset(
+            (x, y)
+            for y, row in enumerate(scene.cells)
+            for x, value in enumerate(row)
+            if value != scene.background
+        )
+        - initial_dynamic
+        - consumable_cells
+    )
+    # Connectors are a relation layer, not authority to erase an unrelated
+    # foreground glyph.  Endpoint and mediator footprints are collision-checked
+    # separately; restore only the static pixels a connector may cross behind.
+    for x, y in protected_static:
+        rows[y][x] = scene.cells[y][x]
+    # Static source glyphs remain above a passing connector.  Exact mediator
+    # contact is the only witnessed source interaction, so restore an
+    # uncollected source unless its assigned child is centered on it.
+    for child_index, (_child, example) in enumerate(relation.assignments):
+        endpoint_centers = tuple(
+            positions[endpoint.object_ref] for endpoint in hierarchy.children[child_index].endpoints
+        )
+        mediator_center = (
+            sum(center[0] for center in endpoint_centers) // hierarchy.children[child_index].arity,
+            sum(center[1] for center in endpoint_centers) // hierarchy.children[child_index].arity,
+        )
+        for source_index, source in enumerate(example.sources):
+            if (
+                child_index,
+                source_index,
+            ) in collected_source_keys or mediator_center == source.center:
+                continue
+            for x, y in source.cells:
+                rows[y][x] = scene.cells[y][x]
+    # The assigned ring is likewise a fixed foreground surface.  Cargo can
+    # match it exactly, but a connector passing behind it cannot mutate it.
+    for _child, example in relation.assignments:
+        for x, y in example.target.cells:
+            rows[y][x] = scene.cells[y][x]
+    overlays: dict[tuple[int, int], int] = {}
+    for child_index, (child, example) in enumerate(relation.assignments):
+        endpoint_centers = tuple(positions[endpoint.object_ref] for endpoint in child.endpoints)
+        mediator_center = (
+            sum(center[0] for center in endpoint_centers) // child.arity,
+            sum(center[1] for center in endpoint_centers) // child.arity,
+        )
+        for source_index, (source, residual_color) in enumerate(
+            zip(example.sources, example.residual_colors, strict=True)
+        ):
+            source_key = (child_index, source_index)
+            if source_key not in collected_source_keys and mediator_center != source.center:
+                continue
+            for dx, dy in source.offsets(residual_color):
+                cell = (mediator_center[0] + dx, mediator_center[1] + dy)
+                if not (0 < cell[0] < scene.width - 1 and 0 < cell[1] < scene.height - 1):
+                    raise ValueError("same-child composite cargo residual left the board")
+                prior = overlays.get(cell)
+                if prior is not None and prior != residual_color:
+                    raise ValueError("same-child composite cargo residual masks overlap")
+                overlays[cell] = residual_color
+    for (x, y), color in overlays.items():
+        rows[y][x] = color
+    return extract_visual_scene(GridFrame.from_rows(rows))
+
+
 def _hierarchy_cells_in_bounds(scene: VisualScene, cells: frozenset[tuple[int, int]]) -> bool:
     return all(0 < x < scene.width - 1 and 0 < y < scene.height - 1 for x, y in cells)
 
@@ -8654,6 +8894,997 @@ def _target_support_hierarchy_plan(
     return None
 
 
+def _same_child_composite_cargo_mediator_centers(
+    hierarchy: _AffineHierarchy,
+    positions: dict[str, tuple[int, int]],
+) -> tuple[tuple[int, int], ...]:
+    """Return every child centroid from one complete endpoint-position state."""
+
+    return tuple(
+        (
+            sum(positions[endpoint.object_ref][0] for endpoint in child.endpoints) // child.arity,
+            sum(positions[endpoint.object_ref][1] for endpoint in child.endpoints) // child.arity,
+        )
+        for child in hierarchy.children
+    )
+
+
+def _same_child_composite_cargo_projected_state_is_safe_uncached(
+    scene: VisualScene,
+    hierarchy: _AffineHierarchy,
+    relation: _CompositeBridgeRelation,
+    *,
+    positions: dict[str, tuple[int, int]],
+    colors: dict[str, int],
+    collected_source_keys: frozenset[_CompositeCargoSourceKey],
+    static_cells: frozenset[tuple[int, int]],
+) -> VisualScene | None:
+    """Return an exact cargo projection only when every unrelated cell is protected."""
+
+    mediator_centers = _same_child_composite_cargo_mediator_centers(hierarchy, positions)
+    group_dynamic: list[frozenset[tuple[int, int]]] = []
+    mediator_footprints: list[frozenset[tuple[int, int]]] = []
+    endpoint_footprints: list[tuple[str, frozenset[tuple[int, int]]]] = []
+    for child, mediator_center in zip(
+        hierarchy.children,
+        mediator_centers,
+        strict=True,
+    ):
+        endpoint_centers = tuple(positions[endpoint.object_ref] for endpoint in child.endpoints)
+        dynamic = _hierarchy_projected_group_footprint(
+            child,
+            endpoint_centers=endpoint_centers,
+            mediator_center=mediator_center,
+        )
+        endpoints = tuple(
+            (
+                endpoint.object_ref,
+                _translated_object_footprint(endpoint, center=center),
+            )
+            for endpoint, center in zip(
+                child.endpoints,
+                endpoint_centers,
+                strict=True,
+            )
+        )
+        mediator_footprint = _translated_object_footprint(
+            child.mediator,
+            center=mediator_center,
+        )
+        if (
+            not _hierarchy_cells_in_bounds(scene, dynamic)
+            or mediator_footprint & static_cells
+            or any(
+                not _hierarchy_cells_in_bounds(scene, footprint) for _ref, footprint in endpoints
+            )
+            or any(
+                not _footprints_have_gap(left, right, gap=1)
+                for (_left_ref, left), (_right_ref, right) in itertools.combinations(
+                    endpoints,
+                    2,
+                )
+            )
+        ):
+            return None
+        group_dynamic.append(dynamic)
+        mediator_footprints.append(mediator_footprint)
+        endpoint_footprints.extend(endpoints)
+    if any(left & right for left, right in itertools.combinations(group_dynamic, 2)) or any(
+        colors[left_ref] == colors[right_ref] and not _footprints_have_gap(left, right, gap=1)
+        for (left_ref, left), (right_ref, right) in itertools.combinations(
+            endpoint_footprints,
+            2,
+        )
+    ):
+        return None
+
+    source_surfaces = {
+        (child_index, source_index): frozenset(source.cells)
+        for child_index, (_child, example) in enumerate(relation.assignments)
+        for source_index, source in enumerate(example.sources)
+    }
+    for source_key, surface in source_surfaces.items():
+        if source_key in collected_source_keys:
+            continue
+        child_index, source_index = source_key
+        source = relation.assignments[child_index][1].sources[source_index]
+        if any(footprint & surface for _endpoint_ref, footprint in endpoint_footprints):
+            return None
+        for dynamic_index, mediator_footprint in enumerate(mediator_footprints):
+            overlap = mediator_footprint & surface
+            if dynamic_index == child_index and mediator_centers[child_index] == source.center:
+                if overlap != surface:
+                    return None
+            elif overlap:
+                return None
+
+    try:
+        projected = _same_child_composite_cargo_projected_scene(
+            scene,
+            hierarchy,
+            relation,
+            positions=positions,
+            colors=colors,
+            collected_source_keys=collected_source_keys,
+        )
+    except ValueError:
+        return None
+    observed_endpoint_signatures = _endpoint_state_signature(projected.endpoints)
+    expected_endpoint_signatures = _endpoint_state_signature(
+        scene.endpoints,
+        positions=positions,
+        colors=colors,
+    )
+    if any(
+        signature not in expected_endpoint_signatures for signature in observed_endpoint_signatures
+    ):
+        return None
+    active = tuple(
+        endpoint for endpoint in projected.endpoints if endpoint.color == hierarchy.active_color
+    )
+    if len(active) > 1:
+        return None
+    target_cells = frozenset(
+        cell for _child, example in relation.assignments for cell in example.target.cells
+    ) | frozenset(hierarchy.target.cells)
+    if any(projected.cells[y][x] != scene.cells[y][x] for x, y in target_cells):
+        return None
+    return projected
+
+
+def _same_child_composite_cargo_projected_state_is_safe(
+    scene: VisualScene,
+    hierarchy: _AffineHierarchy,
+    relation: _CompositeBridgeRelation,
+    *,
+    positions: dict[str, tuple[int, int]],
+    colors: dict[str, int],
+    collected_source_keys: frozenset[_CompositeCargoSourceKey],
+    static_cells: frozenset[tuple[int, int]],
+    search_budget: _HierarchySearchBudget,
+    state_cache: dict[_SameChildCompositeCargoProjectedStateKey, VisualScene | None],
+) -> VisualScene | None:
+    """Return one cached exact projection while preserving the search charge."""
+
+    search_budget.consume()
+    key: _SameChildCompositeCargoProjectedStateKey = (
+        tuple(sorted(positions.items())),
+        tuple(sorted(colors.items())),
+        tuple(sorted(collected_source_keys)),
+    )
+    if key not in state_cache:
+        state_cache[key] = _same_child_composite_cargo_projected_state_is_safe_uncached(
+            scene,
+            hierarchy,
+            relation,
+            positions=positions,
+            colors=colors,
+            collected_source_keys=collected_source_keys,
+            static_cells=static_cells,
+        )
+    return state_cache[key]
+
+
+def _same_child_composite_cargo_support_variants(
+    example: _CompositeBridgeExample,
+    *,
+    source_order: tuple[int, int],
+) -> tuple[tuple[tuple[int, int], ...], ...]:
+    """Return the direct route and two bounded, geometry-derived detours.
+
+    The detours are not board-specific coordinates.  They offset the midpoint
+    of the second-source-to-target segment along its normalized perpendicular.
+    The clearance is four witnessed source radii, which is large enough to move
+    the carried composite disk around one equally scaled foreground object while
+    remaining tied to the observed cargo geometry.
+    """
+
+    sources = tuple(example.sources[index].center for index in source_order)
+    target = example.target.rounded_center
+    direct = (*sources, target)
+    second_source = sources[-1]
+    delta_x = target[0] - second_source[0]
+    delta_y = target[1] - second_source[1]
+    scale = max(abs(delta_x), abs(delta_y))
+    source = example.sources[source_order[-1]]
+    source_radius = max(
+        (max(abs(x - source.center[0]), abs(y - source.center[1])) for x, y in source.cells),
+        default=0,
+    )
+    if scale == 0 or source_radius == 0:
+        return (direct,)
+
+    clearance = 4 * source_radius
+
+    def rounded_scaled(value: int) -> int:
+        quotient, remainder = divmod(abs(value) * clearance, scale)
+        magnitude = quotient + int(2 * remainder >= scale)
+        return magnitude if value >= 0 else -magnitude
+
+    midpoint = (
+        (second_source[0] + target[0]) // 2,
+        (second_source[1] + target[1]) // 2,
+    )
+    perpendicular = (rounded_scaled(delta_y), rounded_scaled(-delta_x))
+    waypoint_candidates = {
+        (midpoint[0] + sign * perpendicular[0], midpoint[1] + sign * perpendicular[1])
+        for sign in (-1, 1)
+    }
+    waypoint_candidates -= {second_source, target, *sources}
+    ordered_waypoints = tuple(
+        sorted(
+            waypoint_candidates,
+            key=lambda waypoint: (
+                _distance(second_source, waypoint) + _distance(waypoint, target),
+                waypoint,
+            ),
+        )
+    )
+    return (direct, *(tuple((*sources, waypoint, target)) for waypoint in ordered_waypoints))
+
+
+def _same_child_composite_cargo_route_key(
+    route: tuple[_HierarchyChildLayout, ...],
+) -> tuple[tuple[tuple[int, int], tuple[tuple[str, tuple[int, int]], ...]], ...]:
+    """Return the complete exact identity of one finite layout route."""
+
+    return tuple(
+        (
+            layout.support,
+            tuple(
+                (endpoint.object_ref, point)
+                for endpoint, point in zip(layout.movers, layout.points, strict=True)
+            ),
+        )
+        for layout in route
+    )
+
+
+def _same_child_composite_cargo_layout_patterns(
+    scene: VisualScene,
+    hierarchy: _AffineHierarchy,
+    relation: _CompositeBridgeRelation,
+    *,
+    child_index: int,
+    source_order: tuple[int, int],
+    static_cells: frozenset[tuple[int, int]],
+    search_budget: _HierarchySearchBudget,
+) -> tuple[tuple[_HierarchyChildLayout, ...], ...]:
+    """Find bounded translation-compatible direct and perpendicular routes."""
+
+    child, example = relation.assignments[child_index]
+    if set(source_order) != set(range(len(example.sources))):
+        return ()
+    support_variants = _same_child_composite_cargo_support_variants(
+        example,
+        source_order=source_order,
+    )
+    all_source_cells = frozenset(
+        cell
+        for _assigned_child, assigned_example in relation.assignments
+        for source in assigned_example.sources
+        for cell in source.cells
+    )
+    ordered_endpoints = tuple(sorted(child.endpoints, key=lambda item: item.object_ref))
+    patterns: list[tuple[_HierarchyChildLayout, ...]] = []
+    for supports in support_variants:
+        support_patterns: dict[
+            tuple[tuple[tuple[int, int], tuple[tuple[str, tuple[int, int]], ...]], ...],
+            tuple[_HierarchyChildLayout, ...],
+        ] = {}
+        for radius in range(6, 28):
+            shell_patterns: list[tuple[_HierarchyChildLayout, ...]] = []
+            for rotation_index in range(64):
+                relative_points = _regular_exact_centroid_points(
+                    (0, 0),
+                    arity=child.arity,
+                    radius=radius,
+                    rotation_index=rotation_index,
+                )
+                if relative_points is None:
+                    continue
+                for point_order in itertools.permutations(relative_points):
+                    search_budget.consume()
+                    layouts: list[_HierarchyChildLayout] = []
+                    prior_positions = {
+                        endpoint.object_ref: endpoint.rounded_center for endpoint in child.endpoints
+                    }
+                    movement_cost = 0.0
+                    for stage_index, support in enumerate(supports):
+                        points = tuple((support[0] + dx, support[1] + dy) for dx, dy in point_order)
+                        if (
+                            sum(point[0] for point in points) != child.arity * support[0]
+                            or sum(point[1] for point in points) != child.arity * support[1]
+                            or any(
+                                prior_positions[endpoint.object_ref] == point
+                                for endpoint, point in zip(
+                                    ordered_endpoints,
+                                    points,
+                                    strict=True,
+                                )
+                            )
+                        ):
+                            layouts = []
+                            break
+                        endpoint_footprints = tuple(
+                            _translated_object_footprint(endpoint, center=point)
+                            for endpoint, point in zip(
+                                ordered_endpoints,
+                                points,
+                                strict=True,
+                            )
+                        )
+                        dynamic = _hierarchy_projected_group_footprint(
+                            child,
+                            endpoint_centers=points,
+                            mediator_center=support,
+                            endpoints=ordered_endpoints,
+                        )
+                        mediator_footprint = _translated_object_footprint(
+                            child.mediator,
+                            center=support,
+                        )
+                        expected_source_surface = (
+                            frozenset(example.sources[source_order[stage_index]].cells)
+                            if stage_index < len(source_order)
+                            else frozenset()
+                        )
+                        if (
+                            any(
+                                not _hierarchy_cells_in_bounds(scene, footprint)
+                                or footprint & static_cells
+                                or footprint & all_source_cells
+                                for footprint in endpoint_footprints
+                            )
+                            or any(
+                                not _footprints_have_gap(left, right, gap=1)
+                                for left, right in itertools.combinations(
+                                    endpoint_footprints,
+                                    2,
+                                )
+                            )
+                            or not _hierarchy_cells_in_bounds(scene, dynamic)
+                            or mediator_footprint & static_cells
+                            or dynamic & all_source_cells != expected_source_surface
+                        ):
+                            layouts = []
+                            break
+                        movement_cost += sum(
+                            _distance(prior_positions[endpoint.object_ref], point)
+                            for endpoint, point in zip(
+                                ordered_endpoints,
+                                points,
+                                strict=True,
+                            )
+                        )
+                        layouts.append(
+                            _HierarchyChildLayout(
+                                group=child,
+                                support=support,
+                                movers=ordered_endpoints,
+                                points=points,
+                                dynamic_footprint=dynamic,
+                                radius=radius,
+                                movement_cost=movement_cost,
+                            )
+                        )
+                        prior_positions.update(
+                            {
+                                endpoint.object_ref: point
+                                for endpoint, point in zip(
+                                    ordered_endpoints,
+                                    points,
+                                    strict=True,
+                                )
+                            }
+                        )
+                    if len(layouts) == len(supports):
+                        shell_patterns.append(tuple(layouts))
+            shell_patterns.sort(
+                key=lambda route: (
+                    route[-1].movement_cost,
+                    tuple(layout.points for layout in route),
+                    tuple(endpoint.object_ref for endpoint in route[0].movers),
+                )
+            )
+            for route in shell_patterns:
+                support_patterns.setdefault(
+                    _same_child_composite_cargo_route_key(route),
+                    route,
+                )
+                if len(support_patterns) >= 2:
+                    break
+            # Preserve two exact, distinct radius/layout alternatives per route
+            # family so parser preflight can reject one without broad search.
+            if len(support_patterns) >= 2:
+                break
+        patterns.extend(support_patterns.values())
+
+    unique_patterns: dict[
+        tuple[tuple[tuple[int, int], tuple[tuple[str, tuple[int, int]], ...]], ...],
+        tuple[_HierarchyChildLayout, ...],
+    ] = {}
+    for route in patterns:
+        unique_patterns.setdefault(_same_child_composite_cargo_route_key(route), route)
+    return tuple(unique_patterns.values())[:_MAX_SAME_CHILD_COMPOSITE_CARGO_PATTERNS]
+
+
+def _same_child_composite_cargo_step_is_compatible(planned: PlannedClick) -> bool:
+    """Validate the closed shape of one complementary-source cargo action."""
+
+    certificate = planned.same_child_composite_cargo_certificate
+    if certificate is None:
+        return False
+    source_keys = certificate.source_keys
+    required = certificate.required_collected_source_keys
+    expected = certificate.expected_collected_source_keys
+    newly_collected = set(expected) - set(required)
+    return bool(
+        planned.plan_signature.startswith("affine-same-child-composite-cargo:")
+        and certificate.relation_key
+        and certificate.child_index >= 0
+        and certificate.stage_index in range(3)
+        and planned.target_center == certificate.target_center
+        and len(source_keys) >= 4
+        and tuple(sorted(set(source_keys))) == source_keys
+        and tuple(sorted(set(required))) == required
+        and tuple(sorted(set(expected))) == expected
+        and set(required) <= set(expected) <= set(source_keys)
+        and len(newly_collected) <= 1
+        and all(key[0] == certificate.child_index for key in newly_collected)
+        and certificate.required_visible_endpoint_count > 0
+        and certificate.required_visible_mediator_count >= 0
+        and certificate.required_visible_active_endpoint_count in {0, 1}
+        and certificate.expected_visible_active_endpoint_count in {0, 1}
+        and planned.required_child_protected_raster_hash is not None
+        and planned.expected_child_protected_raster_hash is not None
+        and planned.expected_visible_endpoint_count is not None
+        and planned.expected_visible_mediator_count is not None
+        and planned.post_deposit_mediator_access_certificate is None
+        and planned.post_access_composite_exit_certificate is None
+        and planned.post_access_composite_marker_certificate is None
+        and not planned.carrier_source_delivery_step
+        and not planned.carrier_source_detachment_step
+        and not planned.carrier_source_paired_cargo_step
+        and not planned.carrier_source_paired_cargo_restoration_step
+        and (
+            (
+                planned.purpose is VisualActionPurpose.PROBE
+                and not newly_collected
+                and certificate.required_mediator_center == certificate.expected_mediator_center
+            )
+            or planned.purpose is VisualActionPurpose.PROGRESS
+        )
+        and certificate.completes_relation == planned.completes_hierarchy
+        and (
+            not certificate.completes_relation
+            or (
+                expected == source_keys
+                and certificate.stage_index == 2
+                and certificate.support_center == certificate.target_center
+            )
+        )
+    )
+
+
+def _same_child_composite_cargo_move_order(
+    scene: VisualScene,
+    hierarchy: _AffineHierarchy,
+    relation: _CompositeBridgeRelation,
+    *,
+    child_index: int,
+    destinations: dict[str, tuple[int, int]],
+    positions: dict[str, tuple[int, int]],
+    colors: dict[str, int],
+    collected_source_keys: frozenset[_CompositeCargoSourceKey],
+    static_cells: frozenset[tuple[int, int]],
+    search_budget: _HierarchySearchBudget,
+    state_cache: dict[_SameChildCompositeCargoProjectedStateKey, VisualScene | None],
+) -> tuple[str, ...] | None:
+    """Choose the first bounded endpoint order whose every returned frame is readable."""
+
+    child, example = relation.assignments[child_index]
+    expected_refs = frozenset(endpoint.object_ref for endpoint in child.endpoints)
+    if frozenset(destinations) != expected_refs:
+        return None
+    active_refs = tuple(ref for ref, color in colors.items() if color == hierarchy.active_color)
+    if len(active_refs) != 1:
+        return None
+    active_ref = active_refs[0]
+    orders = tuple(
+        sorted(
+            _hierarchy_endpoint_orders(child, active_ref=None),
+            key=lambda order: (
+                order[0].object_ref != active_ref,
+                tuple(endpoint.object_ref for endpoint in order),
+            ),
+        )
+    )
+    for endpoint_order in orders:
+        trial_positions = dict(positions)
+        trial_colors = dict(colors)
+        trial_collected = collected_source_keys
+        trial_active_ref = active_ref
+        move_refs = tuple(endpoint.object_ref for endpoint in endpoint_order)
+        valid = True
+        trial_scene = _same_child_composite_cargo_projected_state_is_safe(
+            scene,
+            hierarchy,
+            relation,
+            positions=trial_positions,
+            colors=trial_colors,
+            collected_source_keys=trial_collected,
+            static_cells=static_cells,
+            search_budget=search_budget,
+            state_cache=state_cache,
+        )
+        if trial_scene is None:
+            continue
+        for mover_ref in move_refs:
+            if mover_ref != trial_active_ref:
+                selected = tuple(
+                    endpoint
+                    for endpoint in trial_scene.endpoints
+                    if endpoint.rounded_center == trial_positions[mover_ref]
+                )
+                if len(selected) != 1 or selected[0].color == hierarchy.active_color:
+                    valid = False
+                    break
+                trial_colors[trial_active_ref], trial_colors[mover_ref] = (
+                    trial_colors[mover_ref],
+                    trial_colors[trial_active_ref],
+                )
+                trial_active_ref = mover_ref
+                trial_scene = _same_child_composite_cargo_projected_state_is_safe(
+                    scene,
+                    hierarchy,
+                    relation,
+                    positions=trial_positions,
+                    colors=trial_colors,
+                    collected_source_keys=trial_collected,
+                    static_cells=static_cells,
+                    search_budget=search_budget,
+                    state_cache=state_cache,
+                )
+                if trial_scene is None:
+                    valid = False
+                    break
+            destination = destinations[mover_ref]
+            if trial_positions[mover_ref] == destination:
+                valid = False
+                break
+            required_mediator_center = _same_child_composite_cargo_mediator_centers(
+                hierarchy,
+                trial_positions,
+            )[child_index]
+            trial_positions[mover_ref] = destination
+            expected_mediator_center = _same_child_composite_cargo_mediator_centers(
+                hierarchy,
+                trial_positions,
+            )[child_index]
+            newly_collected = set(trial_collected)
+            for source_index, source in enumerate(example.sources):
+                source_key = (child_index, source_index)
+                if (
+                    source_key not in newly_collected
+                    and required_mediator_center == source.center
+                    and expected_mediator_center != source.center
+                ):
+                    newly_collected.add(source_key)
+            trial_collected = frozenset(newly_collected)
+            trial_scene = _same_child_composite_cargo_projected_state_is_safe(
+                scene,
+                hierarchy,
+                relation,
+                positions=trial_positions,
+                colors=trial_colors,
+                collected_source_keys=trial_collected,
+                static_cells=static_cells,
+                search_budget=search_budget,
+                state_cache=state_cache,
+            )
+            if trial_scene is None:
+                valid = False
+                break
+        if valid:
+            return move_refs
+    return None
+
+
+def _build_same_child_composite_cargo_plan(
+    scene: VisualScene,
+    hierarchy: _AffineHierarchy,
+    relation: _CompositeBridgeRelation,
+    *,
+    child_order: tuple[int, ...],
+    source_orders: tuple[tuple[int, int], ...],
+    layout_routes: tuple[tuple[_HierarchyChildLayout, ...], ...],
+    static_cells: frozenset[tuple[int, int]],
+    search_budget: _HierarchySearchBudget,
+    state_cache: dict[_SameChildCompositeCargoProjectedStateKey, VisualScene | None],
+) -> _HierarchyPlan | None:
+    """Simulate and certificate one fully specified finite accumulation route."""
+
+    identity = (
+        relation.relation_key,
+        child_order,
+        source_orders,
+        tuple(
+            tuple(
+                (
+                    layout.support,
+                    tuple(
+                        (endpoint.object_ref, point)
+                        for endpoint, point in zip(
+                            layout.movers,
+                            layout.points,
+                            strict=True,
+                        )
+                    ),
+                )
+                for layout in route
+            )
+            for route in layout_routes
+        ),
+    )
+    digest = hashlib.sha256(repr(identity).encode("ascii")).hexdigest()[:24]
+    signature = f"affine-same-child-composite-cargo:{digest}"
+    plan_id = f"visual-same-child-composite-cargo:{digest}"
+    source_keys = _same_child_composite_cargo_source_keys(relation)
+    positions = {
+        endpoint.object_ref: endpoint.rounded_center
+        for child in hierarchy.children
+        for endpoint in child.endpoints
+    }
+    colors = {
+        endpoint.object_ref: endpoint.color
+        for child in hierarchy.children
+        for endpoint in child.endpoints
+    }
+    active_refs = tuple(ref for ref, color in colors.items() if color == hierarchy.active_color)
+    if len(active_refs) != 1:
+        return None
+    active_ref = active_refs[0]
+    collected: frozenset[_CompositeCargoSourceKey] = frozenset()
+    required_scene = _same_child_composite_cargo_projected_state_is_safe(
+        scene,
+        hierarchy,
+        relation,
+        positions=positions,
+        colors=colors,
+        collected_source_keys=collected,
+        static_cells=static_cells,
+        search_budget=search_budget,
+        state_cache=state_cache,
+    )
+    if required_scene is None or required_scene.cells != scene.cells:
+        return None
+    actions: list[PlannedClick] = []
+    total_stage_count = sum(len(route) for route in layout_routes)
+    completed_stage_count = 0
+
+    def append_action(
+        *,
+        child_index: int,
+        stage_index: int,
+        support_center: tuple[int, int],
+        coordinate: tuple[int, int],
+        purpose: VisualActionPurpose,
+        required_collected: frozenset[_CompositeCargoSourceKey],
+        expected_collected: frozenset[_CompositeCargoSourceKey],
+        required_mediator_center: tuple[int, int],
+        expected_mediator_center: tuple[int, int],
+        expected_scene: VisualScene,
+        completes_relation: bool,
+    ) -> None:
+        nonlocal required_scene
+        if required_scene is None:
+            raise ValueError("same-child composite cargo route lost its required scene")
+        current_required_scene = required_scene
+        child, example = relation.assignments[child_index]
+        certificate = _SameChildCompositeCargoCertificate(
+            relation_key=relation.relation_key,
+            child_index=child_index,
+            stage_index=stage_index,
+            support_center=support_center,
+            target_center=example.target.rounded_center,
+            source_keys=source_keys,
+            required_collected_source_keys=tuple(sorted(required_collected)),
+            expected_collected_source_keys=tuple(sorted(expected_collected)),
+            required_mediator_center=required_mediator_center,
+            expected_mediator_center=expected_mediator_center,
+            required_visible_endpoint_count=len(current_required_scene.endpoints),
+            required_visible_mediator_count=len(current_required_scene.mediators),
+            required_visible_active_endpoint_count=sum(
+                endpoint.color == hierarchy.active_color
+                for endpoint in current_required_scene.endpoints
+            ),
+            expected_visible_active_endpoint_count=sum(
+                endpoint.color == hierarchy.active_color for endpoint in expected_scene.endpoints
+            ),
+            completes_relation=completes_relation,
+        )
+        planned = PlannedClick(
+            coordinate=Coordinate(*coordinate),
+            purpose=purpose,
+            expectation=(
+                "test the exact same-child complementary-source composite at its assigned ring"
+                if completes_relation
+                else (
+                    "exchange the active role while preserving exact complementary-source cargo"
+                    if purpose is VisualActionPurpose.PROBE
+                    else "move one endpoint along an exact complementary-source cargo route"
+                )
+            ),
+            mechanic_ref=hierarchy.mechanic_ref,
+            plan_id=plan_id,
+            plan_signature=signature,
+            target_center=example.target.rounded_center,
+            mediator_color=child.mediator.color,
+            arity=child.arity,
+            completes_hierarchy=completes_relation,
+            expected_active_center=coordinate,
+            required_child_protected_raster_hash=(
+                _child_isolation_protected_raster_hash(current_required_scene)
+            ),
+            expected_child_protected_raster_hash=(
+                _child_isolation_protected_raster_hash(expected_scene)
+            ),
+            expected_visible_endpoint_count=len(expected_scene.endpoints),
+            expected_visible_mediator_count=len(expected_scene.mediators),
+            same_child_composite_cargo_certificate=certificate,
+        )
+        if not _same_child_composite_cargo_step_is_compatible(planned):
+            raise ValueError("same-child composite cargo action certificate is malformed")
+        actions.append(planned)
+        required_scene = expected_scene
+
+    for child_index in child_order:
+        _child, example = relation.assignments[child_index]
+        route = layout_routes[child_index]
+        source_order = source_orders[child_index]
+        for route_stage_index, layout in enumerate(route):
+            stage_index = min(route_stage_index, len(source_order))
+            completed_stage_count += 1
+            destinations = {
+                endpoint.object_ref: point
+                for endpoint, point in zip(layout.movers, layout.points, strict=True)
+            }
+            move_refs = _same_child_composite_cargo_move_order(
+                scene,
+                hierarchy,
+                relation,
+                child_index=child_index,
+                destinations=destinations,
+                positions=positions,
+                colors=colors,
+                collected_source_keys=collected,
+                static_cells=static_cells,
+                search_budget=search_budget,
+                state_cache=state_cache,
+            )
+            if move_refs is None:
+                return None
+            for mover_ref in move_refs:
+                required_mediator_center = _same_child_composite_cargo_mediator_centers(
+                    hierarchy,
+                    positions,
+                )[child_index]
+                if mover_ref != active_ref:
+                    selected_at = positions[mover_ref]
+                    colors[active_ref], colors[mover_ref] = colors[mover_ref], colors[active_ref]
+                    active_ref = mover_ref
+                    expected_scene = _same_child_composite_cargo_projected_state_is_safe(
+                        scene,
+                        hierarchy,
+                        relation,
+                        positions=positions,
+                        colors=colors,
+                        collected_source_keys=collected,
+                        static_cells=static_cells,
+                        search_budget=search_budget,
+                        state_cache=state_cache,
+                    )
+                    if expected_scene is None:
+                        return None
+                    append_action(
+                        child_index=child_index,
+                        stage_index=stage_index,
+                        support_center=layout.support,
+                        coordinate=selected_at,
+                        purpose=VisualActionPurpose.PROBE,
+                        required_collected=collected,
+                        expected_collected=collected,
+                        required_mediator_center=required_mediator_center,
+                        expected_mediator_center=required_mediator_center,
+                        expected_scene=expected_scene,
+                        completes_relation=False,
+                    )
+                destination = destinations[mover_ref]
+                if positions[mover_ref] == destination:
+                    return None
+                required_mediator_center = _same_child_composite_cargo_mediator_centers(
+                    hierarchy,
+                    positions,
+                )[child_index]
+                positions[mover_ref] = destination
+                expected_mediator_center = _same_child_composite_cargo_mediator_centers(
+                    hierarchy,
+                    positions,
+                )[child_index]
+                newly_collected = set(collected)
+                for source_index, source in enumerate(example.sources):
+                    source_key = (child_index, source_index)
+                    if (
+                        source_key not in newly_collected
+                        and required_mediator_center == source.center
+                        and expected_mediator_center != source.center
+                    ):
+                        newly_collected.add(source_key)
+                expected_collected = frozenset(newly_collected)
+                expected_scene = _same_child_composite_cargo_projected_state_is_safe(
+                    scene,
+                    hierarchy,
+                    relation,
+                    positions=positions,
+                    colors=colors,
+                    collected_source_keys=expected_collected,
+                    static_cells=static_cells,
+                    search_budget=search_budget,
+                    state_cache=state_cache,
+                )
+                if expected_scene is None:
+                    return None
+                final_action = bool(
+                    completed_stage_count == total_stage_count and mover_ref == move_refs[-1]
+                )
+                append_action(
+                    child_index=child_index,
+                    stage_index=stage_index,
+                    support_center=layout.support,
+                    coordinate=destination,
+                    purpose=VisualActionPurpose.PROGRESS,
+                    required_collected=collected,
+                    expected_collected=expected_collected,
+                    required_mediator_center=required_mediator_center,
+                    expected_mediator_center=expected_mediator_center,
+                    expected_scene=expected_scene,
+                    completes_relation=final_action,
+                )
+                collected = expected_collected
+            if (
+                _same_child_composite_cargo_mediator_centers(hierarchy, positions)[child_index]
+                != layout.support
+            ):
+                return None
+            if (
+                stage_index < len(source_order)
+                and (child_index, source_order[stage_index]) in collected
+            ):
+                return None
+        if not all((child_index, source_index) in collected for source_index in source_order):
+            return None
+    if (
+        tuple(sorted(collected)) != source_keys
+        or not actions
+        or not actions[-1].completes_hierarchy
+    ):
+        return None
+    return _HierarchyPlan(
+        actions=tuple(actions),
+        signature=signature,
+        supports=tuple(
+            relation.assignments[index][1].target.rounded_center
+            for index in range(len(relation.assignments))
+        ),
+        support_weights=tuple(1 for _assignment in relation.assignments),
+        recovery_actions=(),
+    )
+
+
+def _same_child_composite_cargo_plan(
+    scene: VisualScene,
+    hierarchy: _AffineHierarchy,
+    relation: _CompositeBridgeRelation,
+    *,
+    rejected_signatures: set[str],
+    search_budget: _HierarchySearchBudget | None = None,
+) -> _HierarchyPlan | None:
+    """Find one bounded route that accumulates both witnessed sources per child."""
+
+    if not _same_child_composite_cargo_relation_is_well_formed(scene, hierarchy, relation):
+        return None
+    if search_budget is None:
+        search_budget = _HierarchySearchBudget(_MAX_HIERARCHY_SEARCH_BUDGET)
+    active = tuple(
+        endpoint for endpoint in scene.endpoints if endpoint.color == hierarchy.active_color
+    )
+    if len(active) != 1:
+        return None
+    initial_dynamic = frozenset(
+        cell for child in hierarchy.children for cell in _hierarchy_dynamic_footprint(scene, child)
+    )
+    source_cells = frozenset(
+        cell
+        for _child, example in relation.assignments
+        for source in example.sources
+        for cell in source.cells
+    )
+    assigned_target_cells = frozenset(
+        cell for _child, example in relation.assignments for cell in example.target.cells
+    )
+    occupied = frozenset(
+        (x, y)
+        for y, row in enumerate(scene.cells)
+        for x, value in enumerate(row)
+        if value != scene.background
+    )
+    # Assigned source disks and assigned target rings are the only witnessed
+    # consumable/overwritable surfaces.  The exact projection below still
+    # requires every target-ring cell to retain its observed value, so removing
+    # those cells from the coarse collision mask does not weaken preservation.
+    static_cells = occupied - initial_dynamic - source_cells - assigned_target_cells
+    child_count = len(relation.assignments)
+    child_orders = tuple(itertools.permutations(range(child_count)))
+    source_order_options = tuple(itertools.product(((0, 1), (1, 0)), repeat=child_count))
+    route_specs = tuple(
+        itertools.islice(
+            itertools.product(child_orders, source_order_options),
+            _MAX_SAME_CHILD_COMPOSITE_CARGO_ROUTES,
+        )
+    )
+    pattern_cache: dict[
+        tuple[int, tuple[int, int]],
+        tuple[tuple[_HierarchyChildLayout, ...], ...],
+    ] = {}
+    state_cache: dict[_SameChildCompositeCargoProjectedStateKey, VisualScene | None] = {}
+    for child_order, source_orders in route_specs:
+        pattern_sets: list[tuple[tuple[_HierarchyChildLayout, ...], ...]] = []
+        for child_index, source_order in enumerate(source_orders):
+            cache_key = (child_index, source_order)
+            patterns = pattern_cache.get(cache_key)
+            if patterns is None:
+                patterns = _same_child_composite_cargo_layout_patterns(
+                    scene,
+                    hierarchy,
+                    relation,
+                    child_index=child_index,
+                    source_order=source_order,
+                    static_cells=static_cells,
+                    search_budget=search_budget,
+                )
+                pattern_cache[cache_key] = patterns
+            if not patterns:
+                pattern_sets = []
+                break
+            pattern_sets.append(patterns)
+        if not pattern_sets:
+            continue
+        lengths = tuple(len(patterns) for patterns in pattern_sets)
+        for pattern_indexes in _fair_index_products(
+            lengths,
+            limit=min(math.prod(lengths), _MAX_HIERARCHY_LAYOUT_COMBINATIONS),
+        ):
+            layout_routes = tuple(
+                pattern_sets[index][pattern_index]
+                for index, pattern_index in enumerate(pattern_indexes)
+            )
+            plan = _build_same_child_composite_cargo_plan(
+                scene,
+                hierarchy,
+                relation,
+                child_order=child_order,
+                source_orders=source_orders,
+                layout_routes=layout_routes,
+                static_cells=static_cells,
+                search_budget=search_budget,
+                state_cache=state_cache,
+            )
+            if plan is not None and plan.signature not in rejected_signatures:
+                return plan
+    return None
+
+
 def _bridge_hierarchy_plan(
     scene: VisualScene,
     hierarchy: _AffineHierarchy,
@@ -9821,6 +11052,34 @@ def _frame_edge_signatures(frame: GridFrame) -> tuple[tuple[int, ...], ...]:
         tuple(reversed(cells[-1])),
         tuple(row[0] for row in reversed(cells)),
     )
+
+
+def _edge_excluded_raster_hash(frame: GridFrame, *, edge_index: int) -> str | None:
+    """Hash every cell outside one observation-derived resource border."""
+
+    cells = frame.cells
+    if (
+        edge_index not in range(4)
+        or not cells
+        or not cells[0]
+        or any(len(row) != len(cells[0]) for row in cells)
+    ):
+        return None
+    width = len(cells[0])
+    height = len(cells)
+    protected = tuple(
+        (x, y, value)
+        for y, row in enumerate(cells)
+        for x, value in enumerate(row)
+        if not (
+            (edge_index == 0 and y == 0)
+            or (edge_index == 1 and x == width - 1)
+            or (edge_index == 2 and y == height - 1)
+            or (edge_index == 3 and x == 0)
+        )
+    )
+    payload = repr((width, height, edge_index, protected)).encode("ascii")
+    return "sha256:" + hashlib.sha256(payload).hexdigest()
 
 
 def _advance_edge_resource_progress(
@@ -11040,6 +12299,35 @@ def _single_hierarchy_planned_click_is_safe(
             and _child_isolation_protected_raster_hash(scene)
             == marker_certificate.protected_raster_hash
             and marker == (marker_certificate.marker_color, marker_certificate.marker_coordinate)
+        )
+    cargo_certificate = planned.same_child_composite_cargo_certificate
+    if cargo_certificate is not None:
+        active = tuple(endpoint for endpoint in scene.endpoints if endpoint.color == active_color)
+        selected = tuple(
+            endpoint
+            for endpoint in scene.endpoints
+            if endpoint.rounded_center == (planned.coordinate.x, planned.coordinate.y)
+        )
+        action_precondition = bool(
+            (
+                planned.purpose is VisualActionPurpose.PROBE
+                and len(selected) == 1
+                and selected[0].color != active_color
+            )
+            or (
+                planned.purpose is VisualActionPurpose.PROGRESS
+                and len(active) == cargo_certificate.required_visible_active_endpoint_count
+            )
+        )
+        return bool(
+            _same_child_composite_cargo_step_is_compatible(planned)
+            and action_precondition
+            and planned.required_child_protected_raster_hash is not None
+            and _child_isolation_protected_raster_hash(scene)
+            == planned.required_child_protected_raster_hash
+            and len(scene.endpoints) == cargo_certificate.required_visible_endpoint_count
+            and len(scene.mediators) == cargo_certificate.required_visible_mediator_count
+            and len(active) == cargo_certificate.required_visible_active_endpoint_count
         )
     paired_cargo_step = bool(
         planned.carrier_source_paired_cargo_step
@@ -15037,6 +16325,7 @@ class VisualCausalPolicy:
         self._active_carrier_source_setup_action_count: int | None = None
         self._active_carrier_source_crossed_forward_action_count: int | None = None
         self._resource_interrupted_paired_replay: _ResourceInterruptedPairedReplay | None = None
+        self._post_marker_resource_reset_bridge: _PostMarkerResourceResetBridge | None = None
         self._active_crossed_replay_resource_lineage: _ActiveCrossedReplayResourceLineage | None = (
             None
         )
@@ -15096,6 +16385,7 @@ class VisualCausalPolicy:
         self._failed_exploration_roots: set[_ExplorationRootKey] = set()
         self._exploration_root_capacity_exhausted = False
         self._last_probe_failed = False
+        self._reset_transition_failed_closed = False
         self._last_active_color: int | None = None
         self._probe_ordinal = 0
         self._step_index = 0
@@ -15193,6 +16483,7 @@ class VisualCausalPolicy:
         self._active_carrier_source_setup_action_count = None
         self._active_carrier_source_crossed_forward_action_count = None
         self._resource_interrupted_paired_replay = None
+        self._post_marker_resource_reset_bridge = None
         self._active_crossed_replay_resource_lineage = None
         self._reset_epoch_index = 0
         self._paired_role_handoff_observed_signature = None
@@ -15237,12 +16528,20 @@ class VisualCausalPolicy:
         self._failed_exploration_roots.clear()
         self._exploration_root_capacity_exhausted = False
         self._last_probe_failed = False
+        self._reset_transition_failed_closed = False
         self._probe_ordinal = 0
 
     def _begin_reset_epoch(self, observation: Observation) -> None:
         """Clear episode-local search state while retaining learned evidence."""
 
         self._reset_epoch_index += 1
+        post_marker_bridge = self._post_marker_resource_reset_bridge
+        if post_marker_bridge is not None and (
+            not post_marker_bridge.game_over_observed
+            or post_marker_bridge.level_index != observation.levels_completed
+            or post_marker_bridge.authorized_reset_epoch != self._reset_epoch_index
+        ):
+            self._post_marker_resource_reset_bridge = None
         interrupted_replay = self._resource_interrupted_paired_replay
         if (
             interrupted_replay is not None
@@ -15287,6 +16586,58 @@ class VisualCausalPolicy:
         self._marker_structural_action_order.clear()
         self._episode_exploration_root = None
         self._last_probe_failed = False
+        self._reset_transition_failed_closed = False
+        self._install_post_marker_reset_plan(observation)
+
+    def _install_post_marker_reset_plan(self, observation: Observation) -> bool:
+        """Consume one exact reset token only after its fresh-life plan exists."""
+
+        bridge = self._post_marker_resource_reset_bridge
+        if (
+            bridge is None
+            or not bridge.game_over_observed
+            or observation.levels_completed != bridge.level_index
+            or self._reset_epoch_index != bridge.authorized_reset_epoch
+            or self._last_active_color is None
+        ):
+            return False
+        scene = extract_visual_scene(observation.frames[-1])
+        try:
+            hierarchy = _unique_affine_hierarchy(
+                scene,
+                active_color=self._last_active_color,
+            )
+        except _HierarchySearchExhausted:
+            return False
+        if hierarchy is None:
+            return False
+        relation = _composite_bridge_relation(
+            scene,
+            hierarchy,
+            level_index=observation.levels_completed,
+        )
+        if relation is None:
+            return False
+        try:
+            plan = _same_child_composite_cargo_plan(
+                scene,
+                hierarchy,
+                relation,
+                rejected_signatures=self._failed_plan_signatures,
+            )
+        except _HierarchySearchExhausted:
+            return False
+        if plan is None:
+            return False
+        self._plan.extend(plan.actions)
+        self._active_hierarchy_signature = plan.signature
+        self._active_hierarchy_relation_key = relation.relation_key
+        self._active_hierarchy_supports = plan.supports
+        self._active_hierarchy_support_weights = plan.support_weights
+        self._active_hierarchy_recovery_actions = plan.recovery_actions
+        self._post_marker_resource_reset_bridge = None
+        self._last_probe_failed = False
+        return True
 
     def _clear_crossed_replay_execution(self) -> None:
         """Fail closed without reopening an unrelated hierarchy continuation."""
@@ -15337,6 +16688,46 @@ class VisualCausalPolicy:
                 lineage.edge_fill_color
                 if index in current_resource.filled_indexes
                 else lineage.edge_baseline[index]
+            )
+            for index, value in enumerate(current_edge)
+        )
+
+    def _post_marker_resource_bridge_matches(self, observation: Observation) -> bool:
+        """Revalidate the exact board-no-op and learned meter prefix."""
+
+        bridge = self._post_marker_resource_reset_bridge
+        if (
+            bridge is None
+            or bridge.game_over_observed
+            or observation.levels_completed != bridge.level_index
+            or bridge.authorized_reset_epoch != self._reset_epoch_index + 1
+            or not bridge.armed_after_actions <= self._episode_action6_count
+            or self._episode_action6_count > bridge.exhausted_after_actions
+            or _edge_excluded_raster_hash(
+                observation.frames[-1],
+                edge_index=bridge.edge_index,
+            )
+            != bridge.protected_raster_hash
+        ):
+            return False
+        current_resource = _matching_edge_resource_lineage(
+            self._episode_resource_candidates,
+            edge_index=bridge.edge_index,
+            baseline=bridge.edge_baseline,
+            fill_color=bridge.edge_fill_color,
+            observed_actions=self._episode_action6_count,
+            exhausted_filled_index_history=bridge.exhausted_filled_index_history,
+        )
+        edges = _frame_edge_signatures(observation.frames[-1])
+        if current_resource is None or not 0 <= bridge.edge_index < len(edges):
+            return False
+        current_edge = edges[bridge.edge_index]
+        return len(current_edge) == len(bridge.edge_baseline) and all(
+            value
+            == (
+                bridge.edge_fill_color
+                if index in current_resource.filled_indexes
+                else bridge.edge_baseline[index]
             )
             for index, value in enumerate(current_edge)
         )
@@ -15714,6 +17105,58 @@ class VisualCausalPolicy:
             raise PolicyError("levels_completed regressed within one policy lifetime")
         if observation.levels_completed > self._level_index:
             self._begin_level(observation)
+        if self._reset_transition_failed_closed:
+            raise PolicyError(
+                "RESET did not return its exact official action receipt; "
+                "no unrelated action is authorized"
+            )
+        post_marker_bridge = self._post_marker_resource_reset_bridge
+        if post_marker_bridge is not None:
+            if post_marker_bridge.game_over_observed:
+                if (
+                    self._reset_epoch_index == post_marker_bridge.authorized_reset_epoch
+                    and self._install_post_marker_reset_plan(observation)
+                ):
+                    post_marker_bridge = None
+                else:
+                    raise PolicyError(
+                        "the one authorized fresh reset epoch did not yield the exact "
+                        "same-child composite-cargo plan"
+                    )
+            else:
+                if ActionName.ACTION6 not in observation.available_actions:
+                    self._post_marker_resource_reset_bridge = None
+                    raise PolicyError(
+                        "the exact post-marker resource bridge action became unavailable"
+                    )
+                if (
+                    self._episode_action6_count >= post_marker_bridge.exhausted_after_actions
+                    or not self._post_marker_resource_bridge_matches(observation)
+                ):
+                    self._post_marker_resource_reset_bridge = None
+                    raise PolicyError(
+                        "the post-marker board-no-op or learned resource prefix no longer "
+                        "matches; no unrelated action is authorized"
+                    )
+                next_action_count = self._episode_action6_count + 1
+                action = ActionRequest(
+                    ActionName.ACTION6,
+                    post_marker_bridge.no_op_coordinate,
+                )
+                self._stage_pending(
+                    observation,
+                    action,
+                    purpose=VisualActionPurpose.PROBE,
+                    prediction=(
+                        "repeat one observation-proven board no-op to reach the exact learned "
+                        "resource GAME_OVER boundary"
+                    ),
+                    plan_signature=(
+                        "post-marker-resource-reset-bridge:"
+                        f"{post_marker_bridge.marker_hypothesis_key}:{next_action_count}"
+                    ),
+                )
+                return action
         queued_composite_certificate = (
             self._plan[0].post_access_composite_exit_certificate if self._plan else None
         )
@@ -17047,6 +18490,13 @@ class VisualCausalPolicy:
                 "affine-carrier-source-occlusion-hierarchy:"
             )
         )
+        same_child_composite_cargo_action = bool(
+            self._pending_plan_signature is not None
+            and self._pending_plan_signature.startswith("affine-same-child-composite-cargo:")
+            and carrier_source_recovery_candidate is not None
+            and carrier_source_recovery_candidate.same_child_composite_cargo_certificate is not None
+            and _same_child_composite_cargo_step_is_compatible(carrier_source_recovery_candidate)
+        )
         joint_hierarchy_action = (
             self._pending_plan_signature is not None
             and self._pending_plan_signature.startswith(
@@ -17060,6 +18510,7 @@ class VisualCausalPolicy:
                     "affine-raw-matching-composite-hierarchy:",
                     "affine-external-own-composite-hierarchy:",
                     "affine-carrier-source-occlusion-hierarchy:",
+                    "affine-same-child-composite-cargo:",
                 )
             )
         )
@@ -17157,6 +18608,11 @@ class VisualCausalPolicy:
             and carrier_source_recovery_candidate.post_access_composite_marker_certificate
             is not None
         )
+        post_marker_resource_reset_bridge_action = bool(
+            self._post_marker_resource_reset_bridge is not None
+            and self._pending_plan_signature is not None
+            and self._pending_plan_signature.startswith("post-marker-resource-reset-bridge:")
+        )
         carrier_source_untouched_action = bool(
             carrier_source_untouched_discriminator_action
             or carrier_source_untouched_restoration_action
@@ -17177,6 +18633,20 @@ class VisualCausalPolicy:
                 or carrier_source_paired_cargo_crossed_predecessor_action
                 or carrier_source_paired_cargo_crossed_delivery_action
             )
+        )
+        active_post_marker_bridge = self._post_marker_resource_reset_bridge
+        post_marker_resource_exhaustion = bool(
+            post_marker_resource_reset_bridge_action
+            and active_post_marker_bridge is not None
+            and resource_exhaustion_candidate is not None
+            and self._episode_action6_count == active_post_marker_bridge.exhausted_after_actions
+            and resource_exhaustion_candidate.edge_index == active_post_marker_bridge.edge_index
+            and resource_exhaustion_candidate.baseline == active_post_marker_bridge.edge_baseline
+            and resource_exhaustion_candidate.fill_color
+            == active_post_marker_bridge.edge_fill_color
+            and resource_exhaustion_candidate.filled_index_history
+            == active_post_marker_bridge.exhausted_filled_index_history
+            and self._post_marker_resource_bridge_matches(observation)
         )
         hierarchy_recovery_action = (
             self._pending_plan_signature is not None
@@ -17319,6 +18789,7 @@ class VisualCausalPolicy:
                 or carrier_source_paired_cargo_role_restoration_action
                 or carrier_source_paired_cargo_crossed_predecessor_action
                 or carrier_source_paired_cargo_crossed_delivery_action
+                or same_child_composite_cargo_action
                 or (hierarchy_target_readable and hierarchy_parent_target_preserved)
             )
         )
@@ -17461,6 +18932,7 @@ class VisualCausalPolicy:
                 or raw_matching_composite_hierarchy_action
                 or external_own_composite_hierarchy_action
                 or carrier_source_occlusion_hierarchy_action
+                or same_child_composite_cargo_action
             )
             and not self._pending_completes_hierarchy
             and not carrier_source_paired_cargo_action
@@ -17642,6 +19114,7 @@ class VisualCausalPolicy:
                 (
                     carrier_source_occlusion_hierarchy_action
                     or carrier_source_occlusion_hierarchy_recovery_action
+                    or same_child_composite_cargo_action
                 )
                 and hierarchy_raster_certified
                 and not hierarchy_structure_readable
@@ -17678,10 +19151,23 @@ class VisualCausalPolicy:
             else None
         )
         marker_bootstrap_succeeded = bootstrap_active_color is not None
+        # ARC's official post-GAME_OVER life recovery returns full_reset=False;
+        # that flag identifies the initial whole-game reset.  Bind this epoch
+        # transition instead to the exact returned RESET action, official state
+        # recovery, and unchanged level identity.
         reset_recovered = (
             action.name is ActionName.RESET
             and before.state in {GameStateName.GAME_OVER, GameStateName.NOT_PLAYED}
             and observation.state is GameStateName.NOT_FINISHED
+            and observation.levels_completed == before.levels_completed
+            and observation.returned_action == action
+        )
+        reset_transition_without_authoritative_receipt = (
+            action.name is ActionName.RESET
+            and before.state in {GameStateName.GAME_OVER, GameStateName.NOT_PLAYED}
+            and observation.state is GameStateName.NOT_FINISHED
+            and observation.levels_completed == before.levels_completed
+            and observation.returned_action != action
         )
         if (
             action.name is ActionName.ACTION6
@@ -18138,7 +19624,9 @@ class VisualCausalPolicy:
             self._active_crossed_replay_resource_lineage = None
             if hierarchy_terminal_game_over_observed:
                 self._preterminal_hierarchy_retry_signature = None
-            if self._pending_plan_signature is not None and not paired_resource_exhaustion:
+            if self._pending_plan_signature is not None and not (
+                paired_resource_exhaustion or post_marker_resource_reset_bridge_action
+            ):
                 if hierarchy_preterminal_game_over_observed:
                     if self._preterminal_hierarchy_retry_signature == self._pending_plan_signature:
                         self._preterminal_hierarchy_retry_signature = None
@@ -18195,7 +19683,12 @@ class VisualCausalPolicy:
                         self._preterminal_hierarchy_retry_signature = None
                     self._failed_plan_signatures.add(self._pending_plan_signature)
             if hierarchy_terminal_game_over_observed and hierarchy_relation_key is not None:
-                if carrier_source_occlusion_hierarchy_action:
+                if same_child_composite_cargo_action:
+                    residual = (
+                        "the exact same-child complementary-source composite terminal "
+                        "returned GAME_OVER"
+                    )
+                elif carrier_source_occlusion_hierarchy_action:
                     self._failed_carrier_source_occlusion_hierarchy_relation_keys.add(
                         hierarchy_relation_key
                     )
@@ -18243,7 +19736,24 @@ class VisualCausalPolicy:
                 else:
                     self._failed_hierarchy_relation_keys.add(hierarchy_relation_key)
                     residual = "the exact equal-weight hierarchy terminal returned GAME_OVER"
-            if (
+            if post_marker_resource_reset_bridge_action:
+                if post_marker_resource_exhaustion and active_post_marker_bridge is not None:
+                    self._post_marker_resource_reset_bridge = replace(
+                        active_post_marker_bridge,
+                        game_over_observed=True,
+                    )
+                    residual = (
+                        "the observation-proven board no-op reached the exact learned resource "
+                        "boundary and returned official GAME_OVER; one fresh RESET epoch is "
+                        "authorized"
+                    )
+                else:
+                    self._post_marker_resource_reset_bridge = None
+                    residual = (
+                        "the post-marker resource bridge reached a nonmatching terminal boundary "
+                        "and failed closed"
+                    )
+            elif (
                 carrier_source_paired_cargo_action
                 or carrier_source_paired_cargo_restoration_action
                 or carrier_source_paired_cargo_role_handoff_action
@@ -18339,7 +19849,9 @@ class VisualCausalPolicy:
                     "was falsified by an exact child-at-target official GAME_OVER "
                     "consequence for this structural child stratum"
                 )
-            if self._episode_exploration_root is not None and not paired_resource_exhaustion:
+            if self._episode_exploration_root is not None and not (
+                paired_resource_exhaustion or post_marker_resource_exhaustion
+            ):
                 if self._episode_exploration_root in self._failed_exploration_roots:
                     pass
                 elif len(self._failed_exploration_roots) < self._MAX_FAILED_EXPLORATION_ROOTS:
@@ -18369,7 +19881,9 @@ class VisualCausalPolicy:
             self._active_carrier_source_crossed_forward_action_count = None
             self._crossed_delivery_recovery_signature = None
             self._clear_child_isolation_execution()
-            self._last_probe_failed = not paired_resource_exhaustion
+            self._last_probe_failed = not (
+                paired_resource_exhaustion or post_marker_resource_exhaustion
+            )
         elif observation.state is GameStateName.WIN:
             self._preterminal_hierarchy_retry_signature = None
             self._plan.clear()
@@ -18388,6 +19902,7 @@ class VisualCausalPolicy:
             self._active_carrier_source_setup_action_count = None
             self._active_carrier_source_crossed_forward_action_count = None
             self._resource_interrupted_paired_replay = None
+            self._post_marker_resource_reset_bridge = None
             self._active_crossed_replay_resource_lineage = None
             self._paired_role_handoff_observed_signature = None
             self._paired_role_handoff_observed_context_key = None
@@ -18402,8 +19917,20 @@ class VisualCausalPolicy:
             self._begin_level(observation)
         elif reset_recovered:
             self._begin_reset_epoch(observation)
+        elif reset_transition_without_authoritative_receipt:
+            self._post_marker_resource_reset_bridge = None
+            self._plan.clear()
+            self._last_probe_failed = True
+            self._reset_transition_failed_closed = True
+            residual = (
+                "RESET returned NOT_FINISHED without its exact official action receipt; "
+                "the one-shot post-marker bridge failed closed"
+            )
         elif observation.state is GameStateName.UNKNOWN:
-            if self._pending_plan_signature is not None:
+            if (
+                self._pending_plan_signature is not None
+                and not post_marker_resource_reset_bridge_action
+            ):
                 if hierarchy_action:
                     self._preterminal_hierarchy_retry_signature = None
                 elif self._preterminal_hierarchy_retry_signature == self._pending_plan_signature:
@@ -18422,6 +19949,7 @@ class VisualCausalPolicy:
             self._active_carrier_source_setup_action_count = None
             self._active_carrier_source_crossed_forward_action_count = None
             self._resource_interrupted_paired_replay = None
+            self._post_marker_resource_reset_bridge = None
             self._active_crossed_replay_resource_lineage = None
             self._paired_role_handoff_observed_signature = None
             self._paired_role_handoff_observed_context_key = None
@@ -18521,12 +20049,72 @@ class VisualCausalPolicy:
                     marker_certificate.hypothesis_key
                 )
                 self._post_access_composite_marker_closed = marker_certificate.hypothesis_key
+                active_lineage = self._active_crossed_replay_resource_lineage
+                protected_before = (
+                    _edge_excluded_raster_hash(
+                        before.frames[-1],
+                        edge_index=active_lineage.edge_index,
+                    )
+                    if active_lineage is not None
+                    else None
+                )
+                protected_after = (
+                    _edge_excluded_raster_hash(
+                        observation.frames[-1],
+                        edge_index=active_lineage.edge_index,
+                    )
+                    if active_lineage is not None
+                    else None
+                )
+                if (
+                    active_lineage is not None
+                    and action.coordinate is not None
+                    and protected_before is not None
+                    and protected_before == protected_after
+                    and self._episode_action6_count < active_lineage.exhausted_after_actions
+                    and len(active_lineage.exhausted_filled_index_history)
+                    == active_lineage.exhausted_after_actions
+                ):
+                    self._post_marker_resource_reset_bridge = _PostMarkerResourceResetBridge(
+                        level_index=before.levels_completed,
+                        marker_hypothesis_key=marker_certificate.hypothesis_key,
+                        no_op_coordinate=action.coordinate,
+                        protected_raster_hash=protected_before,
+                        edge_index=active_lineage.edge_index,
+                        edge_baseline=active_lineage.edge_baseline,
+                        edge_fill_color=active_lineage.edge_fill_color,
+                        exhausted_filled_index_history=(
+                            active_lineage.exhausted_filled_index_history
+                        ),
+                        armed_after_actions=self._episode_action6_count,
+                        exhausted_after_actions=active_lineage.exhausted_after_actions,
+                        authorized_reset_epoch=self._reset_epoch_index + 1,
+                    )
                 self._clear_crossed_replay_execution()
                 residual = (
                     "the unique endpoint-marker-colored cell inside the post-access "
                     "composite received its one exact lineage-bound action, but the official "
                     "environment remained NOT_FINISHED; only this marker-access sufficiency "
                     "hypothesis is rejected and no repeat is authorized"
+                )
+        elif post_marker_resource_reset_bridge_action:
+            active_bridge = self._post_marker_resource_reset_bridge
+            if (
+                active_bridge is not None
+                and self._episode_action6_count < active_bridge.exhausted_after_actions
+                and self._post_marker_resource_bridge_matches(observation)
+            ):
+                self._last_probe_failed = False
+                residual = (
+                    "the observation-proven board no-op preserved the exact learned resource "
+                    "prefix before its GAME_OVER boundary"
+                )
+            else:
+                self._post_marker_resource_reset_bridge = None
+                self._last_probe_failed = True
+                residual = (
+                    "the post-marker board-no-op or learned resource boundary diverged and "
+                    "the reset bridge failed closed"
                 )
         elif marker_bootstrap:
             self._plan.clear()
@@ -18985,7 +20573,11 @@ class VisualCausalPolicy:
             if self._pending_plan_signature is not None:
                 self._failed_plan_signatures.add(self._pending_plan_signature)
             if hierarchy_supports_observed and hierarchy_relation_key is not None:
-                if carrier_source_occlusion_hierarchy_action:
+                if same_child_composite_cargo_action:
+                    # The bridge relation remains observed evidence; only this
+                    # finite same-child composition plan is falsified.
+                    pass
+                elif carrier_source_occlusion_hierarchy_action:
                     self._failed_carrier_source_occlusion_hierarchy_relation_keys.add(
                         hierarchy_relation_key
                     )
@@ -19030,6 +20622,12 @@ class VisualCausalPolicy:
             if hierarchy_supports_observed:
                 residual = (
                     (
+                        "both complementary source masks were accumulated on each assigned "
+                        "child and delivered to their exact residual-color rings, but the "
+                        "official environment remained NOT_FINISHED"
+                    )
+                    if same_child_composite_cargo_action
+                    else (
                         "the raw-linked child and its exact carrier-mask counterpart each "
                         "occluded only their assigned filled source disk, but the official "
                         "environment remained NOT_FINISHED"
@@ -19464,6 +21062,30 @@ class VisualCausalPolicy:
             "failed_plan_count": len(self._failed_plan_signatures),
             "edge_resource_candidate_count": len(self._episode_resource_candidates),
             "episode_action6_count": self._episode_action6_count,
+            "post_marker_resource_reset_bridge_active": (
+                self._post_marker_resource_reset_bridge is not None
+            ),
+            "reset_transition_failed_closed": self._reset_transition_failed_closed,
+            "post_marker_resource_reset_bridge_game_over_observed": (
+                self._post_marker_resource_reset_bridge.game_over_observed
+                if self._post_marker_resource_reset_bridge is not None
+                else False
+            ),
+            "post_marker_resource_reset_bridge_armed_after_actions": (
+                self._post_marker_resource_reset_bridge.armed_after_actions
+                if self._post_marker_resource_reset_bridge is not None
+                else None
+            ),
+            "post_marker_resource_reset_bridge_exhausted_after_actions": (
+                self._post_marker_resource_reset_bridge.exhausted_after_actions
+                if self._post_marker_resource_reset_bridge is not None
+                else None
+            ),
+            "post_marker_resource_reset_bridge_authorized_reset_epoch": (
+                self._post_marker_resource_reset_bridge.authorized_reset_epoch
+                if self._post_marker_resource_reset_bridge is not None
+                else None
+            ),
             "resource_interrupted_paired_replay_active": (
                 self._resource_interrupted_paired_replay is not None
             ),

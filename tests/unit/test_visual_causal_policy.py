@@ -12034,11 +12034,131 @@ def test_campaign43_crossed_route_resource_lifecycle_and_interrupts() -> None:
     assert "only this marker-access sufficiency hypothesis is rejected" in (
         marker_not_finished_policy.receipts[-1].residual
     )
+    assert marker_not_finished_policy.snapshot()["post_marker_resource_reset_bridge_active"] is True
+    assert (
+        marker_not_finished_policy.snapshot()[
+            "post_marker_resource_reset_bridge_armed_after_actions"
+        ]
+        == 57
+    )
+    assert (
+        marker_not_finished_policy.snapshot()[
+            "post_marker_resource_reset_bridge_exhausted_after_actions"
+        ]
+        == 60
+    )
+    marker_failure_state = {
+        name: copy.deepcopy(value)
+        for name, value in vars(marker_not_finished_policy).items()
+        if name.startswith("_failed_")
+    }
+
+    cancelled_bridge_policy = copy.deepcopy(marker_not_finished_policy)
+    cancelled_bridge_action = cancelled_bridge_policy.select(marker_not_finished_observation)
+    assert cancelled_bridge_action.coordinate == marker_not_finished_action.coordinate
+    cancelled_bridge_policy.cancel_unsubmitted_action()
+    assert cancelled_bridge_policy.snapshot()["episode_action6_count"] == 57
+    assert cancelled_bridge_policy.snapshot()["post_marker_resource_reset_bridge_active"] is True
+    assert (
+        cancelled_bridge_policy.select(marker_not_finished_observation) == cancelled_bridge_action
+    )
+    cancelled_bridge_policy.cancel_unsubmitted_action()
+
+    bridge_policy = marker_not_finished_policy
+    bridge_observation = marker_not_finished_observation
+    for expected_action_count in (58, 59):
+        bridge_action = bridge_policy.select(bridge_observation)
+        assert bridge_action.coordinate == marker_not_finished_action.coordinate
+        bridge_observation = _campaign43_with_edge(
+            replace(
+                bridge_observation,
+                returned_action=bridge_action,
+                full_reset=False,
+            ),
+            history[expected_action_count],
+        )
+        bridge_policy.accept_consequence(bridge_observation)
+        assert bridge_policy.snapshot()["episode_action6_count"] == expected_action_count
+        assert bridge_policy.snapshot()["post_marker_resource_reset_bridge_active"] is True
+        assert (
+            bridge_policy.snapshot()["post_marker_resource_reset_bridge_game_over_observed"]
+            is False
+        )
+        assert {
+            name: value
+            for name, value in vars(bridge_policy).items()
+            if name.startswith("_failed_")
+        } == marker_failure_state
+
+    not_finished_boundary_policy = copy.deepcopy(bridge_policy)
+    not_finished_boundary_action = not_finished_boundary_policy.select(bridge_observation)
+    not_finished_boundary_observation = _campaign43_with_edge(
+        replace(
+            bridge_observation,
+            returned_action=not_finished_boundary_action,
+            full_reset=False,
+        ),
+        history[60],
+    )
+    not_finished_boundary_policy.accept_consequence(not_finished_boundary_observation)
+    assert (
+        not_finished_boundary_policy.snapshot()["post_marker_resource_reset_bridge_active"] is False
+    )
+    assert {
+        name: value
+        for name, value in vars(not_finished_boundary_policy).items()
+        if name.startswith("_failed_")
+    } == marker_failure_state
     with pytest.raises(PolicyError, match="one-shot post-access composite-marker"):
-        marker_not_finished_policy.select(marker_not_finished_observation)
-    restored_not_finished_policy = copy.deepcopy(marker_not_finished_policy)
-    with pytest.raises(PolicyError, match="one-shot post-access composite-marker"):
-        restored_not_finished_policy.select(marker_not_finished_observation)
+        not_finished_boundary_policy.select(not_finished_boundary_observation)
+
+    exhaustion_action = bridge_policy.select(bridge_observation)
+    exhaustion_observation = replace(
+        _campaign43_with_edge(
+            replace(
+                bridge_observation,
+                returned_action=exhaustion_action,
+                full_reset=False,
+            ),
+            history[60],
+        ),
+        state=GameStateName.GAME_OVER,
+        available_actions=(ActionName.RESET,),
+    )
+    bridge_policy.accept_consequence(exhaustion_observation)
+    assert bridge_policy.snapshot()["episode_action6_count"] == 60
+    assert bridge_policy.snapshot()["post_marker_resource_reset_bridge_active"] is True
+    assert bridge_policy.snapshot()["post_marker_resource_reset_bridge_game_over_observed"] is True
+    assert {
+        name: value for name, value in vars(bridge_policy).items() if name.startswith("_failed_")
+    } == marker_failure_state
+    assert "exact learned resource boundary" in bridge_policy.receipts[-1].residual
+
+    cancelled_reset_policy = copy.deepcopy(bridge_policy)
+    cancelled_reset_action = cancelled_reset_policy.select(exhaustion_observation)
+    assert cancelled_reset_action.name is ActionName.RESET
+    cancelled_reset_policy.cancel_unsubmitted_action()
+    assert (
+        cancelled_reset_policy.snapshot()["post_marker_resource_reset_bridge_game_over_observed"]
+        is True
+    )
+    assert cancelled_reset_policy.select(exhaustion_observation) == cancelled_reset_action
+    cancelled_reset_policy.cancel_unsubmitted_action()
+
+    reset_action = bridge_policy.select(exhaustion_observation)
+    fresh_reset_observation = _campaign43_observation(
+        reset_frame,
+        returned_action=reset_action,
+    )
+    bridge_policy.accept_consequence(fresh_reset_observation)
+    assert bridge_policy.snapshot()["post_marker_resource_reset_bridge_active"] is False
+    assert bridge_policy.snapshot()["pending_plan_actions"] > 0
+    assert bridge_policy._active_hierarchy_signature is not None
+    assert bridge_policy._active_hierarchy_signature.startswith(
+        "affine-same-child-composite-cargo:"
+    )
+    assert bridge_policy._active_hierarchy_relation_key is not None
+    assert bridge_policy._plan[0].same_child_composite_cargo_certificate is not None
     assert (
         visual_causal._post_deposit_mediator_access_plan(
             extract_visual_scene(delivery_terminal_observation.frames[-1]),
@@ -12659,3 +12779,248 @@ def test_campaign44_target_retained_fallback_preserves_crossed_inverse_failure()
     terminal_policy._failed_plan_signatures.discard(rejected_signature)
     terminal_policy.accept_consequence(corrupt_observation)
     assert rejected_signature in terminal_policy._failed_plan_signatures
+
+
+def test_campaign47_same_child_composite_cargo_uses_one_bounded_detour() -> None:
+    frame = _campaign26_weighted_origin_frame()
+    scene = extract_visual_scene(frame)
+    hierarchy = visual_causal._unique_affine_hierarchy(scene, active_color=0)
+    assert hierarchy is not None
+    relation = visual_causal._composite_bridge_relation(
+        scene,
+        hierarchy,
+        level_index=4,
+    )
+    assert relation is not None
+
+    initial_dynamic = frozenset(
+        cell
+        for child in hierarchy.children
+        for cell in visual_causal._hierarchy_dynamic_footprint(scene, child)
+    )
+    source_cells = frozenset(
+        cell
+        for _child, example in relation.assignments
+        for source in example.sources
+        for cell in source.cells
+    )
+    target_cells = frozenset(
+        cell for _child, example in relation.assignments for cell in example.target.cells
+    )
+    occupied = frozenset(
+        (x, y)
+        for y, row in enumerate(scene.cells)
+        for x, value in enumerate(row)
+        if value != scene.background
+    )
+    static_cells = occupied - initial_dynamic - source_cells - target_cells
+    budget = visual_causal._HierarchySearchBudget(32_768)
+    pattern_sets = tuple(
+        visual_causal._same_child_composite_cargo_layout_patterns(
+            scene,
+            hierarchy,
+            relation,
+            child_index=child_index,
+            source_order=(0, 1),
+            static_cells=static_cells,
+            search_budget=budget,
+        )
+        for child_index in range(len(hierarchy.children))
+    )
+    assert all(pattern_sets)
+    assert all(
+        len({visual_causal._same_child_composite_cargo_route_key(route) for route in patterns})
+        == len(patterns)
+        for patterns in pattern_sets
+    )
+    assert tuple(layout.support for layout in pattern_sets[1][0]) == (
+        (20, 53),
+        (56, 43),
+        (48, 9),
+    )
+    detour_index = next(
+        index
+        for index, route in enumerate(pattern_sets[1])
+        if tuple(layout.support for layout in route) == ((20, 53), (56, 43), (44, 28), (48, 9))
+    )
+    state_cache: dict[
+        visual_causal._SameChildCompositeCargoProjectedStateKey,
+        VisualScene | None,
+    ] = {}
+    direct = visual_causal._build_same_child_composite_cargo_plan(
+        scene,
+        hierarchy,
+        relation,
+        child_order=(0, 1),
+        source_orders=((0, 1), (0, 1)),
+        layout_routes=(pattern_sets[0][0], pattern_sets[1][0]),
+        static_cells=static_cells,
+        search_budget=budget,
+        state_cache=state_cache,
+    )
+    assert direct is None
+
+    plan = visual_causal._build_same_child_composite_cargo_plan(
+        scene,
+        hierarchy,
+        relation,
+        child_order=(0, 1),
+        source_orders=((0, 1), (0, 1)),
+        layout_routes=(pattern_sets[0][0], pattern_sets[1][detour_index]),
+        static_cells=static_cells,
+        search_budget=budget,
+        state_cache=state_cache,
+    )
+    assert plan is not None
+    assert len(plan.actions) == 30
+    assert budget.remaining > 0
+    assert all(
+        visual_causal._same_child_composite_cargo_step_is_compatible(action)
+        for action in plan.actions
+    )
+    assert plan.actions[-1].completes_hierarchy is True
+    assert plan.actions[-1].target_center == (48, 9)
+    assert any(
+        action.same_child_composite_cargo_certificate is not None
+        and action.same_child_composite_cargo_certificate.support_center == (44, 28)
+        for action in plan.actions
+    )
+
+
+def test_campaign47_exact_reset_token_installs_fresh_composite_plan() -> None:
+    frame = _campaign26_weighted_origin_frame()
+    observation = _campaign43_observation(frame)
+    edge_baseline = tuple(row[0] for row in frame.cells)
+    token = visual_causal._PostMarkerResourceResetBridge(
+        level_index=4,
+        marker_hypothesis_key="synthetic-exact-marker-lineage",
+        no_op_coordinate=Coordinate(53, 28),
+        protected_raster_hash=visual_causal._edge_excluded_raster_hash(frame, edge_index=0),
+        edge_index=0,
+        edge_baseline=edge_baseline,
+        edge_fill_color=5,
+        exhausted_filled_index_history=(frozenset(),),
+        armed_after_actions=57,
+        exhausted_after_actions=60,
+        authorized_reset_epoch=1,
+        game_over_observed=True,
+    )
+
+    policy = VisualCausalPolicy(max_coordinate_candidates=8)
+    policy._level_index = 4
+    policy._last_active_color = 0
+    policy._post_marker_resource_reset_bridge = token
+    terminal_observation = _campaign43_observation(
+        frame,
+        state=GameStateName.GAME_OVER,
+    )
+    reset_action = policy.select(terminal_observation)
+    assert reset_action == ActionRequest(ActionName.RESET)
+    policy.accept_consequence(
+        replace(
+            observation,
+            returned_action=reset_action,
+            full_reset=False,
+        )
+    )
+    assert policy._reset_epoch_index == 1
+    assert policy._post_marker_resource_reset_bridge is None
+    assert len(policy._plan) == 30
+    assert policy._active_hierarchy_signature is not None
+    assert policy._active_hierarchy_signature.startswith("affine-same-child-composite-cargo:")
+    assert all(action.same_child_composite_cargo_certificate is not None for action in policy._plan)
+
+    execution_policy = copy.deepcopy(policy)
+    scene = extract_visual_scene(frame)
+    hierarchy = visual_causal._unique_affine_hierarchy(scene, active_color=0)
+    assert hierarchy is not None
+    relation = visual_causal._composite_bridge_relation(scene, hierarchy, level_index=4)
+    assert relation is not None
+    positions = {
+        endpoint.object_ref: endpoint.rounded_center
+        for child in hierarchy.children
+        for endpoint in child.endpoints
+    }
+    colors = {
+        endpoint.object_ref: endpoint.color
+        for child in hierarchy.children
+        for endpoint in child.endpoints
+    }
+    returned = observation
+    for _action_index in range(29):
+        planned = execution_policy._plan[0]
+        certificate = planned.same_child_composite_cargo_certificate
+        assert certificate is not None
+        selected_action = execution_policy.select(returned)
+        coordinate = (selected_action.coordinate.x, selected_action.coordinate.y)
+        active_ref = next(ref for ref, color in colors.items() if color == 0)
+        if planned.purpose is VisualActionPurpose.PROBE:
+            selected_ref = next(ref for ref, center in positions.items() if center == coordinate)
+            colors[active_ref], colors[selected_ref] = colors[selected_ref], colors[active_ref]
+        else:
+            positions[active_ref] = coordinate
+        projected = visual_causal._same_child_composite_cargo_projected_scene(
+            scene,
+            hierarchy,
+            relation,
+            positions=positions,
+            colors=colors,
+            collected_source_keys=frozenset(certificate.expected_collected_source_keys),
+        )
+        returned = replace(
+            returned,
+            frames=(GridFrame.from_rows(projected.cells),),
+            available_actions=(ActionName.ACTION6,),
+            full_reset=False,
+            returned_action=selected_action,
+        )
+        execution_policy.accept_consequence(returned)
+        assert execution_policy._hierarchy_lineage_lost is None
+    assert execution_policy.snapshot()["episode_action6_count"] == 29
+    assert len(execution_policy._plan) == 1
+    assert execution_policy._plan[0].completes_hierarchy is True
+
+    first_planned = policy._plan[0]
+    first_action = policy.select(observation)
+    assert first_action == ActionRequest(ActionName.ACTION6, first_planned.coordinate)
+    policy.cancel_unsubmitted_action()
+    assert len(policy._plan) == 29
+    assert first_planned not in policy._plan
+
+    mismatched = VisualCausalPolicy(max_coordinate_candidates=8)
+    mismatched._level_index = 4
+    mismatched._last_active_color = 0
+    mismatched._post_marker_resource_reset_bridge = replace(
+        token,
+        authorized_reset_epoch=2,
+    )
+    mismatched._begin_reset_epoch(observation)
+    assert mismatched._post_marker_resource_reset_bridge is None
+    assert not mismatched._plan
+
+    missing_reset_receipt = VisualCausalPolicy(max_coordinate_candidates=8)
+    missing_reset_receipt._level_index = 4
+    missing_reset_receipt._last_active_color = 0
+    missing_reset_receipt._post_marker_resource_reset_bridge = token
+    missing_receipt_terminal = _campaign43_observation(
+        frame,
+        state=GameStateName.GAME_OVER,
+    )
+    missing_receipt_reset = missing_reset_receipt.select(missing_receipt_terminal)
+    assert missing_receipt_reset == ActionRequest(ActionName.RESET)
+    missing_reset_receipt.accept_consequence(
+        replace(
+            observation,
+            returned_action=None,
+            full_reset=False,
+        )
+    )
+    assert missing_reset_receipt._reset_epoch_index == 0
+    assert missing_reset_receipt._post_marker_resource_reset_bridge is None
+    assert not missing_reset_receipt._plan
+    assert missing_reset_receipt.receipts[-1].residual == (
+        "RESET returned NOT_FINISHED without its exact official action receipt; "
+        "the one-shot post-marker bridge failed closed"
+    )
+    with pytest.raises(PolicyError, match="no unrelated action is authorized"):
+        missing_reset_receipt.select(observation)
