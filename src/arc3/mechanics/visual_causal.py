@@ -16385,7 +16385,6 @@ class VisualCausalPolicy:
         self._failed_exploration_roots: set[_ExplorationRootKey] = set()
         self._exploration_root_capacity_exhausted = False
         self._last_probe_failed = False
-        self._reset_transition_failed_closed = False
         self._last_active_color: int | None = None
         self._probe_ordinal = 0
         self._step_index = 0
@@ -16528,7 +16527,6 @@ class VisualCausalPolicy:
         self._failed_exploration_roots.clear()
         self._exploration_root_capacity_exhausted = False
         self._last_probe_failed = False
-        self._reset_transition_failed_closed = False
         self._probe_ordinal = 0
 
     def _begin_reset_epoch(self, observation: Observation) -> None:
@@ -16586,7 +16584,6 @@ class VisualCausalPolicy:
         self._marker_structural_action_order.clear()
         self._episode_exploration_root = None
         self._last_probe_failed = False
-        self._reset_transition_failed_closed = False
         self._install_post_marker_reset_plan(observation)
 
     def _install_post_marker_reset_plan(self, observation: Observation) -> bool:
@@ -17105,11 +17102,6 @@ class VisualCausalPolicy:
             raise PolicyError("levels_completed regressed within one policy lifetime")
         if observation.levels_completed > self._level_index:
             self._begin_level(observation)
-        if self._reset_transition_failed_closed:
-            raise PolicyError(
-                "RESET did not return its exact official action receipt; "
-                "no unrelated action is authorized"
-            )
         post_marker_bridge = self._post_marker_resource_reset_bridge
         if post_marker_bridge is not None:
             if post_marker_bridge.game_over_observed:
@@ -19151,23 +19143,15 @@ class VisualCausalPolicy:
             else None
         )
         marker_bootstrap_succeeded = bootstrap_active_color is not None
-        # ARC's official post-GAME_OVER life recovery returns full_reset=False;
-        # that flag identifies the initial whole-game reset.  Bind this epoch
-        # transition instead to the exact returned RESET action, official state
-        # recovery, and unchanged level identity.
+        # ARC's official post-GAME_OVER life recovery returns full_reset=False,
+        # and MyAgent deliberately strips the upstream returned_action before
+        # policy dispatch.  The exact staged RESET plus official state recovery
+        # at the unchanged level is therefore the authoritative local receipt.
         reset_recovered = (
             action.name is ActionName.RESET
             and before.state in {GameStateName.GAME_OVER, GameStateName.NOT_PLAYED}
             and observation.state is GameStateName.NOT_FINISHED
             and observation.levels_completed == before.levels_completed
-            and observation.returned_action == action
-        )
-        reset_transition_without_authoritative_receipt = (
-            action.name is ActionName.RESET
-            and before.state in {GameStateName.GAME_OVER, GameStateName.NOT_PLAYED}
-            and observation.state is GameStateName.NOT_FINISHED
-            and observation.levels_completed == before.levels_completed
-            and observation.returned_action != action
         )
         if (
             action.name is ActionName.ACTION6
@@ -19917,15 +19901,6 @@ class VisualCausalPolicy:
             self._begin_level(observation)
         elif reset_recovered:
             self._begin_reset_epoch(observation)
-        elif reset_transition_without_authoritative_receipt:
-            self._post_marker_resource_reset_bridge = None
-            self._plan.clear()
-            self._last_probe_failed = True
-            self._reset_transition_failed_closed = True
-            residual = (
-                "RESET returned NOT_FINISHED without its exact official action receipt; "
-                "the one-shot post-marker bridge failed closed"
-            )
         elif observation.state is GameStateName.UNKNOWN:
             if (
                 self._pending_plan_signature is not None
@@ -21065,7 +21040,6 @@ class VisualCausalPolicy:
             "post_marker_resource_reset_bridge_active": (
                 self._post_marker_resource_reset_bridge is not None
             ),
-            "reset_transition_failed_closed": self._reset_transition_failed_closed,
             "post_marker_resource_reset_bridge_game_over_observed": (
                 self._post_marker_resource_reset_bridge.game_over_observed
                 if self._post_marker_resource_reset_bridge is not None

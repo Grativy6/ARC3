@@ -12919,7 +12919,7 @@ def test_campaign47_exact_reset_token_installs_fresh_composite_plan() -> None:
     policy.accept_consequence(
         replace(
             observation,
-            returned_action=reset_action,
+            returned_action=None,
             full_reset=False,
         )
     )
@@ -12997,30 +12997,3 @@ def test_campaign47_exact_reset_token_installs_fresh_composite_plan() -> None:
     mismatched._begin_reset_epoch(observation)
     assert mismatched._post_marker_resource_reset_bridge is None
     assert not mismatched._plan
-
-    missing_reset_receipt = VisualCausalPolicy(max_coordinate_candidates=8)
-    missing_reset_receipt._level_index = 4
-    missing_reset_receipt._last_active_color = 0
-    missing_reset_receipt._post_marker_resource_reset_bridge = token
-    missing_receipt_terminal = _campaign43_observation(
-        frame,
-        state=GameStateName.GAME_OVER,
-    )
-    missing_receipt_reset = missing_reset_receipt.select(missing_receipt_terminal)
-    assert missing_receipt_reset == ActionRequest(ActionName.RESET)
-    missing_reset_receipt.accept_consequence(
-        replace(
-            observation,
-            returned_action=None,
-            full_reset=False,
-        )
-    )
-    assert missing_reset_receipt._reset_epoch_index == 0
-    assert missing_reset_receipt._post_marker_resource_reset_bridge is None
-    assert not missing_reset_receipt._plan
-    assert missing_reset_receipt.receipts[-1].residual == (
-        "RESET returned NOT_FINISHED without its exact official action receipt; "
-        "the one-shot post-marker bridge failed closed"
-    )
-    with pytest.raises(PolicyError, match="no unrelated action is authorized"):
-        missing_reset_receipt.select(observation)
