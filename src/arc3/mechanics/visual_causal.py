@@ -6241,6 +6241,7 @@ def _same_child_composite_cargo_projected_scene(
     # Static source glyphs remain above a passing connector.  Exact mediator
     # contact is the only witnessed source interaction, so restore an
     # uncollected source unless its assigned child is centered on it.
+    mediator_centers: dict[int, tuple[int, int]] = {}
     for child_index, (_child, example) in enumerate(relation.assignments):
         endpoint_centers = tuple(
             positions[endpoint.object_ref] for endpoint in hierarchy.children[child_index].endpoints
@@ -6249,6 +6250,7 @@ def _same_child_composite_cargo_projected_scene(
             sum(center[0] for center in endpoint_centers) // hierarchy.children[child_index].arity,
             sum(center[1] for center in endpoint_centers) // hierarchy.children[child_index].arity,
         )
+        mediator_centers[child_index] = mediator_center
         for source_index, source in enumerate(example.sources):
             if (
                 child_index,
@@ -6263,18 +6265,16 @@ def _same_child_composite_cargo_projected_scene(
         for x, y in example.target.cells:
             rows[y][x] = scene.cells[y][x]
     overlays: dict[tuple[int, int], int] = {}
-    for child_index, (child, example) in enumerate(relation.assignments):
-        endpoint_centers = tuple(positions[endpoint.object_ref] for endpoint in child.endpoints)
-        mediator_center = (
-            sum(center[0] for center in endpoint_centers) // child.arity,
-            sum(center[1] for center in endpoint_centers) // child.arity,
-        )
+    overlay_lineage: dict[tuple[int, int], tuple[int, bool]] = {}
+    for child_index, (_child, example) in enumerate(relation.assignments):
+        mediator_center = mediator_centers[child_index]
         for source_index, (source, residual_color) in enumerate(
             zip(example.sources, example.residual_colors, strict=True)
         ):
             source_key = (child_index, source_index)
             if source_key not in collected_source_keys and mediator_center != source.center:
                 continue
+            transported = source_key in collected_source_keys and mediator_center != source.center
             for dx, dy in source.offsets(residual_color):
                 cell = (mediator_center[0] + dx, mediator_center[1] + dy)
                 if not (0 < cell[0] < scene.width - 1 and 0 < cell[1] < scene.height - 1):
@@ -6283,14 +6283,79 @@ def _same_child_composite_cargo_projected_scene(
                 if prior is not None and prior != residual_color and len(example.sources) == 2:
                     raise ValueError("paired same-child cargo residual masks overlap")
                 overlays[cell] = residual_color
+                overlay_lineage[cell] = (child_index, transported)
     for (x, y), color in overlays.items():
         rows[y][x] = color
+
     delivered_child_indexes = _same_child_composite_cargo_delivered_child_indexes(
         hierarchy,
         relation,
         positions=positions,
         collected_source_keys=collected_source_keys,
     )
+    # One returned consequence placed a binary child's connector ingress above
+    # transported residual pixels after another child had already delivered.
+    # Earlier returned consequences retain residual precedence for the ternary
+    # child, including the same offsets and connector directions.  Restrict the
+    # exception to that observed structural phase and the exact residual/own-
+    # child-connector intersection.  The mediator center and carrier-colored
+    # remainder of its footprint stay hierarchy-rendered; endpoints and retained
+    # static/source/target surfaces stay foreground.
+    retained_source_cells = frozenset(
+        cell
+        for child_index, (_child, example) in enumerate(relation.assignments)
+        for source_index, source in enumerate(example.sources)
+        if (child_index, source_index) not in collected_source_keys
+        or mediator_centers[child_index] == source.center
+        for cell in source.cells
+    )
+    assigned_target_cells = frozenset(
+        cell for _child, example in relation.assignments for cell in example.target.cells
+    )
+    endpoint_cells = frozenset(
+        cell
+        for child in hierarchy.children
+        for endpoint in child.endpoints
+        for cell in _translated_object_footprint(
+            endpoint,
+            center=positions[endpoint.object_ref],
+        )
+    )
+    connector_protected = (
+        protected_static
+        | retained_source_cells
+        | assigned_target_cells
+        | endpoint_cells
+        | frozenset(mediator_centers.values())
+    )
+    connector_layers: dict[int, tuple[int, frozenset[tuple[int, int]]]] = {}
+    for child_index, child in enumerate(hierarchy.children):
+        if child.arity != 2 or not any(
+            delivered_index != child_index for delivered_index in delivered_child_indexes
+        ):
+            continue
+        connector_color = _hierarchy_connector_color(scene, child)
+        if connector_color is None:
+            continue
+        connector_layers[child_index] = (
+            connector_color,
+            frozenset(
+                cell
+                for endpoint in child.endpoints
+                for cell in _raster_line_cells(
+                    positions[endpoint.object_ref],
+                    mediator_centers[child_index],
+                )
+            ),
+        )
+    for cell, (child_index, transported) in overlay_lineage.items():
+        connector_layer = connector_layers.get(child_index)
+        if not transported or connector_layer is None or cell in connector_protected:
+            continue
+        connector_color, connector_cells = connector_layer
+        if cell in connector_cells:
+            x, y = cell
+            rows[y][x] = connector_color
     for child_index in delivered_child_indexes:
         child, example = relation.assignments[child_index]
         for x, y in example.target.cells:

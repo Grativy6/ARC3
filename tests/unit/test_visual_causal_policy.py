@@ -12992,6 +12992,283 @@ def test_campaign48_marker_multi_source_cargo_builds_exact_reoriented_route() ->
     )
 
 
+def test_campaign50_submission370_binary_connector_requires_delivered_sibling() -> None:
+    scene = extract_visual_scene(_campaign26_weighted_origin_frame())
+    hierarchy = visual_causal._unique_affine_hierarchy(scene, active_color=0)
+    assert hierarchy is not None
+    relation = visual_causal._composite_bridge_relation(scene, hierarchy, level_index=4)
+    assert relation is not None
+    refs_by_center = {
+        endpoint.rounded_center: endpoint.object_ref
+        for child in hierarchy.children
+        for endpoint in child.endpoints
+    }
+    positions = {
+        endpoint.object_ref: endpoint.rounded_center
+        for child in hierarchy.children
+        for endpoint in child.endpoints
+    }
+    positions[refs_by_center[(25, 35)]] = (8, 40)
+    positions[refs_by_center[(43, 34)]] = (39, 19)
+    colors = {endpoint_ref: 3 for endpoint_ref in positions}
+    colors[refs_by_center[(43, 34)]] = 0
+    collected_source_keys = frozenset({(0, 0)})
+
+    assert hierarchy.children[0].arity == 2
+    assert not visual_causal._same_child_composite_cargo_delivered_child_indexes(
+        hierarchy,
+        relation,
+        positions=positions,
+        collected_source_keys=collected_source_keys,
+    )
+    projected = visual_causal._same_child_composite_cargo_projected_scene(
+        scene,
+        hierarchy,
+        relation,
+        positions=positions,
+        colors=colors,
+        collected_source_keys=collected_source_keys,
+    )
+
+    assert {
+        (21, 30): projected.cells[30][21],
+        (22, 30): projected.cells[30][22],
+    } == {
+        (21, 30): 9,
+        (22, 30): 9,
+    }
+
+
+def test_campaign50_submission402_ternary_connector_keeps_residual_below_mediator() -> None:
+    _frame, scene, hierarchy, relation, _plan = _campaign48_marker_plan_fixture()
+    refs_by_center = {
+        endpoint.rounded_center: endpoint.object_ref
+        for child in hierarchy.children
+        for endpoint in child.endpoints
+    }
+    positions = {
+        endpoint.object_ref: endpoint.rounded_center
+        for child in hierarchy.children
+        for endpoint in child.endpoints
+    }
+    positions[refs_by_center[(11, 11)]] = (10, 27)
+    positions[refs_by_center[(22, 19)]] = (17, 35)
+    positions[refs_by_center[(4, 19)]] = (11, 41)
+    colors = {endpoint_ref: 3 for endpoint_ref in positions}
+    colors[refs_by_center[(4, 19)]] = 0
+
+    projected = visual_causal._same_child_composite_cargo_projected_scene(
+        scene,
+        hierarchy,
+        relation,
+        positions=positions,
+        colors=colors,
+        collected_source_keys=frozenset({(0, 0)}),
+    )
+
+    child, example = relation.assignments[0]
+    assert child.arity == 3
+    assert example.residual_colors[0] == 9
+    assert {(x, y) for x, y in ((12, 35), (12, 36))} <= frozenset(
+        cell
+        for endpoint in child.endpoints
+        for cell in visual_causal._raster_line_cells(
+            positions[endpoint.object_ref],
+            (12, 34),
+        )
+    )
+    assert {
+        (12, 35): projected.cells[35][12],
+        (12, 36): projected.cells[36][12],
+    } == {
+        (12, 35): 9,
+        (12, 36): 9,
+    }
+
+
+def test_campaign50_terminal_frame_uses_child_specific_connector_precedence() -> None:
+    _frame, scene, hierarchy, relation, _plan = _campaign48_marker_plan_fixture()
+    refs_by_center = {
+        endpoint.rounded_center: endpoint.object_ref
+        for child in hierarchy.children
+        for endpoint in child.endpoints
+    }
+    final_centers = {
+        (11, 11): (51, 6),
+        (22, 19): (56, 15),
+        (4, 19): (46, 15),
+        (50, 57): (28, 60),
+        (49, 43): (29, 39),
+    }
+    positions = {refs_by_center[center]: final for center, final in final_centers.items()}
+    colors = {endpoint_ref: 3 for endpoint_ref in positions}
+    colors[refs_by_center[(49, 43)]] = 0
+
+    projected = visual_causal._same_child_composite_cargo_projected_scene(
+        scene,
+        hierarchy,
+        relation,
+        positions=positions,
+        colors=colors,
+        collected_source_keys=frozenset({(0, 0), (0, 1), (0, 2), (1, 0)}),
+    )
+
+    child, example = relation.assignments[1]
+    mediator_center = (28, 49)
+    residual_color = example.residual_colors[0]
+    transported_residual = frozenset(
+        (mediator_center[0] + dx, mediator_center[1] + dy)
+        for dx, dy in example.sources[0].offsets(residual_color)
+    )
+    connector_cells = frozenset(
+        cell
+        for endpoint in child.endpoints
+        for cell in visual_causal._raster_line_cells(
+            positions[endpoint.object_ref],
+            mediator_center,
+        )
+    )
+    connector_ingress = transported_residual & connector_cells
+
+    expected_ternary_residual_intersections = {
+        (51, 10): 14,
+        (51, 11): 14,
+        (49, 13): 9,
+        (50, 13): 9,
+        (52, 13): 9,
+        (53, 13): 9,
+    }
+    assert {
+        cell: projected.cells[cell[1]][cell[0]] for cell in expected_ternary_residual_intersections
+    } == expected_ternary_residual_intersections
+    assert connector_ingress == {(28, 50), (28, 51)}
+    assert all(projected.cells[y][x] == 1 for x, y in connector_ingress)
+    assert all(
+        projected.cells[y][x] == residual_color for x, y in transported_residual - connector_ingress
+    )
+    assert projected.cells[mediator_center[1]][mediator_center[0]] == child.mediator.color
+    assert all(
+        projected.cells[y][x] == scene.cells[y][x]
+        for source in example.sources[1:]
+        for x, y in source.cells
+    )
+    assert all(projected.cells[y][x] == scene.cells[y][x] for x, y in example.target.cells)
+    assert all(projected.cells[y][x] == scene.cells[y][x] for x, y in hierarchy.target.cells)
+
+
+def test_same_child_connector_ingress_is_translation_and_palette_equivariant() -> None:
+    original = _campaign48_level_five_initial_frame()
+    palette = {color: (color * 7 + 2) % 16 for color in range(16)}
+    delta_x, delta_y = (1, -1)
+    rows = [[palette[5] for _x in range(64)] for _y in range(64)]
+    for y in range(2, 62):
+        for x in range(2, 61):
+            if original.cells[y][x] != 5:
+                rows[y + delta_y][x + delta_x] = palette[original.cells[y][x]]
+    scene = extract_visual_scene(GridFrame.from_rows(rows))
+    pair = visual_causal._marker_multi_source_composite_cargo_relation(
+        scene,
+        active_color=palette[0],
+        level_index=5,
+        search_budget=visual_causal._HierarchySearchBudget(
+            visual_causal._MAX_HIERARCHY_SEARCH_BUDGET
+        ),
+    )
+    assert pair is not None
+    hierarchy, relation = pair
+
+    final_centers = {
+        (11, 11): (51, 6),
+        (22, 19): (56, 15),
+        (4, 19): (46, 15),
+        (50, 57): (28, 60),
+        (49, 43): (29, 39),
+    }
+    positions = {
+        endpoint.object_ref: (
+            final_centers[
+                (
+                    endpoint.rounded_center[0] - delta_x,
+                    endpoint.rounded_center[1] - delta_y,
+                )
+            ][0]
+            + delta_x,
+            final_centers[
+                (
+                    endpoint.rounded_center[0] - delta_x,
+                    endpoint.rounded_center[1] - delta_y,
+                )
+            ][1]
+            + delta_y,
+        )
+        for child in hierarchy.children
+        for endpoint in child.endpoints
+    }
+    colors = {
+        endpoint.object_ref: (
+            palette[0] if endpoint.rounded_center == (49 + delta_x, 43 + delta_y) else palette[3]
+        )
+        for child in hierarchy.children
+        for endpoint in child.endpoints
+    }
+    without_delivered_sibling_positions = dict(positions)
+    for endpoint in hierarchy.children[0].endpoints:
+        without_delivered_sibling_positions[endpoint.object_ref] = endpoint.rounded_center
+    without_delivered_sibling = visual_causal._same_child_composite_cargo_projected_scene(
+        scene,
+        hierarchy,
+        relation,
+        positions=without_delivered_sibling_positions,
+        colors=colors,
+        collected_source_keys=frozenset({(1, 0)}),
+    )
+    projected = visual_causal._same_child_composite_cargo_projected_scene(
+        scene,
+        hierarchy,
+        relation,
+        positions=positions,
+        colors=colors,
+        collected_source_keys=frozenset({(0, 0), (0, 1), (0, 2), (1, 0)}),
+    )
+
+    child, example = relation.assignments[1]
+    mediator_center = (28 + delta_x, 49 + delta_y)
+    residual_color = palette[10]
+    transported_residual = frozenset(
+        (mediator_center[0] + dx, mediator_center[1] + dy)
+        for dx, dy in example.sources[0].offsets(residual_color)
+    )
+    connector_cells = frozenset(
+        cell
+        for endpoint in child.endpoints
+        for cell in visual_causal._raster_line_cells(
+            positions[endpoint.object_ref],
+            mediator_center,
+        )
+    )
+    connector_ingress = transported_residual & connector_cells
+
+    assert connector_ingress == {
+        (28 + delta_x, 50 + delta_y),
+        (28 + delta_x, 51 + delta_y),
+    }
+    assert all(
+        without_delivered_sibling.cells[y][x] == residual_color for x, y in connector_ingress
+    )
+    assert all(projected.cells[y][x] == palette[1] for x, y in connector_ingress)
+    assert all(
+        projected.cells[y][x] == residual_color for x, y in transported_residual - connector_ingress
+    )
+    assert projected.cells[mediator_center[1]][mediator_center[0]] == palette[0]
+    assert all(
+        projected.cells[y][x] == scene.cells[y][x]
+        for source in example.sources[1:]
+        for x, y in source.cells
+    )
+    assert all(projected.cells[y][x] == scene.cells[y][x] for x, y in example.target.cells)
+    assert all(projected.cells[y][x] == scene.cells[y][x] for x, y in hierarchy.target.cells)
+
+
 def test_campaign49_marker_route_rejects_endpoint_overlap_with_assigned_target() -> None:
     _frame, scene, hierarchy, relation, _plan = _campaign48_marker_plan_fixture()
     refs_by_center = {
