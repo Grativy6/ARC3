@@ -7,9 +7,10 @@ Do not delete resolved burdens. Append a resolution with its evidence and commit
 - **Status:** OPEN
 - **Stage:** 01–03
 - **Opened:** 2026-08-30
-- **Burden:** The repository has no local 003w environment asset or virtual environment yet. The pinned official SDK may need to acquire the authorized public development asset, or an external service change may prevent local play.
+- **Burden:** The repository-local Python 3.12 environment and pinned official SDK now pass non-playing checks, but the selected official development asset has not yet been opened. The official public acquisition path may still be unavailable.
 - **Why it matters:** Synthetic or mocked success cannot satisfy the owner objective.
-- **Next discriminating action:** Build the repository-local locked environment, run non-playing SDK/import checks, then open only the selected development identity through the official local adapter.
+- **Progress:** `.venv` and `.uv-cache` are checkout-local; the Wise gate, official adapter, integrity, and offline checks pass. Official exposure and environment actions remain zero.
+- **Next discriminating action:** From the clean frozen commit, open only the selected development identity through the guarded official acquisition/local adapter path.
 - **Resolution condition:** The official environment returns a normalized initial observation, or all safe local/public routes end at a precisely recorded `BLOCKED_EXTERNAL` boundary.
 - **Resolution receipt:** none.
 
@@ -45,3 +46,15 @@ Do not delete resolved burdens. Append a resolution with its evidence and commit
 - **Next discriminating action:** Store immutable observations/actions/consequences and implement replay from the initial reset with exact frame/state verification before accepting another action.
 - **Resolution condition:** Focused tests and an official-session resume prove exact prefix reconstruction, or the active uninterrupted session reaches terminal state and the limitation remains explicit.
 - **Resolution receipt:** none.
+
+## B-003W-0005 — Legacy Windows path limit broke one inherited wrapper run
+
+- **Status:** RESOLVED
+- **Stage:** 02
+- **Opened:** 2026-08-30
+- **Resolved:** 2026-08-30
+- **Burden:** Nine inherited wrapper tests failed after the first controller decision returned a `FileNotFoundError`; the other failures cascaded from the unfinished tournament state.
+- **Why it matters:** A source regression and a host filesystem boundary require different responses.
+- **Discriminating action:** Re-run the identical inherited test file with a checkout-local extended-length (`\\?\\`) basetemp and no source or test changes.
+- **Resolution:** The test file passed 13 tests with 2 Linux-only skips. The failure is classified `FAILED_INFRASTRUCTURE`, resolved for this gate without weakening inherited behavior.
+- **Resolution receipt:** `docs/evidence/003w-03-nonplaying-verification.json`.

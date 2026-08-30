@@ -1,0 +1,53 @@
+{
+  "schema": "arc3.build-003w.wise-scientist-implementation.v0.1",
+  "status": "PASS",
+  "recorded_at": "2026-08-30T22:55:19.4695605Z",
+  "branch": "experiment/003w-wise-scientist-clean-room",
+  "preimplementation_checkpoint_commit": "1702c40d159bb1b3fe994aa1998a330d9bcf603c",
+  "directive": "docs/workflows/003w-wise-scientist-play-directive.md",
+  "authorization_receipt": {
+    "path": "docs/evidence/003w-01-development-play-authorization.json",
+    "sha256": "sha256:717025ecee20195044b21fb12dc9bc26a4105c7efac194a204e2bdb75c5afe84"
+  },
+  "implementation_files": [
+    {
+      "path": "src/arc3/wise_scientist/__init__.py",
+      "sha256": "sha256:7f49b3ba0f8860d102272ea6947ae51b2c66dfa5d76e5b105a89361a124a2f1b"
+    },
+    {
+      "path": "src/arc3/wise_scientist/models.py",
+      "sha256": "sha256:f77e9397b2e288346853cd91579a78f04da98f19faf4bd728e4ec92c19aef769"
+    },
+    {
+      "path": "src/arc3/wise_scientist/journal.py",
+      "sha256": "sha256:208eec6c06991343f09e76fb1729e42e7b91dd1fe5916bf1c571f5cfa5d8896a"
+    },
+    {
+      "path": "src/arc3/wise_scientist/session.py",
+      "sha256": "sha256:31d05540bd798cbac83300b4368e76aacb16ae7c18a12fe5de14de46bef20793"
+    },
+    {
+      "path": "scripts/play_wise_scientist.py",
+      "sha256": "sha256:1fe33a3d4a84fd95bfa2cb5e20ea2894ca7da41547643b6b19f4c18d462ef5ce"
+    }
+  ],
+  "contract": {
+    "pre_action_prediction_required": true,
+    "competing_predictions_required_per_distinction": true,
+    "decision_relevance_chain_required": true,
+    "parent_linked_subgoal_lifecycle_required": true,
+    "localized_post_consequence_update_required": true,
+    "level_transition_is_not_completion": true,
+    "game_over_is_failure_evidence": true,
+    "unchanged_failed_action_is_guarded": true,
+    "direct_official_win_is_only_success_terminal": true,
+    "hosted_model_calls": false,
+    "production_game_id_branching": false
+  },
+  "gameplay": {
+    "official_environment_opened": false,
+    "environment_actions": 0,
+    "holdout_identities_loaded": 0,
+    "holdout_environment_actions": 0
+  }
+}
