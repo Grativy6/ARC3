@@ -30,7 +30,7 @@ This ledger is append-oriented. Later evidence may supersede a decision but must
 - **Status:** ADOPTED
 - **Stage:** 01
 - **Date:** 2026-08-30
-- **Commit:** pending
+- **Commit:** `fd147318019ca497a920c5726ad42a239b105290`
 - **Decision:** Before every environment action, require a current observation identity, one governing objective, decision-relevant distinctions with competing predictions and relevance chains, parent-linked subgoals with lifecycle conditions, a predicted consequence, concise alternatives, and a localized post-consequence update. Stop successfully only on an observed official `GameState.WIN`.
 - **Alternatives:** Reuse the inherited FULL controller unchanged; record prose after acting; treat level completion or `NOT_FINISHED` as success.
 - **Evidence:** `docs/workflows/003w-wise-scientist-play-directive.md`.
@@ -42,7 +42,7 @@ This ledger is append-oriented. Later evidence may supersede a decision but must
 - **Status:** ADOPTED
 - **Stage:** 01–02
 - **Date:** 2026-08-30
-- **Commit:** pending
+- **Commit:** `fd147318019ca497a920c5726ad42a239b105290`
 - **Decision:** Use a typed scan → act → assess gate around the official local adapter. Require a signed development authorization, an exact clean commit, checkout-local artifacts, bounded actions/resets/time, and refusal of `ARC_API_KEY`. Permit the pinned public acquisition helper only before the local offline session.
 - **Alternatives:** Drive the adapter from an ad hoc shell; reuse the full inherited controller; allow uncommitted source changes during play.
 - **Evidence:** `docs/evidence/003w-01-development-play-authorization.json`, `docs/evidence/003w-02-wise-scientist-implementation.json`, and `docs/evidence/003w-03-nonplaying-verification.json`.
@@ -54,7 +54,7 @@ This ledger is append-oriented. Later evidence may supersede a decision but must
 - **Status:** RESOLVED
 - **Stage:** 02
 - **Date:** 2026-08-30
-- **Commit:** pending
+- **Commit:** `5c5c7666d9c08cd8c633231939f88495c2f6bbfc`
 - **Decision:** Preserve the initial 9-failure inherited wrapper run as `FAILED_INFRASTRUCTURE`; do not alter inherited controller code or weaken tests. Use a checkout-local extended-length Windows basetemp for the resolving run.
 - **Evidence:** The failed wrapper receipt reported `boundary=controller-decision` and `error_type=FileNotFoundError`; the identical test file then passed 13 tests with 2 Linux-only skips under the extended-length path. See `docs/evidence/003w-03-nonplaying-verification.json`.
 - **Consequences:** The source gate is not blocked by the host path limit. The failed attempt remains part of the experiment record.
