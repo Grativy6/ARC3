@@ -1,0 +1,198 @@
+{
+  "schema": "arc3.build-003.official-development-win.v0.1",
+  "generated_at": "2026-08-30T04:30:18.605738Z",
+  "status": "PASS",
+  "surface": "local-public",
+  "partition": "development",
+  "claim_boundary": {
+    "authoritative_completion": "OBSERVED",
+    "synthetic_mechanism_result": "FAILED_MECHANISM",
+    "public_evaluator_claim": "MECHANISM_NOT_OBSERVED",
+    "official_arc3_rhae": "NOT_MEASURED",
+    "public_holdout_consumed": "0/1",
+    "arc3_generalization_claim": false,
+    "required_literal": "NO_ARC3_GENERALIZATION_CLAIM"
+  },
+  "source": {
+    "branch": "build/003-bla-clef-mechanical-learner",
+    "frozen_commit": "eab4497a6033bd27102ed99d4d2e43f6ab708ec4",
+    "frozen_tree": "17bb7e126034f6ccf8a5d24becd8163629e33757",
+    "first_party_source_hash": "sha256:96fada83990cd7c6a6b08aca151443c1d3ce51d725020bc35361a5cbee3c3902",
+    "clean_detached_checkout": "C:\\a\\b52-eab4497-local",
+    "independent_verifier_checkout": "C:\\a\\b52-eab4497-visual"
+  },
+  "completion_receipt": {
+    "game_id": "r11l-495a7899",
+    "evaluation_id": "build003-r11l-mechanical-seed7-eab4497-campaign52",
+    "run_id": "r11l-495a7899-B5-mechanical-seed-7",
+    "final_environment_state": "WIN",
+    "raw_final_state": "WIN",
+    "metric_final_state": "WIN",
+    "official_run_state": "WIN",
+    "levels_completed": 6,
+    "win_levels": 6,
+    "level_action_counts": [3, 10, 13, 35, 335, 33],
+    "submitted_action_count_including_resets": 429,
+    "non_reset_environment_action_count": 424,
+    "submitted_reset_count": 5,
+    "initial_sdk_reset_return_count": 1,
+    "recording_observation_count": 430,
+    "not_finished_consequences": 423,
+    "game_over_consequences": 5,
+    "win_consequences": 1,
+    "final_submission_index": 429,
+    "final_level_episode_action": 33,
+    "final_action": {
+      "name": "ACTION6",
+      "coordinate": {
+        "x": 14,
+        "y": 60
+      }
+    },
+    "completion_genuinely_observed": true,
+    "completion_observed": true,
+    "receipt_complete": true,
+    "run_evidence_complete": true,
+    "recording_verified": true,
+    "replay_verified": true,
+    "official_scorecard_verified": true,
+    "run_receipt_hash": "sha256:9826969ef86358f9d58d5d66b0bdd09034d8c2a8835ed8eea456ed3fb19260e1",
+    "completion_receipt_hash": "sha256:84030e25bd09e812d7bd15948d9f785a3d9e9468e99d0534f7e6f91e3ad4181c"
+  },
+  "official_artifacts": {
+    "root": "C:\\a\\arc3-b003-play\\build003-r11l-mechanical-seed7-eab4497-campaign52",
+    "evaluation_manifest": {
+      "path": "C:\\a\\arc3-b003-play\\build003-r11l-mechanical-seed7-eab4497-campaign52\\manifest.json",
+      "bytes": 117363,
+      "file_sha256": "sha256:92098cd1c0aa36494ed39637e7b31d69e4b5f397ca83f5c95258dd813dfe672f",
+      "object_hash": "sha256:e0b8eaa80514861a82f11bcff82781465229913ba3c3dee7a1fd5067762add80",
+      "identity_hash": "sha256:d90e51cdfa92c8f4ef3c01838e52252b025fcf9337015d478cff8c09cd20261e",
+      "config_hash": "sha256:5a0574bcad2dd2418d4fabb4a1625a6ef545e4759ed1ec79723200ac12dd9404",
+      "run_spec_hash": "sha256:4f4a1db326eb8370ad797a3006e4a2e3cc69f2d175cfcdf562bbac9518e9c696"
+    },
+    "recording": {
+      "path": "C:\\a\\arc3-b003-play\\build003-r11l-mechanical-seed7-eab4497-campaign52\\official-recordings\\c2120ed7e4beb839e4d0\\ff6119d7-eb42-4c7a-91a4-6842c94f8188\\r11l-495a7899-730d1515-d732-4f70-9b7b-8796119c3e21.jsonl",
+      "bytes": 14420965,
+      "sha256": "sha256:441ca0be8f956b8b07c52c8ba5f24e0b485618f06231248c7e6ce579f7d48fbe",
+      "rows": 430,
+      "session_id": "730d1515-d732-4f70-9b7b-8796119c3e21"
+    },
+    "run_receipt": {
+      "path": "C:\\a\\arc3-b003-play\\build003-r11l-mechanical-seed7-eab4497-campaign52\\runs\\r11l-495a7899-B5-mechanical-seed-7.json",
+      "bytes": 2431793,
+      "file_sha256": "sha256:8b7f653e914f44276108b34af1bf37f74ce66c6a6f094e7b6eb3ab0dc723e069",
+      "object_hash": "sha256:9826969ef86358f9d58d5d66b0bdd09034d8c2a8835ed8eea456ed3fb19260e1"
+    },
+    "results": {
+      "path": "C:\\a\\arc3-b003-play\\build003-r11l-mechanical-seed7-eab4497-campaign52\\results.jsonl",
+      "bytes": 2431793,
+      "sha256": "sha256:8b7f653e914f44276108b34af1bf37f74ce66c6a6f094e7b6eb3ab0dc723e069"
+    },
+    "summary": {
+      "path": "C:\\a\\arc3-b003-play\\build003-r11l-mechanical-seed7-eab4497-campaign52\\summary.json",
+      "bytes": 1039,
+      "sha256": "sha256:32635fe3b5acc940971c103f897caffb0724aeb7d08f7ad62a957d3fbd83a96b"
+    },
+    "trace": {
+      "root": "C:\\a\\arc3-b003-play\\build003-r11l-mechanical-seed7-eab4497-campaign52\\t\\c2120ed7e4beb839e4d0",
+      "chunk_path": "C:\\a\\arc3-b003-play\\build003-r11l-mechanical-seed7-eab4497-campaign52\\t\\c2120ed7e4beb839e4d0\\chunk-000001.jsonl",
+      "chunk_bytes": 8262831,
+      "chunk_sha256": "sha256:3c0338cc43b27740d3a0b91e4cd40a5bb36864c5f72d5ec7b1936d5a1a888436",
+      "manifest_path": "C:\\a\\arc3-b003-play\\build003-r11l-mechanical-seed7-eab4497-campaign52\\t\\c2120ed7e4beb839e4d0\\manifest.json",
+      "manifest_file_sha256": "sha256:5a9835f2e5296495e694a0d5dde90084c5499d8f2499e546c9797d3a9c31693f",
+      "manifest_object_hash": "sha256:ef4c11fc2c60a12cdb0a3f01f119e0611ae93fbf3de0834ea82ade7cc6517364",
+      "events": 2575,
+      "observations": 430,
+      "action_candidates": 429,
+      "action_selections": 429,
+      "action_submissions": 429,
+      "consequences": 429,
+      "mechanics_receipts": 429,
+      "first_event_hash": "sha256:23c6aceaf94c795e83ea30e24ccbffeaba2971a5b61ca800ff52dd7933a967db",
+      "final_observation_event_id": "E-01788064208554893700-00000a0e-a8495476bf5941f5b66973273aa640fe",
+      "tail_event_hash": "sha256:91f3e24a39fea6a823139e148b33f5f695b8dc9dd3cd0b666910d2b36dba0f0e",
+      "unique_blobs": 603,
+      "unique_blob_bytes": 5095918
+    }
+  },
+  "verification": {
+    "canonical_public_verifier": {
+      "verified": true,
+      "artifact_count": 613,
+      "run_count": 1,
+      "errors": []
+    },
+    "recording_trace_action_sequence_match": true,
+    "raw_terminal_observation_matches_scorecard": true,
+    "asset_identity_before_after_match": true,
+    "asset_sha256": "sha256:483e583c88e91c2ae58ad1fa7b274d97813993796ce798551a563e1a9a78a7ff",
+    "source_semantically_inspected": false
+  },
+  "exposure_ledger": {
+    "path": "C:\\a\\arc3-b003-play\\public-exposure.jsonl",
+    "events": 101,
+    "development_events": 101,
+    "holdout_events": 0,
+    "last_sequence": 100,
+    "bytes": 72976,
+    "file_sha256": "sha256:1dbfe3e9b29dae81083fddc1e69ba7dca35e67b3f030d633cf90b56342fcb000",
+    "campaign_start_event_hash": "sha256:b819eb54943b7572b6a428716698cba047b7286781255408a0166c88a8016e65",
+    "tail_event_hash": "sha256:157773149e8dfa20c2f624ffc2a811635786aaf29ed12912b3a7d53e2630af40",
+    "chain_verified": true
+  },
+  "exact_freeze_package": {
+    "source_commit": "eab4497a6033bd27102ed99d4d2e43f6ab708ec4",
+    "source_tree": "17bb7e126034f6ccf8a5d24becd8163629e33757",
+    "hosted_run": "https://github.com/Grativy6/ARC3/actions/runs/33288733132",
+    "downloaded_artifact_root": "C:\\a\\arc3-c52-package-artifact-eab4497-push",
+    "release_receipt": {
+      "path": "C:\\a\\arc3-c52-package-artifact-eab4497-push\\release-verification-receipt.json",
+      "file_sha256": "sha256:a2b0473ad43dec9175668f9faa538eedcbdbe9249339aa869e9515ab0f57a996",
+      "object_hash": "sha256:4a6d74204328c9b6270023fe9bc84756ab4d9a3497b8e2827f95631dbeb3f8b7",
+      "status": "BLOCKED_EXTERNAL",
+      "scoped_status": "ALL_NON_PRIVATE_CHECKS_PASS",
+      "private_boundary": "exact private Kaggle wheels, platform Agents input, gateway, and scorer were not provided; no access was attempted"
+    },
+    "package_candidate": {
+      "path": "C:\\a\\arc3-c52-package-artifact-eab4497-push\\package-a\\arc3-kaggle-candidate.zip",
+      "bytes": 1201781,
+      "sha256": "sha256:432bdf0ae61f5c960f7372c6b07c1e1393fa52f764f1997ab0d450b2f3459639",
+      "deterministic_a_b_equal": true,
+      "payload_sha256": "sha256:95394d1722ec9590980e51444542ad0f9755f52e98b0f6274af773bafde2d0a5",
+      "manifest_sha256": "sha256:acf091dd0ae701a9bc8c80d3770bb05b0165b971c07f72798349b0712edab377",
+      "sbom_sha256": "sha256:05ec473913d86194ae56582dd8cfbf2e0c7dccc7fcfdb87ca19e7da657e3f97c",
+      "build_receipt_sha256": "sha256:282dd07338953f593a60c6af23f38d97240906075cd3b02fafa76304dc15ecb4",
+      "runtime_wheel_count": 31
+    },
+    "package_safe_tests": {
+      "passed": 1130,
+      "skipped": 3,
+      "failed": 0,
+      "wall_seconds": 3294.09,
+      "guard_attempts": 0
+    },
+    "cold_start": {
+      "status": "PASS",
+      "total_seconds": 1.2002790999999888,
+      "sampled_peak_rss_bytes": 84910080,
+      "network_attempts": 0,
+      "process_attempts": 0
+    },
+    "generated_log_secret_scan": {
+      "status": "PASS",
+      "persisted_redacted_logs": 22,
+      "findings": 0,
+      "redactions": 0
+    }
+  },
+  "human_gates": {
+    "terms_accepted": false,
+    "credentials_used": false,
+    "holdout_accessed": false,
+    "money_spent": false,
+    "upload_or_submission": false,
+    "release_published": false,
+    "pull_request_merged": false,
+    "external_message_sent_as_owner": false
+  }
+}

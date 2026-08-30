@@ -1,10 +1,11 @@
 # ARC3 Build 003 — BLA–CLEF mechanical learner
 
-**Current build disposition:** `IN_PROGRESS`
+**Workflow disposition:** `COMPLETE`
+**Build disposition:** `PARTIAL`
+**Official development target:** `WIN`, 6/6 levels in Campaign 52
+**Official target completion observed:** `true`
 **Final preregistered synthetic matrix:** `FAILED_MECHANISM`
 **Corrected independent audit:** `FAIL` — 534 genuine evidence-completeness findings
-**Official development target:** `NOT_FINISHED`, 4/6 levels after Campaign 28
-**Official target completion observed:** `false`
 **Official ARC3 RHAE:** `NOT_MEASURED`
 **Public holdout consumed:** `0/1`
 **Claim boundary:** `NO_ARC3_GENERALIZATION_CLAIM`
@@ -18,40 +19,40 @@ Build 003 implements a bounded BLA/CLEF-inspired mechanical learner that predict
 decomposes returned consequences, records structured residuals, revises versioned scoped mechanics,
 uses passive confirmation, and retains reliable mechanics across levels while quarantining game
 facts between games. The production route is
-`MyAgent -> VisualCausalPolicy -> MechanicalLearner`; action selection remains subject to the
-Build 002 lifecycle, legal-action, resource, and tournament-governor boundaries.
+`MyAgent -> VisualCausalPolicy -> MechanicalLearner`; the Build 002 lifecycle, legal-action,
+resource, and tournament-governor boundaries remain operative.
 
-The final preregistered synthetic result is negative. The exact one-shot v0.2 matrix contains all
-1,200 required rows and 120 sequence receipts, but H1 and H3 failed their literal rules, H2 was not
-measured, and action/receipt completeness was only 0.615. The corrected independent audit removed
-only 1,158 auditor-generated schema/reconstruction findings and still returned `FAIL` with 462
-per-level action/receipt count mismatches and 72 aggregate incomplete-link attestations. This is
-not `MECHANISM_CONFIRMED_SYNTHETIC`.
+The primary gameplay outcome was achieved. On authorized public non-holdout development play, the
+official environment returned `GameState.WIN` for `r11l-495a7899` after completing all six levels.
+Campaign 52 submitted 429 actions including five legal resets: 424 `ACTION6` actions and five
+`RESET`s. The terminal action was `ACTION6 (14,60)`. The raw recording, immutable trace, official
+scorecard, run receipt, and completion receipt all report `WIN`, `levels_completed=6`, and
+`win_levels=6`; the canonical verifier passed all 613 declared artifacts.
 
-Authorized official non-holdout development play made real progress but did not complete the
-target. Campaign 28 ended with the official environment returning `NOT_FINISHED` at 4/6 levels
-after 115 `ACTION6` submissions, with zero submitted resets, zero `GAME_OVER`, and zero `WIN`.
-Campaign 29 has not started. Only an official returned `GameState.WIN` can change the completion
-field.
+This win does not erase the negative research result. The exact one-shot synthetic matrix remains
+`FAILED_MECHANISM`: H1 and H3 failed, H2 is `NOT_MEASURED`, and receipt completeness is 0.615. The
+public evaluator therefore retains `MECHANISM_NOT_OBSERVED` and `NO_GENERALIZATION_CLAIM` even
+though its run status is `PASS`. Repeated development exposure and iterative repairs make Campaign
+52 evidence of completion on this public development game, not hidden-game generalization.
 
 ## 1. Identity, base, and authority
 
 Build 003 branches from merged main `bea1eac99cb0f1b351526b1dc487d132ba1d40ef`, tree
 `700718c09c2a1532cea16526b290f57be0120371`. Build 002 head
 `5448c53f3b7e08f606cf292e6068f3f9c9db16d4` is ancestral and merge-equivalent by tree. Build 001
-remains `PARTIAL` and `SEALED_UNCONSUMED`; Build 002 remains `PARTIAL` with exact evaluation
-`BLOCKED_EXTERNAL`. No prior result is retroactively revised.
+remains `PARTIAL` and `SEALED_UNCONSUMED`; Build 002 remains `PARTIAL`, with its exact private
+evaluation boundary preserved as `BLOCKED_EXTERNAL`. No prior result is retroactively revised.
 
-The Build 003 implementation freeze is:
+The successful implementation freeze is:
 
 - branch: `build/003-bla-clef-mechanical-learner`;
-- commit: `83df5520478cc209c06d9ce4e658c90786914544`;
-- tree: `3d1a45995b004947900de3114449a7e42bd80a87`.
+- commit: `eab4497a6033bd27102ed99d4d2e43f6ab708ec4`;
+- tree: `17bb7e126034f6ccf8a5d24becd8163629e33757`;
+- first-party source hash:
+  `sha256:96fada83990cd7c6a6b08aca151443c1d3ce51d725020bc35361a5cbee3c3902`.
 
-Later commits are evidence, assurance, or documentation only unless a ledgered defect explicitly
-reopens the implementation. The exact-freeze package, cold-start, package-only integrity, and
-generated-log secret evidence are now recorded below. Draft PR #7 is open; the final documentation
-head, exact pushed PR head, current-head CI, and Campaign 29 receipt remain `PENDING_EVIDENCE`.
+The final evidence commit is documentation-only relative to that freeze. Its exact pushed identity
+and current check state are external self-referential facts recorded on draft PR #7.
 
 The controlling source identities are:
 
@@ -67,317 +68,220 @@ The controlling source identities are:
 | `arcprize/docs` | `a5dfc0b64c625fb4a19cf074af845ebe0bb88ff8` |
 
 The official cached target asset is repository-classified development evidence at
-`C:\a\arc3-s15-6a0f6e5\artifacts\stage15\public-environments`, asset SHA-256
+`C:\a\arc3-s15-6a0f6e5\artifacts\stage15\public-environments`, SHA-256
 `483e583c88e91c2ae58ad1fa7b274d97813993796ce798551a563e1a9a78a7ff`. Its game source was not
 semantically inspected. The target ID is evaluation configuration only and is prohibited from
 production policy code.
 
 ## 2. Architecture delivered
 
-Build 003 adds these bounded mechanisms:
+Build 003 adds:
 
-- CLEF-style layer declarations, noise thresholds, readability walls, independent evidence
-  families, validity gates, and explicit `PROMOTE`/`PARK`/`STOP` decisions;
-- factored predicted and observed consequence vectors covering displacement, object changes,
-  resources, inventory, legal actions, topology/reachability, status/animation, score/progress,
-  terminal/reset, and delayed/unresolved effects;
-- immutable, replay-linked causal action receipts and structured mixed-type residuals;
-- a hash-linked versioned mechanic ledger with scope ceilings, evidence provenance, calibrated
-  statuses, counterevidence, reopening, supersession, passive confirmation, and bounded active
-  state;
-- sparse additive, conditional, gating, override, and delayed effect composition;
-- local-first repair candidates and deeper reopening only after implicated local explanations fail;
-- broad-map exploration with consequence relevance, progress, information value, action savings,
-  resource/failure risk, redundancy, bounded candidate counts, and non-grid-search coordinate
-  targeting;
-- within-game cross-level persistence, level-local reset, same-level failure retention, and
-  cross-game quarantine;
-- deterministic synthetic curriculum, four-variant ablation, exact frozen comparator, literal
-  H1–H3 result gates, production-route profiling, public-evaluation receipts, and read-only
-  recording replay.
+- typed CLEF-style logical layers, readability/noise gates, independent evidence families, and
+  explicit `PROMOTE`/`PARK`/`STOP` decisions;
+- predicted, observed, explained, and residual consequence vectors over ten effect channels;
+- immutable replay-linked action receipts and a hash-linked versioned BLA mechanic ledger;
+- scoped support, passive confirmation, stress, reopening, revision, and supersession;
+- sparse additive, conditional, gating, override, and delayed causal composition;
+- local-first repair and deeper reopening only after implicated local explanations fail;
+- relevance-ranked bounded exploration without a whole-grid coordinate fallback;
+- within-game cross-level persistence, level-local reset, same-level failure memory, and cross-game
+  quarantine;
+- deterministic curriculum, ablation, replay, public evaluation, packaging, and integrity tools.
 
-The learner remains deterministic under its declared seed and bounded by the inherited governor.
-No hosted model or remote inference API is required.
+The learner is deterministic under its declared seed, works without a hosted model, and remains
+bounded by the inherited competition governor.
 
 ## 3. BLA/CLEF source-to-implementation mapping
 
-The source frameworks are used only as bounded software design inputs. They do not control ARC
-semantics and their implementation does not validate either framework as a general theory.
+The frameworks are bounded software-design inputs. Their use does not validate BLA or CLEF as a
+general theory and does not control ARC semantics.
 
-| Source mechanism actually used | Bounded software realization | Principal paths | Evidence and limit |
+| Source mechanism used | Bounded realization | Principal paths | Evidence limit |
 |---|---|---|---|
-| CLEF layer declaration `(X, r, N_L, A_L, W_L)` and dynamic action window | Typed logical layers, action windows, readable fields, thresholds, extraction method, and readability wall | `src/arc3/perception/layers.py` | Unit layer tests; operational game layers only, no physical/thermodynamic import |
-| CLEF independent evidence families and non-averagable validity gates | Separate evidence readings plus required gates inside `LayerAssessment` | `src/arc3/perception/layers.py` | Failed validity parks evidence rather than being averaged into support |
-| CLEF coupling promotion and scale-relevance stopping | `assess_residual` returns `PROMOTE`, `PARK`, or `STOP` for noise, explanation, wall, decision effect, and cost/value reasons | `src/arc3/perception/layers.py`, `src/arc3/exploration/causal_events.py` | Stage 09 adversarial coverage; final H3 still `FAIL` |
-| CLEF active-layer pressure and BLA-only comparison | Measured promoted/parked/stopped residuals and active-ledger pressure; ablation can disable CLEF relevance | `evaluation_only/arc3_build003_curriculum/variant_policy.py`, `src/arc3/evaluation/build003_results.py` | H3 pressure median delta was 8.0 and redundant-probe delta 0.0; no benefit claim |
-| BLA residual opens a bounded question, not an answer | Predicted/observed consequence comparison emits typed residual records with evidence references and dispositions | `src/arc3/exploration/causal_events.py`, `src/arc3/mechanics/effects.py` | Ten consequence channels remain explicit; unknown/unreadable values are not invented |
-| BLA versioned boundary ledger and reopening handle | Append-only hash-linked events, immutable mechanic versions, scoped statuses, evidence/counterevidence, reopen and supersede transitions | `src/arc3/mechanics/models.py`, `src/arc3/mechanics/ledger.py` | Ledger serialization/replay tests; final matrix receipt linkage is incomplete |
-| BLA earned support and conservation of still-correct consequences | Distinct-context evidence, passive confirmation, channel-local support, scoped stress/reopen, and transfer confirmation | `src/arc3/mechanics/ledger.py`, `src/arc3/mechanics/learner.py` | Development evidence is positive; H1 final transfer rule failed |
-| BLA smallest sufficient repair | At most four ranked local candidates per residual, tracked failures, and deeper reopening after implicated local failures | `src/arc3/mechanics/repair.py`, `src/arc3/mechanics/learner.py` | Stage 09 cases pass; H2 final decision is `NOT_MEASURED` |
-| BLA sparse causal composition | Base, additive, conditional, gating, override, and delayed contributions with unresolved ambiguity retained | `src/arc3/mechanics/models.py`, `src/arc3/mechanics/effects.py` | Exact-context override support is occurrence-only; magnitude certainty is not claimed |
-| BLA persistence and authority ceilings | Game/level/region/object/state scopes, cross-level retention, same-level failure memory, level-local archival, and cross-game quarantine | `src/arc3/mechanics/learner.py`, `src/arc3/mechanics/ledger.py` | Quarantine is enforced at ledger admission; no two-live-game generalization claim |
-| BLA/CLEF economical causal exploration | Relevance-ranked probes, ineffective-action memory, bounded coordinate candidates, readable objects/regions/frontiers, and no whole-grid fallback | `src/arc3/exploration/policy.py`, `src/arc3/exploration/coordinates.py`, `src/arc3/mechanics/visual_causal.py` | Coordinate exhaustion fails closed rather than inventing a target |
-| Action-by-action integration and consequence return path | `MyAgent` delegates to `VisualCausalPolicy`, which predicts, selects once, accepts one returned observation, updates the learner, and replans | `agent/my_agent.py`, `src/arc3/mechanics/visual_causal.py`, `src/arc3/evaluation/public_runner.py` | Canonical Campaign 28 replay matched 115 actions/consequences; official state remained `NOT_FINISHED` |
+| CLEF layer declaration and dynamic action window | Typed logical layers, action windows, readable fields, extraction thresholds, and readability walls | `src/arc3/perception/layers.py` | Operational game layers only |
+| CLEF independent evidence families | Separate evidence readings and non-averagable validity gates | `src/arc3/perception/layers.py` | Failed validity parks evidence |
+| CLEF coupling promotion and relevance stopping | `PROMOTE`, `PARK`, or `STOP` on residual relevance and cost/value | `src/arc3/perception/layers.py`, `src/arc3/exploration/causal_events.py` | Final H3 is `FAIL` |
+| BLA residual as bounded question | Typed predicted/observed residual records with provenance | `src/arc3/exploration/causal_events.py`, `src/arc3/mechanics/effects.py` | Unknown values are not invented |
+| BLA versioned boundary ledger | Append-only hash-linked mechanic versions, scope, counterevidence, reopen, and supersede | `src/arc3/mechanics/models.py`, `src/arc3/mechanics/ledger.py` | Final matrix linkage remains incomplete |
+| BLA support conservation | Distinct-context support, passive confirmation, scoped stress/reopen, and transfer confirmation | `src/arc3/mechanics/ledger.py`, `src/arc3/mechanics/learner.py` | H1 failed; no general transfer claim |
+| BLA smallest repair | At most four ranked local candidates and implicated-only reopening | `src/arc3/mechanics/repair.py`, `src/arc3/mechanics/learner.py` | H2 is `NOT_MEASURED` |
+| Sparse causal composition | Additive, conditional, gating, override, and delayed contributions | `src/arc3/mechanics/models.py`, `src/arc3/mechanics/effects.py` | Occurrence evidence does not prove magnitude |
+| Persistence and authority ceilings | Game/level/region/object/state scope, reset retention, and cross-game quarantine | `src/arc3/mechanics/learner.py`, `src/arc3/mechanics/ledger.py` | No live cross-game generalization evidence |
+| Economical causal exploration | Relevance-ranked probes, failed-action memory, bounded coordinates, and fail-closed exhaustion | `src/arc3/exploration/policy.py`, `src/arc3/exploration/coordinates.py`, `src/arc3/mechanics/visual_causal.py` | No whole-grid fallback |
+| Action/consequence integration | Predict, select once, receive one consequence, update, and replan | `agent/my_agent.py`, `src/arc3/mechanics/visual_causal.py`, `src/arc3/evaluation/public_runner.py` | Campaign 52 is one public-development win |
 
 ## 4. Synthetic curriculum and ablation
 
-Protocol v0.2 froze 30 held-out cases, ten mechanic families, four variants, and 1,200 required
-rows. It binds the exact Build 002 comparator commit/tree, uses 192 actions per sequence, 48 actions
-per level attempt, ten resets, ten wall-clock seconds, 1 GiB peak memory, and no row replacement.
-The learner process receives only normalized observations and returned consequences, not generator
-configuration, seed, family, transition truth, or oracle plan.
-
-Development selection evidence was directionally positive but non-final:
-
-| Variant | Synthetic sequences won | Levels completed | Actions |
-|---|---:|---:|---:|
-| full BLA+CLEF | 5/5 | 50 | 721 |
-| BLA-only persistent | 3/5 | 35 | 797 |
-| BLA+CLEF per-level reset | 0/5 | 7 | 960 |
-| exact Build 002 | 0/5 | 1 | bounded by five wall-clock exits |
-
-These development seeds selected and debugged the implementation. They are not the final paired
-result and do not establish ARC gameplay performance.
-
-### Final one-shot v0.2 matrix
-
-Root: `C:\a\arc3-b003-stage08-v02-final-83df552-01`
-Matrix receipt SHA-256: `a01c3dfca5c18d6282e978c07de035932dd28de21491e7a7ea04f8354a0fc8a6`
-Rows SHA-256: `8195b470bf4287f4d3246ee82ab349b39a20fb26697c6e714ef1e1aed748f8c0`
-Sequence receipts SHA-256: `d5d7d865a4a4b52c42d01601b274744b3603893d8e07495b61d16fd69a9c2d60`
+Protocol v0.2 froze 30 held-out synthetic cases, ten mechanic families, four variants, and 1,200
+required rows. The exact root is `C:\a\arc3-b003-stage08-v02-final-83df552-01`.
 
 | Result | Literal disposition |
 |---|---|
-| structure | complete: 1,200 rows, 120 sequences, 30 cases, four variants |
+| structure | complete: 1,200 rows and 120 sequence receipts |
 | terminal counts | 47 synthetic `WIN`, 43 `ACTION_BUDGET`, 30 `WALL_CLOCK_BUDGET` |
-| H1 transfer | `FAIL`: later-level exploratory-action paired median delta 2.0, not strictly lower; treatment completions 250 versus 64 reference |
-| H2 conservative repair | `NOT_MEASURED`: incomplete modifier assessment/retention and unmeasured erroneous global reopenings; 545 scoped revisions |
-| H3 CLEF relevance | `FAIL`: redundant-probe median delta 0.0; active-ledger-pressure median delta 8.0; action medians both 14, ratio 1.0 |
-| evidence quality | `FAILED`: replay determinism 1.0; receipt completeness 0.615; zero infrastructure rows; zero policy-error rows |
-| wall time | 133.42792640000698 seconds |
+| H1 transfer | `FAIL`; paired later-level exploratory-action median delta 2.0 |
+| H2 conservative repair | `NOT_MEASURED`; required assessment incomplete |
+| H3 CLEF relevance | `FAIL`; redundant-probe delta 0.0 and pressure delta 8.0 |
+| replay determinism | 1.0 |
+| action/receipt completeness | 0.615 |
 | overall | `FAILED_MECHANISM` |
 
-The result is an immutable synthetic anti-result. No row may be rerun, replaced, omitted, or
-post-selected.
+Principal hashes are matrix receipt
+`a01c3dfca5c18d6282e978c07de035932dd28de21491e7a7ea04f8354a0fc8a6`, rows
+`8195b470bf4287f4d3246ee82ab349b39a20fb26697c6e714ef1e1aed748f8c0`, and sequence receipts
+`d5d7d865a4a4b52c42d01601b274744b3603893d8e07495b61d16fd69a9c2d60`.
 
-### Independent audit
+The corrected independent audit remains `FAIL` with 534 genuine findings: 462 per-level
+action/receipt count mismatches and 72 aggregate incomplete-link attestations. The matrix was not
+rerun, subsetted, rewritten, or reclassified.
 
-The first audit at `C:\a\arc3-b003-stage08-v02-final-83df552-01-audit` remains immutable `FAIL`
-with 1,692 findings. Independent diagnosis separated 1,158 auditor defects from 534 genuine matrix
-evidence failures. Assurance-only commit `d3d8eddb85549550ddc6629de4aa32e202ef897a` fixed only the
-auditor schema and per-level reconstruction defects.
+## 5. Official non-holdout development completion
 
-The corrected source-projected audit at
-`C:\a\arc3-b003-stage08-v02-final-83df552-01-audit-v3-d3d8edd-source-projected` returned `FAIL`
-with exactly:
-
-- 462 per-level action/receipt count mismatches;
-- 72 truthful aggregate incomplete-link attestations;
-- zero schema, row-cascade, source-mutation, infrastructure, or policy errors.
-
-Thirteen of fourteen checks passed; only sequence replay links and counters failed. Audit receipt
-SHA-256 is `518cc61bdf981a2c6537bda321c27d46d66deb95974f0bedc922db040e0a0c89`,
-report SHA-256 is `86f1a33c0b6ca8cbdb122619d6a9d5554d430651c3c6160865a2d5889994d046`,
-sealed payload SHA-256 is `fda2cc01f12746abbb98b44d8d3513161366e0b8b3c4be8876d65eccb564dde3`,
-and the matrix-root manifest remained
-`747e4c35b13f68714548b8af196ced026e555f8c33491dff5d942b5baab88389` before and after.
-
-## 5. Required adversarial cases
-
-All sixteen named Stage 09 obligations have bounded observation-grounded tests or development
-comparison evidence, including provisional movement/resource inference, distinct-context support,
-failure/reset linkage, localized restoration, additive-versus-override discrimination, cross-level
-transfer, visual remapping, decorative-change parking, consequence relevance, deeper reopening,
-bounded coordinate behavior, failed-root avoidance, cross-game quarantine, evaluator isolation,
-and measured ablation loss.
-
-This Stage 09 `PASS` is narrower than the final matrix. Limits remain explicit: override evidence
-is occurrence-only and exact-resource-context localized; failed-root and level-boundary memory are
-bounded; coordinate-only exhaustion fails closed; and cross-game evidence covers ledger admission,
-not a claim of live multi-game generalization.
-
-## 6. Official non-holdout development play
-
-The target is `r11l-495a7899`, repository partition `development`, evidence surface
+The target was `r11l-495a7899`, partition `development`, surface
 `local-public-source-preview-exposed`, with six declared levels. Public development play was
-explicitly authorized. It is not the sealed public holdout and does not produce official RHAE.
+authorized. It was not the sealed holdout.
 
-Campaign 28 is the latest authoritative receipt:
+Campaign 52 is the authoritative completion receipt:
 
-| Receipt field | Value |
+| Required receipt field | Value |
 |---|---|
-| evaluation ID | `build003-r11l-mechanical-seed7-4a9ebb4-campaign28` |
-| frozen policy commit | `4a9ebb4798003c5c1d3d6eedae352fc414a998fe` |
-| final environment state | `NOT_FINISHED` |
-| levels completed | 4/6 |
+| evaluation ID | `build003-r11l-mechanical-seed7-eab4497-campaign52` |
+| game ID | `r11l-495a7899` |
+| final environment state | `WIN` |
+| levels completed | 6/6 |
 | `win_levels` | 6 |
-| observations | 116 |
-| submitted actions | 115 |
-| non-reset actions | 115 |
-| submitted resets | 0 |
-| initial SDK reset returns | 1, not a submitted action |
-| `GAME_OVER` events | 0 |
-| `WIN` events | 0 |
-| completion genuinely observed | `false` |
+| submitted actions including resets | 429 |
+| non-reset environment actions | 424 |
+| submitted resets | 5 |
+| final action | official action 429, `ACTION6 (14,60)` |
+| `GAME_OVER` / `WIN` consequences | 5 / 1 |
+| completion genuinely observed | `true` |
+| repository receipt | `docs/evidence/003-10-official-development-win.json` |
 
-Both observed child strata, equal-weight composition, and endpoint-arity-weighted composition were
-officially tested, returned `NOT_FINISHED`, and were exactly recovered without target damage or
-hierarchy-lineage loss. The evaluator then failed closed after the 115th consequence because every
-parser-safe continuation in those families was exhausted. No action 116 was submitted.
+The official scorecard reports level action counts `[3,10,13,35,335,33]`, verified state `WIN`,
+and score `76.79913906815948`. That score is not relabeled RHAE; the scorer exposes no standalone
+official RHAE field.
 
-The sealed recording is
-`C:\a\arc3-b003-play\build003-r11l-mechanical-seed7-4a9ebb4-campaign28\official-recordings\c2120ed7e4beb839e4d0\fd7275c9-50b1-43b4-90fa-18c9e1121d30\r11l-495a7899-7685d115-40b6-47d5-9eb8-64296f242331.jsonl`,
-SHA-256 `154f3e1f862dfd47c08607fcfa84546bb9f0b23e85841fe4242772ed9d1637fd`.
-The integrity replay receipt is
-`C:\a\arc3-b003-play\campaign28-4a9ebb4-154f3e1f-integrity-replay-receipt.json`, SHA-256
-`45da1c1537f734f2ac9b34b131d01ed1df57eec742c3a35a98e09e73cf9a1222`.
+The recording contains 430 rows: one opening SDK observation plus 429 submitted actions. The trace
+contains 2,575 events: 430 observations and 429 each of candidate, selection, submission,
+consequence, and durable mechanics receipt. All four action streams match. The final raw observation
+event is `E-01788064208554893700-00000a0e-a8495476bf5941f5b66973273aa640fe` and reports
+`WIN`, 6/6, with upstream session `730d1515-d732-4f70-9b7b-8796119c3e21`.
 
-The implementation-freeze canonical replay matched all 115 recorded selections and consequences,
-then derived and cancelled an unsubmitted observation-only candidate. Its receipt is
-`C:\a\arc3-b003-play\campaign28-83df552-154f3e1f-canonical-replay-receipt.json`, SHA-256
-`a31eccb229279a965c7a66dc93c80f40b061ee21401591577fe7f6dda2c42bb2`. Replay is readiness
-evidence only; it is not official progress.
+Principal evidence:
 
-The shared public-exposure ledger contains 53 development events, zero holdout events, last
-sequence 52, tail hash
-`sha256:3c3e851f18a81451079beebe7b2233690b4011495a9fb2b876f14909400c5695`, and file SHA-256
-`b3feda3d24756cb279ac7a9fbbeed1b301fd19c6953ea997a20535d20c20233a`.
+- root:
+  `C:\a\arc3-b003-play\build003-r11l-mechanical-seed7-eab4497-campaign52`;
+- recording SHA-256:
+  `441ca0be8f956b8b07c52c8ba5f24e0b485618f06231248c7e6ce579f7d48fbe`;
+- run/result file SHA-256:
+  `8b7f653e914f44276108b34af1bf37f74ce66c6a6f094e7b6eb3ab0dc723e069`;
+- run receipt object hash:
+  `sha256:9826969ef86358f9d58d5d66b0bdd09034d8c2a8835ed8eea456ed3fb19260e1`;
+- completion receipt hash:
+  `sha256:84030e25bd09e812d7bd15948d9f785a3d9e9468e99d0534f7e6f91e3ad4181c`;
+- trace chunk SHA-256:
+  `3c0338cc43b27740d3a0b91e4cd40a5bb36864c5f72d5ec7b1936d5a1a888436`;
+- trace manifest object hash:
+  `sha256:ef4c11fc2c60a12cdb0a3f01f119e0611ae93fbf3de0834ea82ade7cc6517364`;
+- trace tail:
+  `sha256:91f3e24a39fea6a823139e148b33f5f695b8dc9dd3cd0b666910d2b36dba0f0e`.
 
-Campaign 29 has not started. Its final state, levels completed, `win_levels`, action counts,
-reset count, replay/evidence path, verification status, and genuinely-observed completion field are
-all `PENDING_EVIDENCE`. They must not be inherited from Campaign 28 or populated from replay.
+The canonical verifier returned `verified=true`, 613 declared artifacts, one run, and zero errors.
+The exposure ledger contains 101 development events, zero holdout events, final sequence 100, tail
+`sha256:157773149e8dfa20c2f624ffc2a811635786aaf29ed12912b3a7d53e2630af40`, and file SHA-256
+`1dbfe3e9b29dae81083fddc1e69ba7dca35e67b3f030d633cf90b56342fcb000`.
 
-## 7. Performance, package, and verification
+Campaigns 1–51 remain immutable development evidence. In particular, Campaign 50 and Campaign 51
+remain `FAILED_MECHANISM` at 5/6. Their two distinct overlay residuals motivated the generic
+per-source layer repair in `eab4497`; their failures are not rewritten as prior knowledge or
+success.
 
-The matched synthetic production-route profile passed at the implementation freeze. Every Build
-003 cycle reached the mechanical route; maximum cycle time was 0.0559292 seconds and maximum peak
-RSS was 77,959,168 bytes. Relative to the matched Build 002 route, Build 003 was faster but used
-26,386,432 more peak RSS bytes. Receipt:
-`C:\a\b003-profile-final-83df552.json`, SHA-256
-`caa48466570b4c55ac1fe324071cc7be000ea0b9222d6d043510e0033d256596`.
-This is synthetic runtime evidence, not gameplay or RHAE.
+## 6. Verification, package, and CI
 
-The production action-semantics scan had zero findings. Receipt:
-`C:\a\b003-action-semantics-final-83df552.json`, SHA-256
-`4615ff438676d992f09e6cbbfdda78bf72443806939c1fe31bf6929d3a2c965d`.
+At exact successful freeze `eab4497`:
 
-The earlier Linux package-only wrapper at `91c5f26` remains a preserved failure: 1,012 tests passed,
-but the no-child-process guard correctly rejected 725 child-RSS reads caused by a transitive
-process-backed development-performance test. The freeze excludes that test only from the
-no-child-process package-only profile; ordinary CI retains it.
+- Campaign 51 replay matched all 424 submissions, consequences, and mechanics receipts, then
+  staged/cancelled only the related continuation with zero environment actions;
+- clean-source selection: 119 passed, three expected platform skips;
+- replay/CLI/audit selection: 82 passed;
+- full visual-policy module: 155 passed in 4,165.07 seconds;
+- Ruff lint/format, strict MyPy, manifest integrity, package-only integrity, action semantics, and
+  sanitized development prelaunch audit passed;
+- all five required hosted workflows and all nine jobs passed before Campaign 52.
 
-The exact `83df552` source was independently cloned at `C:\a\s3f83`. Two offline package builds
-completed successfully and produced byte-identical candidates. The frozen package at
-`C:\a\o3f83\package-a\arc3-kaggle-candidate.zip` has SHA-256
-`d83efdd5c08b082ec8f1402120e75645b15e960fa954e42eb33fd116ee875ee8`; its first-party payload is
-`sha256:27bfe4fd15459d20fa1750c4e4bbe69cb1873ded13db26b43030f7866def1e16`, package manifest
-`sha256:81a53eb9a26a8d251370b652478493d5fb309610ed5e37f23fad183d7792f94c`, SBOM
-`sha256:45d81bef6a94c987a3e5db078a2cab6f48fbe5aa7762bed84111850507255106`, and build receipt
-`sha256:c2cc69ece59767a0999b1b4c9e3bd03103c41341ca08236943ebb6b7bf322423`. The two builds took
-25.5815 and 22.2563 seconds, with sampled peak RSS of 165,130,240 and 153,407,488 bytes. The payload
-contains 31 pinned Linux CPython 3.12 wheels.
+Ordinary exact-freeze CI totals were 1,881 passed and 10 skipped on Ubuntu for both
+the PR and push runs, and 1,871 passed and 20 skipped on Windows for both runs. Ruff
+passed, and strict MyPy checked 207 first-party source files.
 
-The package cold-start check passed in 3.0803145 seconds with 73,826,304 sampled peak RSS. Its
-embedded startup path took 2.8182920 seconds, including a 2.5552326-second import and a
-0.0001277-second agent instantiation, with zero network and zero process attempts. The package-only
-integrity receipt at `C:\a\o3f83\integrity-receipt.json`, SHA-256
-`5ff2932b4cd5de6868652ec4b4d87f668207a53f8be4aaa12cb0ba4d513effd2`, reports
-`package_only_passed=true`; its top-level `passed=false` only because public-identifier semantics
-are intentionally `NOT_EVALUATED` in package-only mode. The generated-log scan covered the 22
-persisted redacted stdout/stderr logs and returned zero findings or redactions; it does not claim
-every raw sealed byte was scanned. The additional full static lock-only scan at `C:\a\i3f83.json`,
-SHA-256 `6d83a04b1a2e652f60ad8dbb8cf401c6baa24f3bfb12b961a848cd39d5c33ffa`, passed source identity,
-policy, archive, and secret sub-checks but has top-level `passed=false`: supply-chain evaluation is
-explicitly `NOT_EVALUATED` under that lock-only scope, with 60 nonblocking
-`dependency-license-not-evaluated` warnings.
+The exact-freeze Windows package artifact was downloaded read-only from hosted run
+`33288733132` to `C:\a\arc3-c52-package-artifact-eab4497-push`. Its scoped non-private checks pass;
+the release wrapper remains correctly `BLOCKED_EXTERNAL` only for unavailable exact private Kaggle
+surfaces, which were not accessed.
 
-The integrated exact-freeze verifier is nevertheless preserved as `FAILED_INFRASTRUCTURE`: its
-guarded test phase exceeded the fixed 2,400-second limit at 84 percent. Receipt:
-`C:\a\o3f83\release-verification-receipt.json`, SHA-256
-`35e84860f5c167677cfaa1de45fa903e099fff895a73e0ff81de0e366fd72ddb`. All 45 hashes declared by
-that receipt still match with zero missing or mismatched files, but the historical sealed artifact
-set remains explicitly incomplete because the verifier failed. A separate no-deadline
-exact-source recovery collected 1,022 tests and found one genuine synthetic-lab generator defect,
-with 1,018 inferred passes, three skips, and zero guard attempts. Its raw wrapper disposition is
-`FAILED_BOUNDARY`, classified here as `FAILED_MECHANISM` because the failure was an unsolvable
-synthetic case rather than a path-boundary crossing. Receipt:
-`C:\a\o3f83\package-only-test-guard-recovery.json`, SHA-256
-`a2b21eeb5c4a7ac7448ecfd9abdaf77902cf8ceaba12d0dde462c68d23d31a1a`.
-
-Post-freeze assurance commit `48bd18d09ec82c06150dbcba7b72370781eb21de` prevents supplemental
-synthetic anchors from aliasing and pins the failing Hypothesis seed. The exact property regression
-passed 3 tests; the combined synthetic-lab suite passed 17 tests; Ruff, formatting, and strict mypy
-passed. `src/arc3/lab` contributes zero of the frozen first-party archive's 114 members, so this
-repair does not alter the competition executable payload or reopen the `83df552` production and
-Campaign 29 policy freeze.
-
-Current terminal verification status is:
-
-| Gate | Status |
+| Package field | Value |
 |---|---|
-| exact `83df552` offline package candidate and hashes | `PASS`; deterministic A/B package |
-| exact-freeze cold start | `PASS`; zero network/process attempts |
-| exact-freeze package-only integrity | `package_only_passed=true`; top-level `passed=false` because public identifiers are `NOT_EVALUATED` by scope |
-| exact-freeze generated-log secret scan | `PASS` for 22 persisted redacted logs; zero findings/redactions |
-| exact-freeze full static lock-only scan | top-level `passed=false`; four sub-checks `PASS`, supply chain `NOT_EVALUATED` by scope |
-| integrated exact-freeze verifier | `FAILED_INFRASTRUCTURE`; test timeout preserved |
-| standalone exact-freeze guarded test recovery | `FAILED_MECHANISM`; synthetic generator defect preserved and repaired post-freeze |
-| current documentation-head Linux package-only CI | `PENDING_EVIDENCE` |
-| current documentation-head ordinary Ubuntu/Windows CI | `PENDING_EVIDENCE` |
-| final documentation commit/tree | `PENDING_EVIDENCE` |
-| draft pull request | `OPEN_DRAFT`: #7; exact final pushed head `PENDING_EVIDENCE` |
+| candidate | `C:\a\arc3-c52-package-artifact-eab4497-push\package-a\arc3-kaggle-candidate.zip` |
+| candidate SHA-256 | `432bdf0ae61f5c960f7372c6b07c1e1393fa52f764f1997ab0d450b2f3459639` |
+| A/B deterministic | `true` |
+| first-party payload SHA-256 | `95394d1722ec9590980e51444542ad0f9755f52e98b0f6274af773bafde2d0a5` |
+| manifest SHA-256 | `acf091dd0ae701a9bc8c80d3770bb05b0165b971c07f72798349b0712edab377` |
+| SBOM SHA-256 | `05ec473913d86194ae56582dd8cfbf2e0c7dccc7fcfdb87ca19e7da657e3f97c` |
+| package-safe suite | 1,130 passed, three platform skips, zero guard attempts |
+| cold start | 1.2002791 seconds, 84,910,080 sampled peak RSS bytes, zero network/process attempts |
+| generated-log scan | 22 persisted redacted logs, zero findings/redactions |
 
-No CI or documentation value may be copied from Build 002 or an earlier Build 003 commit to fill
-the remaining fields. The exact-freeze package evidence is bound only to `83df552`.
+Hosted exact-freeze runs were CI push `33288733127`, package push `33288733132`, CI PR
+`33288734446`, package PR `33288734449`, and cold-start PR `33288734468`. All nine jobs succeeded.
 
-Draft PR: `https://github.com/Grativy6/ARC3/pull/7`. It must remain unmerged.
+## 7. Stage disposition
 
-## 8. Stage disposition
-
-| Stage | Current status | Bounded result |
+| Stage | Status | Bounded result |
 |---:|---|---|
-| 00 | `PASS` | source/base/authority and non-holdout target identity verified |
-| 01 | `PASS` | Build 002 baseline frozen; one reproducible Windows host-topology failure retained |
-| 02 | `PASS` | readable state, ten consequence channels, prediction/action links, production reachability |
-| 03 | `PASS` | BLA residual lifecycle, passive confirmation, scoped repair and reopening |
-| 04 | `PASS` | CLEF promote/park/stop and behaviorally distinct BLA-only path |
-| 05 | `PASS` | bounded exploration/planning integrated with the existing governor |
-| 06 | `PASS` | cross-level persistence, composition, reset retention, cross-game quarantine |
-| 07 | `PASS` | hidden procedural curriculum and privilege boundary |
-| 08 | `FAILED_MECHANISM` | exact final v0.2 H1/H3 fail, H2 not measured, receipt completeness 0.615 |
-| 09 | `PASS` | all sixteen required adversarial obligations covered within declared limits |
-| 10 | `IN_PROGRESS` | Campaign 28 `NOT_FINISHED`; package evidence complete, current-head CI and Campaign 29 remain |
-| 11 | `IN_PROGRESS` | report, handoff, and index drafted; final hashes/PR/CI remain pending |
+| 00 | `PASS` | source/base/authority and development target identity verified |
+| 01 | `PASS` | Build 002 baseline frozen; historical infrastructure failures retained |
+| 02–07 | `PASS` | state, ledger, relevance, planning, persistence, and curriculum delivered |
+| 08 | `FAILED_MECHANISM` | exact final H1/H3 fail, H2 not measured, completeness 0.615 |
+| 09 | `PASS` | required adversarial obligations covered within declared limits |
+| 10 | `PASS` | official `WIN` observed; exact package/local/hosted gates passed |
+| 11 | `PASS_WITH_EXTERNAL_SELF_IDENTITY_RECEIPT` | final receipt, report, handoff, index, evidence freeze, push, and draft PR handoff; final commit/tree/index hash live in the PR receipt because the files cannot embed their own identities |
 
-## 9. Claim boundary and open burdens
+The overall build remains `PARTIAL` because the synthetic mechanism claim failed and generalization
+was not measured. `PARTIAL` does not negate the separately observed target-game `WIN`.
 
-Build 003 cannot report `MECHANISM_CONFIRMED_SYNTHETIC`. It cannot claim official target
-completion, ARC3 generalization, official RHAE, validation of BLA/CLEF as general theories, AGI,
-consciousness, or a general theory of intelligence.
+## 8. Open burdens and claim boundary
 
-The material open burdens are:
+Build 003 cannot report `MECHANISM_CONFIRMED_SYNTHETIC`, ARC3 generalization, official RHAE,
+private Kaggle compatibility, validation of BLA/CLEF as general theories, AGI, consciousness, or a
+general theory of intelligence.
 
-- Campaign 29 and later authorized non-holdout development play must continue until the official
-  environment returns `GameState.WIN` or an exact external boundary prevents real play;
-- the final matrix's 534 genuine action/receipt linkage findings remain unresolved and immutable;
-- H1 and H3 failed, and H2 remains `NOT_MEASURED`;
-- the integrated exact-freeze verifier timed out and the standalone recovery exposed one synthetic
-  generator defect; both failures remain preserved even though package, cold-start, integrity, and
-  secret sub-gates passed and the defect was repaired post-freeze;
-- current-head CI remains `PENDING_EVIDENCE`;
-- the independent Campaign 28 integrity receipt reports
-  `trace_manifest_object_hash_verified=false` even though the authoritative evaluator and exact
-  replay passed; that discrepancy is not relabeled true;
+Material residuals remain:
+
+- the 534 genuine final-matrix linkage findings remain immutable;
+- H1 and H3 failed and H2 is `NOT_MEASURED`;
+- one repeatedly exposed public development game cannot establish hidden-game transfer;
+- exact private Kaggle wheels, gateway, Agents input, scorer, and acceptance surface remain
+  `BLOCKED_EXTERNAL` and unaccessed;
 - pixel-only inventory interpretation, topology without behavioral evidence, one-off delayed
   consequences, and exact-resource-context override magnitude remain bounded limitations;
-- official ARC3 RHAE and private Kaggle compatibility remain `NOT_MEASURED`.
+- all earlier failed and interrupted campaigns remain preserved in the decisions/open-burdens
+  ledgers rather than being absorbed into the final success.
 
-## 10. Human-gated actions not taken
+Required literals:
 
-No ARC Prize or Kaggle terms were accepted; no credentials were used; no public holdout was opened;
-no notebook was uploaded; no scorecard or submission was created; no money was spent; no release or
-DOI was published; no PR was merged; and no external message was sent as Christopher D. Pang.
+```text
+OFFICIAL_ARC3_RHAE = NOT_MEASURED
+PUBLIC_HOLDOUT_CONSUMED = 0/1
+NO_ARC3_GENERALIZATION_CLAIM
+```
 
-The next autonomous step is to seal and push the documentation-only head, obtain current-head CI,
-then start a fresh Campaign 29 official development session from the exact `83df552` learner. The
-draft PR must remain unmerged.
+## 9. Human-gated actions not taken
+
+No ARC Prize or Kaggle terms were accepted; no benchmark credentials were used; no public holdout
+was opened; no notebook was uploaded; no competition scorecard or submission was created; no money
+was spent; no release or DOI was published; no PR was merged; and no external message was sent as
+Christopher D. Pang.
+
+Draft PR: `https://github.com/Grativy6/ARC3/pull/7`. It remains draft and must not be merged without
+separate owner authorization.

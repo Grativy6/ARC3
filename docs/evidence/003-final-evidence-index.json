@@ -1,14 +1,14 @@
 {
   "schema": "arc3.build-003.final-evidence-index.v0.1",
-  "generated_at": "2026-08-26T14:26:08Z",
-  "index_status": "DRAFT_PENDING_EVIDENCE",
-  "overall_build_status": "IN_PROGRESS",
-  "status": "IN_PROGRESS",
+  "generated_at": "2026-08-30T04:30:18.605738Z",
+  "index_status": "FINAL",
+  "overall_build_status": "PARTIAL",
+  "status": "COMPLETE",
   "claim_boundary": {
     "final_synthetic_matrix": "FAILED_MECHANISM",
     "corrected_independent_audit": "FAIL",
-    "official_target_state": "NOT_FINISHED",
-    "official_target_completion_observed": false,
+    "official_target_state": "WIN",
+    "official_target_completion_observed": true,
     "official_arc3_rhae": "NOT_MEASURED",
     "public_holdout_consumed": "0/1",
     "arc3_generalization_claim": false,
@@ -17,22 +17,23 @@
   },
   "implementation_freeze": {
     "branch": "build/003-bla-clef-mechanical-learner",
-    "prior_commit": "0d0cd86177a6e281bcf5af16b31e91cd32a99e9c",
-    "prior_tree": "ec5cf89eada152dc2e5b81f3d0c6c7562468acf5",
-    "commit": "83dbe5211451f65e45c8a768b92ae7c5ed305b0a",
-    "tree": "71fd0ebdd5def55770e4dbfe3780c7e3241c53fb",
-    "status": "CAMPAIGN_32 IMPLEMENTATION FROZEN; EXACT PRELAUNCH GATES AND FROZEN-HEAD CI PASSED; OFFICIAL CONSEQUENCE PENDING",
-    "later_change_boundary": "only evidence and documentation may change after the 83dbe52 implementation freeze unless an exact gate, CI, or official consequence reopens implementation"
+    "prior_commit": "83dbe5211451f65e45c8a768b92ae7c5ed305b0a",
+    "prior_tree": "71fd0ebdd5def55770e4dbfe3780c7e3241c53fb",
+    "commit": "eab4497a6033bd27102ed99d4d2e43f6ab708ec4",
+    "tree": "17bb7e126034f6ccf8a5d24becd8163629e33757",
+    "status": "SUCCESSFUL PLAY IMPLEMENTATION FROZEN; EXACT LOCAL, PACKAGE, AND HOSTED GATES PASSED; CAMPAIGN 52 OBSERVED AUTHORITATIVE WIN",
+    "later_change_boundary": "only evidence and documentation may change after the eab4497 successful-play implementation freeze"
   },
   "documentation_head": {
-    "commit": "PENDING_EVIDENCE",
-    "tree": "PENDING_EVIDENCE",
+    "commit": "EXTERNAL_SELF_IDENTITY_RECORDED_AFTER_PUSH",
+    "tree": "EXTERNAL_SELF_IDENTITY_RECORDED_AFTER_PUSH",
     "draft_pull_request": "https://github.com/Grativy6/ARC3/pull/7",
     "draft_pull_request_number": 7,
     "draft_pull_request_state": "OPEN_DRAFT",
-    "draft_pull_request_exact_final_head": "PENDING_EVIDENCE",
-    "current_head_ci": "PASS_AT_FROZEN_83DBE52; FIVE_OF_FIVE_WORKFLOW_RUNS_AND_NINE_OF_NINE_JOBS",
-    "reason": "Campaign 32 will run from the replay-certified frozen implementation commit 83dbe52; later documentation-only commits do not alter those play bytes and cannot contain their own final SHA or later CI conclusion."
+    "draft_pull_request_exact_final_head": "EXTERNAL_SELF_IDENTITY_RECORDED_AFTER_PUSH",
+    "current_head_ci": "PASS_AT_SUCCESSFUL_PLAY_FREEZE_EAB4497; FIVE_OF_FIVE WORKFLOW RUNS AND NINE_OF_NINE JOBS",
+    "external_receipt_location": "draft PR #7 body and final Codex handoff",
+    "reason": "The final documentation commit, tree, index file hash, and PR head cannot be embedded in the file that helps create them. Campaign 52 ran from exact successful-play implementation commit eab4497; the post-push external receipt proves the later commit is documentation/evidence only."
   },
   "base": {
     "main_commit": "bea1eac99cb0f1b351526b1dc487d132ba1d40ef",
@@ -662,7 +663,7 @@
       "completion_genuinely_observed": false
     },
     "campaign_32_candidate": {
-      "status": "IMPLEMENTED_REPLAY_CERTIFIED_FROZEN_AND_CI_GREEN_AT_83DBE52; OFFICIAL CONSEQUENCE PENDING",
+      "status": "HISTORICAL FAILED_MECHANISM; EXACT CAMPAIGN 32 OFFICIAL CONSEQUENCE AND RECOVERY PRESERVED",
       "decision": "D-003-0034",
       "open_burden": "B-003-0029",
       "hypothesis": "unique external residual-chain family",
@@ -696,11 +697,133 @@
         "https://github.com/Grativy6/ARC3/actions/runs/32974088510"
       ],
       "frozen_head_package_boundary": "four package-only receipts retained BLOCKED_EXTERNAL for the private surface while scoped assertions passed; no public inventory or gameplay attempted",
-      "official_environment_state": "NOT_YET_OBSERVED",
+      "official_environment_state": "NOT_FINISHED",
       "completion_observed": false
+    },
+    "campaign_52": {
+      "status": "PASS",
+      "surface": "local-public",
+      "partition": "development",
+      "game_id": "r11l-495a7899",
+      "evaluation_id": "build003-r11l-mechanical-seed7-eab4497-campaign52",
+      "run_id": "r11l-495a7899-B5-mechanical-seed-7",
+      "frozen_commit": "eab4497a6033bd27102ed99d4d2e43f6ab708ec4",
+      "frozen_tree": "17bb7e126034f6ccf8a5d24becd8163629e33757",
+      "first_party_source_hash": "sha256:96fada83990cd7c6a6b08aca151443c1d3ce51d725020bc35361a5cbee3c3902",
+      "final_environment_state": "WIN",
+      "raw_final_state": "WIN",
+      "metric_final_state": "WIN",
+      "official_run_state": "WIN",
+      "levels_completed": 6,
+      "win_levels": 6,
+      "level_action_counts": [3, 10, 13, 35, 335, 33],
+      "submitted_action_count_including_resets": 429,
+      "non_reset_environment_action_count": 424,
+      "submitted_reset_count": 5,
+      "initial_sdk_reset_return_count": 1,
+      "recording_observation_count": 430,
+      "not_finished_consequences": 423,
+      "game_over_consequences": 5,
+      "win_consequences": 1,
+      "final_submission_index": 429,
+      "final_level_episode_action": 33,
+      "final_action": {
+        "name": "ACTION6",
+        "coordinate": {"x": 14, "y": 60}
+      },
+      "completion_observed": true,
+      "completion_genuinely_observed": true,
+      "receipt_complete": true,
+      "run_evidence_complete": true,
+      "recording_verified": true,
+      "replay_verified": true,
+      "official_scorecard_verified": true,
+      "official_score": 76.79913906815948,
+      "run_receipt_hash": "sha256:9826969ef86358f9d58d5d66b0bdd09034d8c2a8835ed8eea456ed3fb19260e1",
+      "completion_receipt_hash": "sha256:84030e25bd09e812d7bd15948d9f785a3d9e9468e99d0534f7e6f91e3ad4181c",
+      "evidence_receipt": "docs/evidence/003-10-official-development-win.json",
+      "root": "C:\\a\\arc3-b003-play\\build003-r11l-mechanical-seed7-eab4497-campaign52",
+      "recording": {
+        "path": "C:\\a\\arc3-b003-play\\build003-r11l-mechanical-seed7-eab4497-campaign52\\official-recordings\\c2120ed7e4beb839e4d0\\ff6119d7-eb42-4c7a-91a4-6842c94f8188\\r11l-495a7899-730d1515-d732-4f70-9b7b-8796119c3e21.jsonl",
+        "bytes": 14420965,
+        "sha256": "sha256:441ca0be8f956b8b07c52c8ba5f24e0b485618f06231248c7e6ce579f7d48fbe",
+        "rows": 430,
+        "session_id": "730d1515-d732-4f70-9b7b-8796119c3e21"
+      },
+      "evaluation_manifest": {
+        "path": "C:\\a\\arc3-b003-play\\build003-r11l-mechanical-seed7-eab4497-campaign52\\manifest.json",
+        "bytes": 117363,
+        "file_sha256": "sha256:92098cd1c0aa36494ed39637e7b31d69e4b5f397ca83f5c95258dd813dfe672f",
+        "object_hash": "sha256:e0b8eaa80514861a82f11bcff82781465229913ba3c3dee7a1fd5067762add80"
+      },
+      "run_receipt": {
+        "path": "C:\\a\\arc3-b003-play\\build003-r11l-mechanical-seed7-eab4497-campaign52\\runs\\r11l-495a7899-B5-mechanical-seed-7.json",
+        "bytes": 2431793,
+        "file_sha256": "sha256:8b7f653e914f44276108b34af1bf37f74ce66c6a6f094e7b6eb3ab0dc723e069"
+      },
+      "trace": {
+        "events": 2575,
+        "observations": 430,
+        "action_candidates": 429,
+        "action_selections": 429,
+        "action_submissions": 429,
+        "consequences": 429,
+        "mechanics_receipts": 429,
+        "chunk_sha256": "sha256:3c0338cc43b27740d3a0b91e4cd40a5bb36864c5f72d5ec7b1936d5a1a888436",
+        "manifest_file_sha256": "sha256:5a9835f2e5296495e694a0d5dde90084c5499d8f2499e546c9797d3a9c31693f",
+        "manifest_object_hash": "sha256:ef4c11fc2c60a12cdb0a3f01f119e0611ae93fbf3de0834ea82ade7cc6517364",
+        "tail_event_hash": "sha256:91f3e24a39fea6a823139e148b33f5f695b8dc9dd3cd0b666910d2b36dba0f0e"
+      },
+      "canonical_public_verifier": {
+        "verified": true,
+        "artifact_count": 613,
+        "run_count": 1,
+        "errors": []
+      },
+      "exposure_ledger": {
+        "events": 101,
+        "development_events": 101,
+        "holdout_events": 0,
+        "last_sequence": 100,
+        "file_sha256": "sha256:1dbfe3e9b29dae81083fddc1e69ba7dca35e67b3f030d633cf90b56342fcb000",
+        "tail_event_hash": "sha256:157773149e8dfa20c2f624ffc2a811635786aaf29ed12912b3a7d53e2630af40"
+      },
+      "claim_boundary": "ONE AUTHORIZED PUBLIC-DEVELOPMENT WIN; NO RHAE, HOLDOUT, PRIVATE, OR GENERALIZATION CLAIM"
     }
   },
-  "implementation_freeze_verification": {
+  "successful_play_freeze_verification": {
+    "commit": "eab4497a6033bd27102ed99d4d2e43f6ab708ec4",
+    "tree": "17bb7e126034f6ccf8a5d24becd8163629e33757",
+    "sealed_campaign_51_replay": {
+      "path": "C:\\a\\arc3-b003-gate-evidence-eab4497-c52-r1\\campaign51-full-replay-eab4497.json",
+      "file_sha256": "sha256:4b9ca976a6f150f934175b100c5362d828e17357c0b551ce7137599ac7a44b60",
+      "receipt_hash": "sha256:378af9a14a05a56216ad9e0a9ce5fb1acf4f6e82312d5564c56c9d52600263ad",
+      "matched_action_consequence_receipt_cycles": 424,
+      "environment_actions_issued": 0
+    },
+    "local_gates": {
+      "clean_source_passed": 119,
+      "clean_source_skipped": 3,
+      "replay_cli_audit_passed": 82,
+      "visual_policy_passed": 155,
+      "ruff": "PASS",
+      "format": "PASS",
+      "mypy_strict": "PASS",
+      "diff_hygiene": "PASS",
+      "manifest_integrity": "PASS",
+      "package_only_integrity": "PASS_WITH_DECLARED_SCOPE",
+      "action_semantics": "PASS_ZERO_FINDINGS",
+      "sanitized_prelaunch_audit": "PASS"
+    },
+    "prelaunch_audit": {
+      "path": "C:\\a\\arc3-b003-gate-evidence-eab4497-c52-r1\\local-campaign52-prelaunch-audit-eab4497.json",
+      "file_sha256": "sha256:10be94866df9482836e02be852ea5794b9f1e8d89c618c32ea9c2960f4aec36e",
+      "development_exposures_before_launch": 99,
+      "holdout_exposures": 0,
+      "environment_actions_issued": 0
+    }
+  },
+  "historical_pre_eab_freeze_verification": {
     "action_semantics": {
       "path": "C:\\a\\b003-action-semantics-final-83df552.json",
       "status": "PASS",
@@ -739,7 +862,7 @@
     }
   },
   "package_and_ci": {
-    "exact_freeze_package": {
+    "historical_83df552_package": {
       "status": "PASS",
       "source_commit": "83df5520478cc209c06d9ce4e658c90786914544",
       "source_tree": "3d1a45995b004947900de3114449a7e42bd80a87",
@@ -771,7 +894,7 @@
         "sampled_peak_rss_bytes": 153407488
       }
     },
-    "exact_freeze_cold_start": {
+    "historical_83df552_cold_start": {
       "status": "PASS",
       "evidence_receipt_path": "C:\\a\\o3f83\\release-verification-receipt.json",
       "evidence_receipt_sha256": "sha256:35e84860f5c167677cfaa1de45fa903e099fff895a73e0ff81de0e366fd72ddb",
@@ -784,7 +907,7 @@
       "process_attempts": 0,
       "tournament_mode_configured": true
     },
-    "exact_freeze_integrity_and_secret": {
+    "historical_83df552_integrity_and_secret": {
       "status": "SCOPED_SUBCHECKS_PASS_TOP_LEVEL_FALSE",
       "package_only_integrity_receipt_path": "C:\\a\\o3f83\\integrity-receipt.json",
       "package_only_integrity_receipt_sha256": "sha256:5ff2932b4cd5de6868652ec4b4d87f668207a53f8be4aaa12cb0ba4d513effd2",
@@ -811,7 +934,7 @@
       "generated_log_redactions": 0,
       "generated_log_scope": "persisted redacted stdout and stderr logs only; not every raw sealed byte"
     },
-    "integrated_exact_freeze_verifier": {
+    "historical_83df552_integrated_verifier": {
       "status": "FAILED_INFRASTRUCTURE",
       "receipt_path": "C:\\a\\o3f83\\release-verification-receipt.json",
       "receipt_sha256": "sha256:35e84860f5c167677cfaa1de45fa903e099fff895a73e0ff81de0e366fd72ddb",
@@ -829,7 +952,7 @@
       "mismatched_declared_artifacts": 0,
       "sealed_artifact_set_complete": false
     },
-    "standalone_exact_freeze_guard_recovery": {
+    "historical_83df552_guard_recovery": {
       "classification": "FAILED_MECHANISM",
       "raw_wrapper_status": "FAILED_BOUNDARY",
       "receipt_path": "C:\\a\\o3f83\\package-only-test-guard-recovery.json",
@@ -845,7 +968,7 @@
       "failing_case_id": "synthetic-lab-v1-0005-3d5e218b550b3d1b",
       "cause": "duplicate fallback anchors aliased key, door, and target at one unreachable cell"
     },
-    "post_freeze_synthetic_assurance_repair": {
+    "historical_post_83df552_synthetic_assurance_repair": {
       "commit": "48bd18d09ec82c06150dbcba7b72370781eb21de",
       "tree": "93c599f4d28a2d013e82c31292a606c4a5f61c45",
       "scope": "procedural synthetic lab generator and exact regression only",
@@ -864,58 +987,47 @@
       "campaign_31_exact_play_tree": "fb77bc0c752f9b1932f6aa6c7b46e069f1e216da"
     },
     "current_head_ci": {
-      "status": "PASS_AT_EXACT_0434B3C; FIVE_OF_FIVE_WORKFLOW_RUNS_AND_NINE_OF_NINE_JOBS_SUCCEEDED",
-      "head_commit": "0434b3c95b7c1e3bd98488e9277df5c82f8c5850",
-      "head_tree": "fb77bc0c752f9b1932f6aa6c7b46e069f1e216da",
+      "status": "PASS_AT_SUCCESSFUL_PLAY_FREEZE_EAB4497; FIVE_OF_FIVE WORKFLOW RUNS AND NINE_OF_NINE JOBS SUCCEEDED",
+      "head_commit": "eab4497a6033bd27102ed99d4d2e43f6ab708ec4",
+      "head_tree": "17bb7e126034f6ccf8a5d24becd8163629e33757",
       "workflow_runs_total": 5,
       "workflow_runs_succeeded": 5,
       "jobs_total": 9,
       "jobs_succeeded": 9,
       "runs": {
-        "build_002_pr": "https://github.com/Grativy6/ARC3/actions/runs/32958543305",
-        "arc3_ci_pr": "https://github.com/Grativy6/ARC3/actions/runs/32958543329",
-        "arc3_ci_push": "https://github.com/Grativy6/ARC3/actions/runs/32958539045",
-        "package_only_pr": "https://github.com/Grativy6/ARC3/actions/runs/32958543361",
-        "package_only_push": "https://github.com/Grativy6/ARC3/actions/runs/32958538967"
+        "arc3_ci_push": "https://github.com/Grativy6/ARC3/actions/runs/33288733127",
+        "package_only_push": "https://github.com/Grativy6/ARC3/actions/runs/33288733132",
+        "arc3_ci_pr": "https://github.com/Grativy6/ARC3/actions/runs/33288734446",
+        "package_only_pr": "https://github.com/Grativy6/ARC3/actions/runs/33288734449",
+        "cold_start_pr": "https://github.com/Grativy6/ARC3/actions/runs/33288734468"
       },
-      "ubuntu": "PASS at exact commit 0434b3c for all required jobs",
-      "windows": "PASS at exact commit 0434b3c for all required jobs, including both package-only guarded suites without timeout",
-      "package_only_pr": {
-        "run_id": 32958543361,
-        "receipt_path": "C:\\a\\arc3-ci-0434-package-win-pr\\release-verification-receipt.json",
-        "receipt_file_sha256": "sha256:119f882c2039bebc8462a52b94341ee94419d2d79a87e10b5b3c1d3ffd9fa10e",
-        "receipt_hash": "sha256:4e4f56e170a54bbf30fe94adb67a98798a595717e1224d8ba1de848603b2069b",
-        "status": "EXPECTED_BLOCKED_EXTERNAL_PRIVATE_ONLY; ALL_20_NON_PRIVATE_CHECKS_PASS",
-        "tests_passed": 1053,
-        "tests_skipped": 3,
-        "test_duration_seconds": 2501.66,
-        "verifier_duration_seconds": 2505.1840711,
-        "guard_ceiling_seconds": 2700,
-        "timeout_triggered": false
+      "ordinary_ci": {
+        "ubuntu_push": {"passed": 1881, "skipped": 10},
+        "ubuntu_pr": {"passed": 1881, "skipped": 10},
+        "windows_push": {"passed": 1871, "skipped": 20},
+        "windows_pr": {"passed": 1871, "skipped": 20},
+        "ruff": "PASS",
+        "mypy_strict_first_party_source_files": 207
       },
       "package_only_push": {
-        "run_id": 32958538967,
-        "receipt_path": "C:\\a\\arc3-ci-0434-package-win-push\\release-verification-receipt.json",
-        "receipt_file_sha256": "sha256:e9086d415d7a4107b278c27a732d52a190954c6490fafbe973644d2ac8da4bed",
-        "receipt_hash": "sha256:58692f577bc5236ec710caebc52297867a860830ff78868a2ac4661a58648620",
-        "status": "EXPECTED_BLOCKED_EXTERNAL_PRIVATE_ONLY; ALL_20_NON_PRIVATE_CHECKS_PASS",
-        "tests_passed": 1053,
+        "run_id": 33288733132,
+        "artifact_root": "C:\\a\\arc3-c52-package-artifact-eab4497-push",
+        "release_receipt_file_sha256": "sha256:a2b0473ad43dec9175668f9faa538eedcbdbe9249339aa869e9515ab0f57a996",
+        "release_receipt_object_hash": "sha256:4a6d74204328c9b6270023fe9bc84756ab4d9a3497b8e2827f95631dbeb3f8b7",
+        "status": "EXPECTED_BLOCKED_EXTERNAL_PRIVATE_ONLY; ALL_NON_PRIVATE_CHECKS_PASS",
+        "tests_passed": 1130,
         "tests_skipped": 3,
-        "test_duration_seconds": 1737.33,
-        "verifier_duration_seconds": 1740.549541,
-        "guard_ceiling_seconds": 2700,
-        "timeout_triggered": false
+        "tests_failed": 0,
+        "guard_attempts": 0,
+        "candidate_sha256": "sha256:432bdf0ae61f5c960f7372c6b07c1e1393fa52f764f1997ab0d450b2f3459639",
+        "payload_sha256": "sha256:95394d1722ec9590980e51444542ad0f9755f52e98b0f6274af773bafde2d0a5",
+        "deterministic_candidates_equal": true,
+        "cold_start_seconds": 1.2002790999999888,
+        "cold_start_peak_rss_bytes": 84910080,
+        "network_attempts": 0,
+        "process_attempts": 0
       },
-      "preserved_prior_failures": {
-        "b7d10cd_package_only_pr_status": "FAILED_INFRASTRUCTURE_AT_2400_SECOND_GUARDED_CEILING; immutable",
-        "b7d10cd_package_only_pr_run": "https://github.com/Grativy6/ARC3/actions/runs/32953824616",
-        "b7d10cd_package_only_pr_receipt": "C:\\a\\arc3-ci-b7d10cd-package-win-pr-fail\\release-verification-receipt.json",
-        "b7d10cd_package_only_pr_receipt_file_sha256": "sha256:04daa6ab6d9c6537add994312594c9a7708b38d7d0fb77673e613ee64b8bccc8",
-        "b7d10cd_package_only_push_run": "https://github.com/Grativy6/ARC3/actions/runs/32953819904",
-        "b7d10cd_package_only_push_receipt": "C:\\a\\arc3-ci-b7d10cd-package-win-push-pass\\release-verification-receipt.json",
-        "b7d10cd_package_only_push_receipt_file_sha256": "sha256:a4d290383734a0a306de34f14546fb359b166790a10824c7a074452ca1e7569a",
-        "live_onedrive_status": "FAILED_INFRASTRUCTURE evidence preserved: inaccessible shared pytest temp and changing candidate bytes"
-      }
+      "preserved_prior_failures": "Earlier failed-mechanism and failed-infrastructure receipts remain immutable in the Build 003 ledgers and report."
     }
   },
   "stage_disposition": {
@@ -929,8 +1041,8 @@
     "07": "PASS",
     "08": "FAILED_MECHANISM",
     "09": "PASS",
-    "10": "IN_PROGRESS",
-    "11": "PENDING"
+    "10": "PASS",
+    "11": "PASS_WITH_EXTERNAL_SELF_IDENTITY_RECEIPT"
   },
   "tracked_evidence": [
     {
@@ -946,33 +1058,38 @@
       "sha256": "sha256:c68c180fd019c71257d815fa249337592d331df146ef7b56698d8695e43e54a1"
     },
     {
+      "path": "docs/evidence/003-10-official-development-win.json",
+      "sha256": "sha256:39b2bc84e6d66ffcac53ef9077274d5b43df2e1e9d28b5ec0a21af079ce449f3",
+      "status": "AUTHORITATIVE_LOCAL_PUBLIC_WIN_RECEIPT"
+    },
+    {
       "path": "docs/ledger/build-003-run-state.json",
-      "sha256": "sha256:06b3aa161bc6651cd6b0e6c23e6c8322e94f80b5f250d4da56c6ec639bbc35ba",
-      "status": "CURRENT_AT_INDEX_DRAFT"
+      "sha256": "sha256:3c84833daad006e701d93fcd98709ec713439fef98f91bc42b5f065f2774d5bb",
+      "status": "FINAL"
     },
     {
       "path": "docs/ledger/build-003-DECISIONS.md",
-      "sha256": "sha256:9e1d1c2c20d67784226b29d56a2e67cf709883a2818a65013a2d908c35adc40e",
-      "status": "CURRENT_AT_INDEX_DRAFT"
+      "sha256": "sha256:3a054d6bdfb56811b78446888de60cd7a6fe8f8962a11467b101e9f16caf5de0",
+      "status": "FINAL"
     },
     {
       "path": "docs/ledger/build-003-OPEN-BURDENS.md",
-      "sha256": "sha256:bb6c71c40049b20f2bc6c3efa9970f93be2c92556224ad225ebeb1db5326bf3e",
-      "status": "CURRENT_AT_INDEX_DRAFT"
+      "sha256": "sha256:5cf3f96c35cad31224efb0dd1b9177befb9819348619c8a100b019d67e83d706",
+      "status": "FINAL_WITH_PRESERVED_OPEN_BOUNDARIES"
     },
     {
       "path": "docs/research/ARC3-Build-003-report.md",
-      "sha256": "sha256:ed424ad5198d5309e55a83328774e118ff220ea39e22e3059b5432ad3b4617ba"
+      "sha256": "sha256:8ce20f04d75cbc4d929000c4697ab12e1cd7aa1b1f64454f8f883a18dd96e043"
     },
     {
       "path": "docs/handoffs/003-bla-clef-mechanical-learner.md",
-      "sha256": "sha256:3029b9d82ab3916abadab40659e983dd0773a538ae0e20f87b1bd92d5906f5d9"
+      "sha256": "sha256:b91e519a8f5e213f970cec0a7db6342ae52ed976a85619d010ad60ff56f16fa8"
     }
   ],
   "self_identity": {
     "path": "docs/evidence/003-final-evidence-index.json",
-    "sha256": "PENDING_EXTERNAL_AFTER_FILE_FREEZE",
-    "reason": "The index cannot embed its own file hash without changing that hash."
+    "sha256": "EXTERNAL_SELF_IDENTITY_RECORDED_AFTER_PUSH",
+    "reason": "The index cannot embed its own file hash without changing that hash; the draft PR body and final Codex handoff record it after the file is frozen."
   },
   "human_gates": {
     "terms_accepted": false,
@@ -987,10 +1104,5 @@
     "external_message_sent_as_owner": false,
     "game_source_semantically_inspected": false
   },
-  "pending_evidence": [
-    "Campaign 32 authorized official terminal consequence, exact inverse or legal recovery, and complete recording/evidence receipts",
-    "final documentation commit and tree",
-    "draft pull request exact final pushed head",
-    "genuinely observed official GameState.WIN"
-  ]
+  "pending_evidence": []
 }

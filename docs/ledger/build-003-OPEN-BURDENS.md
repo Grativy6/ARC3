@@ -4,7 +4,7 @@ Do not delete a burden when later evidence resolves it. Append a resolution with
 
 ## B-003-0001 - Real OFFLINE target playability is not dynamically verified
 
-- **Status:** OPEN
+- **Status:** RESOLVED BY VERIFIED OFFICIAL OFFLINE DEVELOPMENT PLAY; CAMPAIGN 52 TERMINAL RECEIPT PRESERVED
 - **Stage:** 00, 10
 - **Opened:** 2026-08-24
 - **Owner:** shared
@@ -13,10 +13,11 @@ Do not delete a burden when later evidence resolves it. Append a resolution with
 - **Current evidence:** `docs/evidence/003-00-source-and-base-preflight.json`.
 - **Next discriminating action:** After synthetic gates and implementation freeze, revalidate the hash and open exactly this identity with `network_enabled=false` and no credentials.
 - **Resolution condition:** The official OFFLINE adapter opens and returns a normalized frame, or an exact incompatibility receipt establishes `BLOCKED_EXTERNAL`.
+- **Resolution evidence:** The exact pinned adapter opened the cached development asset repeatedly without network or credentials, and Campaign 52 completed a verified run at frozen commit `eab4497a6033bd27102ed99d4d2e43f6ab708ec4`. Its canonical verifier passed 613 artifacts and one run with zero errors; the final returned state was `WIN` at 6/6. Receipt: `docs/evidence/003-10-official-development-win.json`.
 
 ## B-003-0002 - BLA/CLEF mechanism benefit is unmeasured
 
-- **Status:** OPEN
+- **Status:** RESOLVED AS PRESERVED FAILED_MECHANISM; BENEFIT CLAIM NOT EARNED
 - **Stage:** 02-09
 - **Opened:** 2026-08-24
 - **Owner:** Codex
@@ -25,10 +26,11 @@ Do not delete a burden when later evidence resolves it. Append a resolution with
 - **Current evidence:** Source identity and pre-registration only.
 - **Next discriminating action:** Implement the mechanism once, run the frozen four-variant matrix on all predeclared held-out seeds, and report paired outcomes including failures.
 - **Resolution condition:** Acceptance gates support `MECHANISM_CONFIRMED_SYNTHETIC`, or the result is preserved as `PARTIAL`/`FAILED_MECHANISM`.
+- **Resolution evidence:** The exact one-shot v0.2 matrix contains all 1,200 rows and 120 sequence receipts, but H1 and H3 failed, H2 is `NOT_MEASURED`, and action/receipt completeness is 0.615. The corrected independent audit retains 534 genuine linkage findings. Build 003 therefore remains `PARTIAL` and `MECHANISM_NOT_OBSERVED`; Campaign 52's public-development `WIN` does not retroactively establish mechanism benefit.
 
 ## B-003-0003 - No authoritative target-game completion exists
 
-- **Status:** OPEN
+- **Status:** RESOLVED BY AUTHORITATIVE CAMPAIGN 52 GAMESTATE.WIN
 - **Stage:** 10-11
 - **Opened:** 2026-08-24
 - **Owner:** shared
@@ -37,6 +39,7 @@ Do not delete a burden when later evidence resolves it. Append a resolution with
 - **Current evidence:** Build 000 Stage 15 trace; Build 003 preflight.
 - **Next discriminating action:** Use the frozen learner at the official action boundary, preserve every failure/reset, and continue until WIN or an exact external/resource boundary.
 - **Resolution condition:** A replay-linked receipt records final official state WIN, or the same exact blocking condition satisfies the persistent blocked-goal rule after independent work is exhausted.
+- **Resolution evidence:** Campaign 52 evaluation `build003-r11l-mechanical-seed7-eab4497-campaign52` returned raw, metric, and verified local scorecard state `WIN`, `levels_completed=6`, and `win_levels=6`. Its 429 submissions comprise 424 `ACTION6` and five legal `RESET`s; final action 429 was `ACTION6 (14,60)`. Run receipt `sha256:9826969ef86358f9d58d5d66b0bdd09034d8c2a8835ed8eea456ed3fb19260e1`, completion receipt `sha256:84030e25bd09e812d7bd15948d9f785a3d9e9468e99d0534f7e6f91e3ad4181c`, and `docs/evidence/003-10-official-development-win.json` bind genuinely observed completion.
 
 ## B-003-0004 - Target-guided development may overfit
 
@@ -46,9 +49,9 @@ Do not delete a burden when later evidence resolves it. Append a resolution with
 - **Owner:** Codex
 - **Burden:** Iterating from one public development target can accidentally create identity-, coordinate-, color-, layout-, or walkthrough-specific behavior.
 - **Why it matters:** Such behavior would violate the workflow and provide no game-agnostic evidence.
-- **Current evidence:** Production public-ID scan exists; no Build 003 code exists.
-- **Next discriminating action:** Keep the target ID external, run static scans and remapping/metamorphic tests, and require generic causal features for every repair.
-- **Resolution condition:** Final source scans and held-out synthetic compositions pass with zero target/public IDs or privileged imports.
+- **Current evidence:** At exact successful-play freeze `eab4497`, production-ID and privileged-import scans, translation/palette metamorphic coverage, held-out synthetic compositions, 155 visual-policy cases, Ruff, and strict MyPy all pass. Production stores no game, campaign, level, palette, or coordinate constant. This closes the static implementation boundary but cannot measure transfer after repeated exposure to one public development game.
+- **Next discriminating action:** None within Build 003 authority. Preserve `NO_ARC3_GENERALIZATION_CLAIM`; only a separately preregistered and authorized multi-game evaluation can address the remaining transfer/overfit risk.
+- **Resolution condition:** A separately authorized evaluation on identities not used for iterative repair measures transfer without consuming the sealed holdout outside its gate. Static scans or the Campaign 52 win alone cannot resolve this burden.
 
 ## B-003-0005 - Official ARC3 RHAE remains unmeasured
 
@@ -64,15 +67,16 @@ Do not delete a burden when later evidence resolves it. Append a resolution with
 
 ## B-003-0006 - Frozen Windows launcher identity test fails on the current uv alias topology
 
-- **Status:** OPEN / inherited `FAILED_INFRASTRUCTURE`
+- **Status:** RESOLVED BY FINAL EXACT PREDICATE TEST; HISTORICAL BASELINE FAILURE PRESERVED
 - **Stage:** 01, 10
 - **Opened:** 2026-08-24
 - **Owner:** host tooling
 - **Burden:** `test_windows_direct_base_spawn_preserves_venv_identity_and_pid` reproducibly fails before Build 003 changes because `_runtime_identity` returns `verified=false` only for `direct_process_probe_exact`.
 - **Why it matters:** The final regression result must preserve this known failure rather than attribute it to the learner or silently call the full suite clean.
 - **Current evidence:** `docs/evidence/003-01-build-002-frozen-baseline.json`; the launcher probe reports the uv base Python through an unversioned lexical alias while direct execution reports its versioned resolved directory.
-- **Next discriminating action:** Re-run the exact test at Stage 10 and compare the predicate-level receipt. Do not modify the frozen baseline or weaken runtime identity validation merely to obtain green output.
+- **Next discriminating action:** None. Preserve the frozen Build 002 failure receipt as historical host evidence.
 - **Resolution condition:** The final test passes on an authenticated stable launcher topology, or a separately scoped fix proves both launcher paths equivalent without weakening any identity predicate.
+- **Resolution evidence:** With source and test bytes unchanged from successful-play freeze `eab4497`, `.venv\Scripts\python.exe -B -m pytest -q tests\unit\test_measure_stage10_regression.py::test_windows_direct_base_spawn_preserves_venv_identity_and_pid` passed on the final Windows host topology. No launcher predicate or production byte was weakened; the original baseline failure remains immutable.
 
 ## B-003-0007 - Global composite-preservation guards regressed ordinary affine play
 
@@ -311,7 +315,7 @@ Do not delete a burden when later evidence resolves it. Append a resolution with
 
 ## B-003-0021 - Visible-node hierarchy composition is locally certified but officially untested
 
-- **Status:** OPEN; CLEAN IMPLEMENTATION CHECKPOINT VERIFIED; CAMPAIGN 29 GATED
+- **Status:** RESOLVED BY CAMPAIGN 29 OFFICIAL FAILED-MECHANISM CONSEQUENCE; FAILURE PRESERVED
 - **Stage:** 10
 - **Opened:** 2026-08-25
 - **Owner:** Codex
@@ -321,6 +325,7 @@ Do not delete a burden when later evidence resolves it. Append a resolution with
 - **Canonical implementation-freeze checkpoint:** Frozen commit `83df5520478cc209c06d9ce4e658c90786914544`, tree `3d1a45995b004947900de3114449a7e42bd80a87`, was replayed from a clean detached checkout against the sealed Campaign 28 recording. Receipt `C:\a\arc3-b003-play\campaign28-83df552-154f3e1f-canonical-replay-receipt.json`, file SHA-256 `a31eccb229279a965c7a66dc93c80f40b061ee21401591577fe7f6dda2c42bb2`, payload SHA-256 `1ef595d61ec435680e105b6d91eceacf4debe807d146336de6444e5258d3e85b`, and receipt hash `78cb8c95703d6217c9c668fb49f6c433f9765f447f41e0214f86edf6117460fe` match all 115 recorded selections and accepted consequences. The learner derives the next visible-node candidate `ACTION6 (52,14)` with weights three and four, then cancels it without submission. The production action-semantics scan has zero findings, and the matched `MyAgent` profile passes route, determinism, terminal, time, and memory gates. These receipts used zero official interactions and do not resolve this burden.
 - **Next discriminating action:** First complete the exact final matrix and independent audit in B-003-0022, then finish the current-head package, integrity, secret, and documentation gates. Only then start Campaign 29 from a fresh authorized public-development session and submit one official action at a time with reobservation. Treat exact `GAME_OVER` as family failure, issue only legal `RESET`, retain the implicated rejection, and continue; treat exact `NOT_FINISHED` as bounded family falsification and recover through the certified inverse.
 - **Resolution condition:** An official returned consequence reaches or invalidates the visible-node terminal under exact certificates. Neither replay nor synthetic success resolves the game; only official `GameState.WIN` completes it.
+- **Resolution evidence:** Campaign 29 officially exercised the visible-node family, returned a non-winning consequence, and preserved the exact failure and recovery receipts. Campaign 52 later observed authoritative `GameState.WIN` through a distinct retained-mechanics continuation; it does not relabel the Campaign 29 family as successful.
 
 ## B-003-0022 - Final v0.2 paired learner failed mechanism and accurate re-audit
 
@@ -358,7 +363,7 @@ Do not delete a burden when later evidence resolves it. Append a resolution with
 
 ## B-003-0024 - Synthetic fallback-anchor collision generated an unsolvable locked-key case
 
-- **Status:** RESOLVED AT `48bd18d`; CURRENT-HEAD CI REQUIRED; PRODUCTION FREEZE UNCHANGED
+- **Status:** RESOLVED AT `48BD18D` AND CLOSED BY EXACT EAB4497 PACKAGE/HOSTED GATES; HISTORICAL FAILURES PRESERVED
 - **Stage:** 10
 - **Opened:** 2026-08-26
 - **Owner:** Codex
@@ -367,7 +372,8 @@ Do not delete a burden when later evidence resolves it. Append a resolution with
 - **Package sub-gate evidence:** Two exact-source package builds passed and were byte-identical at candidate SHA-256 `d83efdd5c08b082ec8f1402120e75645b15e960fa954e42eb33fd116ee875ee8`; the first-party payload is `27bfe4fd15459d20fa1750c4e4bbe69cb1873ded13db26b43030f7866def1e16`. Cold start passed in 3.0803145 seconds with zero network/process attempts. Package-only integrity reports `package_only_passed=true` but top-level `passed=false` because public identifiers are intentionally `NOT_EVALUATED`; 22 persisted redacted logs had zero secret findings or redactions. The full static lock-only scan also has top-level `passed=false`: source, policy, archive, and secret sub-checks pass while supply chain is explicitly `NOT_EVALUATED` with 60 nonblocking warnings. These scoped passing sub-gates do not relabel either preserved verifier failure or claim every raw byte was secret-scanned.
 - **Smallest repair:** Reject duplicate fallback anchors during deterministic spec generation and lock the exact root seed into a public evaluator-solvability regression. Do not special-case a family, game ID, coordinate, or target result.
 - **Verification:** Exact regression and property file pass; the combined 17-test lab catalog/transition/integration/property suite passes; Ruff lint/format and strict MyPy pass. No official environment, holdout, game source, credential, or submission surface was touched.
-- **Resolution condition:** Met for the implicated generator mechanism at `48bd18d`. Archive inspection confirms the lab is absent from all 114 executable payload members, so `83df552` remains the production/campaign freeze. The final release burden remains open until the preserved package boundary and current-head CI are reported honestly.
+- **Resolution condition:** Met for the implicated generator mechanism at `48bd18d`. Archive inspection confirmed the lab was absent from all 114 executable payload members at that historical checkpoint.
+- **Final closure evidence:** Successful-play freeze `eab4497` passed all five hosted workflows and all nine jobs. Its deterministic A/B package candidate is `sha256:432bdf0ae61f5c960f7372c6b07c1e1393fa52f764f1997ab0d450b2f3459639`; the package-safe suite passed 1,130 cases with three expected skips and zero guard attempts. Exact private Kaggle surfaces remain separately `BLOCKED_EXTERNAL`; neither the later gates nor Campaign 52 relabels the original `83df552` verifier failures.
 
 ## B-003-0025 - Composite bridge sinks are observation-supported but officially untested
 
@@ -445,7 +451,7 @@ Do not delete a burden when later evidence resolves it. Append a resolution with
 
 ## B-003-0030 - Post-Campaign-32 hierarchy continuation and stale retry latch require bounded repair
 
-- **Status:** OPEN; OBSERVATION-ONLY DIAGNOSIS IN PROGRESS
+- **Status:** RESOLVED BY LATER LATCH REPAIR AND OFFICIAL CONTINUATION; CAMPAIGN 32 FAILURE PRESERVED
 - **Stage:** 10
 - **Opened:** 2026-08-26
 - **Owner:** Codex
@@ -454,10 +460,11 @@ Do not delete a burden when later evidence resolves it. Append a resolution with
 - **Preserved evidence:** Root `C:\a\arc3-b003-play\build003-r11l-mechanical-seed7-83dbe52-campaign32`; logical run receipt `sha256:7f36c601284723715e8db17f5c1543da85c767744949c390896c1a9f363928db`; physical run JSON SHA-256 `3c5f15f68c8b9d7e08422f8ed640d706f0514611eff07a6f67931fa2069e9d35`; completion receipt `sha256:b87c019ab67e887bda6103d511578885baa368e8a9a5813c1318258db8402d2f`; trace tail `sha256:65a541dc22ee75c5a9d0111c3680624b6af1d809ecff31fc890b7cc77ee4214e`.
 - **Resource boundary:** The two observed `GAME_OVER` returns remain failure/resource evidence. The next route must be shorter than exhaustive interaction enumeration, retain legal reset handling, and carry a complete inverse. Repeated testing of already rejected terminals is prohibited.
 - **Resolution condition:** A generic repair clears the stale latch with focused regressions; one observation-grounded candidate, if any, passes the complete visual-policy suite, strict source-quality and integrity gates, sealed Campaign 32 replay with zero environment actions, exact frozen-head CI, and then receives an authoritative official consequence. Only official `GameState.WIN` resolves target completion.
+- **Resolution evidence:** The generic stale-latch repair and its focused regressions passed, later campaigns continued from the recovered state under exact replay and hosted gates, and Campaign 52 ultimately returned authoritative `GameState.WIN`. Campaign 32's external residual-chain failure remains immutable evidence.
 
 ## B-003-0031 - Campaigns 33 and 34 exhausted the remaining sparse-sink hierarchy families without WIN
 
-- **Status:** OPEN; FAILED_MECHANISM PRESERVED
+- **Status:** RESOLVED BY LATER OUT-OF-FAMILY OFFICIAL EVIDENCE AND CAMPAIGN 52 WIN; CAMPAIGN 33/34 FAILURES PRESERVED
 - **Stage:** 10 and target-game continuation
 - **Opened:** 2026-08-26
 - **Owner:** Codex
@@ -465,6 +472,7 @@ Do not delete a burden when later evidence resolves it. Append a resolution with
 - **Evidence:** Campaign 33 root `C:\a\arc3-b003-play\build003-r11l-mechanical-seed7-7df4046-campaign33`; Campaign 34 root `C:\a\arc3-b003-play\build003-r11l-mechanical-seed7-1315a60-campaign34`. Campaign 34 recording SHA-256 `607a4271a58d54fd44a793d4c477221b15b92b8118074ed51388126db12d06fb`; run receipt hash `012aee25314cf5ab8d965e140f47d44718633ab295a71fee88ff38590f88a801`; completion receipt hash `12f3bd06c18fc3333868967b06a115613e2007842c8e9e0fbbe477d75ea00e21`.
 - **Impact:** Build 003 completion remains false. No synthetic, replay, score, or complete-looking mechanic map can close this burden.
 - **Reopening handle:** An exact source-free relation outside the rejected sparse-sink family passes reversible parser certification and official discrimination, or the environment itself reports `GameState.WIN`.
+- **Resolution evidence:** Later campaigns admitted only separately certified, out-of-family relations and preserved the Campaign 33/34 sparse-sink failures. Campaign 52 then returned authoritative `GameState.WIN` at 6/6 through the retained-mechanics continuation.
 
 ## B-003-0032 - Carrier-source occlusion is uniquely identified but not yet sequentially certified
 
@@ -596,7 +604,7 @@ Do not delete a burden when later evidence resolves it. Append a resolution with
 
 ## B-003-0041 - Campaign 39 leaves the sole untouched carrier-source attachment unresolved
 
-- **Status:** OPEN; EXACT 6055E7F REPLAY AND LOCAL GATES PASSED; FINAL HEAD AND HOSTED CI PENDING
+- **Status:** RESOLVED BY EXACT 02D078E GATES AND CAMPAIGN 40 OFFICIAL DISCRIMINATOR
 - **Stage:** 10 and target-game continuation
 - **Opened:** 2026-08-27
 - **Owner:** Codex
@@ -660,7 +668,7 @@ Do not delete a burden when later evidence resolves it. Append a resolution with
 
 ## B-003-0045 - Complementary terminal handoff has not survived a fresh-life lineage reconstruction
 
-- **Status:** RESOLVED BY VERIFIED OFFICIAL CAMPAIGN 43 FAILED_MECHANISM; AUTHORITATIVE COMPLETION REMAINS OPEN
+- **Status:** RESOLVED BY VERIFIED OFFICIAL CAMPAIGN 43 FAILED_MECHANISM; TARGET COMPLETION LATER RESOLVED BY CAMPAIGN 52
 - **Stage:** 10 and target-game continuation
 - **Opened:** 2026-08-28
 - **Owner:** Codex
@@ -804,7 +812,7 @@ Do not delete a burden when later evidence resolves it. Append a resolution with
 
 ## B-003-0054 - Campaign 51 exposes loss of per-source z-order at a connector overlap
 
-- **Status:** OPEN; CAMPAIGN 51 SEALED AS FAILED_MECHANISM; NARROW REPAIR PASSES FOCUSED LOCAL GATES; EXACT REPAIR-HEAD GATES PENDING
+- **Status:** RESOLVED BY EXACT EAB4497 GATES AND CAMPAIGN 52 AUTHORITATIVE WIN; CAMPAIGN 51 FAILURE PRESERVED
 - **Stage:** 10 and target-game continuation
 - **Opened:** 2026-08-29
 - **Owner:** Codex
@@ -813,5 +821,6 @@ Do not delete a burden when later evidence resolves it. Append a resolution with
 - **Diagnosis:** Both source 0 residual 10 and newly transported source 1 residual 11 cover the two connector cells. The overlay loop correctly paints source 1 last, but child-only `overlay_lineage` discards source identity and lets the connector exception overwrite that later layer. This is a per-source composition defect, not route, endpoint, source-collection, target, mediator, or child-delivery evidence.
 - **Smallest candidate:** Retain `source_index` in overlay lineage. Apply the already-earned connector precedence only where the top overlay cell belongs to the earliest transported source layer, allowing a later observed source layer to occlude it. This composes the Campaign 50 connector with source 0 before later source layers without weakening static/source/target/endpoint/mediator protections. The implementation contains no game, campaign, level, palette, or coordinate constant.
 - **Focused evidence:** Four fixed regressions pass: Campaign 50 first-source connector precedence, Campaign 51 later-source residual precedence, translation/palette equivariance, and the earlier ternary connector contradiction. Ruff lint/format, strict MyPy, and diff hygiene pass. Candidate production/test SHA-256 values are `3eabe213fdff6fd0c533631436bfeeb4061a0bcf6eee1045f59d0a40420a696e` / `ce9f43fa45062b64fe6e0906917014c236d7bef52155dc0baeb4ca23114966f0`.
-- **Exposure and authority:** The exposure ledger contains 99 development events and zero holdout events, tail `sha256:17d772ebea77e1b9f5c8b0f45f7b9e20424f32a0b442a2c5da262104ef0f3b50`, file SHA-256 `b0b5604809a416d1b2ebaee61f4e41affd20e38ff781d33e55b42a7464f2cb2f`. The candidate has issued zero Campaign 52 environment actions. No holdout, target source, terms, credentials, spending, upload, submission, merge, release, or external representation occurred.
+- **Prelaunch exposure and authority:** Before Campaign 52, the exposure ledger contained 99 development events and zero holdout events, tail `sha256:17d772ebea77e1b9f5c8b0f45f7b9e20424f32a0b442a2c5da262104ef0f3b50`, file SHA-256 `b0b5604809a416d1b2ebaee61f4e41affd20e38ff781d33e55b42a7464f2cb2f`. At that gate the candidate had issued zero Campaign 52 environment actions. No holdout, target source, terms, credentials, spending, upload, submission, merge, release, or external representation occurred.
 - **Resolution condition:** A fresh exact committed head must replay all 424 Campaign 51 submissions and mechanics receipts, accept the terminal consequence without lineage loss, and cancel only the related next retained-plan action with zero environment actions; every clean-source, static, sanitized, and hosted launch gate must pass at that head. Authorized development-only play must then preserve every consequence and continue while `NOT_FINISHED`. Only returned `GameState.WIN` resolves the target-game burden.
+- **Resolution evidence:** Exact `eab4497a6033bd27102ed99d4d2e43f6ab708ec4`, tree `17bb7e126034f6ccf8a5d24becd8163629e33757`, replayed all 424 Campaign 51 cycles, cancelled only the related continuation, passed 119 clean-source cases with three expected skips, 82 replay/CLI/audit cases, 155 visual-policy cases, every static/sanitized gate, and all five hosted workflows/nine jobs before play. Campaign 52 then retained the later transported source layer, completed the remaining route, and returned `GameState.WIN` at 6/6 on official action 429. Canonical verification passed 613 artifacts with zero errors. The final exposure ledger contains 101 development events and zero holdout events, file SHA-256 `1dbfe3e9b29dae81083fddc1e69ba7dca35e67b3f030d633cf90b56342fcb000`. Campaign 51 remains immutable `FAILED_MECHANISM`; the resolution does not rewrite its two-cell residual or claim generalization.
