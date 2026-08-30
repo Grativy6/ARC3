@@ -275,10 +275,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         artifact_dir.mkdir(parents=True, exist_ok=True)
         environment_dir.mkdir(parents=True, exist_ok=True)
         recordings_dir.mkdir(parents=True, exist_ok=True)
+        authorization_hash = authorization["authorization_hash"]
+        assert isinstance(authorization_hash, str)
         if args.acquire_missing:
             exposure_status = "acquisition-attempted"
-            authorization_hash = authorization["authorization_hash"]
-            assert isinstance(authorization_hash, str)
             _acquire(
                 game_id=game_id,
                 seed=cast(int, args.seed),
@@ -307,6 +307,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         run = WiseScientistRun(
             session,
             artifact_dir,
+            source_commit=cast(str, args.frozen_commit),
+            authorization_hash=authorization_hash,
             max_environment_actions=cast(int, args.max_actions),
             max_resets=cast(int, args.max_resets),
             wall_clock_seconds=cast(float, args.wall_clock_seconds),

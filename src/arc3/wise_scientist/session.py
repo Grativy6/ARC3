@@ -17,7 +17,7 @@ from arc3.adapters import EnvironmentSession, Observation, ScoreSummary, validat
 from arc3.errors import ARC3ValidationError, EnvironmentStateError
 from arc3.evaluation.artifacts import atomic_write_json, atomic_write_text
 from arc3.perception import render_grid_svg, render_grid_text
-from arc3.trace.canonical import sha256_json
+from arc3.trace.canonical import is_sha256, sha256_json
 from arc3.types import ActionName, GameStateName, JSONValue
 from arc3.wise_scientist.journal import WiseJournal
 from arc3.wise_scientist.models import (
@@ -142,6 +142,8 @@ class WiseScientistRun:
         session: EnvironmentSession,
         artifact_root: str | Path,
         *,
+        source_commit: str,
+        authorization_hash: str,
         max_environment_actions: int = 1_000,
         max_resets: int = 20,
         wall_clock_seconds: float = 14_400.0,
@@ -155,6 +157,12 @@ class WiseScientistRun:
             raise ARC3ValidationError("Wise Scientist action and reset budgets must be positive")
         if isinstance(wall_clock_seconds, bool) or wall_clock_seconds <= 0:
             raise ARC3ValidationError("Wise Scientist wall-clock budget must be positive")
+        if len(source_commit) != 40 or any(
+            character not in "0123456789abcdef" for character in source_commit
+        ):
+            raise ARC3ValidationError("Wise Scientist source commit must be a lowercase SHA-1")
+        if not is_sha256(authorization_hash):
+            raise ARC3ValidationError("Wise Scientist authorization hash must be a tagged SHA-256")
         self._session = session
         self.artifact_root = Path(artifact_root).resolve()
         self.artifact_root.mkdir(parents=True, exist_ok=True)
@@ -175,6 +183,8 @@ class WiseScientistRun:
         self._max_environment_actions = max_environment_actions
         self._max_resets = max_resets
         self._wall_clock_seconds = wall_clock_seconds
+        self._source_commit = source_commit
+        self._authorization_hash = authorization_hash
         self._started_at = datetime.now(UTC).isoformat().replace("+00:00", "Z")
         self._started_monotonic = monotonic()
         self.phase = WiseRunPhase.NEEDS_SCAN
@@ -185,6 +195,8 @@ class WiseScientistRun:
                 "game_id": str(self._observation.game_id),
                 "governing_objective_id": GOVERNING_OBJECTIVE_ID,
                 "governing_objective": GOVERNING_OBJECTIVE,
+                "source_commit": self._source_commit,
+                "authorization_hash": self._authorization_hash,
                 "started_at": self._started_at,
                 "budgets": {
                     "max_environment_actions": self._max_environment_actions,
@@ -616,6 +628,8 @@ class WiseScientistRun:
         elapsed = monotonic() - self._started_monotonic
         receipt_core: dict[str, JSONValue] = {
             "schema": _FINAL_RECEIPT_SCHEMA,
+            "source_commit": self._source_commit,
+            "authorization_hash": self._authorization_hash,
             "game_id": str(self._observation.game_id),
             "final_official_state": self._observation.state.value,
             "levels_completed": self._observation.levels_completed,
@@ -700,6 +714,8 @@ class WiseScientistRun:
         ]
         payload: dict[str, JSONValue] = {
             "schema": _CHECKPOINT_SCHEMA,
+            "source_commit": self._source_commit,
+            "authorization_hash": self._authorization_hash,
             "phase": self.phase.value,
             "game_id": str(self._observation.game_id),
             "governing_objective_id": GOVERNING_OBJECTIVE_ID,

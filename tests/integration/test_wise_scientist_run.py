@@ -18,6 +18,9 @@ from arc3.wise_scientist import (
     WiseScientistRun,
 )
 
+_SOURCE_COMMIT = "1" * 40
+_AUTHORIZATION_HASH = "sha256:" + ("2" * 64)
+
 
 def _observation(
     state: GameStateName,
@@ -181,7 +184,12 @@ def test_level_transition_is_not_completion_and_direct_win_is(tmp_path: Path) ->
             _observation(GameStateName.WIN, levels_completed=2, cell=3),
         ],
     )
-    run = WiseScientistRun(session, tmp_path / "run")
+    run = WiseScientistRun(
+        session,
+        tmp_path / "run",
+        source_commit=_SOURCE_COMMIT,
+        authorization_hash=_AUTHORIZATION_HASH,
+    )
 
     run.scan(_scan(run, "L0"))
     run.act(_act(run, "L0"))
@@ -220,7 +228,12 @@ def test_game_over_is_failure_evidence_then_reset_requires_fresh_scan(
             _observation(GameStateName.NOT_FINISHED, cell=1, full_reset=True),
         ],
     )
-    run = WiseScientistRun(session, tmp_path / "run")
+    run = WiseScientistRun(
+        session,
+        tmp_path / "run",
+        source_commit=_SOURCE_COMMIT,
+        authorization_hash=_AUTHORIZATION_HASH,
+    )
     run.scan(_scan(run, "TRY"))
     run.act(_act(run, "TRY"))
     run.assess(_assess(run, "TRY", kind="MISMATCHED", revision="NARROW"))
@@ -289,7 +302,10 @@ def test_game_over_is_failure_evidence_then_reset_requires_fresh_scan(
 
 def test_orphan_subgoal_and_wrong_objective_are_rejected(tmp_path: Path) -> None:
     run = WiseScientistRun(
-        _FakeSession(_observation(GameStateName.NOT_FINISHED), []), tmp_path / "run"
+        _FakeSession(_observation(GameStateName.NOT_FINISHED), []),
+        tmp_path / "run",
+        source_commit=_SOURCE_COMMIT,
+        authorization_hash=_AUTHORIZATION_HASH,
     )
     raw = _scan(run, "ORPHAN").to_dict()
     subgoals = raw["subgoals"]

@@ -1,7 +1,7 @@
 {
   "schema": "arc3.build-003w.nonplaying-verification.v0.1",
   "status": "PASS",
-  "recorded_at": "2026-08-30T22:55:19.4695605Z",
+  "recorded_at": "2026-08-30T23:00:00.4884963Z",
   "runtime": {
     "python": "CPython 3.12.14",
     "environment": ".venv",
@@ -23,7 +23,7 @@
     "passed": 37,
     "failed": 0,
     "skipped": 0,
-    "duration_seconds": 20.91
+    "duration_seconds": 17.10
   },
   "broad_relevant_regression": {
     "scope": [

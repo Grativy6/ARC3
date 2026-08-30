@@ -1,7 +1,7 @@
 {
   "schema": "arc3.build-003w.wise-scientist-implementation.v0.1",
   "status": "PASS",
-  "recorded_at": "2026-08-30T22:55:19.4695605Z",
+  "recorded_at": "2026-08-30T23:00:00.4884963Z",
   "branch": "experiment/003w-wise-scientist-clean-room",
   "preimplementation_checkpoint_commit": "1702c40d159bb1b3fe994aa1998a330d9bcf603c",
   "directive": "docs/workflows/003w-wise-scientist-play-directive.md",
@@ -24,11 +24,11 @@
     },
     {
       "path": "src/arc3/wise_scientist/session.py",
-      "sha256": "sha256:31d05540bd798cbac83300b4368e76aacb16ae7c18a12fe5de14de46bef20793"
+      "sha256": "sha256:d71f5addd75e5ad9d34a8968e3f2f0c301f7e957f43f0b4e6faf96fd434a8062"
     },
     {
       "path": "scripts/play_wise_scientist.py",
-      "sha256": "sha256:1fe33a3d4a84fd95bfa2cb5e20ea2894ca7da41547643b6b19f4c18d462ef5ce"
+      "sha256": "sha256:af2538314311ae3e6c51b8d87b6719d51d6dc89d442a187790d96a50b077f5d9"
     }
   ],
   "contract": {
@@ -41,6 +41,7 @@
     "game_over_is_failure_evidence": true,
     "unchanged_failed_action_is_guarded": true,
     "direct_official_win_is_only_success_terminal": true,
+    "source_commit_and_authorization_are_in_checkpoint_and_final_receipt": true,
     "hosted_model_calls": false,
     "production_game_id_branching": false
   },
