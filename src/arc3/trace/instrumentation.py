@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 
 from arc3.adapters import Observation
@@ -9,7 +10,7 @@ from arc3.baseline_runner import BaselineReceiptSink
 from arc3.types import ActionName, ActionRequest, JSONValue, RationaleCategory, StateScope
 
 from .journal import EventJournal
-from .schema import CodeIdentity, SourceIdentity
+from .schema import CodeIdentity, SourceIdentity, TraceEvent
 
 
 def _action_payload(action: ActionRequest) -> dict[str, JSONValue]:
@@ -29,17 +30,31 @@ class BaselineTraceSink(BaselineReceiptSink):
     code_identity: CodeIdentity
     level_index: int = 0
     step_index: int = 0
+    observation_level_scoping: bool = False
+    last_consequence_event_id: str | None = None
+    last_consequence_level_index: int | None = None
+    last_consequence_step_index: int | None = None
+    last_consequence_action: dict[str, JSONValue] | None = None
+    last_consequence_before_state: str | None = None
+    last_consequence_after_state: str | None = None
+    last_consequence_before_frame_hash: str | None = None
+    last_consequence_after_frame_hash: str | None = None
 
     def _append(
         self,
         observation: Observation,
         event_type: str,
         payload: dict[str, object],
-    ) -> None:
-        self.journal.append(
+    ) -> TraceEvent:
+        event_level = (
+            observation.levels_completed if self.observation_level_scoping else self.level_index
+        )
+        if self.observation_level_scoping:
+            self.level_index = event_level
+        return self.journal.append(
             episode_id=self.episode_id,
             game_id=str(observation.game_id),
-            level_index=self.level_index,
+            level_index=event_level,
             step_index=self.step_index,
             event_type=event_type,
             source=self.source,
@@ -62,17 +77,20 @@ class BaselineTraceSink(BaselineReceiptSink):
                 "full_reset": observation.full_reset,
             }
         )
+        payload: dict[str, object] = {
+            "frame_count": len(frames),
+            "frames": frames,
+            "game_state": observation.state.value,
+            "score": None,
+            "available_actions": [action.value for action in observation.available_actions],
+            "upstream_metadata": metadata,
+        }
+        if self.observation_level_scoping:
+            payload["upstream_session_id"] = observation.upstream_session_id
         self._append(
             observation,
             "observation.received",
-            {
-                "frame_count": len(frames),
-                "frames": frames,
-                "game_state": observation.state.value,
-                "score": None,
-                "available_actions": [action.value for action in observation.available_actions],
-                "upstream_metadata": metadata,
-            },
+            payload,
         )
 
     def record_candidates(self, observation: Observation) -> None:
@@ -135,8 +153,8 @@ class BaselineTraceSink(BaselineReceiptSink):
         frame_receipts = [
             self.journal.blobs.put_frame(frame.cells).to_payload() for frame in after.frames
         ]
-        self._append(
-            after,
+        event = self._append(
+            before if self.observation_level_scoping else after,
             "consequence.received",
             {
                 "action": _action_payload(action),
@@ -148,7 +166,65 @@ class BaselineTraceSink(BaselineReceiptSink):
                 "model_update": "not-applicable-baseline",
             },
         )
+        self.last_consequence_event_id = event.event_id
+        self.last_consequence_level_index = event.level_index
+        self.last_consequence_step_index = event.step_index
+        self.last_consequence_action = _action_payload(action)
+        self.last_consequence_before_state = before.state.value
+        self.last_consequence_after_state = after.state.value
+        self.last_consequence_before_frame_hash = str(before.frames[-1].digest)
+        self.last_consequence_after_frame_hash = str(after.frames[-1].digest)
         self.step_index += 1
+
+    def record_mechanical_receipts(
+        self,
+        observation: Observation,
+        receipts: Sequence[Mapping[str, object]],
+    ) -> None:
+        """Durably bind one BLA/CLEF receipt to its raw consequence event."""
+
+        if (
+            self.last_consequence_event_id is None
+            or self.last_consequence_level_index is None
+            or self.last_consequence_step_index is None
+        ):
+            raise ValueError("mechanical receipt has no source consequence event")
+        if len(receipts) != 1:
+            raise ValueError("each mechanical consequence requires exactly one action receipt")
+        receipt = dict(receipts[0])
+        if (
+            receipt.get("level_index") != self.last_consequence_level_index
+            or receipt.get("levels_before") != self.last_consequence_level_index
+            or receipt.get("levels_after") != observation.levels_completed
+            or receipt.get("action") != self.last_consequence_action
+            or receipt.get("before_state") != self.last_consequence_before_state
+            or receipt.get("after_state") != self.last_consequence_after_state
+            or receipt.get("before_frame_hash") != self.last_consequence_before_frame_hash
+            or receipt.get("after_frame_hash") != self.last_consequence_after_frame_hash
+        ):
+            raise ValueError("mechanical receipt disagrees with its source consequence")
+        self.journal.append(
+            episode_id=self.episode_id,
+            game_id=str(observation.game_id),
+            level_index=self.last_consequence_level_index,
+            step_index=self.last_consequence_step_index,
+            event_type="mechanics.action_receipt",
+            source=self.source,
+            scope=StateScope.EPISODE,
+            payload={
+                "receipt": receipt,
+                "source_consequence_event_id": self.last_consequence_event_id,
+            },
+            code_identity=self.code_identity,
+        )
+        self.last_consequence_event_id = None
+        self.last_consequence_level_index = None
+        self.last_consequence_step_index = None
+        self.last_consequence_action = None
+        self.last_consequence_before_state = None
+        self.last_consequence_after_state = None
+        self.last_consequence_before_frame_hash = None
+        self.last_consequence_after_frame_hash = None
 
 
 __all__ = ["BaselineTraceSink"]

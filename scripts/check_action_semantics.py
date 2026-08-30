@@ -27,6 +27,7 @@ DEFAULT_MANIFEST = ROOT / "docs" / "evaluation" / "public-game-partitions.v0.1.j
 PRODUCTION_DIRECTORIES = (
     "policy",
     "exploration",
+    "mechanics",
     "planning",
     "hypotheses",
     "goals",
@@ -108,6 +109,33 @@ def discover_action_semantic_files(root: Path) -> tuple[Path, ...]:
 
 def _source_segment(source: str, node: ast.AST) -> str:
     return ast.get_source_segment(source, node) or ""
+
+
+def _local_statement_segment(source: str, node: ast.stmt) -> str:
+    """Return only the statement-local expression, excluding nested bodies.
+
+    ``ast.get_source_segment`` on a compound statement includes every nested
+    statement.  That made an ACTION6 availability check inherit unrelated
+    words such as ``target`` from a large observation-driven body.  Child
+    statements are visited independently, so scanning only the header keeps
+    direct name-based assumptions visible without manufacturing parent-body
+    findings.
+    """
+
+    if isinstance(node, ast.Expr) and isinstance(node.value, ast.Constant):
+        if isinstance(node.value.value, str):
+            return ""
+    if isinstance(node, (ast.If, ast.While, ast.Assert)):
+        return _source_segment(source, node.test)
+    if isinstance(node, (ast.For, ast.AsyncFor)):
+        return " ".join((_source_segment(source, node.target), _source_segment(source, node.iter)))
+    if isinstance(node, (ast.With, ast.AsyncWith)):
+        return " ".join(_source_segment(source, item.context_expr) for item in node.items)
+    if isinstance(node, ast.Match):
+        return _source_segment(source, node.subject)
+    if isinstance(node, (ast.Try, ast.TryStar)):
+        return ""
+    return _source_segment(source, node)
 
 
 def _action_tokens(node: ast.AST) -> tuple[str, ...]:
@@ -254,8 +282,13 @@ def _scan_tree(
         if isinstance(node, ast.stmt) and not isinstance(
             node, (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef, ast.Module)
         ):
-            segment = _source_segment(source, node)
-            tokens = set(_action_tokens(node))
+            segment = _local_statement_segment(source, node)
+            local_tree: ast.AST
+            try:
+                local_tree = ast.parse(segment) if segment else ast.Module(body=[], type_ignores=[])
+            except SyntaxError:
+                local_tree = node
+            tokens = set(_action_tokens(local_tree))
             if tokens and _DIRECTION_RE.search(segment.replace("_", " ")):
                 findings.add(
                     _finding(

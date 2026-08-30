@@ -1,0 +1,119 @@
+{
+  "schema": "arc3.build003.curriculum-protocol.v0.2",
+  "status": "PREREGISTERED_BEFORE_V02_RESULTS",
+  "registered_at": "2026-08-25T21:17:52.7971800Z",
+  "surface": "synthetic",
+  "protocol_id": "arc3.build003.curriculum.v0.2",
+  "amends_without_rewriting": "arc3.build003.curriculum.v0.1",
+  "seed_manifest": "docs/evaluation/build-003-heldout-seeds.v0.2.json",
+  "preregistration_amendment": "docs/evaluation/build-003-preregistration-amendment.v0.2.json",
+  "families": [
+    "movement-resource-cost",
+    "blocking-walls",
+    "resource-restoration",
+    "reusable-versus-one-shot-restoration",
+    "gate-switch-reachability",
+    "pushing-other-object",
+    "terrain-status-modifier",
+    "delayed-hidden-state-response",
+    "harmless-animation",
+    "held-out-mechanic-composition"
+  ],
+  "variants": [
+    "BUILD002_FROZEN",
+    "BLA_CLEF_LEVEL_RESET",
+    "BLA_ONLY_PERSISTENT",
+    "BLA_CLEF_FULL"
+  ],
+  "pairing": {
+    "unit": "seed-and-family",
+    "heldout_seed_count": 30,
+    "family_count": 10,
+    "variant_count": 4,
+    "required_rows": 1200,
+    "missing_rows_permitted": false,
+    "duplicate_or_replacement_rows_permitted": false
+  },
+  "budgets_per_variant_seed_sequence": {
+    "maximum_environment_actions": 192,
+    "maximum_environment_actions_per_level_attempt": 48,
+    "maximum_resets": 10,
+    "maximum_wall_clock_seconds": 10,
+    "maximum_peak_memory_bytes": 1073741824,
+    "maximum_policy_cycle_seconds": 10
+  },
+  "sequence_mechanics": {
+    "base_movement_resource_cost": {
+      "sample_once_per_sequence": true,
+      "distribution": "uniform integer in {1,2}",
+      "reused_unchanged_across_all_levels": true,
+      "varies_across_seeds": true
+    },
+    "action_to_vector_mapping": {
+      "actions": ["ACTION1", "ACTION2", "ACTION3", "ACTION4"],
+      "vectors": [[0, -1], [0, 1], [-1, 0], [1, 0]],
+      "sample_once_per_sequence": "uniform permutation without replacement",
+      "reused_unchanged_across_all_levels": true,
+      "varies_across_seeds": true,
+      "ACTION5": "non-movement interaction"
+    }
+  },
+  "visual_randomization": {
+    "layout": "independent seeded D4 symmetry per level",
+    "palette": "independent seeded permutation of colors 1 through 15 per level",
+    "sprite_roles": "single-cell semantic roles receive the permuted palette colors; no multi-cell shape change is introduced because it would alter collision geometry",
+    "policy_visibility": "only rendered pixels are visible; role and palette identities remain evaluator-private"
+  },
+  "environment_contract": {
+    "frame_size": [10, 10],
+    "action_names": ["ACTION1", "ACTION2", "ACTION3", "ACTION4", "ACTION5"],
+    "intermediate_level_state": "NOT_FINISHED",
+    "authoritative_final_state": "WIN",
+    "failure_state": "GAME_OVER",
+    "failure_recovery_action": "RESET",
+    "progressive_level_count": 10
+  },
+  "build002_baseline": {
+    "source_receipt": "docs/evidence/003-01-build-002-frozen-baseline.json",
+    "commit": "5448c53f3b7e08f606cf292e6068f3f9c9db16d4",
+    "tree": "700718c09c2a1532cea16526b290f57be0120371",
+    "identity_must_be_verified_before_worker_import": true,
+    "substitution_permitted": false
+  },
+  "privilege_boundary": {
+    "learner_process_receives": [
+      "normalized frame pixels",
+      "state",
+      "levels_completed",
+      "win_levels",
+      "available actions",
+      "returned action",
+      "step and attempt counters"
+    ],
+    "learner_process_never_receives": [
+      "protocol identifier",
+      "generator seed",
+      "family label",
+      "base movement resource cost",
+      "action to vector mapping",
+      "palette role mapping",
+      "rule configuration",
+      "exact evaluator state",
+      "transition truth",
+      "oracle plan"
+    ],
+    "denied_policy_imports": ["engine", "generator", "oracle"]
+  },
+  "cli_binding": {
+    "protocol_selection_must_be_explicit": true,
+    "seed_set_selection_must_be_explicit": true,
+    "full_matrix_requires": [
+      "--protocol v0.2",
+      "--seed-set heldout",
+      "all 30 frozen cases",
+      "all four variants"
+    ],
+    "development_smoke_is_not_a_full_matrix": true
+  },
+  "claim_boundary": "Synthetic curriculum evidence is not target-game completion or GameState.WIN evidence for public, holdout, or official play."
+}

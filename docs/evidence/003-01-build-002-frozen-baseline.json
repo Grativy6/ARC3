@@ -1,0 +1,101 @@
+{
+  "schema": "arc3.build-003.stage-01-baseline.v0.1",
+  "recorded_at": "2026-08-24T18:15:35.6990514-04:00",
+  "repository": "Grativy6/ARC3",
+  "source_commit": "bea1eac99cb0f1b351526b1dc487d132ba1d40ef",
+  "source_tree": "700718c09c2a1532cea16526b290f57be0120371",
+  "required_build_002_head": "5448c53f3b7e08f606cf292e6068f3f9c9db16d4",
+  "build_002_present": true,
+  "build_002_ancestral": true,
+  "main_tree_equals_build_002_tree": true,
+  "scope": "merged-main synthetic and open-fixture baseline; no game environment opened",
+  "runtime": {
+    "python": "3.12.14",
+    "platform": "Windows-10-10.0.19045-SP0 AMD64",
+    "uv_lock_sha256": "sha256:3bf42dcbe45720f71b7433584f56a5d5982ec1c687c341ad2626222fa5de285b",
+    "arc_agi_version": "0.9.9",
+    "arcengine_version": "0.9.3",
+    "wall_clock_seconds": 2437,
+    "peak_memory_bytes": null,
+    "peak_memory_status": "NOT_MEASURED",
+    "peak_memory_note": "The already-started baseline test process did not have a trustworthy peak-memory sampler attached; no value is manufactured retroactively."
+  },
+  "commands": [
+    {
+      "name": "lock consistency",
+      "status": "PASS"
+    },
+    {
+      "name": "ruff check",
+      "status": "PASS"
+    },
+    {
+      "name": "ruff format --check",
+      "status": "PASS",
+      "detail": "330 files already formatted"
+    },
+    {
+      "name": "mypy --strict",
+      "status": "PASS",
+      "detail": "188 source files"
+    },
+    {
+      "name": "pytest full suite",
+      "status": "FAILED_INFRASTRUCTURE",
+      "detail": "1463 passed, 21 skipped, 2 failed"
+    },
+    {
+      "name": "targeted rerun of the two failures",
+      "status": "PARTIAL",
+      "detail": "repository-integrity test passed after concurrent ignored-file writes stopped; Windows direct-base runtime identity test failed reproducibly"
+    }
+  ],
+  "failure_modes": [
+    {
+      "id": "baseline-concurrent-integrity-scan-race",
+      "classification": "FAILED_INFRASTRUCTURE_TRANSIENT",
+      "test": "test_repository_integrity_scan_passes",
+      "detail": "A candidate changed while the bounded snapshot was read because ignored analysis artifacts were being written concurrently in the same workspace.",
+      "targeted_rerun": "PASS",
+      "code_regression": false
+    },
+    {
+      "id": "baseline-windows-runtime-identity",
+      "classification": "FAILED_INFRASTRUCTURE_REPRODUCIBLE",
+      "test": "test_windows_direct_base_spawn_preserves_venv_identity_and_pid",
+      "detail": "The Stage 10 runtime identity is verified=false only because direct_process_probe_exact=false. The ordinary launcher reports an unversioned uv managed base-executable lexical path while the direct-base probe reports the versioned resolved path; all other runtime-identity predicates pass.",
+      "targeted_rerun": "FAIL",
+      "implicated_surface": "host uv managed Python launcher alias topology",
+      "code_regression": false
+    }
+  ],
+  "counts": {
+    "tests_passed": 1463,
+    "tests_skipped": 21,
+    "tests_failed_initial": 2,
+    "tests_failed_reproducible": 1,
+    "environment_actions": 0,
+    "holdout_actions": 0,
+    "target_actions": 0
+  },
+  "existing_system_reuse": {
+    "perception": "src/arc3/perception",
+    "memory": "src/arc3/memory",
+    "world_model": "src/arc3/world_model",
+    "exploration": "src/arc3/exploration",
+    "policy_and_governor": "src/arc3/policy",
+    "trace_and_replay": "src/arc3/trace and src/arc3/replay",
+    "official_adapter": "src/arc3/adapter",
+    "competition_entrypoint": "src/arc3/agent.py:MyAgent",
+    "packaging": "src/arc3/packaging and scripts/build_offline_package.py"
+  },
+  "prior_evidence_boundary": {
+    "build_001": "PARTIAL",
+    "build_002": "PARTIAL",
+    "build_002_exact_evaluation": "BLOCKED_EXTERNAL",
+    "public_holdout": "SEALED_UNCONSUMED",
+    "retroactive_revision_permitted": false
+  },
+  "stage_status": "PASS",
+  "stage_status_note": "Stage 01 freezes and records the inherited baseline including its reproducible host-infrastructure failure; it does not relabel that failure as a passing test suite."
+}

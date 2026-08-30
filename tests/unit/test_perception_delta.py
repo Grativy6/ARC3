@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+from arc3.adapters import Observation
 from arc3.perception.delta import CellChangeKind, measure_delta
 from arc3.perception.frame import normalize_grid
+from arc3.perception.metadata import observation_metadata
+from arc3.types import ActionName, GameId, GameStateName
 
 
 def test_exact_cell_and_metadata_delta() -> None:
@@ -71,3 +74,40 @@ def test_identical_frame_and_metadata_is_apparent_noop() -> None:
     delta = measure_delta(frame, frame, before_metadata={"score": 1}, after_metadata={"score": 1})
     assert delta.apparent_noop
     assert delta.changed_mask == ((False, False),)
+
+
+def test_metadata_only_change_is_not_an_apparent_noop() -> None:
+    frame = normalize_grid([[1, 2]])
+    delta = measure_delta(
+        frame,
+        frame,
+        before_metadata={"state": "NOT_FINISHED"},
+        after_metadata={"state": "GAME_OVER"},
+    )
+
+    assert delta.changed_cell_count == 0
+    assert [change.field for change in delta.metadata_changes] == ["state"]
+    assert not delta.apparent_noop
+
+
+def test_observation_metadata_includes_official_state_and_prevents_shadowing() -> None:
+    observation = Observation(
+        game_id=GameId("fixture"),
+        frames=(normalize_grid([[0]]),),
+        state=GameStateName.GAME_OVER,
+        levels_completed=2,
+        win_levels=3,
+        available_actions=(ActionName.RESET,),
+        full_reset=True,
+        upstream_metadata=(("state", "spoofed"), ("counter", 7)),
+    )
+
+    assert observation_metadata(observation) == {
+        "state": "GAME_OVER",
+        "levels_completed": 2,
+        "win_levels": 3,
+        "available_actions": "RESET",
+        "full_reset": True,
+        "upstream.state": "spoofed",
+        "counter": 7,
+    }

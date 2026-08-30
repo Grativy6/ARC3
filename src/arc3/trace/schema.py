@@ -68,6 +68,7 @@ CORE_EVENT_TYPES: Final[frozenset[str]] = frozenset(
         "mechanics.change_candidate_resolved",
         "mechanics.change_confirmed",
         "mechanics.epoch_opened",
+        "mechanics.action_receipt",
         "simulation.plan_evaluated",
         "simulation.plan_invalidated",
         "simulation.prediction_emitted",
@@ -672,10 +673,14 @@ def _validate_delta_payload(payload: dict[str, JSONValue]) -> None:
         ):
             raise ARC3ValidationError("changed_bbox must contain four integers or be null")
     require_array(payload.get("component_changes"), field="component_changes")
-    require_object(payload.get("metadata_changes"), field="metadata_changes")
+    metadata_changes = require_object(payload.get("metadata_changes"), field="metadata_changes")
     apparent_noop = payload.get("apparent_noop")
-    if not isinstance(apparent_noop, bool) or apparent_noop != (changed_count == 0):
-        raise ARC3ValidationError("apparent_noop must exactly reflect changed_cell_count == 0")
+    if not isinstance(apparent_noop, bool) or apparent_noop != (
+        changed_count == 0 and not metadata_changes
+    ):
+        raise ARC3ValidationError(
+            "apparent_noop must exactly reflect empty cell and metadata changes"
+        )
 
 
 def _validate_checkpoint_written_payload(payload: dict[str, JSONValue]) -> None:

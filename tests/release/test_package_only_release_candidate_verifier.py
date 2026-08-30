@@ -61,6 +61,7 @@ def test_package_only_plan_has_no_public_inventory_or_gameplay(tmp_path: Path) -
     assert "scripts.package_only_pytest" in by_id["package-safe-test-suite"].argv
     assert "--select-in-process-tests" in by_id["package-safe-test-suite"].argv
     assert "--build001-boundary-policy" in by_id["package-safe-test-suite"].argv
+    assert by_id["package-safe-test-suite"].timeout_seconds == 4800.0
     assert (
         by_id["package-safe-test-suite"].argv[
             by_id["package-safe-test-suite"].argv.index("--expected-commit") + 1
@@ -153,6 +154,10 @@ def test_package_only_test_selection_is_exact_and_full_ci_retains_excluded_cover
     assert tuple(sorted(reasons)) == tuple(path for path, _ in selection.boundary_exclusion_reasons)
     assert all(reason.strip() for reason in reasons.values())
     assert {
+        "tests/evaluation/test_build003_curriculum.py",
+        "tests/evaluation/test_build003_development_performance.py",
+        "tests/evaluation/test_build003_protocol_v02.py",
+        "tests/evaluation/test_build003_results.py",
         "tests/integration/test_pinned_agents_framework.py",
         "tests/integrity/test_dependencies.py",
         "tests/integrity/test_first_party_license.py",
@@ -161,6 +166,10 @@ def test_package_only_test_selection_is_exact_and_full_ci_retains_excluded_cover
         "tests/unit/test_diagnose_hot_path.py",
         "tests/unit/test_measure_hot_path.py",
     } <= set(reasons)
+    assert (
+        "tests/evaluation/test_build003_development_performance.py"
+        not in selection.selected_test_files
+    )
     assert f"run: {ORDINARY_CI_FULL_SUITE_COMMAND}" in workflow
     assert "scripts.package_only_pytest" not in workflow
     assert "--ignore" not in workflow
@@ -311,6 +320,40 @@ def test_package_workflow_normalizes_expected_blocked_exit_only_after_receipt_ch
     assert expected_exit < blocked_status < sealed_boundary < normalized_exit
     assert 'push:\n    branches:\n      - "build/**"' in workflow
     assert "pull_request:\n    branches:\n      - main" in workflow
+
+
+def test_package_workflow_preserves_outer_timeout_reserve(tmp_path: Path) -> None:
+    repository = Path(__file__).resolve().parents[2]
+    workflow = (repository / ".github/workflows/build001-package-only.yml").read_text(
+        encoding="utf-8"
+    )
+    timeout_lines = [line.strip() for line in workflow.splitlines() if "timeout-minutes:" in line]
+    specs = build_plan(
+        repository=repository,
+        output_root=tmp_path / "output",
+        transient_root=tmp_path / "transient",
+        expectation=None,
+        uv_command=("uv",),
+        official_environments=None,
+        profile=BUILD001_PACKAGE_ONLY_PROFILE,
+    )
+    guarded_timeout = next(
+        spec.timeout_seconds for spec in specs if spec.check_id == "package-safe-test-suite"
+    )
+
+    assert timeout_lines == ["timeout-minutes: 90"]
+    assert 90 * 60 - guarded_timeout == 600.0
+
+
+def test_full_ci_workflow_preserves_long_windows_coverage_budget() -> None:
+    repository = Path(__file__).resolve().parents[2]
+    workflow = (repository / ".github/workflows/ci.yml").read_text(encoding="utf-8")
+
+    timeout_lines = [line.strip() for line in workflow.splitlines() if "timeout-minutes:" in line]
+
+    assert timeout_lines == ["timeout-minutes: 95"]
+    assert "uv run pytest -q --cov-report=xml" in workflow
+    assert "uv run arc3 doctor" in workflow
 
 
 def test_package_workflow_uploads_available_failure_evidence() -> None:

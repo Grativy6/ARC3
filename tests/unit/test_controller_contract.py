@@ -247,6 +247,46 @@ def test_canonical_upstream_metadata_remains_accepted(tmp_path: Path) -> None:
     assert controller.snapshot.fault_count == 0
 
 
+def test_metadata_only_terminal_change_is_not_recorded_as_apparent_noop(
+    tmp_path: Path,
+) -> None:
+    controller = ARC3Controller(ControllerPreset.TRACE)
+    controller.reset(_context(tmp_path))
+    frame = GridFrame.from_rows(((0, 1), (0, 2)))
+    before = Observation(
+        game_id=GameId(SYNTHETIC_GAME_ID),
+        frames=(frame,),
+        state=GameStateName.NOT_FINISHED,
+        levels_completed=0,
+        win_levels=1,
+        available_actions=(ActionName.ACTION1,),
+    )
+    controller.observe(before)
+    decision = controller.choose_action()
+    controller.apply_consequence(
+        Observation(
+            game_id=before.game_id,
+            frames=(frame,),
+            state=GameStateName.GAME_OVER,
+            levels_completed=0,
+            win_levels=1,
+            available_actions=before.available_actions,
+            returned_action=decision.action,
+        )
+    )
+
+    delta = next(
+        event
+        for event in reversed(controller.journal.verify_manifest())
+        if event.event_type == "observation.delta_measured"
+    )
+    assert delta.payload["changed_cell_count"] == 0
+    assert delta.payload["metadata_changes"] == {
+        "state": {"before": "NOT_FINISHED", "after": "GAME_OVER"}
+    }
+    assert delta.payload["apparent_noop"] is False
+
+
 def test_game_over_only_selects_reset_and_accepts_reset_consequence(tmp_path: Path) -> None:
     session = SyntheticAdapter(seed=17, size=8, max_steps=1).open(SYNTHETIC_GAME_ID)
     controller = ARC3Controller(ControllerPreset.FULL)

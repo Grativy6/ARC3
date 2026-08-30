@@ -8,20 +8,10 @@ from collections.abc import Collection
 from arc3.adapters import Observation
 from arc3.perception.components import ComponentConfig, extract_components
 from arc3.perception.delta import measure_delta
+from arc3.perception.metadata import observation_metadata
 from arc3.types import ActionRequest, FrameHash, GameStateName
 
 from .models import EffectClassification, EffectKind, StateFeatures
-
-
-def _metadata(observation: Observation) -> dict[str, str | int | float | bool | None]:
-    values: dict[str, str | int | float | bool | None] = {
-        "state": observation.state.value,
-        "levels_completed": observation.levels_completed,
-        "win_levels": observation.win_levels,
-        "available_actions": ",".join(action.value for action in observation.available_actions),
-    }
-    values.update(dict(observation.upstream_metadata))
-    return values
 
 
 def state_features(
@@ -97,8 +87,8 @@ def classify_effect(
     delta = measure_delta(
         old_grid,
         new_grid,
-        before_metadata=_metadata(before),
-        after_metadata=_metadata(after),
+        before_metadata=observation_metadata(before),
+        after_metadata=observation_metadata(after),
     )
     kinds: set[EffectKind] = set()
     displacements = movement_displacements(before, after) if delta.cell_changes else ()

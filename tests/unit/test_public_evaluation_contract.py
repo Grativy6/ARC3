@@ -49,6 +49,7 @@ from arc3.evaluation.public_runner import (
     _aggregate,
     _asset_identity_check,
     _failure_result,
+    _fold_trace_metrics,
     _hot_path_profile_valid,
     _legacy_aggregate,
     _OfflineSocketGuard,
@@ -139,6 +140,49 @@ def test_pre_action_authority_drift_blocks_the_next_environment_step() -> None:
         )
     assert checks == 2
     assert session.steps == 1
+
+
+def test_exhausted_reset_budget_stops_before_policy_stages_an_unsubmitted_reset() -> None:
+    observation = Observation(
+        game_id=GameId("opaque-reset-budget-fixture"),
+        frames=(GridFrame(((0,),)),),
+        state=GameStateName.GAME_OVER,
+        levels_completed=0,
+        win_levels=1,
+        available_actions=(),
+    )
+
+    class Session:
+        @property
+        def observation(self) -> Observation:
+            return observation
+
+        def close(self) -> None:
+            return None
+
+    class Policy:
+        manages_trace = False
+
+        def __init__(self) -> None:
+            self.select_calls = 0
+
+        def select(self, _current: Observation) -> ActionRequest:
+            self.select_calls += 1
+            return ActionRequest(ActionName.RESET)
+
+        def accept_consequence(self, _returned: Observation) -> None:
+            raise AssertionError("no reset was submitted")
+
+    policy = Policy()
+    _scorecard, metrics = run_public_episode(
+        cast(Any, Session()),
+        cast(Any, policy),
+        max_actions=1,
+        max_resets=0,
+    )
+
+    assert policy.select_calls == 0
+    assert metrics["final_state"] == GameStateName.GAME_OVER.value
 
 
 def test_frozen_manifest_recomputes_all_assignments_and_exposures() -> None:
@@ -813,6 +857,48 @@ def test_failure_receipt_preserves_a_recovered_official_score() -> None:
     assert receipt["status"] == "failure"
     assert receipt["score"] == recovered_score
     assert receipt["failure"]["kind"] == "PolicyError"
+    assert "disposition" not in receipt["failure"]
+
+    mechanical_specification = {
+        **specification,
+        "run_id": "fixture-B5-mechanical-seed-7",
+        "baseline_id": "B5",
+        "agent": "mechanical",
+    }
+    mechanical = _failure_result(
+        mechanical_specification,
+        identity,
+        started_at="2026-08-22T00:00:00Z",
+        status="failure",
+        kind="PolicyError",
+        message="bounded candidates exhausted",
+        recovered_score=recovered_score,
+    )
+    assert mechanical["failure"]["disposition"] == "FAILED_MECHANISM"
+
+
+def test_trace_metric_fold_restores_final_mechanical_observation() -> None:
+    metrics: dict[str, object] = {"fault_count": 0}
+    trace: dict[str, object] = {
+        "environment_action_count": 4,
+        "reset_count": 2,
+        "consequence_count": 6,
+        "byte_length": 60,
+        "event_type_counts": {},
+        "final_state": "NOT_FINISHED",
+        "final_levels_completed": 4,
+        "final_win_levels": 6,
+    }
+
+    _fold_trace_metrics(metrics, trace, minimum_fault_count=1)
+
+    assert metrics["environment_actions"] == 4
+    assert metrics["resets"] == 2
+    assert metrics["fault_count"] == 1
+    assert metrics["trace_bytes_per_action"] == 10.0
+    assert metrics["final_state"] == "NOT_FINISHED"
+    assert metrics["final_levels_completed"] == 4
+    assert metrics["final_win_levels"] == 6
 
 
 def test_aggregate_separates_recovered_failure_scores_from_success_metrics() -> None:
@@ -1097,6 +1183,12 @@ def test_worker_seals_trace_score_resources_asset_and_close_after_policy_fault(
             self.closed = True
             self.journal.close()
 
+        def snapshot(self) -> dict[str, JSONValue]:
+            return {
+                "schema": "fixture.failure-diagnostic.v0.1",
+                "ledger": {"event_count": 1, "tail_hash": "sha256:" + "7" * 64},
+            }
+
     session = FaultSession()
     policy = FaultPolicy()
 
@@ -1177,6 +1269,8 @@ def test_worker_seals_trace_score_resources_asset_and_close_after_policy_fault(
     assert receipt["metrics"]["process_memory_before"]["measurement_source"]
     assert receipt["metrics"]["process_memory_after"]["measurement_source"]
     assert receipt["metrics"]["network_attempt_count"] == 0
+    assert receipt["metrics"]["policy_snapshot_capture_status"] == "captured-after-failure"
+    assert receipt["metrics"]["policy_snapshot"]["ledger"]["event_count"] == 1
     assert receipt["metrics"]["policy_close_status"] == "closed"
     assert receipt["metrics"]["session_close_status"] == "closed"
     assert receipt["metrics"]["journal_close_status"] == "closed-by-policy"

@@ -36,7 +36,11 @@ def _plan() -> tuple[PlanProblem, object]:
         available_actions=(ActionRequest(ActionName.ACTION1),),
         goal_test=lambda candidate: candidate.entity("mover").anchor == Cell(2, 0),  # type: ignore[union-attr]
     )
-    result = search(problem, algorithm=SearchAlgorithm.BREADTH_FIRST)
+    result = search(
+        problem,
+        algorithm=SearchAlgorithm.BREADTH_FIRST,
+        enforce_time_budget=False,
+    )
     assert result.plan is not None
     return problem, result.plan
 

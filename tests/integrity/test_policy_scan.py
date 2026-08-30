@@ -158,6 +158,10 @@ def test_production_entry_reaches_pure_boundary_not_environment_adapter() -> Non
 
     assert "agent/my_agent.py" in labels
     assert "src/arc3/adapters/normalization.py" in labels
+    assert "src/arc3/mechanics/visual_causal.py" in labels
+    assert "src/arc3/mechanics/learner.py" in labels
+    assert "src/arc3/mechanics/ledger.py" in labels
+    assert "src/arc3/exploration/causal_events.py" in labels
     assert "src/arc3/adapters/arc_agi.py" not in labels
     findings = scan_policy_files(root=root, files=reachable, public_identifiers=())
     assert not any(

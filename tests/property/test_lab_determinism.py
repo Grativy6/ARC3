@@ -42,3 +42,15 @@ def test_generated_catalogs_are_solvable_and_leakage_free(root_seed: int) -> Non
         evaluator = LabEvaluator(partition=partition, root_seed=root_seed, count=6)
         evaluator.assert_no_observation_leakage()
         evaluator.assert_solvable()
+
+
+def test_generated_toggle_door_key_keeps_key_reachable() -> None:
+    """Regression for a fallback-anchor collision that placed the key on its locked door."""
+
+    evaluator = LabEvaluator(
+        partition=LabPartition.DEVELOPMENT,
+        root_seed=262_795_363_413_301_024,
+        count=6,
+    )
+
+    evaluator.assert_solvable()

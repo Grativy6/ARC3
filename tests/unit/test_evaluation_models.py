@@ -23,6 +23,7 @@ def test_b0_through_b4_are_pinned_without_substituting_full() -> None:
     assert [baseline.baseline_id for baseline in BASELINES] == ["B0", "B1", "B2", "B3", "B4"]
     assert all(baseline.status == "supported" for baseline in BASELINES)
     assert baseline_descriptor("full").limitation is None
+    assert baseline_descriptor("mechanical").baseline_id == "B5"
 
 
 @pytest.mark.parametrize("policy", [NoveltyOnlyPolicy(), TraceLocalStatisticsPolicy()])

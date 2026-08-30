@@ -1,0 +1,155 @@
+{
+  "schema": "arc3.build-003.stage-00-preflight.v0.1",
+  "generated_at": "2026-08-24T21:27:07.4196369Z",
+  "status": "PASS",
+  "claim_boundary": "source, base, authority, and static environment identity only; no gameplay, score, holdout access, or mechanic claim",
+  "repository": {
+    "remote": "https://github.com/Grativy6/ARC3",
+    "branch": "main",
+    "head": "bea1eac99cb0f1b351526b1dc487d132ba1d40ef",
+    "tree": "700718c09c2a1532cea16526b290f57be0120371",
+    "clean": true,
+    "synchronized_with_origin_main": true,
+    "build_002_required_head": "5448c53f3b7e08f606cf292e6068f3f9c9db16d4",
+    "build_002_is_ancestor": true,
+    "build_002_tree": "700718c09c2a1532cea16526b290f57be0120371",
+    "main_tree_equals_build_002_tree": true,
+    "build_002_pull_request": {
+      "number": 6,
+      "url": "https://github.com/Grativy6/ARC3/pull/6",
+      "state": "MERGED",
+      "merge_commit": "bea1eac99cb0f1b351526b1dc487d132ba1d40ef",
+      "merged_at": "2026-08-24T14:49:48Z"
+    }
+  },
+  "prior_build_boundary": {
+    "build_001_status": "PARTIAL",
+    "build_001_holdout": "SEALED_UNCONSUMED",
+    "build_002_status": "PARTIAL",
+    "build_002_exact_evaluation": "BLOCKED_EXTERNAL",
+    "build_002_public_runs_started": 0,
+    "build_002_authorized_holdout_runs_consumed": 0,
+    "build_002_authorized_holdout_run_capacity": 1,
+    "build_003_public_holdout_consumed": "0/1",
+    "retroactive_revision_permitted": false
+  },
+  "controlling_workflow": {
+    "source_path": "C:/Users/cdpan/Downloads/ARC3_Build_003_BLA_CLEF_Mechanical_Learner_Workflow.md",
+    "sha256": "sha256:f261b0840e023f34bbadd06cece2ab98647d3685afd960fd1f2f3eeb329f8467",
+    "lines": 581,
+    "read_completely": true
+  },
+  "framework_sources": {
+    "BLA": {
+      "record": 20807530,
+      "doi": "10.5281/zenodo.20807530",
+      "title": "Boundary-Ledger Accounting in Primitive Axiom Layers",
+      "creator": "Pang, Chris",
+      "publication_date": "2026-06-23",
+      "record_version": null,
+      "artifact_cover_version": "v0.9.1 public working draft",
+      "license": "cc-by-4.0",
+      "file": "BLA in PAL.pdf",
+      "bytes": 1449533,
+      "md5": "9b10a897e27a1f911ecfc4463dbb2e81",
+      "sha256": "sha256:7ec1fbd21a792770a1617b74360b3af1b2ab1fd056d9a81bb7ba1b136008185e",
+      "identity_status": "PASS_FILE_LEVEL_VERSION"
+    },
+    "CLEF": {
+      "record": 21193511,
+      "doi": "10.5281/zenodo.21193511",
+      "title": "CLEF: Cluster-Layer Entropy Focus",
+      "creator": "Pang, Christopher",
+      "publication_date": "2026-07-04",
+      "version": "v1.0",
+      "license": "cc-by-4.0",
+      "file": "CLEF_cluster_layer_entropy_focus_v1_0.pdf",
+      "bytes": 482688,
+      "md5": "aa77fca2421305420ccb4c434e2d5aac",
+      "sha256": "sha256:24589330eda2020145492fc7c3395911e0cf7a17cc67dfe47dad4e7af1280d43",
+      "identity_status": "PASS"
+    },
+    "source_identity_gate": "PASS"
+  },
+  "official_sources": {
+    "accessed_at": "2026-08-24T21:22:00Z",
+    "repository_heads": {
+      "arcprize/ARC-AGI": "f12822c4d550121c35a275008d964afbbed47d2f",
+      "arcprize/ARCEngine": "b495c6acaf253c9681cd7b75c4299d352e9ce6f8",
+      "arcprize/ARC-AGI-3-Agents": "4743e7d0aaae0ded0d98a89a7e282e63564cd58b",
+      "arcprize/ARC-AGI-3-Kaggle-Starter": "eeb1535404f321d280a8f9194bbc1d7aca5f05fc",
+      "arcprize/docs": "a5dfc0b64c625fb4a19cf074af845ebe0bb88ff8"
+    },
+    "documents": [
+      {"url": "https://docs.arcprize.org/methodology.md", "status": 200, "sha256": "sha256:c780fe45e1910767c5dd525d3c061d7e1d458db40717e883f9f9a2088d806c30"},
+      {"url": "https://docs.arcprize.org/actions.md", "status": 200, "sha256": "sha256:ddab3ae48e7ea27729c3295f0469f9cc957b47869cff2ea3a8a1902f18d52563"},
+      {"url": "https://docs.arcprize.org/create-agent.md", "status": 200, "sha256": "sha256:f5e17b255e2c3777eec1e7895457a209116255bcb6ee0c3270615990bdeffea7"},
+      {"url": "https://docs.arcprize.org/local-vs-online.md", "status": 200, "sha256": "sha256:eba9e92d28b5023837c52783965aa38191c8dc4b04a7aeb86d0dcc7d6f43810a"},
+      {"url": "https://docs.arcprize.org/full-play-test.md", "status": 200, "sha256": "sha256:83513b37c1ba07ef5be073fc0fef31c4f98f06d6f7080ce97c9f0438360c9b4f"}
+    ],
+    "packages": {
+      "python": "3.12.14",
+      "uv": "0.12.5",
+      "arc-agi": "0.9.9",
+      "arcengine": "0.9.3"
+    },
+    "completion_gate": "only an official returned GameState.WIN is completion",
+    "not_finished_policy": "continue",
+    "game_over_policy": "preserve failure trace; only RESET is valid; revise implicated scope and continue",
+    "offline_policy": "OperationMode.OFFLINE only; no API key, network, online scorecard, or leaderboard"
+  },
+  "target_environment": {
+    "selection_status": "PREDECLARED",
+    "game_id": "r11l-495a7899",
+    "selection_reason": "authorized development identity with the strongest prior repository-grounded progress signal; selection is not a game-specific policy rule",
+    "partition": "development",
+    "declared_levels": 6,
+    "human_baseline_actions_total_metadata": 233,
+    "asset_root": "C:/a/arc3-s15-6a0f6e5/artifacts/stage15/public-environments",
+    "asset_sha256": "sha256:483e583c88e91c2ae58ad1fa7b274d97813993796ce798551a563e1a9a78a7ff",
+    "asset_identity_verified": true,
+    "asset_source_semantically_inspected": false,
+    "runtime_environment_opened": false,
+    "surface": "local-public-source-preview-exposed",
+    "real_play_authority": "PERMITTED_NON_HOLDOUT_DEVELOPMENT",
+    "contingent_blocker": "BLOCKED_EXTERNAL only if the verified cached official development asset becomes unavailable, hash-different, undiscoverable, or incompatible with pinned OFFLINE execution"
+  },
+  "host": {
+    "os": "Microsoft Windows 10 Home 10.0.19045",
+    "cpu": "AMD Ryzen 5 2600 Six-Core Processor",
+    "logical_processors": 12,
+    "ram_bytes": 17124503552,
+    "gpu": "NVIDIA GeForce GTX 1660",
+    "git": "2.54.0.windows.1",
+    "github_cli": "2.97.0",
+    "timezone": "America/New_York"
+  },
+  "credential_and_human_gates": {
+    "arc_api_key_present": false,
+    "kaggle_username_present": false,
+    "kaggle_key_present": false,
+    "kaggle_token_file_present": false,
+    "terms_accepted": false,
+    "credentials_used": false,
+    "money_spent": false,
+    "submission_authorized": false,
+    "merge_authorized": false
+  },
+  "material_discrepancies": [
+    "Agents counts RESET in total submissions while toolkit scoring tracks scored non-RESET actions and resets separately; Build 003 receipts must report all three counts",
+    "live create-agent documentation imports a missing .structs module at the pinned Agents head; executable imports come from arcengine",
+    "full-play example samples ACTION6 in 0..29 while normative docs and arcengine enforce 0..63",
+    "local toolkit and Kaggle score-cap conventions remain distinct; no local result is official RHAE"
+  ],
+  "authorization_checks": {
+    "source_identity": "PASS",
+    "base_merged": "PASS",
+    "base_clean": "PASS",
+    "prior_evidence_preserved": "PASS",
+    "holdout_untouched": "PASS",
+    "target_non_holdout_classification": "PASS",
+    "target_static_asset_identity": "PASS",
+    "real_runtime_playability": "NOT_YET_DYNAMICALLY_VERIFIED"
+  },
+  "next_action": "create build/003-bla-clef-mechanical-learner from exact main and initialize tracked Build 003 ledgers"
+}

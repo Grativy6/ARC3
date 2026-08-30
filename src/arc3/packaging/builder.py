@@ -54,6 +54,7 @@ _RUNTIME_TOP_LEVEL = {
     "goals",
     "hypotheses",
     "memory",
+    "mechanics",
     "packaging",
     "perception",
     "planning",

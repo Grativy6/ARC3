@@ -14,6 +14,7 @@ from typing import cast
 
 from arc3.adapters import Observation
 from arc3.perception.delta import measure_delta
+from arc3.perception.metadata import observation_metadata
 from arc3.types import ActionName, ActionRequest, FrameHash, JSONValue
 
 from .effects import movement_displacements, state_features
@@ -255,17 +256,6 @@ class ActionEffectObservation:
         return len(self.canonical_effects) > 1
 
 
-def _metadata(observation: Observation) -> dict[str, str | int | float | bool | None]:
-    values: dict[str, str | int | float | bool | None] = {
-        "state": observation.state.value,
-        "levels_completed": observation.levels_completed,
-        "win_levels": observation.win_levels,
-        "available_actions": ",".join(action.value for action in observation.available_actions),
-    }
-    values.update(dict(observation.upstream_metadata))
-    return values
-
-
 def _coordinate_relation(
     before: Observation,
     action: ActionRequest,
@@ -277,8 +267,8 @@ def _coordinate_relation(
     delta = measure_delta(
         before.frames[-1],
         after.frames[-1],
-        before_metadata=_metadata(before),
-        after_metadata=_metadata(after),
+        before_metadata=observation_metadata(before),
+        after_metadata=observation_metadata(after),
     )
     if not delta.cell_changes:
         return CoordinateRelation.NO_CHANGE
@@ -328,8 +318,8 @@ def derive_action_effect_observation(
     delta = measure_delta(
         before_grid,
         after_grid,
-        before_metadata=_metadata(before),
-        after_metadata=_metadata(after),
+        before_metadata=observation_metadata(before),
+        after_metadata=observation_metadata(after),
     )
     condition = action_condition_signature(before)
     relation = _coordinate_relation(before, action, after)
