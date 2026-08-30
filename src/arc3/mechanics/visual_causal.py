@@ -6265,7 +6265,7 @@ def _same_child_composite_cargo_projected_scene(
         for x, y in example.target.cells:
             rows[y][x] = scene.cells[y][x]
     overlays: dict[tuple[int, int], int] = {}
-    overlay_lineage: dict[tuple[int, int], tuple[int, bool]] = {}
+    overlay_lineage: dict[tuple[int, int], tuple[int, int, bool]] = {}
     for child_index, (_child, example) in enumerate(relation.assignments):
         mediator_center = mediator_centers[child_index]
         for source_index, (source, residual_color) in enumerate(
@@ -6283,7 +6283,7 @@ def _same_child_composite_cargo_projected_scene(
                 if prior is not None and prior != residual_color and len(example.sources) == 2:
                     raise ValueError("paired same-child cargo residual masks overlap")
                 overlays[cell] = residual_color
-                overlay_lineage[cell] = (child_index, transported)
+                overlay_lineage[cell] = (child_index, source_index, transported)
     for (x, y), color in overlays.items():
         rows[y][x] = color
 
@@ -6294,13 +6294,16 @@ def _same_child_composite_cargo_projected_scene(
         collected_source_keys=collected_source_keys,
     )
     # One returned consequence placed a binary child's connector ingress above
-    # transported residual pixels after another child had already delivered.
-    # Earlier returned consequences retain residual precedence for the ternary
-    # child, including the same offsets and connector directions.  Restrict the
-    # exception to that observed structural phase and the exact residual/own-
-    # child-connector intersection.  The mediator center and carrier-colored
-    # remainder of its footprint stay hierarchy-rendered; endpoints and retained
-    # static/source/target surfaces stay foreground.
+    # its earliest transported residual after another child had already delivered.
+    # A later returned consequence retained the next observed source layer above
+    # that same ingress.  Preserve the source-layer lineage so the connector is
+    # composed with only the earliest transported layer and later source layers
+    # can occlude it.  Earlier returned consequences retain residual precedence
+    # for the ternary child, including the same offsets and connector directions.
+    # Restrict the exception to that observed structural phase and the exact
+    # residual/own-child-connector intersection.  The mediator center and carrier-
+    # colored remainder of its footprint stay hierarchy-rendered; endpoints and
+    # retained static/source/target surfaces stay foreground.
     retained_source_cells = frozenset(
         cell
         for child_index, (_child, example) in enumerate(relation.assignments)
@@ -6348,9 +6351,28 @@ def _same_child_composite_cargo_projected_scene(
                 )
             ),
         )
-    for cell, (child_index, transported) in overlay_lineage.items():
+    first_transported_source_index_by_child = {
+        child_index: min(
+            source_index
+            for source_index, source in enumerate(example.sources)
+            if (child_index, source_index) in collected_source_keys
+            and mediator_centers[child_index] != source.center
+        )
+        for child_index, (_child, example) in enumerate(relation.assignments)
+        if any(
+            (child_index, source_index) in collected_source_keys
+            and mediator_centers[child_index] != source.center
+            for source_index, source in enumerate(example.sources)
+        )
+    }
+    for cell, (child_index, source_index, transported) in overlay_lineage.items():
         connector_layer = connector_layers.get(child_index)
-        if not transported or connector_layer is None or cell in connector_protected:
+        if (
+            not transported
+            or connector_layer is None
+            or source_index != first_transported_source_index_by_child[child_index]
+            or cell in connector_protected
+        ):
             continue
         connector_color, connector_cells = connector_layer
         if cell in connector_cells:

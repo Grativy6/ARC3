@@ -13156,6 +13156,56 @@ def test_campaign50_terminal_frame_uses_child_specific_connector_precedence() ->
     assert all(projected.cells[y][x] == scene.cells[y][x] for x, y in hierarchy.target.cells)
 
 
+def test_campaign51_second_source_layer_keeps_precedence_over_own_connector() -> None:
+    _frame, scene, hierarchy, relation, _plan = _campaign48_marker_plan_fixture()
+    refs_by_center = {
+        endpoint.rounded_center: endpoint.object_ref
+        for child in hierarchy.children
+        for endpoint in child.endpoints
+    }
+    positions = {
+        refs_by_center[(11, 11)]: (51, 6),
+        refs_by_center[(22, 19)]: (56, 15),
+        refs_by_center[(4, 19)]: (46, 15),
+        refs_by_center[(49, 43)]: (29, 39),
+        refs_by_center[(50, 57)]: (48, 35),
+    }
+    colors = {endpoint_ref: 3 for endpoint_ref in positions}
+    colors[refs_by_center[(50, 57)]] = 0
+
+    projected = visual_causal._same_child_composite_cargo_projected_scene(
+        scene,
+        hierarchy,
+        relation,
+        positions=positions,
+        colors=colors,
+        collected_source_keys=frozenset({(0, 0), (0, 1), (0, 2), (1, 0), (1, 1)}),
+    )
+
+    child, example = relation.assignments[1]
+    mediator_center = (38, 37)
+    later_residual_color = example.residual_colors[1]
+    later_residual = frozenset(
+        (mediator_center[0] + dx, mediator_center[1] + dy)
+        for dx, dy in example.sources[1].offsets(later_residual_color)
+    )
+    connector_cells = frozenset(
+        cell
+        for endpoint in child.endpoints
+        for cell in visual_causal._raster_line_cells(
+            positions[endpoint.object_ref],
+            mediator_center,
+        )
+    )
+    connector_ingress = later_residual & connector_cells
+
+    assert child.arity == 2
+    assert later_residual_color == 11
+    assert connector_ingress == {(36, 37), (37, 37)}
+    assert all(projected.cells[y][x] == later_residual_color for x, y in connector_ingress)
+    assert projected.cells[mediator_center[1]][mediator_center[0]] == child.mediator.color
+
+
 def test_same_child_connector_ingress_is_translation_and_palette_equivariant() -> None:
     original = _campaign48_level_five_initial_frame()
     palette = {color: (color * 7 + 2) % 16 for color in range(16)}
