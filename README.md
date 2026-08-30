@@ -1,5 +1,27 @@
 # ARC3
 
+## Wise Scientist clean-room playground
+
+This branch is an isolated sibling experiment rooted at the Build 002 merge
+`bea1eac99cb0f1b351526b1dc487d132ba1d40ef`. It must not inherit implementation,
+receipts, traces, replays, or game-specific discoveries from Build 003.
+
+Merely reading this checkout does not authorize changes. If an owner instruction explicitly
+directs a system to build or run ARC3 **in this checkout**, that system must treat this repository
+root as its complete project workspace:
+
+- do not create, edit, delete, or use task-generated project files outside this repository;
+- do not inspect or import another ARC3 checkout, Build 003 branch, PR, trace, replay, or artifact;
+- keep virtual environments, caches, temporary files, logs, traces, recordings, checkpoints, and
+  generated evidence inside this repository;
+- use [`playground/`](playground/) for disposable scratch work and task-local tool state;
+- stop and report the boundary if a required build step cannot be completed without writing or
+  retrieving project state outside this playground.
+
+Read-only systems may inspect this checkout when authorized to do so. The build restrictions become
+active only for a system instructed to build or run work here; they do not manufacture write
+authority for a reader. See [`playground/README.md`](playground/README.md) for the full boundary.
+
 ARC3 is a reproducible, offline-capable research agent for the **ARC Prize 2026 — ARC-AGI-3**
 interactive reasoning benchmark. It explores unfamiliar grid environments, preserves immutable
 observations and action consequences, tracks revisable hypotheses, compiles executable world

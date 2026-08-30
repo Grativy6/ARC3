@@ -2,6 +2,16 @@
 
 Bootstrap reference (frozen): `docs/reference/AGENTS.arc3-bootstrap.v0.1.md`
 
+## Wise Scientist clean-room workspace boundary
+
+Before writing or executing a build in this checkout, read
+[`README.md`](README.md#wise-scientist-clean-room-playground) and
+[`playground/README.md`](playground/README.md). When the active owner instruction directs work here,
+all project writes and generated task state must remain beneath this checkout's repository root.
+Do not inspect or import another ARC3 checkout or any Build 003 implementation, receipt, trace,
+replay, PR, or artifact. A task that grants read-only access remains read-only; these workspace
+instructions do not independently authorize a build or any mutation.
+
 ## Controlling instruction
 
 The controlling build plan is:
