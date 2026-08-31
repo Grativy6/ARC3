@@ -6,12 +6,12 @@
   "build_status": "IN_PROGRESS",
   "status": "IN_PROGRESS",
   "current_stage": "03",
-  "current_task": "open the authorized public development environment and continue until observed WIN",
+  "current_task": "guarded exact recovery to preserved GAME_OVER, mandatory RESET, and continuation until observed WIN",
   "implementation_branch": "experiment/003w-wise-scientist-clean-room",
   "started_at": "2026-08-30T22:26:34.2012276Z",
-  "last_checkpoint_at": "2026-08-30T23:01:04.2829694Z",
-  "last_checkpoint_commit": "fd147318019ca497a920c5726ad42a239b105290",
-  "gameplay_source_commit": "fd147318019ca497a920c5726ad42a239b105290",
+  "last_checkpoint_at": "2026-08-31T05:43:13.3469524Z",
+  "last_checkpoint_commit": "5db317cf198beffaa89b7b02dc27a12594538d4a",
+  "gameplay_source_commit": "5db317cf198beffaa89b7b02dc27a12594538d4a",
   "clean_room": {
     "root": "C:/Users/cdpan/OneDrive/Documents/ARC3-Wise-Scientist",
     "head": "04cf10a1e45b40e26bb31a0e5e106593e53b5696",
@@ -32,16 +32,33 @@
   },
   "play": {
     "run_id": "003w-20260830T222634Z",
-    "official_environment_opened": false,
-    "environment_actions": 0,
-    "resets": 0,
-    "game_over_events": 0,
-    "levels_completed": 0,
-    "win_levels": 0,
-    "final_state": null,
+    "official_environment_opened": true,
+    "environment_actions": 991,
+    "unique_logical_environment_actions": 532,
+    "replay_environment_actions": 459,
+    "resets": 2,
+    "unique_logical_resets": 1,
+    "replay_resets": 1,
+    "game_over_events": 2,
+    "levels_completed": 4,
+    "win_levels": 7,
+    "final_state": "GAME_OVER",
     "win_observed": false,
-    "trace_path": null,
-    "replay_path": null
+    "trace_path": "artifacts/003w/run-003w-20260830T2302Z-bridge/events.jsonl",
+    "replay_path": "artifacts/003w/run-003w-20260830T2302Z-bridge/recovery-events.jsonl",
+    "official_session_ids": [
+      "d6ef2cfd-a23b-4aa6-8651-208dcb596c2a",
+      "997dd936-dba0-46c9-9941-60019c6f7213",
+      "0c36d92f-6275-40dc-be97-8d7abc8f4e52"
+    ]
+  },
+  "environment_action_budget_extension": {
+    "status": "GATE_PASSED_REPLAY_NOT_STARTED",
+    "old_max_environment_actions": 1000,
+    "new_max_environment_actions": 3000,
+    "max_resets": 20,
+    "wall_clock_seconds": 86400.0,
+    "evidence": "docs/evidence/003w-04-environment-action-budget-extension-gate.json"
   },
   "holdout": {
     "status": "SEALED_UNCONSUMED",
@@ -67,8 +84,8 @@
     },
     "03": {
       "name": "official development play through observed WIN",
-      "status": "PENDING",
-      "evidence": null
+      "status": "IN_PROGRESS",
+      "evidence": "artifacts/003w/run-003w-20260830T2302Z-bridge/events.jsonl"
     },
     "04": {
       "name": "replay, final verification, report, handoff, and draft PR",
@@ -80,5 +97,5 @@
     "NO_GENERALIZATION_CLAIM",
     "NO_OFFICIAL_RHAE_CLAIM"
   ],
-  "next_action": "push the clean source freeze, then open only the authorized official public development game"
+  "next_action": "commit the explicit extension receipt, then guarded-replay all 532 logical actions to exact GAME_OVER before mandatory RESET"
 }

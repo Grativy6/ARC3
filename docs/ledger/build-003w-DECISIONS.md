@@ -59,3 +59,15 @@ This ledger is append-oriented. Later evidence may supersede a decision but must
 - **Evidence:** The failed wrapper receipt reported `boundary=controller-decision` and `error_type=FileNotFoundError`; the identical test file then passed 13 tests with 2 Linux-only skips under the extended-length path. See `docs/evidence/003w-03-nonplaying-verification.json`.
 - **Consequences:** The source gate is not blocked by the host path limit. The failed attempt remains part of the experiment record.
 - **Reopening condition:** The same test fails under an extended-length path or a non-path-related regression appears.
+
+## D-003W-0006 — Extend the physical action ceiling only through an explicit monotonic recovery gate
+
+- **Status:** ADOPTED
+- **Stage:** 03
+- **Date:** 2026-08-31
+- **Commit:** `5db317cf198beffaa89b7b02dc27a12594538d4a`
+- **Decision:** The frozen 1,000-action ceiling cannot reproduce the exact `GAME_OVER` checkpoint: 991 physical environment actions have already occurred and guarded recovery requires 532 more. Permit a resume-only monotonic extension to 3,000 physical environment actions with a bounded reason and immutable `run.resumed` receipt. Keep the reset ceiling at 20 and the effective wall-clock ceiling at 86,400 seconds.
+- **Alternatives:** Reset in the nearly exhausted current session; omit replayed actions from the physical total; silently change the resume budget; stop at `GAME_OVER` despite the owner-mandated `WIN` objective.
+- **Evidence:** `docs/evidence/003w-04-environment-action-budget-extension-gate.json`; focused tests passed 77, secret/policy tests passed 36, Ruff and strict mypy passed.
+- **Consequences:** Every recovery validates the full extension chain, counts replay actions and resets honestly, and aborts on the first observation mismatch. Mandatory RESET remains gated until exact terminal reproduction in the recovered official session.
+- **Reopening condition:** The 3,000-action ceiling becomes insufficient before `WIN`; any further increase requires another explicit monotonic receipt and must not alter reset or wall-clock budgets implicitly.
