@@ -1,0 +1,155 @@
+{
+  "schema": "arc3.build-003w.official-development-win.v0.1",
+  "status": "PASS",
+  "recorded_at": "2026-08-31T18:57:30.4455598Z",
+  "repository": "Grativy6/ARC3",
+  "implementation_branch": "experiment/003w-wise-scientist-clean-room",
+  "gameplay_source_commit": "41d73427468afa7a8d797d93a87efd6e2a7e9403",
+  "surface": "local-public",
+  "game": {
+    "game_id": "ls20-9607627b",
+    "final_official_environment_state": "WIN",
+    "levels_completed": 7,
+    "win_levels": 7,
+    "game_state_win_genuinely_observed": true,
+    "completion_authority": "direct official environment observation",
+    "completion_event_recorded_at": "2026-08-31T18:53:05.372569Z"
+  },
+  "environment_action_accounting": {
+    "total_environment_action_count": 2315,
+    "total_environment_action_count_definition": "all physical non-RESET environment actions, including guarded replay",
+    "physical_resets": 5,
+    "physical_environment_calls_including_resets": 2320,
+    "unique_logical_non_reset_actions": 1324,
+    "unique_logical_resets": 3,
+    "unique_logical_environment_calls_including_resets": 1327,
+    "replay_non_reset_actions": 991,
+    "replay_resets": 2,
+    "replay_environment_calls_including_resets": 993,
+    "accounting_identity": "2320 physical calls = 1327 unique logical calls + 993 replay calls",
+    "accounting_identity_verified": true
+  },
+  "official_sessions": {
+    "count": 4,
+    "session_ids": [
+      "d6ef2cfd-a23b-4aa6-8651-208dcb596c2a",
+      "997dd936-dba0-46c9-9941-60019c6f7213",
+      "0c36d92f-6275-40dc-be97-8d7abc8f4e52",
+      "dcf3cbf8-ab5f-4ad3-8cd0-5ca3cf98257b"
+    ],
+    "run_resumptions": 3,
+    "game_over_events_preserved": 3
+  },
+  "budgets": {
+    "max_environment_actions": 3000,
+    "max_resets": 20,
+    "wall_clock_seconds": 86400.0,
+    "environment_action_budget_exhausted": false,
+    "reset_budget_exhausted": false
+  },
+  "terminal_receipt": {
+    "path": "artifacts/003w/run-003w-20260830T2302Z-bridge/final-receipt.json",
+    "schema": "arc3.wise-scientist.final-receipt.v0.2",
+    "file_bytes": 4767,
+    "file_sha256": "sha256:8db97b8fdbde43fd7781f235d2e1d1592abca33ca9a691ed48f2b26250a23705",
+    "receipt_hash": "sha256:fd69f3d50d1b03d055db73eb1e8e8c138d73a0ceeb95ad211f42bb13e1c2f6ce",
+    "authorization_hash": "sha256:1d9097b276304996a10cb6c6c47da85cf46ad00bdea0dbd48d6b56456d622d78",
+    "started_at": "2026-08-30T23:05:39.629204Z",
+    "elapsed_seconds": 71244.569304,
+    "scorecard_close_error": null,
+    "parked_distinction_count": 122,
+    "parked_distinction_ids_path": "artifacts/003w/run-003w-20260830T2302Z-bridge/final-receipt.json"
+  },
+  "terminal_observation": {
+    "path": "artifacts/003w/run-003w-20260830T2302Z-bridge/observation-001327.json",
+    "file_bytes": 8992,
+    "file_sha256": "sha256:c34ca2c0128997d10d546382b7a4f402026c24567acb71fb8afc6a25fd5acaee",
+    "event_sequence": 5332,
+    "event_hash": "sha256:fd33de48465f0b82a3313d28fb59932cce0d601d2412697f5564b84981599b4b",
+    "state": "WIN",
+    "levels_completed": 7,
+    "win_levels": 7
+  },
+  "terminal_assessment": {
+    "event_sequence": 5334,
+    "event_hash": "sha256:109beb1f7abd35491199a8d6b8386268d64b0afa06fa2b4647775a57dfbd53a1",
+    "matches_receipt_assessment_event_hash": true,
+    "matches_journal_tail_hash_before_completion": true
+  },
+  "immutable_trace": {
+    "path": "artifacts/003w/run-003w-20260830T2302Z-bridge/events.jsonl",
+    "file_bytes": 6507077,
+    "file_sha256": "sha256:061069370d9a581dbcac9e2c028bc2ec734d712d68f0b9b03a91c28877e1ef02",
+    "event_count": 5336,
+    "tail_hash": "sha256:d5c3bb8010cdd936908b12b5010d95eef8a921e72c40932447befa29ba43c756",
+    "completion_event_sequence": 5335,
+    "completion_event_hash": "sha256:d5c3bb8010cdd936908b12b5010d95eef8a921e72c40932447befa29ba43c756",
+    "run_completed_event_count": 1,
+    "win_observation_event_count": 1,
+    "win_consequence_event_count": 1,
+    "win_assessment_event_count": 1
+  },
+  "final_journal_receipt": {
+    "path": "artifacts/003w/run-003w-20260830T2302Z-bridge/final-journal-receipt.json",
+    "file_bytes": 145,
+    "file_sha256": "sha256:7b2163961b5b390e65bad5462ae443e9470b8f5bc1660f4ca500d3b47b392075",
+    "event_count": 5336,
+    "journal_tail_hash": "sha256:d5c3bb8010cdd936908b12b5010d95eef8a921e72c40932447befa29ba43c756"
+  },
+  "replay_evidence": {
+    "path": "artifacts/003w/run-003w-20260830T2302Z-bridge/recovery-events.jsonl",
+    "file_bytes": 785661,
+    "file_sha256": "sha256:b707d18fb97502728312fc5d2e800b615cf756768a0d3871433a8de663086fa8",
+    "event_count": 999,
+    "tail_hash": "sha256:56030321740f7b9a02edd907669f0c802674682a4d56881dd5ba0075b16c004f",
+    "recovery_started_events": 3,
+    "recovery_replay_action_events": 993,
+    "recovery_verified_events": 3
+  },
+  "terminal_checkpoint": {
+    "path": "artifacts/003w/run-003w-20260830T2302Z-bridge/checkpoint.json",
+    "file_bytes": 208121,
+    "file_sha256": "sha256:f44c8e49f2077a75b46b929a7cd100318c2c5172b8006cd6852b6ad941593818",
+    "phase": "COMPLETE",
+    "state": "WIN",
+    "pending_consequence": null,
+    "journal_event_count": 5336,
+    "journal_tail_hash": "sha256:d5c3bb8010cdd936908b12b5010d95eef8a921e72c40932447befa29ba43c756"
+  },
+  "local_scorecard": {
+    "scorer": "arc-agi==0.9.9 local ScorecardManager",
+    "verified": true,
+    "completed": true,
+    "state": "WIN",
+    "levels_completed": 7,
+    "actions": 1327,
+    "resets": 3,
+    "level_actions": [16, 80, 206, 59, 462, 231, 273],
+    "score": 57.27512786469639,
+    "score_authority": "local-public only; not an official-private or Kaggle RHAE result"
+  },
+  "holdout": {
+    "status": "SEALED_UNCONSUMED",
+    "identities_loaded": 0,
+    "manifest_parsed": false,
+    "environment_actions": 0
+  },
+  "clean_room_metadata_transparency": {
+    "other_ref_objects_fetched": false,
+    "other_ref_source_or_history_content_inspected": false,
+    "remote_ref_metadata_checked_during_gameplay": true,
+    "pull_request_metadata_checked_during_gameplay": true,
+    "metadata_observed": "remote branch commit identifiers, default-branch name, repository visibility, and pull-request existence",
+    "metadata_used_for_gameplay": false,
+    "gameplay_state_or_mechanics_imported": false,
+    "qualification": "The delivery-readiness audit inspected remote metadata while gameplay was ongoing, but fetched no other ref object or content and supplied no mechanics or trajectory information to the player."
+  },
+  "claim_boundary": {
+    "result_label": "local-public",
+    "single_game_assisted_trajectory": true,
+    "no_generalization_claim": true,
+    "no_official_rhae_claim": true,
+    "no_holdout_claim": true,
+    "completion_claim": "GameState.WIN was directly and genuinely observed for ls20-9607627b at 7/7."
+  }
+}
