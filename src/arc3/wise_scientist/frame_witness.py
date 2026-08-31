@@ -26,6 +26,52 @@ class PositionChangeKind(StrEnum):
 
 
 @dataclass(frozen=True, slots=True)
+class RegionColorCountWitness:
+    """Exact count of one color inside a half-open rectangular frame region."""
+
+    left: int
+    top: int
+    right_exclusive: int
+    bottom_exclusive: int
+    color: int
+    count: int
+
+    def __post_init__(self) -> None:
+        bounds = (self.left, self.top, self.right_exclusive, self.bottom_exclusive)
+        if any(isinstance(value, bool) or not isinstance(value, int) for value in bounds):
+            raise ARC3ValidationError("color-count region bounds must be integers")
+        if (
+            self.left < 0
+            or self.top < 0
+            or self.right_exclusive <= self.left
+            or self.bottom_exclusive <= self.top
+        ):
+            raise ARC3ValidationError(
+                "color-count region bounds must define a non-empty non-negative rectangle"
+            )
+        if isinstance(self.color, bool) or not isinstance(self.color, int):
+            raise ARC3ValidationError("color-count witness color must be an integer in 0..15")
+        if not 0 <= self.color <= 15:
+            raise ARC3ValidationError("color-count witness color must be an integer in 0..15")
+        if isinstance(self.count, bool) or not isinstance(self.count, int) or self.count < 0:
+            raise ARC3ValidationError("color-count witness count must be a non-negative integer")
+
+    def to_dict(self) -> dict[str, JSONValue]:
+        """Return a normalized evidence payload with explicit half-open bounds."""
+
+        return {
+            "region": {
+                "left": self.left,
+                "top": self.top,
+                "right_exclusive": self.right_exclusive,
+                "bottom_exclusive": self.bottom_exclusive,
+            },
+            "color": self.color,
+            "count": self.count,
+        }
+
+
+@dataclass(frozen=True, slots=True)
 class PatternLocation:
     """One exact occurrence of a declared rectangular pattern."""
 
@@ -89,6 +135,48 @@ def _validated_pattern(pattern: tuple[tuple[int, ...], ...]) -> tuple[tuple[int,
         ):
             raise ARC3ValidationError("tracked pattern cells must be integers in 0..15")
     return pattern
+
+
+def measure_region_color_count(
+    frame: GridFrame,
+    *,
+    left: int,
+    top: int,
+    right_exclusive: int,
+    bottom_exclusive: int,
+    color: int,
+) -> RegionColorCountWitness:
+    """Count ``color`` exactly inside caller-supplied half-open frame bounds.
+
+    The caller supplies the semantic meaning of the region and color.  This
+    function only validates the rectangle against the immutable frame and
+    returns the measured cell count; it does not infer that the cells are a
+    resource or HUD element.
+    """
+
+    bounds = (left, top, right_exclusive, bottom_exclusive)
+    if any(isinstance(value, bool) or not isinstance(value, int) for value in bounds):
+        raise ARC3ValidationError("color-count region bounds must be integers")
+    if not (0 <= left < right_exclusive <= frame.width):
+        raise ARC3ValidationError("color-count horizontal bounds are outside the frame")
+    if not (0 <= top < bottom_exclusive <= frame.height):
+        raise ARC3ValidationError("color-count vertical bounds are outside the frame")
+    if isinstance(color, bool) or not isinstance(color, int) or not 0 <= color <= 15:
+        raise ARC3ValidationError("color-count witness color must be an integer in 0..15")
+
+    count = sum(
+        cell == color
+        for row in frame.cells[top:bottom_exclusive]
+        for cell in row[left:right_exclusive]
+    )
+    return RegionColorCountWitness(
+        left=left,
+        top=top,
+        right_exclusive=right_exclusive,
+        bottom_exclusive=bottom_exclusive,
+        color=color,
+        count=count,
+    )
 
 
 def locate_pattern(
@@ -194,8 +282,10 @@ __all__ = [
     "PatternLocation",
     "PositionChangeKind",
     "PositionTransition",
+    "RegionColorCountWitness",
     "locate_pattern",
     "measure_position_transition",
+    "measure_region_color_count",
     "require_position_transition",
     "require_unique_pattern",
 ]
