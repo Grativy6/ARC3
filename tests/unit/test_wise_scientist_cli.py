@@ -8,6 +8,7 @@ import pytest
 from scripts.play_wise_scientist import (
     ROOT,
     _inside_checkout,
+    _resume_environment_action_extension_reason,
     _resume_wall_clock_extension_reason,
     _validate_authorization,
     build_parser,
@@ -87,6 +88,21 @@ def test_runner_accepts_explicit_resume_only_wall_clock_extension_reason() -> No
     )
 
 
+def test_runner_accepts_explicit_resume_only_environment_action_extension_reason() -> None:
+    arguments = _parse_runner_arguments(
+        "--resume",
+        "--extend-max-actions-on-resume",
+        "--max-actions-extension-reason",
+        "  Replay the immutable checkpoint and continue toward observed WIN.  ",
+        "--max-actions",
+        "3000",
+    )
+
+    assert _resume_environment_action_extension_reason(arguments) == (
+        "Replay the immutable checkpoint and continue toward observed WIN."
+    )
+
+
 @pytest.mark.parametrize(
     ("extra", "expected"),
     [
@@ -137,3 +153,52 @@ def test_runner_rejects_implicit_or_unbounded_wall_clock_extension(
 
     with pytest.raises(ARC3ValidationError, match=expected):
         _resume_wall_clock_extension_reason(arguments)
+
+
+@pytest.mark.parametrize(
+    ("extra", "expected"),
+    [
+        (
+            ("--max-actions-extension-reason", "reason without opt-in"),
+            "requires --extend-max-actions-on-resume",
+        ),
+        (
+            (
+                "--extend-max-actions-on-resume",
+                "--max-actions-extension-reason",
+                "reason without resume",
+            ),
+            "requires --resume",
+        ),
+        (
+            ("--resume", "--extend-max-actions-on-resume"),
+            "nonempty reason",
+        ),
+        (
+            (
+                "--resume",
+                "--extend-max-actions-on-resume",
+                "--max-actions-extension-reason",
+                "   ",
+            ),
+            "nonempty reason",
+        ),
+        (
+            (
+                "--resume",
+                "--extend-max-actions-on-resume",
+                "--max-actions-extension-reason",
+                "x" * 501,
+            ),
+            "exceeds 500 characters",
+        ),
+    ],
+)
+def test_runner_rejects_implicit_or_unbounded_environment_action_extension(
+    extra: tuple[str, ...],
+    expected: str,
+) -> None:
+    arguments = _parse_runner_arguments(*extra)
+
+    with pytest.raises(ARC3ValidationError, match=expected):
+        _resume_environment_action_extension_reason(arguments)

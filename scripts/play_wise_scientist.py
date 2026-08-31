@@ -216,6 +216,18 @@ def build_parser() -> argparse.ArgumentParser:
         "--wall-clock-extension-reason",
         help="bounded reason recorded immutably when extending a resumed run",
     )
+    parser.add_argument(
+        "--extend-max-actions-on-resume",
+        action="store_true",
+        help=(
+            "explicitly allow --max-actions to increase during --resume; "
+            "requires --max-actions-extension-reason"
+        ),
+    )
+    parser.add_argument(
+        "--max-actions-extension-reason",
+        help="bounded reason recorded immutably when extending physical actions",
+    )
     parser.add_argument("--max-actions", type=int, default=1_000)
     parser.add_argument("--max-resets", type=int, default=20)
     parser.add_argument("--wall-clock-seconds", type=float, default=14_400.0)
@@ -234,6 +246,20 @@ def _resume_wall_clock_extension_reason(args: argparse.Namespace) -> str | None:
     if not cast(bool, args.resume):
         raise ARC3ValidationError("--extend-wall-clock-on-resume requires --resume")
     return WiseScientistRun.normalize_wall_clock_extension_reason(supplied)
+
+
+def _resume_environment_action_extension_reason(args: argparse.Namespace) -> str | None:
+    requested = cast(bool, args.extend_max_actions_on_resume)
+    supplied = cast(str | None, args.max_actions_extension_reason)
+    if not requested:
+        if supplied is not None:
+            raise ARC3ValidationError(
+                "--max-actions-extension-reason requires --extend-max-actions-on-resume"
+            )
+        return None
+    if not cast(bool, args.resume):
+        raise ARC3ValidationError("--extend-max-actions-on-resume requires --resume")
+    return WiseScientistRun.normalize_environment_action_extension_reason(supplied)
 
 
 def _emit(value: object) -> None:
@@ -293,6 +319,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     exposure_status = "not-attempted"
     try:
         wall_clock_extension_reason = _resume_wall_clock_extension_reason(args)
+        environment_action_extension_reason = _resume_environment_action_extension_reason(args)
         artifact_dir = _inside_checkout(args.artifact_dir, field="artifact directory")
         environment_dir = _inside_checkout(args.environments_dir, field="environment directory")
         recordings_dir = _inside_checkout(args.recordings_dir, field="recordings directory")
@@ -347,6 +374,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                 max_environment_actions=cast(int, args.max_actions),
                 max_resets=cast(int, args.max_resets),
                 wall_clock_seconds=cast(float, args.wall_clock_seconds),
+                allow_environment_action_extension=cast(bool, args.extend_max_actions_on_resume),
+                environment_action_extension_reason=environment_action_extension_reason,
                 allow_wall_clock_extension=cast(bool, args.extend_wall_clock_on_resume),
                 wall_clock_extension_reason=wall_clock_extension_reason,
             )

@@ -44,6 +44,7 @@ _CHECKPOINT_SCHEMA = "arc3.wise-scientist.checkpoint.v0.2"
 _FINAL_RECEIPT_SCHEMA = "arc3.wise-scientist.final-receipt.v0.2"
 _CHECKPOINT_WRITE_ATTEMPTS = 8
 WALL_CLOCK_EXTENSION_REASON_MAX_CHARACTERS = 500
+ENVIRONMENT_ACTION_EXTENSION_REASON_MAX_CHARACTERS = 500
 
 
 class WiseRunPhase(StrEnum):
@@ -233,6 +234,8 @@ class WiseScientistRun:
         max_environment_actions: int = 1_000,
         max_resets: int = 20,
         wall_clock_seconds: float = 14_400.0,
+        allow_environment_action_extension: bool = False,
+        environment_action_extension_reason: str | None = None,
         allow_wall_clock_extension: bool = False,
         wall_clock_extension_reason: str | None = None,
     ) -> WiseScientistRun:
@@ -253,17 +256,21 @@ class WiseScientistRun:
         if not journal.events:
             raise ARC3ValidationError("resume requires an existing Wise Scientist journal")
         checkpoint = cls._load_resume_checkpoint(checkpoint_path)
-        wall_clock_budget_extension = cls._validate_resume_identity(
-            checkpoint,
-            journal=journal,
-            session=session,
-            recovery_source_commit=recovery_source_commit,
-            authorization_hash=authorization_hash,
-            max_environment_actions=max_environment_actions,
-            max_resets=max_resets,
-            wall_clock_seconds=wall_clock_seconds,
-            allow_wall_clock_extension=allow_wall_clock_extension,
-            wall_clock_extension_reason=wall_clock_extension_reason,
+        environment_action_budget_extension, wall_clock_budget_extension = (
+            cls._validate_resume_identity(
+                checkpoint,
+                journal=journal,
+                session=session,
+                recovery_source_commit=recovery_source_commit,
+                authorization_hash=authorization_hash,
+                max_environment_actions=max_environment_actions,
+                max_resets=max_resets,
+                wall_clock_seconds=wall_clock_seconds,
+                allow_environment_action_extension=allow_environment_action_extension,
+                environment_action_extension_reason=environment_action_extension_reason,
+                allow_wall_clock_extension=allow_wall_clock_extension,
+                wall_clock_extension_reason=wall_clock_extension_reason,
+            )
         )
         checkpoint_event_count = cast(int, checkpoint["journal_event_count"])
         suffix = journal.events[checkpoint_event_count:]
@@ -523,6 +530,7 @@ class WiseScientistRun:
                 "semantic_replay_verified": True,
                 "recovery_ledger_path": "recovery-events.jsonl",
                 "recovery_ledger_tail_hash": recovery_verified.event_hash,
+                "environment_action_budget_extension": environment_action_budget_extension,
                 "wall_clock_budget_extension": wall_clock_budget_extension,
                 "observation_equivalence_rule": (
                     "exact normalized observation payload after excluding only "
@@ -599,9 +607,11 @@ class WiseScientistRun:
         max_environment_actions: int,
         max_resets: int,
         wall_clock_seconds: float,
+        allow_environment_action_extension: bool,
+        environment_action_extension_reason: str | None,
         allow_wall_clock_extension: bool,
         wall_clock_extension_reason: str | None,
-    ) -> dict[str, JSONValue] | None:
+    ) -> tuple[dict[str, JSONValue] | None, dict[str, JSONValue] | None]:
         if len(recovery_source_commit) != 40 or any(
             character not in "0123456789abcdef" for character in recovery_source_commit
         ):
@@ -657,8 +667,36 @@ class WiseScientistRun:
             or wall_clock_seconds <= 0
         ):
             raise ARC3ValidationError("resume wall-clock budget must be positive and finite")
-        if original_max_actions != max_environment_actions or original_max_resets != max_resets:
+        if original_max_resets != max_resets:
             raise ARC3ValidationError("resume budgets differ from the original run")
+        effective_max_actions = cls._effective_environment_action_budget(
+            journal,
+            original_max_actions=original_max_actions,
+        )
+        if not isinstance(allow_environment_action_extension, bool):
+            raise ARC3ValidationError("environment-action extension opt-in must be boolean")
+        if not allow_environment_action_extension:
+            if environment_action_extension_reason is not None:
+                raise ARC3ValidationError(
+                    "environment-action extension reason requires explicit extension opt-in"
+                )
+            if max_environment_actions != effective_max_actions:
+                raise ARC3ValidationError("resume budgets differ from the original run")
+            action_extension: dict[str, JSONValue] | None = None
+        else:
+            action_reason = cls.normalize_environment_action_extension_reason(
+                environment_action_extension_reason
+            )
+            if max_environment_actions <= effective_max_actions:
+                raise ARC3ValidationError(
+                    "resume environment-action extension must monotonically increase "
+                    "the effective budget"
+                )
+            action_extension = {
+                "old_max_environment_actions": effective_max_actions,
+                "new_max_environment_actions": max_environment_actions,
+                "reason": action_reason,
+            }
         effective_wall_clock = cls._effective_wall_clock_budget(
             journal,
             original_wall_clock=original_wall_clock,
@@ -688,7 +726,71 @@ class WiseScientistRun:
             raise ARC3ValidationError("resume journal authorization mismatch")
         if started.payload.get("game_id") != checkpoint.get("game_id"):
             raise ARC3ValidationError("resume journal game mismatch")
-        return extension
+        return action_extension, extension
+
+    @staticmethod
+    def normalize_environment_action_extension_reason(reason: str | None) -> str:
+        """Return a bounded reason for a monotonic physical-action extension."""
+
+        if not isinstance(reason, str):
+            raise ARC3ValidationError("environment-action extension requires a nonempty reason")
+        normalized = reason.strip()
+        if not normalized:
+            raise ARC3ValidationError("environment-action extension requires a nonempty reason")
+        if len(normalized) > ENVIRONMENT_ACTION_EXTENSION_REASON_MAX_CHARACTERS:
+            raise ARC3ValidationError(
+                "environment-action extension reason exceeds "
+                f"{ENVIRONMENT_ACTION_EXTENSION_REASON_MAX_CHARACTERS} characters"
+            )
+        return normalized
+
+    @classmethod
+    def _effective_environment_action_budget(
+        cls,
+        journal: WiseJournal,
+        *,
+        original_max_actions: JSONValue,
+    ) -> int:
+        if (
+            isinstance(original_max_actions, bool)
+            or not isinstance(original_max_actions, int)
+            or original_max_actions <= 0
+        ):
+            raise ARC3ValidationError("resume journal has invalid original budgets")
+        effective = original_max_actions
+        for event in journal.events:
+            if event.event_type != "run.resumed":
+                continue
+            value = event.payload.get("environment_action_budget_extension")
+            if value is None:
+                continue
+            if not isinstance(value, dict) or set(value) != {
+                "old_max_environment_actions",
+                "new_max_environment_actions",
+                "reason",
+            }:
+                raise ARC3ValidationError(
+                    "resume journal has malformed environment-action extension"
+                )
+            old = value.get("old_max_environment_actions")
+            new = value.get("new_max_environment_actions")
+            reason = value.get("reason")
+            if (
+                isinstance(old, bool)
+                or not isinstance(old, int)
+                or isinstance(new, bool)
+                or not isinstance(new, int)
+                or old != effective
+                or new <= effective
+            ):
+                raise ARC3ValidationError(
+                    "resume journal has invalid environment-action extension chain"
+                )
+            cls.normalize_environment_action_extension_reason(
+                reason if isinstance(reason, str) else None
+            )
+            effective = new
+        return effective
 
     @staticmethod
     def normalize_wall_clock_extension_reason(reason: str | None) -> str:

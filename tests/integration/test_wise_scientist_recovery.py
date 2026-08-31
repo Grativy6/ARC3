@@ -535,3 +535,147 @@ def test_wall_clock_extension_reason_requires_opt_in(tmp_path: Path) -> None:
             authorization_hash=_AUTHORIZATION_HASH,
             wall_clock_extension_reason="Unrequested reason.",
         )
+
+
+def test_explicit_environment_action_extension_is_append_only_and_survives_resume(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "run"
+    WiseScientistRun(
+        _empty_resume_session(upstream_session_id="original-session"),
+        root,
+        source_commit=_SOURCE_COMMIT,
+        authorization_hash=_AUTHORIZATION_HASH,
+    )
+    original = WiseJournal.verify(root / "events.jsonl")
+
+    extended = WiseScientistRun.resume(
+        _empty_resume_session(upstream_session_id="extension-session"),
+        root,
+        recovery_source_commit=_RECOVERY_SOURCE_COMMIT,
+        authorization_hash=_AUTHORIZATION_HASH,
+        max_environment_actions=3_000,
+        allow_environment_action_extension=True,
+        environment_action_extension_reason=(
+            "  Replay the immutable terminal checkpoint and continue toward observed WIN.  "
+        ),
+    )
+
+    extended_events = WiseJournal.verify(root / "events.jsonl")
+    assert tuple(event.event_hash for event in extended_events[: len(original)]) == tuple(
+        event.event_hash for event in original
+    )
+    assert extended_events[0].payload["budgets"] == {
+        "max_environment_actions": 1_000,
+        "max_resets": 20,
+        "wall_clock_seconds": 14_400.0,
+    }
+    assert extended_events[-1].payload["environment_action_budget_extension"] == {
+        "old_max_environment_actions": 1_000,
+        "new_max_environment_actions": 3_000,
+        "reason": "Replay the immutable terminal checkpoint and continue toward observed WIN.",
+    }
+    assert extended.status()["max_environment_actions"] == 3_000
+
+    resumed = WiseScientistRun.resume(
+        _empty_resume_session(upstream_session_id="later-session"),
+        root,
+        recovery_source_commit="4" * 40,
+        authorization_hash=_AUTHORIZATION_HASH,
+        max_environment_actions=3_000,
+    )
+
+    final_events = WiseJournal.verify(root / "events.jsonl")
+    assert final_events[-1].payload["environment_action_budget_extension"] is None
+    assert resumed.status()["max_environment_actions"] == 3_000
+
+
+@pytest.mark.parametrize(
+    ("override", "expected"),
+    [
+        ({"max_environment_actions": 1_000}, "monotonically increase"),
+        ({"max_environment_actions": 999}, "monotonically increase"),
+        ({"max_resets": 21}, "budgets differ"),
+        ({"wall_clock_seconds": 28_800.0}, "budgets differ"),
+        ({"environment_action_extension_reason": "   "}, "nonempty reason"),
+        ({"environment_action_extension_reason": "x" * 501}, "exceeds 500 characters"),
+        ({"allow_environment_action_extension": 1}, "opt-in must be boolean"),
+    ],
+)
+def test_environment_action_extension_rejects_nonmonotonic_or_broader_changes(
+    tmp_path: Path,
+    override: dict[str, object],
+    expected: str,
+) -> None:
+    root = tmp_path / "run"
+    WiseScientistRun(
+        _empty_resume_session(upstream_session_id="original-session"),
+        root,
+        source_commit=_SOURCE_COMMIT,
+        authorization_hash=_AUTHORIZATION_HASH,
+    )
+    arguments: dict[str, object] = {
+        "recovery_source_commit": _RECOVERY_SOURCE_COMMIT,
+        "authorization_hash": _AUTHORIZATION_HASH,
+        "max_environment_actions": 3_000,
+        "max_resets": 20,
+        "wall_clock_seconds": 14_400.0,
+        "allow_environment_action_extension": True,
+        "environment_action_extension_reason": "Bounded physical-action continuation.",
+    }
+    arguments.update(override)
+
+    with pytest.raises(ARC3ValidationError, match=expected):
+        WiseScientistRun.resume(
+            _empty_resume_session(upstream_session_id="recovery-session"),
+            root,
+            **arguments,  # type: ignore[arg-type]
+        )
+
+
+def test_environment_action_extension_reason_requires_opt_in(tmp_path: Path) -> None:
+    root = tmp_path / "run"
+    WiseScientistRun(
+        _empty_resume_session(upstream_session_id="original-session"),
+        root,
+        source_commit=_SOURCE_COMMIT,
+        authorization_hash=_AUTHORIZATION_HASH,
+    )
+
+    with pytest.raises(ARC3ValidationError, match="requires explicit extension opt-in"):
+        WiseScientistRun.resume(
+            _empty_resume_session(upstream_session_id="recovery-session"),
+            root,
+            recovery_source_commit=_RECOVERY_SOURCE_COMMIT,
+            authorization_hash=_AUTHORIZATION_HASH,
+            environment_action_extension_reason="Unrequested reason.",
+        )
+
+
+def test_environment_action_extension_chain_rejects_malformed_receipt(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "run"
+    WiseScientistRun(
+        _empty_resume_session(upstream_session_id="original-session"),
+        root,
+        source_commit=_SOURCE_COMMIT,
+        authorization_hash=_AUTHORIZATION_HASH,
+    )
+    journal = WiseJournal(root / "events.jsonl")
+    journal.append(
+        "run.resumed",
+        {
+            "environment_action_budget_extension": {
+                "old_max_environment_actions": 999,
+                "new_max_environment_actions": 3_000,
+                "reason": "Broken predecessor identity.",
+            }
+        },
+    )
+
+    with pytest.raises(ARC3ValidationError, match="invalid environment-action extension chain"):
+        WiseScientistRun._effective_environment_action_budget(
+            journal,
+            original_max_actions=1_000,
+        )
