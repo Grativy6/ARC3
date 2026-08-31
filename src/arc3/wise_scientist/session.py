@@ -7,19 +7,21 @@ and refuses to equate a level transition with completion.
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from enum import StrEnum
 from pathlib import Path
-from time import monotonic
+from time import monotonic, sleep
+from typing import cast
 
 from arc3.adapters import EnvironmentSession, Observation, ScoreSummary, validate_action_request
 from arc3.errors import ARC3ValidationError, EnvironmentStateError
 from arc3.evaluation.artifacts import atomic_write_json, atomic_write_text
 from arc3.perception import render_grid_svg, render_grid_text
-from arc3.trace.canonical import is_sha256, sha256_json
+from arc3.trace.canonical import is_sha256, normalize_json, sha256_json
 from arc3.types import ActionName, GameStateName, JSONValue
-from arc3.wise_scientist.journal import WiseJournal
+from arc3.wise_scientist.journal import WiseEvent, WiseJournal
 from arc3.wise_scientist.models import (
     ActCommand,
     AssessCommand,
@@ -36,8 +38,10 @@ from arc3.wise_scientist.models import (
 
 GOVERNING_OBJECTIVE_ID = "OBJ-WIN"
 GOVERNING_OBJECTIVE = "Reach a directly observed official GameState.WIN."
-_CHECKPOINT_SCHEMA = "arc3.wise-scientist.checkpoint.v0.1"
-_FINAL_RECEIPT_SCHEMA = "arc3.wise-scientist.final-receipt.v0.1"
+_CHECKPOINT_SCHEMA_V1 = "arc3.wise-scientist.checkpoint.v0.1"
+_CHECKPOINT_SCHEMA = "arc3.wise-scientist.checkpoint.v0.2"
+_FINAL_RECEIPT_SCHEMA = "arc3.wise-scientist.final-receipt.v0.2"
+_CHECKPOINT_WRITE_ATTEMPTS = 8
 
 
 class WiseRunPhase(StrEnum):
@@ -180,6 +184,12 @@ class WiseScientistRun:
         self._pending: _PendingConsequence | None = None
         self._environment_actions = 0
         self._reset_count = 0
+        self._official_environment_actions = 0
+        self._official_reset_count = 0
+        self._replay_environment_actions = 0
+        self._replay_reset_count = 0
+        initial_session_id = self._observation.upstream_session_id
+        self._official_session_ids = (initial_session_id,) if initial_session_id is not None else ()
         self._max_environment_actions = max_environment_actions
         self._max_resets = max_resets
         self._wall_clock_seconds = wall_clock_seconds
@@ -210,6 +220,583 @@ class WiseScientistRun:
             self._complete_without_action()
         self._write_checkpoint()
 
+    @classmethod
+    def resume(
+        cls,
+        session: EnvironmentSession,
+        artifact_root: str | Path,
+        *,
+        recovery_source_commit: str,
+        authorization_hash: str,
+        max_environment_actions: int = 1_000,
+        max_resets: int = 20,
+        wall_clock_seconds: float = 14_400.0,
+    ) -> WiseScientistRun:
+        """Resume a local official run by verified deterministic action replay.
+
+        The local SDK does not expose a serializable environment state.  Recovery
+        therefore opens a fresh same-seed session, replays the already-journaled
+        actions without creating duplicate logical action events, and compares
+        every returned consequence with the immutable stored observation modulo
+        the new session's upstream identity.  Only a current checkpoint or the
+        exact suffix produced when a checkpoint write fails after an action is
+        accepted.
+        """
+
+        root = Path(artifact_root).resolve()
+        checkpoint_path = root / "checkpoint.json"
+        journal = WiseJournal(root / "events.jsonl")
+        if not journal.events:
+            raise ARC3ValidationError("resume requires an existing Wise Scientist journal")
+        checkpoint = cls._load_resume_checkpoint(checkpoint_path)
+        cls._validate_resume_identity(
+            checkpoint,
+            journal=journal,
+            session=session,
+            recovery_source_commit=recovery_source_commit,
+            authorization_hash=authorization_hash,
+            max_environment_actions=max_environment_actions,
+            max_resets=max_resets,
+            wall_clock_seconds=wall_clock_seconds,
+        )
+        checkpoint_event_count = cast(int, checkpoint["journal_event_count"])
+        suffix = journal.events[checkpoint_event_count:]
+        suffix_types = tuple(item.event_type for item in suffix)
+        action_suffix = (
+            suffix[:3]
+            if suffix_types[:3]
+            == (
+                "action.selected",
+                "observation.recorded",
+                "action.consequence",
+            )
+            else ()
+        )
+        trailing_suffix = suffix[len(action_suffix) :]
+        if suffix and any(item.event_type != "run.resumed" for item in trailing_suffix):
+            raise ARC3ValidationError(
+                "resume refuses an unsupported journal suffix after the last checkpoint"
+            )
+
+        replay_steps = cls._replay_steps(root, journal)
+        recovery_journal = WiseJournal(root / "recovery-events.jsonl")
+        prior_recovery_session_ids = cls._recovery_session_ids(recovery_journal)
+        new_session_id = session.observation.upstream_session_id
+        recovery_started = recovery_journal.append(
+            "recovery.started",
+            {
+                "recovery_source_commit": recovery_source_commit,
+                "new_official_session_id": new_session_id,
+                "expected_replay_environment_actions": sum(
+                    command.action.name is not ActionName.RESET for _, command, _ in replay_steps
+                ),
+                "expected_replay_resets": sum(
+                    command.action.name is ActionName.RESET for _, command, _ in replay_steps
+                ),
+                "observation_equivalence_rule": (
+                    "exact normalized observation payload after excluding only "
+                    "upstream_session_id and upstream_metadata"
+                ),
+            },
+        )
+        try:
+            cls._verify_replay_observation(
+                session.observation,
+                root=root,
+                observation_path=cls._initial_observation_path(journal),
+            )
+        except ARC3ValidationError:
+            recovery_journal.append(
+                "recovery.initial_divergence",
+                {
+                    "recovery_started_event_hash": recovery_started.event_hash,
+                    "new_official_session_id": new_session_id,
+                    "official_environment_actions_executed": 0,
+                    "official_resets_executed": 0,
+                },
+            )
+            raise
+        replayed_actions = 0
+        replayed_resets = 0
+        for replay_ordinal, (selected_event, command, observation_path) in enumerate(
+            replay_steps, start=1
+        ):
+            reasoning: dict[str, JSONValue] = {
+                "wise_scientist_event_hash": selected_event.event_hash,
+                "active_goal_id": command.active_goal_id,
+                "distinction_ids": list(command.distinction_ids),
+                "predicted_consequence": command.predicted_consequence,
+                "rationale": command.rationale.value,
+            }
+            try:
+                returned = session.step(command.action, reasoning=reasoning)
+            except Exception as error:
+                recovery_journal.append(
+                    "recovery.transport_failed",
+                    {
+                        "recovery_started_event_hash": recovery_started.event_hash,
+                        "replay_ordinal": replay_ordinal,
+                        "selected_event_hash": selected_event.event_hash,
+                        "action": action_to_dict(command.action),
+                        "error_type": type(error).__name__,
+                        "action_application_unknown": True,
+                    },
+                )
+                raise
+            replay_error: ARC3ValidationError | None = None
+            try:
+                cls._verify_replay_observation(
+                    returned,
+                    root=root,
+                    observation_path=observation_path,
+                )
+            except ARC3ValidationError as error:
+                replay_error = error
+            recovery_journal.append(
+                "recovery.replay_action",
+                {
+                    "recovery_started_event_hash": recovery_started.event_hash,
+                    "replay_ordinal": replay_ordinal,
+                    "selected_event_hash": selected_event.event_hash,
+                    "action": action_to_dict(command.action),
+                    "stored_observation_path": observation_path,
+                    "returned_observation_hash": observation_hash(returned),
+                    "semantically_equivalent": replay_error is None,
+                },
+            )
+            if command.action.name is ActionName.RESET:
+                replayed_resets += 1
+            else:
+                replayed_actions += 1
+            if replay_error is not None:
+                recovery_journal.append(
+                    "recovery.diverged",
+                    {
+                        "recovery_started_event_hash": recovery_started.event_hash,
+                        "replay_ordinal": replay_ordinal,
+                        "official_environment_actions_executed": replayed_actions,
+                        "official_resets_executed": replayed_resets,
+                    },
+                )
+                raise replay_error
+        recovery_verified = recovery_journal.append(
+            "recovery.verified",
+            {
+                "recovery_started_event_hash": recovery_started.event_hash,
+                "official_environment_actions_executed": replayed_actions,
+                "official_resets_executed": replayed_resets,
+                "semantic_replay_verified": True,
+            },
+        )
+
+        run = cls.__new__(cls)
+        run._session = session
+        run.artifact_root = root
+        run.journal = journal
+        run._observation = session.observation
+        run._distinctions = {
+            item.distinction_id: item
+            for item in (
+                Distinction.from_dict(value, field="checkpoint.distinctions[]")
+                for value in cast(list[object], checkpoint["distinctions"])
+            )
+        }
+        run._subgoals = {
+            item.goal_id: item
+            for item in (
+                Subgoal.from_dict(value, field="checkpoint.subgoals[]")
+                for value in cast(list[object], checkpoint["subgoals"])
+            )
+        }
+        run._failed_action_guards = set(cast(list[str], checkpoint["failed_action_guards"]))
+        run._environment_actions = cast(
+            int,
+            checkpoint.get("unique_logical_action_count", checkpoint["environment_action_count"]),
+        )
+        run._reset_count = cast(
+            int, checkpoint.get("unique_logical_reset_count", checkpoint["reset_count"])
+        )
+        run._observation_index = cast(int, checkpoint["observation_count"])
+        run._pending = cls._pending_from_checkpoint(checkpoint.get("pending"))
+        run.phase = WiseRunPhase(cast(str, checkpoint["phase"]))
+
+        previous_source_commit = cast(str, checkpoint["source_commit"])
+        previous_observation_hash = cast(str, checkpoint["current_observation_hash"])
+        if action_suffix:
+            selected, recorded, consequence = action_suffix
+            selected_payload = selected.payload
+            consequence_payload = consequence.payload
+            command = ActCommand.from_dict(selected_payload)
+            if (
+                recorded.payload.get("observation_hash")
+                != consequence_payload.get("after_observation_hash")
+                or consequence_payload.get("selected_event_hash") != selected.event_hash
+                or consequence_payload.get("before_observation_hash") != previous_observation_hash
+            ):
+                raise ARC3ValidationError("resume journal suffix has inconsistent action links")
+            belief_hash = selected_payload.get("belief_hash")
+            if not isinstance(belief_hash, str) or not is_sha256(belief_hash):
+                raise ARC3ValidationError("resume action suffix has invalid belief hash")
+            run._pending = _PendingConsequence(
+                command=command,
+                before_observation_hash=previous_observation_hash,
+                after_observation_hash=cast(str, consequence_payload["after_observation_hash"]),
+                before_levels_completed=cast(int, checkpoint["levels_completed"]),
+                before_belief_hash=belief_hash,
+            )
+            if command.action.name is ActionName.RESET:
+                run._reset_count += 1
+            else:
+                run._environment_actions += 1
+            run._observation_index += 1
+            run.phase = WiseRunPhase.AWAITING_ASSESSMENT
+
+        if run._environment_actions != replayed_actions or run._reset_count != replayed_resets:
+            raise ARC3ValidationError(
+                "resume replay counts do not match the recovered logical action counts"
+            )
+        if run.phase is WiseRunPhase.AWAITING_ASSESSMENT and run._pending is None:
+            raise ARC3ValidationError("resume checkpoint is missing its pending consequence")
+        if run.phase is not WiseRunPhase.AWAITING_ASSESSMENT and run._pending is not None:
+            raise ARC3ValidationError("resume checkpoint has a consequence in the wrong phase")
+
+        total_replay_actions, total_replay_resets = cls._recovery_action_totals(recovery_journal)
+        official_before_recovery = (
+            run._environment_actions + total_replay_actions - replayed_actions
+        )
+        official_resets_before_recovery = run._reset_count + total_replay_resets - replayed_resets
+        run._official_environment_actions = run._environment_actions + total_replay_actions
+        run._official_reset_count = run._reset_count + total_replay_resets
+        run._replay_environment_actions = total_replay_actions
+        run._replay_reset_count = total_replay_resets
+        prior_session_ids = tuple(
+            dict.fromkeys((*cls._stored_session_ids(root, journal), *prior_recovery_session_ids))
+        )
+        run._official_session_ids = tuple(
+            dict.fromkeys(
+                (*prior_session_ids, *((new_session_id,) if new_session_id is not None else ()))
+            )
+        )
+
+        run._max_environment_actions = max_environment_actions
+        run._max_resets = max_resets
+        run._wall_clock_seconds = wall_clock_seconds
+        run._source_commit = recovery_source_commit
+        run._authorization_hash = authorization_hash
+        started_at = cls._run_started_at(journal)
+        run._started_at = started_at
+        started = datetime.fromisoformat(started_at.replace("Z", "+00:00"))
+        elapsed = max(0.0, (datetime.now(UTC) - started).total_seconds())
+        run._started_monotonic = monotonic() - elapsed
+
+        replayed_observation_hash = run.current_observation_hash
+        run.journal.append(
+            "run.resumed",
+            {
+                "recovery_kind": "verified-deterministic-local-replay",
+                "previous_source_commit": previous_source_commit,
+                "recovery_source_commit": recovery_source_commit,
+                "checkpoint_event_count": checkpoint_event_count,
+                "checkpoint_suffix_event_types": [item.event_type for item in suffix],
+                "new_official_session_id": new_session_id,
+                "prior_official_session_ids": list(prior_session_ids),
+                "replayed_environment_actions_this_recovery": replayed_actions,
+                "replayed_resets_this_recovery": replayed_resets,
+                "replay_environment_action_count": run._replay_environment_actions,
+                "replay_reset_count": run._replay_reset_count,
+                "official_environment_actions_before_recovery": official_before_recovery,
+                "official_resets_before_recovery": official_resets_before_recovery,
+                "official_environment_action_count": run._official_environment_actions,
+                "official_reset_count": run._official_reset_count,
+                "unique_logical_action_count": run._environment_actions,
+                "unique_logical_reset_count": run._reset_count,
+                "official_replay_actions_executed": replayed_actions > 0,
+                "logical_actions_duplicated": False,
+                "previous_observation_hash": previous_observation_hash,
+                "replayed_observation_hash": replayed_observation_hash,
+                "semantic_replay_verified": True,
+                "recovery_ledger_path": "recovery-events.jsonl",
+                "recovery_ledger_tail_hash": recovery_verified.event_hash,
+                "observation_equivalence_rule": (
+                    "exact normalized observation payload after excluding only "
+                    "upstream_session_id and upstream_metadata"
+                ),
+            },
+        )
+        run._write_checkpoint()
+        return run
+
+    @staticmethod
+    def _load_resume_checkpoint(path: Path) -> dict[str, JSONValue]:
+        try:
+            raw: object = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError) as error:
+            raise ARC3ValidationError(f"cannot read Wise Scientist checkpoint: {error}") from error
+        normalized = normalize_json(raw)
+        if not isinstance(normalized, dict):
+            raise ARC3ValidationError("Wise Scientist checkpoint must be a JSON object")
+        required = {
+            "schema",
+            "source_commit",
+            "authorization_hash",
+            "phase",
+            "game_id",
+            "governing_objective_id",
+            "current_observation_hash",
+            "current_official_state",
+            "levels_completed",
+            "win_levels",
+            "environment_action_count",
+            "reset_count",
+            "observation_count",
+            "distinctions",
+            "subgoals",
+            "failed_action_guards",
+            "pending",
+            "journal_tail_hash",
+            "journal_event_count",
+        }
+        current_only = {
+            "unique_logical_action_count",
+            "unique_logical_reset_count",
+            "replay_environment_action_count",
+            "replay_reset_count",
+            "official_session_ids",
+        }
+        schema = normalized.get("schema")
+        expected = required if schema == _CHECKPOINT_SCHEMA_V1 else required | current_only
+        if set(normalized) != expected or schema not in {
+            _CHECKPOINT_SCHEMA_V1,
+            _CHECKPOINT_SCHEMA,
+        }:
+            raise ARC3ValidationError("Wise Scientist checkpoint has invalid fields or schema")
+        return normalized
+
+    @staticmethod
+    def _run_started_at(journal: WiseJournal) -> str:
+        started = journal.events[0]
+        value = started.payload.get("started_at") if started.event_type == "run.started" else None
+        if not isinstance(value, str):
+            raise ARC3ValidationError("Wise Scientist journal has no valid run.started event")
+        return value
+
+    @classmethod
+    def _validate_resume_identity(
+        cls,
+        checkpoint: dict[str, JSONValue],
+        *,
+        journal: WiseJournal,
+        session: EnvironmentSession,
+        recovery_source_commit: str,
+        authorization_hash: str,
+        max_environment_actions: int,
+        max_resets: int,
+        wall_clock_seconds: float,
+    ) -> None:
+        if len(recovery_source_commit) != 40 or any(
+            character not in "0123456789abcdef" for character in recovery_source_commit
+        ):
+            raise ARC3ValidationError("recovery source commit must be a lowercase SHA-1")
+        if not is_sha256(authorization_hash):
+            raise ARC3ValidationError("resume authorization hash must be a tagged SHA-256")
+        if checkpoint.get("authorization_hash") != authorization_hash:
+            raise ARC3ValidationError("resume authorization differs from the checkpoint")
+        if checkpoint.get("game_id") != str(session.observation.game_id):
+            raise ARC3ValidationError("resume session game differs from the checkpoint")
+        event_count = checkpoint.get("journal_event_count")
+        if isinstance(event_count, bool) or not isinstance(event_count, int):
+            raise ARC3ValidationError("resume checkpoint has invalid journal event count")
+        if event_count <= 0 or event_count > len(journal.events):
+            raise ARC3ValidationError("resume checkpoint event count is outside the journal")
+        if journal.events[event_count - 1].event_hash != checkpoint.get("journal_tail_hash"):
+            raise ARC3ValidationError("resume checkpoint does not identify its journal prefix")
+        started = journal.events[0]
+        if started.event_type != "run.started":
+            raise ARC3ValidationError("resume journal does not begin with run.started")
+        budgets = started.payload.get("budgets")
+        expected_budgets: dict[str, JSONValue] = {
+            "max_environment_actions": max_environment_actions,
+            "max_resets": max_resets,
+            "wall_clock_seconds": wall_clock_seconds,
+        }
+        if budgets != expected_budgets:
+            raise ARC3ValidationError("resume budgets differ from the original run")
+        if started.payload.get("authorization_hash") != authorization_hash:
+            raise ARC3ValidationError("resume journal authorization mismatch")
+        if started.payload.get("game_id") != checkpoint.get("game_id"):
+            raise ARC3ValidationError("resume journal game mismatch")
+
+    @staticmethod
+    def _initial_observation_path(journal: WiseJournal) -> str:
+        for event in journal.events:
+            if event.event_type == "observation.recorded":
+                value = event.payload.get("observation_path")
+                if isinstance(value, str):
+                    return value
+                break
+        raise ARC3ValidationError("resume journal has no initial observation path")
+
+    @classmethod
+    def _stored_session_ids(cls, root: Path, journal: WiseJournal) -> tuple[str, ...]:
+        path = (root / cls._initial_observation_path(journal)).resolve()
+        if not path.is_relative_to(root) or path.parent != root:
+            raise ARC3ValidationError("resume initial observation path escapes artifact root")
+        try:
+            raw: object = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError) as error:
+            raise ARC3ValidationError(f"cannot read initial replay observation: {error}") from error
+        normalized = normalize_json(raw)
+        if not isinstance(normalized, dict):
+            raise ARC3ValidationError("initial replay observation must be an object")
+        session_id = normalized.get("upstream_session_id")
+        if session_id is None:
+            return ()
+        if not isinstance(session_id, str) or not session_id:
+            raise ARC3ValidationError("initial replay observation has invalid session identity")
+        return (session_id,)
+
+    @staticmethod
+    def _recovery_session_ids(journal: WiseJournal) -> tuple[str, ...]:
+        session_ids: list[str] = []
+        for event in journal.events:
+            if event.event_type != "recovery.started":
+                continue
+            session_id = event.payload.get("new_official_session_id")
+            if session_id is None:
+                continue
+            if not isinstance(session_id, str) or not session_id:
+                raise ARC3ValidationError("recovery ledger has invalid session identity")
+            session_ids.append(session_id)
+        return tuple(dict.fromkeys(session_ids))
+
+    @staticmethod
+    def _recovery_action_totals(journal: WiseJournal) -> tuple[int, int]:
+        environment_actions = 0
+        resets = 0
+        for event in journal.events:
+            if event.event_type != "recovery.replay_action":
+                continue
+            raw_action = event.payload.get("action")
+            if not isinstance(raw_action, dict):
+                raise ARC3ValidationError("recovery ledger has invalid action receipt")
+            name = raw_action.get("name")
+            if name == ActionName.RESET.value:
+                resets += 1
+            elif isinstance(name, str) and name in {item.value for item in ActionName}:
+                environment_actions += 1
+            else:
+                raise ARC3ValidationError("recovery ledger has unknown action receipt")
+        return environment_actions, resets
+
+    @classmethod
+    def _replay_steps(
+        cls, root: Path, journal: WiseJournal
+    ) -> tuple[tuple[WiseEvent, ActCommand, str], ...]:
+        del root
+        pending: tuple[WiseEvent, ActCommand] | None = None
+        recorded_path: str | None = None
+        recorded_hash: str | None = None
+        steps: list[tuple[WiseEvent, ActCommand, str]] = []
+        for event in journal.events:
+            if event.event_type == "action.transport_failed":
+                raise ARC3ValidationError(
+                    "resume refuses a journal with unknown action application"
+                )
+            if event.event_type == "action.selected":
+                if pending is not None:
+                    raise ARC3ValidationError("resume journal contains overlapping actions")
+                pending = (event, ActCommand.from_dict(event.payload))
+                recorded_path = None
+                recorded_hash = None
+            elif event.event_type == "observation.recorded" and pending is not None:
+                path = event.payload.get("observation_path")
+                identity = event.payload.get("observation_hash")
+                if not isinstance(path, str) or not isinstance(identity, str):
+                    raise ARC3ValidationError("resume journal has invalid observation record")
+                recorded_path = path
+                recorded_hash = identity
+            elif event.event_type == "action.consequence":
+                if pending is None or recorded_path is None or recorded_hash is None:
+                    raise ARC3ValidationError("resume journal consequence has no selected action")
+                selected, command = pending
+                if (
+                    event.payload.get("selected_event_hash") != selected.event_hash
+                    or event.payload.get("after_observation_hash") != recorded_hash
+                ):
+                    raise ARC3ValidationError("resume journal action links are inconsistent")
+                steps.append((selected, command, recorded_path))
+                pending = None
+                recorded_path = None
+                recorded_hash = None
+        if pending is not None:
+            raise ARC3ValidationError("resume refuses an action with unknown consequence")
+        return tuple(steps)
+
+    @staticmethod
+    def _replay_projection(value: object) -> dict[str, JSONValue]:
+        if isinstance(value, Observation):
+            payload = observation_payload(value)
+        else:
+            normalized = normalize_json(value)
+            if not isinstance(normalized, dict):
+                raise ARC3ValidationError("stored replay observation must be an object")
+            payload = dict(normalized)
+            payload.pop("schema", None)
+            payload.pop("observation_hash", None)
+        payload.pop("upstream_session_id", None)
+        payload.pop("upstream_metadata", None)
+        return payload
+
+    @classmethod
+    def _verify_replay_observation(
+        cls, observation: Observation, *, root: Path, observation_path: str
+    ) -> None:
+        path = (root / observation_path).resolve()
+        if not path.is_relative_to(root) or path.parent != root:
+            raise ARC3ValidationError("resume observation path escapes the artifact root")
+        try:
+            stored: object = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError) as error:
+            raise ARC3ValidationError(f"cannot read replay observation: {error}") from error
+        if cls._replay_projection(observation) != cls._replay_projection(stored):
+            raise ARC3ValidationError(
+                f"deterministic replay diverged at stored observation {observation_path}"
+            )
+
+    @staticmethod
+    def _pending_from_checkpoint(value: JSONValue | None) -> _PendingConsequence | None:
+        if value is None:
+            return None
+        if not isinstance(value, dict):
+            raise ARC3ValidationError("resume checkpoint pending value must be an object")
+        required = {
+            "command",
+            "before_observation_hash",
+            "after_observation_hash",
+            "before_levels_completed",
+            "before_belief_hash",
+        }
+        if set(value) != required:
+            raise ARC3ValidationError("resume checkpoint pending value has invalid fields")
+        before_levels = value["before_levels_completed"]
+        if isinstance(before_levels, bool) or not isinstance(before_levels, int):
+            raise ARC3ValidationError("resume checkpoint pending level count is invalid")
+        before_hash = value["before_observation_hash"]
+        after_hash = value["after_observation_hash"]
+        belief_hash = value["before_belief_hash"]
+        if not all(
+            isinstance(item, str) and is_sha256(item)
+            for item in (before_hash, after_hash, belief_hash)
+        ):
+            raise ARC3ValidationError("resume checkpoint pending hashes are invalid")
+        return _PendingConsequence(
+            command=ActCommand.from_dict(value["command"]),
+            before_observation_hash=cast(str, before_hash),
+            after_observation_hash=cast(str, after_hash),
+            before_levels_completed=before_levels,
+            before_belief_hash=cast(str, belief_hash),
+        )
+
     @property
     def observation(self) -> Observation:
         return self._observation
@@ -220,10 +807,18 @@ class WiseScientistRun:
 
     @property
     def environment_action_count(self) -> int:
+        return self._official_environment_actions
+
+    @property
+    def unique_logical_action_count(self) -> int:
         return self._environment_actions
 
     @property
     def reset_count(self) -> int:
+        return self._official_reset_count
+
+    @property
+    def unique_logical_reset_count(self) -> int:
         return self._reset_count
 
     @property
@@ -410,11 +1005,14 @@ class WiseScientistRun:
         elapsed = monotonic() - self._started_monotonic
         if elapsed >= self._wall_clock_seconds:
             raise EnvironmentStateError("Wise Scientist wall-clock budget is exhausted")
-        if command.action.name is ActionName.RESET and self._reset_count >= self._max_resets:
+        if (
+            command.action.name is ActionName.RESET
+            and self._official_reset_count >= self._max_resets
+        ):
             raise EnvironmentStateError("Wise Scientist reset budget is exhausted")
         if (
             command.action.name is not ActionName.RESET
-            and self._environment_actions >= self._max_environment_actions
+            and self._official_environment_actions >= self._max_environment_actions
         ):
             raise EnvironmentStateError("Wise Scientist environment-action budget is exhausted")
         self._validate_action_context(command)
@@ -453,8 +1051,10 @@ class WiseScientistRun:
 
         if command.action.name is ActionName.RESET:
             self._reset_count += 1
+            self._official_reset_count += 1
         else:
             self._environment_actions += 1
+            self._official_environment_actions += 1
         self._observation = after
         self._record_observation(source="environment-consequence")
         after_hash = self.current_observation_hash
@@ -625,6 +1225,10 @@ class WiseScientistRun:
                 "scorecard.close_failed",
                 {"error_type": close_error, "win_observed": True},
             )
+        recovery_path = self.artifact_root / "recovery-events.jsonl"
+        recovery_tail_hash = (
+            WiseJournal(recovery_path).tail_hash if recovery_path.is_file() else None
+        )
         elapsed = monotonic() - self._started_monotonic
         receipt_core: dict[str, JSONValue] = {
             "schema": _FINAL_RECEIPT_SCHEMA,
@@ -634,8 +1238,13 @@ class WiseScientistRun:
             "final_official_state": self._observation.state.value,
             "levels_completed": self._observation.levels_completed,
             "win_levels": self._observation.win_levels,
-            "environment_action_count": self._environment_actions,
-            "reset_count": self._reset_count,
+            "environment_action_count": self._official_environment_actions,
+            "reset_count": self._official_reset_count,
+            "unique_logical_action_count": self._environment_actions,
+            "unique_logical_reset_count": self._reset_count,
+            "replay_environment_action_count": self._replay_environment_actions,
+            "replay_reset_count": self._replay_reset_count,
+            "official_session_ids": list(self._official_session_ids),
             "budgets": {
                 "max_environment_actions": self._max_environment_actions,
                 "max_resets": self._max_resets,
@@ -645,9 +1254,13 @@ class WiseScientistRun:
             "elapsed_seconds": elapsed,
             "journal_path": "events.jsonl",
             "journal_tail_hash_before_completion": self.journal.tail_hash,
+            "recovery_ledger_path": (
+                "recovery-events.jsonl" if recovery_tail_hash is not None else None
+            ),
+            "recovery_ledger_tail_hash": recovery_tail_hash,
             "assessment_event_hash": assessment_event_hash,
             "win_observed": True,
-            "scorecard": _scorecard_payload(scorecard),
+            "current_session_scorecard": _scorecard_payload(scorecard),
             "scorecard_close_error": close_error,
             "parked_distinction_ids": [
                 item.distinction_id
@@ -688,8 +1301,13 @@ class WiseScientistRun:
             "levels_completed": self._observation.levels_completed,
             "win_levels": self._observation.win_levels,
             "available_actions": [item.value for item in self._observation.available_actions],
-            "environment_action_count": self._environment_actions,
-            "reset_count": self._reset_count,
+            "environment_action_count": self._official_environment_actions,
+            "reset_count": self._official_reset_count,
+            "unique_logical_action_count": self._environment_actions,
+            "unique_logical_reset_count": self._reset_count,
+            "replay_environment_action_count": self._replay_environment_actions,
+            "replay_reset_count": self._replay_reset_count,
+            "official_session_ids": list(self._official_session_ids),
             "max_environment_actions": self._max_environment_actions,
             "max_resets": self._max_resets,
             "wall_clock_seconds": self._wall_clock_seconds,
@@ -723,8 +1341,13 @@ class WiseScientistRun:
             "current_official_state": self._observation.state.value,
             "levels_completed": self._observation.levels_completed,
             "win_levels": self._observation.win_levels,
-            "environment_action_count": self._environment_actions,
-            "reset_count": self._reset_count,
+            "environment_action_count": self._official_environment_actions,
+            "reset_count": self._official_reset_count,
+            "unique_logical_action_count": self._environment_actions,
+            "unique_logical_reset_count": self._reset_count,
+            "replay_environment_action_count": self._replay_environment_actions,
+            "replay_reset_count": self._replay_reset_count,
+            "official_session_ids": list(self._official_session_ids),
             "observation_count": self._observation_index,
             "distinctions": [item.to_dict() for item in self.distinctions],
             "subgoals": [item.to_dict() for item in self.subgoals],
@@ -733,7 +1356,15 @@ class WiseScientistRun:
             "journal_tail_hash": self.journal.tail_hash,
             "journal_event_count": len(self.journal.events),
         }
-        atomic_write_json(self.artifact_root / "checkpoint.json", payload)
+        checkpoint_path = self.artifact_root / "checkpoint.json"
+        for attempt in range(_CHECKPOINT_WRITE_ATTEMPTS):
+            try:
+                atomic_write_json(checkpoint_path, payload)
+                return
+            except PermissionError:
+                if attempt + 1 == _CHECKPOINT_WRITE_ATTEMPTS:
+                    raise
+                sleep(0.05 * (2**attempt))
 
 
 __all__ = [

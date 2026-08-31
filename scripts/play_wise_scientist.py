@@ -199,6 +199,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--environments-dir", required=True, type=Path)
     parser.add_argument("--recordings-dir", required=True, type=Path)
     parser.add_argument("--acquire-missing", action="store_true")
+    parser.add_argument(
+        "--resume",
+        action="store_true",
+        help="resume an existing artifact journal by verified deterministic local replay",
+    )
     parser.add_argument("--max-actions", type=int, default=1_000)
     parser.add_argument("--max-resets", type=int, default=20)
     parser.add_argument("--wall-clock-seconds", type=float, default=14_400.0)
@@ -304,15 +309,28 @@ def main(argv: Sequence[str] | None = None) -> int:
         exposure_status = "local-run-open-attempted"
         session = adapter.open(game_id, seed=cast(int, args.seed))
         exposure_status = "local-run-opened"
-        run = WiseScientistRun(
-            session,
-            artifact_dir,
-            source_commit=cast(str, args.frozen_commit),
-            authorization_hash=authorization_hash,
-            max_environment_actions=cast(int, args.max_actions),
-            max_resets=cast(int, args.max_resets),
-            wall_clock_seconds=cast(float, args.wall_clock_seconds),
-        )
+        if args.resume:
+            if args.acquire_missing:
+                raise ARC3ValidationError("--resume cannot be combined with --acquire-missing")
+            run = WiseScientistRun.resume(
+                session,
+                artifact_dir,
+                recovery_source_commit=cast(str, args.frozen_commit),
+                authorization_hash=authorization_hash,
+                max_environment_actions=cast(int, args.max_actions),
+                max_resets=cast(int, args.max_resets),
+                wall_clock_seconds=cast(float, args.wall_clock_seconds),
+            )
+        else:
+            run = WiseScientistRun(
+                session,
+                artifact_dir,
+                source_commit=cast(str, args.frozen_commit),
+                authorization_hash=authorization_hash,
+                max_environment_actions=cast(int, args.max_actions),
+                max_resets=cast(int, args.max_resets),
+                wall_clock_seconds=cast(float, args.wall_clock_seconds),
+            )
         return _interactive_loop(run)
     except (ARC3Error, OSError, subprocess.SubprocessError, ValueError) as error:
         _emit(
