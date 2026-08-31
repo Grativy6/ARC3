@@ -12,7 +12,7 @@ from arc3.errors import ARC3ValidationError
 from arc3.evaluation.artifacts import atomic_write_json
 from arc3.trace.canonical import is_sha256, normalize_json, sha256_json
 from arc3.types import JSONValue
-from arc3.wise_scientist.frame_witness import measure_position_transition
+from arc3.wise_scientist.frame_witness import measure_position_transition_between_patterns
 
 ROOT = Path(__file__).resolve().parents[1]
 _REPLAY_EQUIVALENCE_RULE = (
@@ -42,18 +42,18 @@ def _load_json(path: Path) -> dict[str, JSONValue]:
         raise ARC3ValidationError(f"cannot read {path}: {error}") from error
 
 
-def _parse_pattern(value: str) -> tuple[tuple[int, ...], ...]:
+def _parse_pattern(value: str, *, option: str = "--pattern-json") -> tuple[tuple[int, ...], ...]:
     try:
         raw: object = json.loads(value)
     except json.JSONDecodeError as error:
-        raise ARC3ValidationError(f"invalid --pattern-json: {error}") from error
+        raise ARC3ValidationError(f"invalid {option}: {error}") from error
     if not isinstance(raw, list) or any(not isinstance(row, list) for row in raw):
-        raise ARC3ValidationError("--pattern-json must be a two-dimensional array")
+        raise ARC3ValidationError(f"{option} must be a two-dimensional array")
     rows: list[tuple[int, ...]] = []
     for raw_row in raw:
         row = cast(list[object], raw_row)
         if any(isinstance(cell, bool) or not isinstance(cell, int) for cell in row):
-            raise ARC3ValidationError("--pattern-json cells must be integers")
+            raise ARC3ValidationError(f"{option} cells must be integers")
         rows.append(tuple(cast(int, cell) for cell in row))
     return tuple(rows)
 
@@ -124,10 +124,12 @@ def audit_positions(
     ordinary_displacements: frozenset[tuple[int, int]],
     first_action: int,
     last_action: int,
+    after_pattern: tuple[tuple[int, ...], ...] | None = None,
 ) -> dict[str, JSONValue]:
     """Return exact transition evidence for a contiguous logical-action range."""
 
     root = _inside_checkout(artifact_dir)
+    effective_after_pattern = pattern if after_pattern is None else after_pattern
     events_path = root / "events.jsonl"
     events: list[dict[str, JSONValue]] = []
     try:
@@ -215,10 +217,11 @@ def audit_positions(
         after_observation = _load_json(after_path)
         before_frame = _frame_from_observation(before_observation)
         after_frame = _frame_from_observation(after_observation)
-        transition = measure_position_transition(
+        transition = measure_position_transition_between_patterns(
             before_frame,
             after_frame,
-            pattern,
+            before_pattern=pattern,
+            after_pattern=effective_after_pattern,
             ordinary_displacements=ordinary_displacements,
         )
         results.append(
@@ -238,6 +241,9 @@ def audit_positions(
         "pattern": [list(row) for row in pattern],
         "actions": results,
     }
+    if effective_after_pattern != pattern:
+        core["before_pattern"] = [list(row) for row in pattern]
+        core["after_pattern"] = [list(row) for row in effective_after_pattern]
     return {**core, "audit_hash": sha256_json(core)}
 
 
@@ -245,6 +251,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--artifact-dir", required=True, type=Path)
     parser.add_argument("--pattern-json", required=True)
+    parser.add_argument("--after-pattern-json")
     parser.add_argument("--ordinary-displacement", action="append", required=True)
     parser.add_argument("--first-action", required=True, type=int)
     parser.add_argument("--last-action", required=True, type=int)
@@ -255,6 +262,11 @@ def build_parser() -> argparse.ArgumentParser:
 def main() -> int:
     args = build_parser().parse_args()
     pattern = _parse_pattern(args.pattern_json)
+    after_pattern = (
+        pattern
+        if args.after_pattern_json is None
+        else _parse_pattern(args.after_pattern_json, option="--after-pattern-json")
+    )
     displacements = frozenset(_parse_displacement(item) for item in args.ordinary_displacement)
     result = audit_positions(
         args.artifact_dir,
@@ -262,6 +274,7 @@ def main() -> int:
         ordinary_displacements=displacements,
         first_action=args.first_action,
         last_action=args.last_action,
+        after_pattern=after_pattern,
     )
     if args.output is not None:
         atomic_write_json(_inside_checkout(args.output), result)

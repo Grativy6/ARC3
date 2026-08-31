@@ -227,8 +227,13 @@ def measure_position_transition(
     pattern: tuple[tuple[int, ...], ...],
     *,
     ordinary_displacements: frozenset[tuple[int, int]],
+    after_pattern: tuple[tuple[int, ...], ...] | None = None,
 ) -> PositionTransition:
     """Measure and classify one declared footprint across final frames.
+
+    ``after_pattern`` defaults to ``pattern`` for the original exact-identity
+    behavior.  A distinct exact after-pattern permits observation-bound color
+    changes without weakening unique footprint location.
 
     ``ordinary_displacements`` is observation-derived configuration, not an
     inferred action mapping.  A zero displacement is always ``BLOCKED``;
@@ -236,10 +241,29 @@ def measure_position_transition(
     relocation is a ``DISCONTINUITY`` that must be explained before acting.
     """
 
+    return measure_position_transition_between_patterns(
+        before,
+        after,
+        before_pattern=pattern,
+        after_pattern=pattern if after_pattern is None else after_pattern,
+        ordinary_displacements=ordinary_displacements,
+    )
+
+
+def measure_position_transition_between_patterns(
+    before: GridFrame,
+    after: GridFrame,
+    *,
+    before_pattern: tuple[tuple[int, ...], ...],
+    after_pattern: tuple[tuple[int, ...], ...],
+    ordinary_displacements: frozenset[tuple[int, int]],
+) -> PositionTransition:
+    """Measure one footprint using independently declared exact patterns."""
+
     if (0, 0) in ordinary_displacements:
         raise ARC3ValidationError("ordinary displacements must not contain zero")
-    before_location = require_unique_pattern(before, pattern, field="before frame")
-    after_location = require_unique_pattern(after, pattern, field="after frame")
+    before_location = require_unique_pattern(before, before_pattern, field="before frame")
+    after_location = require_unique_pattern(after, after_pattern, field="after frame")
     displacement = (
         after_location.center[0] - before_location.center[0],
         after_location.center[1] - before_location.center[1],
@@ -285,6 +309,7 @@ __all__ = [
     "RegionColorCountWitness",
     "locate_pattern",
     "measure_position_transition",
+    "measure_position_transition_between_patterns",
     "measure_region_color_count",
     "require_position_transition",
     "require_unique_pattern",

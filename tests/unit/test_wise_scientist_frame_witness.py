@@ -13,6 +13,7 @@ from arc3.types import JSONValue
 from arc3.wise_scientist.frame_witness import (
     PositionChangeKind,
     measure_position_transition,
+    measure_position_transition_between_patterns,
     measure_region_color_count,
     require_position_transition,
 )
@@ -22,6 +23,11 @@ PATTERN = (
     (12, 12, 12),
     (12, 9, 12),
     (9, 9, 9),
+)
+AFTER_PATTERN = (
+    (12, 12, 12),
+    (12, 8, 12),
+    (8, 8, 8),
 )
 ORDINARY = frozenset({(-1, 0), (1, 0), (0, -1), (0, 1)})
 HUD_FRAME = GridFrame.from_rows(
@@ -37,11 +43,16 @@ _EXACT_REPLAY_RULE = (
 )
 
 
-def _frame(center: tuple[int, int], *, resource: int = 1) -> GridFrame:
+def _frame(
+    center: tuple[int, int],
+    *,
+    pattern: tuple[tuple[int, ...], ...] = PATTERN,
+    resource: int = 1,
+) -> GridFrame:
     rows = [[3 for _x in range(9)] for _y in range(9)]
     left = center[0] - 1
     top = center[1] - 1
-    for y, row in enumerate(PATTERN):
+    for y, row in enumerate(pattern):
         for x, cell in enumerate(row):
             rows[top + y][left + x] = cell
     rows[8][8] = resource
@@ -89,7 +100,12 @@ def _record_resume(
     )
 
 
-def _audit(root: Path, monkeypatch: pytest.MonkeyPatch) -> dict[str, JSONValue]:
+def _audit(
+    root: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    after_pattern: tuple[tuple[int, ...], ...] | None = None,
+) -> dict[str, JSONValue]:
     monkeypatch.setattr(position_audit, "ROOT", root.parent)
     return position_audit.audit_positions(
         root,
@@ -97,6 +113,7 @@ def _audit(root: Path, monkeypatch: pytest.MonkeyPatch) -> dict[str, JSONValue]:
         ordinary_displacements=ORDINARY,
         first_action=1,
         last_action=1,
+        after_pattern=after_pattern,
     )
 
 
@@ -188,6 +205,20 @@ def test_position_witness_classifies_ordinary_move() -> None:
         _frame((3, 3)),
         _frame((4, 3), resource=2),
         PATTERN,
+        ordinary_displacements=ORDINARY,
+    )
+
+    assert transition.before.center == (3, 3)
+    assert transition.after.center == (4, 3)
+    assert transition.kind is PositionChangeKind.ORDINARY_MOVE
+
+
+def test_position_witness_accepts_distinct_exact_after_pattern() -> None:
+    transition = measure_position_transition_between_patterns(
+        _frame((3, 3)),
+        _frame((4, 3), pattern=AFTER_PATTERN, resource=2),
+        before_pattern=PATTERN,
+        after_pattern=AFTER_PATTERN,
         ordinary_displacements=ORDINARY,
     )
 
@@ -292,6 +323,78 @@ def test_position_audit_preserves_direct_observation_resolution(
     after = cast(dict[str, JSONValue], transition["after"])
     assert before["center"] == [3, 3]
     assert after["center"] == [4, 3]
+    assert result["schema"] == "arc3.wise-scientist.position-audit.v0.1"
+    assert result["pattern"] == [list(row) for row in PATTERN]
+    assert "before_pattern" not in result
+    assert "after_pattern" not in result
+
+
+def test_position_audit_records_distinct_before_and_after_patterns(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root = tmp_path / "run"
+    root.mkdir()
+    journal = WiseJournal(root / "events.jsonl")
+    _record_observation(
+        root,
+        journal,
+        identity=_hash("1"),
+        filename="before.json",
+        frame=_frame((3, 3)),
+    )
+    journal.append(
+        "action.selected",
+        {
+            "action": {"name": "ACTION1"},
+            "observation_hash": _hash("1"),
+            "predicted_consequence": "the color-changing marker moves one cell east",
+        },
+    )
+    _record_observation(
+        root,
+        journal,
+        identity=_hash("3"),
+        filename="after.json",
+        frame=_frame((4, 3), pattern=AFTER_PATTERN, resource=2),
+    )
+    journal.append("action.consequence", {"after_observation_hash": _hash("3")})
+
+    result = _audit(root, monkeypatch, after_pattern=AFTER_PATTERN)
+
+    assert result["schema"] == "arc3.wise-scientist.position-audit.v0.1"
+    assert result["pattern"] == [list(row) for row in PATTERN]
+    assert result["before_pattern"] == [list(row) for row in PATTERN]
+    assert result["after_pattern"] == [list(row) for row in AFTER_PATTERN]
+    actions = cast(list[dict[str, JSONValue]], result["actions"])
+    transition = cast(dict[str, JSONValue], actions[0]["position_transition"])
+    assert transition["kind"] == PositionChangeKind.ORDINARY_MOVE.value
+
+
+def test_position_audit_cli_after_pattern_defaults_to_before_pattern() -> None:
+    parser = position_audit.build_parser()
+    args = parser.parse_args(
+        [
+            "--artifact-dir",
+            "artifacts/example",
+            "--pattern-json",
+            json.dumps(PATTERN),
+            "--ordinary-displacement",
+            "1,0",
+            "--first-action",
+            "1",
+            "--last-action",
+            "1",
+        ]
+    )
+
+    before_pattern = position_audit._parse_pattern(args.pattern_json)
+    after_pattern = (
+        before_pattern
+        if args.after_pattern_json is None
+        else position_audit._parse_pattern(args.after_pattern_json, option="--after-pattern-json")
+    )
+    assert after_pattern == before_pattern
 
 
 def test_position_audit_resolves_verified_resume_alias_chain(
