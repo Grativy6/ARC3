@@ -10,11 +10,15 @@ from typing import cast
 from arc3.adapters import GridFrame
 from arc3.errors import ARC3ValidationError
 from arc3.evaluation.artifacts import atomic_write_json
-from arc3.trace.canonical import normalize_json, sha256_json
+from arc3.trace.canonical import is_sha256, normalize_json, sha256_json
 from arc3.types import JSONValue
 from arc3.wise_scientist.frame_witness import measure_position_transition
 
 ROOT = Path(__file__).resolve().parents[1]
+_REPLAY_EQUIVALENCE_RULE = (
+    "exact normalized observation payload after excluding only "
+    "upstream_session_id and upstream_metadata"
+)
 
 
 def _inside_checkout(path: Path) -> Path:
@@ -72,6 +76,47 @@ def _frame_from_observation(value: dict[str, JSONValue]) -> GridFrame:
     return GridFrame.from_rows(cast(list[list[int]], raw_frame["cells"]))
 
 
+def _apply_resume_observation_aliases(
+    events: list[dict[str, JSONValue]],
+    *,
+    observation_paths: dict[str, Path],
+) -> None:
+    for event in events:
+        if event.get("event_type") != "run.resumed":
+            continue
+        payload = event.get("payload")
+        if not isinstance(payload, dict):
+            raise ARC3ValidationError("run.resumed observation alias payload is malformed")
+        previous = payload.get("previous_observation_hash")
+        replayed = payload.get("replayed_observation_hash")
+        if (
+            not isinstance(previous, str)
+            or not is_sha256(previous)
+            or not isinstance(replayed, str)
+            or not is_sha256(replayed)
+        ):
+            raise ARC3ValidationError("run.resumed observation alias is malformed")
+        if payload.get("semantic_replay_verified") is not True:
+            raise ARC3ValidationError(
+                "run.resumed observation alias requires verified semantic replay"
+            )
+        if payload.get("observation_equivalence_rule") != _REPLAY_EQUIVALENCE_RULE:
+            raise ARC3ValidationError(
+                "run.resumed observation alias has an unauthorized equivalence rule"
+            )
+        previous_path = observation_paths.get(previous)
+        if previous_path is None:
+            raise ARC3ValidationError(
+                "run.resumed previous observation has no existing artifact or alias"
+            )
+        existing_path = observation_paths.get(replayed)
+        if existing_path is not None and existing_path != previous_path:
+            raise ARC3ValidationError(
+                "run.resumed observation alias conflicts with existing evidence"
+            )
+        observation_paths[replayed] = previous_path
+
+
 def audit_positions(
     artifact_dir: Path,
     *,
@@ -106,6 +151,7 @@ def audit_positions(
         if not path.is_relative_to(root) or path.parent != root:
             raise ARC3ValidationError("observation event path escapes artifact directory")
         observation_paths[identity] = path
+    _apply_resume_observation_aliases(events, observation_paths=observation_paths)
 
     logical_action = 0
     pending: dict[str, JSONValue] | None = None
@@ -148,9 +194,7 @@ def audit_positions(
     selected = [
         record
         for record in records
-        if first_action
-        <= cast(int, record["unique_logical_action_count"])
-        <= last_action
+        if first_action <= cast(int, record["unique_logical_action_count"]) <= last_action
     ]
     if [record["unique_logical_action_count"] for record in selected] != list(
         range(first_action, last_action + 1)
@@ -190,9 +234,7 @@ def audit_positions(
         "schema": "arc3.wise-scientist.position-audit.v0.1",
         "artifact_dir": root.relative_to(ROOT).as_posix(),
         "action_range": [first_action, last_action],
-        "ordinary_displacements": [
-            list(item) for item in sorted(ordinary_displacements)
-        ],
+        "ordinary_displacements": [list(item) for item in sorted(ordinary_displacements)],
         "pattern": [list(row) for row in pattern],
         "actions": results,
     }
@@ -213,9 +255,7 @@ def build_parser() -> argparse.ArgumentParser:
 def main() -> int:
     args = build_parser().parse_args()
     pattern = _parse_pattern(args.pattern_json)
-    displacements = frozenset(
-        _parse_displacement(item) for item in args.ordinary_displacement
-    )
+    displacements = frozenset(_parse_displacement(item) for item in args.ordinary_displacement)
     result = audit_positions(
         args.artifact_dir,
         pattern=pattern,

@@ -1,15 +1,22 @@
 from __future__ import annotations
 
+import json
+from pathlib import Path
+from typing import cast
+
 import pytest
+import scripts.audit_wise_frame_positions as position_audit
 
 from arc3.adapters import GridFrame
 from arc3.errors import ARC3ValidationError
+from arc3.types import JSONValue
 from arc3.wise_scientist.frame_witness import (
     PositionChangeKind,
     measure_position_transition,
     measure_region_color_count,
     require_position_transition,
 )
+from arc3.wise_scientist.journal import WiseJournal
 
 PATTERN = (
     (12, 12, 12),
@@ -24,6 +31,10 @@ HUD_FRAME = GridFrame.from_rows(
         (5, 5, 0, 5, 5),
     )
 )
+_EXACT_REPLAY_RULE = (
+    "exact normalized observation payload after excluding only "
+    "upstream_session_id and upstream_metadata"
+)
 
 
 def _frame(center: tuple[int, int], *, resource: int = 1) -> GridFrame:
@@ -35,6 +46,58 @@ def _frame(center: tuple[int, int], *, resource: int = 1) -> GridFrame:
             rows[top + y][left + x] = cell
     rows[8][8] = resource
     return GridFrame.from_rows(rows)
+
+
+def _hash(digit: str) -> str:
+    return "sha256:" + (digit * 64)
+
+
+def _record_observation(
+    root: Path,
+    journal: WiseJournal,
+    *,
+    identity: str,
+    filename: str,
+    frame: GridFrame,
+) -> None:
+    (root / filename).write_text(
+        json.dumps({"frames": [{"cells": [list(row) for row in frame.cells]}]}),
+        encoding="utf-8",
+    )
+    journal.append(
+        "observation.recorded",
+        {"observation_hash": identity, "observation_path": filename},
+    )
+
+
+def _record_resume(
+    journal: WiseJournal,
+    *,
+    previous: object,
+    replayed: object,
+    semantic_replay_verified: object = True,
+    equivalence_rule: object = _EXACT_REPLAY_RULE,
+) -> None:
+    journal.append(
+        "run.resumed",
+        {
+            "previous_observation_hash": previous,
+            "replayed_observation_hash": replayed,
+            "semantic_replay_verified": semantic_replay_verified,
+            "observation_equivalence_rule": equivalence_rule,
+        },
+    )
+
+
+def _audit(root: Path, monkeypatch: pytest.MonkeyPatch) -> dict[str, JSONValue]:
+    monkeypatch.setattr(position_audit, "ROOT", root.parent)
+    return position_audit.audit_positions(
+        root,
+        pattern=PATTERN,
+        ordinary_displacements=ORDINARY,
+        first_action=1,
+        last_action=1,
+    )
 
 
 def test_region_color_count_witness_measures_exact_rectangle() -> None:
@@ -188,3 +251,181 @@ def test_position_witness_rejects_ambiguous_pattern() -> None:
             PATTERN,
             ordinary_displacements=ORDINARY,
         )
+
+
+def test_position_audit_preserves_direct_observation_resolution(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root = tmp_path / "run"
+    root.mkdir()
+    journal = WiseJournal(root / "events.jsonl")
+    _record_observation(
+        root,
+        journal,
+        identity=_hash("1"),
+        filename="before.json",
+        frame=_frame((3, 3)),
+    )
+    journal.append(
+        "action.selected",
+        {
+            "action": {"name": "ACTION1"},
+            "observation_hash": _hash("1"),
+            "predicted_consequence": "the marker moves one cell east",
+        },
+    )
+    _record_observation(
+        root,
+        journal,
+        identity=_hash("3"),
+        filename="after.json",
+        frame=_frame((4, 3)),
+    )
+    journal.append("action.consequence", {"after_observation_hash": _hash("3")})
+
+    result = _audit(root, monkeypatch)
+
+    actions = cast(list[dict[str, JSONValue]], result["actions"])
+    transition = cast(dict[str, JSONValue], actions[0]["position_transition"])
+    before = cast(dict[str, JSONValue], transition["before"])
+    after = cast(dict[str, JSONValue], transition["after"])
+    assert before["center"] == [3, 3]
+    assert after["center"] == [4, 3]
+
+
+def test_position_audit_resolves_verified_resume_alias_chain(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root = tmp_path / "run"
+    root.mkdir()
+    journal = WiseJournal(root / "events.jsonl")
+    _record_observation(
+        root,
+        journal,
+        identity=_hash("1"),
+        filename="before.json",
+        frame=_frame((3, 3)),
+    )
+    _record_resume(journal, previous=_hash("1"), replayed=_hash("2"))
+    _record_resume(journal, previous=_hash("2"), replayed=_hash("3"))
+    journal.append(
+        "action.selected",
+        {
+            "action": {"name": "ACTION1"},
+            "observation_hash": _hash("3"),
+            "predicted_consequence": "the marker moves one cell east",
+        },
+    )
+    _record_observation(
+        root,
+        journal,
+        identity=_hash("4"),
+        filename="after.json",
+        frame=_frame((4, 3)),
+    )
+    journal.append("action.consequence", {"after_observation_hash": _hash("4")})
+
+    result = _audit(root, monkeypatch)
+
+    actions = cast(list[dict[str, JSONValue]], result["actions"])
+    assert actions[0]["before_observation_hash"] == _hash("3")
+    transition = cast(dict[str, JSONValue], actions[0]["position_transition"])
+    before = cast(dict[str, JSONValue], transition["before"])
+    assert before["center"] == [3, 3]
+
+
+@pytest.mark.parametrize(
+    ("semantic_replay_verified", "equivalence_rule", "expected"),
+    [
+        (False, _EXACT_REPLAY_RULE, "requires verified semantic replay"),
+        (True, "payload equality except arbitrary fields", "unauthorized equivalence rule"),
+    ],
+)
+def test_position_audit_rejects_unverified_or_inexact_resume_alias(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    semantic_replay_verified: object,
+    equivalence_rule: object,
+    expected: str,
+) -> None:
+    root = tmp_path / "run"
+    root.mkdir()
+    journal = WiseJournal(root / "events.jsonl")
+    _record_observation(
+        root,
+        journal,
+        identity=_hash("1"),
+        filename="before.json",
+        frame=_frame((3, 3)),
+    )
+    _record_resume(
+        journal,
+        previous=_hash("1"),
+        replayed=_hash("2"),
+        semantic_replay_verified=semantic_replay_verified,
+        equivalence_rule=equivalence_rule,
+    )
+
+    with pytest.raises(ARC3ValidationError, match=expected):
+        _audit(root, monkeypatch)
+
+
+@pytest.mark.parametrize(
+    ("previous", "replayed"),
+    [
+        (None, _hash("2")),
+        (_hash("1"), None),
+        ("not-a-hash", _hash("2")),
+        (_hash("1"), "not-a-hash"),
+    ],
+)
+def test_position_audit_rejects_malformed_resume_alias(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    previous: object,
+    replayed: object,
+) -> None:
+    root = tmp_path / "run"
+    root.mkdir()
+    journal = WiseJournal(root / "events.jsonl")
+    _record_observation(
+        root,
+        journal,
+        identity=_hash("1"),
+        filename="before.json",
+        frame=_frame((3, 3)),
+    )
+    _record_resume(journal, previous=previous, replayed=replayed)
+
+    with pytest.raises(ARC3ValidationError, match="alias is malformed"):
+        _audit(root, monkeypatch)
+
+
+def test_position_audit_rejects_conflicting_resume_aliases(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root = tmp_path / "run"
+    root.mkdir()
+    journal = WiseJournal(root / "events.jsonl")
+    _record_observation(
+        root,
+        journal,
+        identity=_hash("1"),
+        filename="first-before.json",
+        frame=_frame((3, 3)),
+    )
+    _record_resume(journal, previous=_hash("1"), replayed=_hash("2"))
+    _record_observation(
+        root,
+        journal,
+        identity=_hash("3"),
+        filename="conflicting-before.json",
+        frame=_frame((5, 3)),
+    )
+    _record_resume(journal, previous=_hash("3"), replayed=_hash("2"))
+
+    with pytest.raises(ARC3ValidationError, match="conflicts with existing evidence"):
+        _audit(root, monkeypatch)
