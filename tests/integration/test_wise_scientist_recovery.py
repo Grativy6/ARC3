@@ -218,6 +218,13 @@ def _resume_session(*, divergent_second_consequence: bool = False) -> _Determini
     )
 
 
+def _empty_resume_session(*, upstream_session_id: str) -> _DeterministicSession:
+    return _DeterministicSession(
+        _observation(cell=1, upstream_session_id=upstream_session_id),
+        [],
+    )
+
+
 def test_resume_replays_all_actions_and_folds_exact_pending_suffix(tmp_path: Path) -> None:
     root = tmp_path / "run"
     stale_checkpoint, original_event_hashes = _leave_exact_pending_suffix(root)
@@ -388,3 +395,143 @@ def test_resume_accepts_checkpoint_current_with_no_suffix(tmp_path: Path) -> Non
     assert after[-1].payload["official_replay_actions_executed"] is True
     assert after[-1].payload["logical_actions_duplicated"] is False
     assert sum(event.event_type == "action.selected" for event in after) == 1
+
+
+def test_resume_requires_explicit_opt_in_for_wall_clock_budget_mismatch(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "run"
+    WiseScientistRun(
+        _empty_resume_session(upstream_session_id="original-session"),
+        root,
+        source_commit=_SOURCE_COMMIT,
+        authorization_hash=_AUTHORIZATION_HASH,
+    )
+    before = WiseJournal.verify(root / "events.jsonl")
+
+    with pytest.raises(ARC3ValidationError, match="budgets differ from the original run"):
+        WiseScientistRun.resume(
+            _empty_resume_session(upstream_session_id="recovery-session"),
+            root,
+            recovery_source_commit=_RECOVERY_SOURCE_COMMIT,
+            authorization_hash=_AUTHORIZATION_HASH,
+            wall_clock_seconds=28_800.0,
+        )
+
+    after = WiseJournal.verify(root / "events.jsonl")
+    assert tuple(event.event_hash for event in after) == tuple(event.event_hash for event in before)
+    assert not (root / "recovery-events.jsonl").exists()
+
+
+def test_explicit_wall_clock_extension_is_append_only_and_survives_later_resume(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "run"
+    WiseScientistRun(
+        _empty_resume_session(upstream_session_id="original-session"),
+        root,
+        source_commit=_SOURCE_COMMIT,
+        authorization_hash=_AUTHORIZATION_HASH,
+    )
+    original = WiseJournal.verify(root / "events.jsonl")
+
+    extended = WiseScientistRun.resume(
+        _empty_resume_session(upstream_session_id="extension-session"),
+        root,
+        recovery_source_commit=_RECOVERY_SOURCE_COMMIT,
+        authorization_hash=_AUTHORIZATION_HASH,
+        wall_clock_seconds=28_800.0,
+        allow_wall_clock_extension=True,
+        wall_clock_extension_reason="  Continue the bounded observed-WIN attempt.  ",
+    )
+
+    extended_events = WiseJournal.verify(root / "events.jsonl")
+    assert tuple(event.event_hash for event in extended_events[: len(original)]) == tuple(
+        event.event_hash for event in original
+    )
+    assert extended_events[0].payload["budgets"] == {
+        "max_environment_actions": 1_000,
+        "max_resets": 20,
+        "wall_clock_seconds": 14_400.0,
+    }
+    assert extended_events[-1].event_type == "run.resumed"
+    assert extended_events[-1].payload["wall_clock_budget_extension"] == {
+        "old_wall_clock_seconds": 14_400.0,
+        "new_wall_clock_seconds": 28_800.0,
+        "reason": "Continue the bounded observed-WIN attempt.",
+    }
+    assert extended.status()["wall_clock_seconds"] == 28_800.0
+
+    resumed = WiseScientistRun.resume(
+        _empty_resume_session(upstream_session_id="later-session"),
+        root,
+        recovery_source_commit="4" * 40,
+        authorization_hash=_AUTHORIZATION_HASH,
+        wall_clock_seconds=28_800.0,
+    )
+
+    final_events = WiseJournal.verify(root / "events.jsonl")
+    assert final_events[-1].event_type == "run.resumed"
+    assert final_events[-1].payload["wall_clock_budget_extension"] is None
+    assert resumed.status()["wall_clock_seconds"] == 28_800.0
+
+
+@pytest.mark.parametrize(
+    ("override", "expected"),
+    [
+        ({"max_environment_actions": 1_001}, "budgets differ"),
+        ({"max_resets": 21}, "budgets differ"),
+        ({"wall_clock_seconds": 14_400.0}, "monotonically increase"),
+        ({"wall_clock_seconds": 7_200.0}, "monotonically increase"),
+        ({"wall_clock_extension_reason": "   "}, "nonempty reason"),
+        ({"wall_clock_extension_reason": "x" * 501}, "exceeds 500 characters"),
+    ],
+)
+def test_wall_clock_extension_rejects_nonmonotonic_or_broader_budget_changes(
+    tmp_path: Path,
+    override: dict[str, object],
+    expected: str,
+) -> None:
+    root = tmp_path / "run"
+    WiseScientistRun(
+        _empty_resume_session(upstream_session_id="original-session"),
+        root,
+        source_commit=_SOURCE_COMMIT,
+        authorization_hash=_AUTHORIZATION_HASH,
+    )
+    arguments: dict[str, object] = {
+        "recovery_source_commit": _RECOVERY_SOURCE_COMMIT,
+        "authorization_hash": _AUTHORIZATION_HASH,
+        "max_environment_actions": 1_000,
+        "max_resets": 20,
+        "wall_clock_seconds": 28_800.0,
+        "allow_wall_clock_extension": True,
+        "wall_clock_extension_reason": "Bounded continuation.",
+    }
+    arguments.update(override)
+
+    with pytest.raises(ARC3ValidationError, match=expected):
+        WiseScientistRun.resume(
+            _empty_resume_session(upstream_session_id="recovery-session"),
+            root,
+            **arguments,  # type: ignore[arg-type]
+        )
+
+
+def test_wall_clock_extension_reason_requires_opt_in(tmp_path: Path) -> None:
+    root = tmp_path / "run"
+    WiseScientistRun(
+        _empty_resume_session(upstream_session_id="original-session"),
+        root,
+        source_commit=_SOURCE_COMMIT,
+        authorization_hash=_AUTHORIZATION_HASH,
+    )
+
+    with pytest.raises(ARC3ValidationError, match="requires explicit extension opt-in"):
+        WiseScientistRun.resume(
+            _empty_resume_session(upstream_session_id="recovery-session"),
+            root,
+            recovery_source_commit=_RECOVERY_SOURCE_COMMIT,
+            authorization_hash=_AUTHORIZATION_HASH,
+            wall_clock_extension_reason="Unrequested reason.",
+        )

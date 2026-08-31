@@ -11,6 +11,7 @@ import json
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from enum import StrEnum
+from math import isfinite
 from pathlib import Path
 from time import monotonic, sleep
 from typing import cast
@@ -42,6 +43,7 @@ _CHECKPOINT_SCHEMA_V1 = "arc3.wise-scientist.checkpoint.v0.1"
 _CHECKPOINT_SCHEMA = "arc3.wise-scientist.checkpoint.v0.2"
 _FINAL_RECEIPT_SCHEMA = "arc3.wise-scientist.final-receipt.v0.2"
 _CHECKPOINT_WRITE_ATTEMPTS = 8
+WALL_CLOCK_EXTENSION_REASON_MAX_CHARACTERS = 500
 
 
 class WiseRunPhase(StrEnum):
@@ -231,6 +233,8 @@ class WiseScientistRun:
         max_environment_actions: int = 1_000,
         max_resets: int = 20,
         wall_clock_seconds: float = 14_400.0,
+        allow_wall_clock_extension: bool = False,
+        wall_clock_extension_reason: str | None = None,
     ) -> WiseScientistRun:
         """Resume a local official run by verified deterministic action replay.
 
@@ -249,7 +253,7 @@ class WiseScientistRun:
         if not journal.events:
             raise ARC3ValidationError("resume requires an existing Wise Scientist journal")
         checkpoint = cls._load_resume_checkpoint(checkpoint_path)
-        cls._validate_resume_identity(
+        wall_clock_budget_extension = cls._validate_resume_identity(
             checkpoint,
             journal=journal,
             session=session,
@@ -258,6 +262,8 @@ class WiseScientistRun:
             max_environment_actions=max_environment_actions,
             max_resets=max_resets,
             wall_clock_seconds=wall_clock_seconds,
+            allow_wall_clock_extension=allow_wall_clock_extension,
+            wall_clock_extension_reason=wall_clock_extension_reason,
         )
         checkpoint_event_count = cast(int, checkpoint["journal_event_count"])
         suffix = journal.events[checkpoint_event_count:]
@@ -517,6 +523,7 @@ class WiseScientistRun:
                 "semantic_replay_verified": True,
                 "recovery_ledger_path": "recovery-events.jsonl",
                 "recovery_ledger_tail_hash": recovery_verified.event_hash,
+                "wall_clock_budget_extension": wall_clock_budget_extension,
                 "observation_equivalence_rule": (
                     "exact normalized observation payload after excluding only "
                     "upstream_session_id and upstream_metadata"
@@ -592,7 +599,9 @@ class WiseScientistRun:
         max_environment_actions: int,
         max_resets: int,
         wall_clock_seconds: float,
-    ) -> None:
+        allow_wall_clock_extension: bool,
+        wall_clock_extension_reason: str | None,
+    ) -> dict[str, JSONValue] | None:
         if len(recovery_source_commit) != 40 or any(
             character not in "0123456789abcdef" for character in recovery_source_commit
         ):
@@ -614,17 +623,133 @@ class WiseScientistRun:
         if started.event_type != "run.started":
             raise ARC3ValidationError("resume journal does not begin with run.started")
         budgets = started.payload.get("budgets")
-        expected_budgets: dict[str, JSONValue] = {
-            "max_environment_actions": max_environment_actions,
-            "max_resets": max_resets,
-            "wall_clock_seconds": wall_clock_seconds,
-        }
-        if budgets != expected_budgets:
+        if not isinstance(budgets, dict) or set(budgets) != {
+            "max_environment_actions",
+            "max_resets",
+            "wall_clock_seconds",
+        }:
+            raise ARC3ValidationError("resume journal has invalid original budgets")
+        original_max_actions = budgets.get("max_environment_actions")
+        original_max_resets = budgets.get("max_resets")
+        original_wall_clock = budgets.get("wall_clock_seconds")
+        if (
+            isinstance(original_max_actions, bool)
+            or not isinstance(original_max_actions, int)
+            or original_max_actions <= 0
+            or isinstance(original_max_resets, bool)
+            or not isinstance(original_max_resets, int)
+            or original_max_resets <= 0
+        ):
+            raise ARC3ValidationError("resume journal has invalid original budgets")
+        if (
+            isinstance(max_environment_actions, bool)
+            or not isinstance(max_environment_actions, int)
+            or max_environment_actions <= 0
+            or isinstance(max_resets, bool)
+            or not isinstance(max_resets, int)
+            or max_resets <= 0
+        ):
+            raise ARC3ValidationError("resume budgets must be positive")
+        if (
+            isinstance(wall_clock_seconds, bool)
+            or not isinstance(wall_clock_seconds, (int, float))
+            or not isfinite(wall_clock_seconds)
+            or wall_clock_seconds <= 0
+        ):
+            raise ARC3ValidationError("resume wall-clock budget must be positive and finite")
+        if original_max_actions != max_environment_actions or original_max_resets != max_resets:
             raise ARC3ValidationError("resume budgets differ from the original run")
+        effective_wall_clock = cls._effective_wall_clock_budget(
+            journal,
+            original_wall_clock=original_wall_clock,
+        )
+        if not isinstance(allow_wall_clock_extension, bool):
+            raise ARC3ValidationError("wall-clock extension opt-in must be boolean")
+        if not allow_wall_clock_extension:
+            if wall_clock_extension_reason is not None:
+                raise ARC3ValidationError(
+                    "wall-clock extension reason requires explicit extension opt-in"
+                )
+            if wall_clock_seconds != effective_wall_clock:
+                raise ARC3ValidationError("resume budgets differ from the original run")
+            extension: dict[str, JSONValue] | None = None
+        else:
+            reason = cls.normalize_wall_clock_extension_reason(wall_clock_extension_reason)
+            if wall_clock_seconds <= effective_wall_clock:
+                raise ARC3ValidationError(
+                    "resume wall-clock extension must monotonically increase the effective budget"
+                )
+            extension = {
+                "old_wall_clock_seconds": effective_wall_clock,
+                "new_wall_clock_seconds": wall_clock_seconds,
+                "reason": reason,
+            }
         if started.payload.get("authorization_hash") != authorization_hash:
             raise ARC3ValidationError("resume journal authorization mismatch")
         if started.payload.get("game_id") != checkpoint.get("game_id"):
             raise ARC3ValidationError("resume journal game mismatch")
+        return extension
+
+    @staticmethod
+    def normalize_wall_clock_extension_reason(reason: str | None) -> str:
+        """Return a bounded nonempty reason suitable for an immutable receipt."""
+
+        if not isinstance(reason, str):
+            raise ARC3ValidationError("wall-clock extension requires a nonempty reason")
+        normalized = reason.strip()
+        if not normalized:
+            raise ARC3ValidationError("wall-clock extension requires a nonempty reason")
+        if len(normalized) > WALL_CLOCK_EXTENSION_REASON_MAX_CHARACTERS:
+            raise ARC3ValidationError(
+                "wall-clock extension reason exceeds "
+                f"{WALL_CLOCK_EXTENSION_REASON_MAX_CHARACTERS} characters"
+            )
+        return normalized
+
+    @classmethod
+    def _effective_wall_clock_budget(
+        cls,
+        journal: WiseJournal,
+        *,
+        original_wall_clock: JSONValue,
+    ) -> float:
+        if (
+            isinstance(original_wall_clock, bool)
+            or not isinstance(original_wall_clock, (int, float))
+            or not isfinite(original_wall_clock)
+            or original_wall_clock <= 0
+        ):
+            raise ARC3ValidationError("resume journal has invalid original budgets")
+        effective = float(original_wall_clock)
+        for event in journal.events:
+            if event.event_type != "run.resumed":
+                continue
+            value = event.payload.get("wall_clock_budget_extension")
+            if value is None:
+                continue
+            if not isinstance(value, dict) or set(value) != {
+                "old_wall_clock_seconds",
+                "new_wall_clock_seconds",
+                "reason",
+            }:
+                raise ARC3ValidationError("resume journal has malformed wall-clock extension")
+            old = value.get("old_wall_clock_seconds")
+            new = value.get("new_wall_clock_seconds")
+            reason = value.get("reason")
+            if (
+                isinstance(old, bool)
+                or not isinstance(old, (int, float))
+                or not isfinite(old)
+                or isinstance(new, bool)
+                or not isinstance(new, (int, float))
+                or not isfinite(new)
+                or float(old) != effective
+                or float(new) <= effective
+            ):
+                raise ARC3ValidationError("resume journal has invalid wall-clock extension chain")
+            cls.normalize_wall_clock_extension_reason(reason if isinstance(reason, str) else None)
+            effective = float(new)
+        return effective
 
     @staticmethod
     def _initial_observation_path(journal: WiseJournal) -> str:

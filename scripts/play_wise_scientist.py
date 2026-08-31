@@ -204,10 +204,36 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="resume an existing artifact journal by verified deterministic local replay",
     )
+    parser.add_argument(
+        "--extend-wall-clock-on-resume",
+        action="store_true",
+        help=(
+            "explicitly allow --wall-clock-seconds to increase during --resume; "
+            "requires --wall-clock-extension-reason"
+        ),
+    )
+    parser.add_argument(
+        "--wall-clock-extension-reason",
+        help="bounded reason recorded immutably when extending a resumed run",
+    )
     parser.add_argument("--max-actions", type=int, default=1_000)
     parser.add_argument("--max-resets", type=int, default=20)
     parser.add_argument("--wall-clock-seconds", type=float, default=14_400.0)
     return parser
+
+
+def _resume_wall_clock_extension_reason(args: argparse.Namespace) -> str | None:
+    requested = cast(bool, args.extend_wall_clock_on_resume)
+    supplied = cast(str | None, args.wall_clock_extension_reason)
+    if not requested:
+        if supplied is not None:
+            raise ARC3ValidationError(
+                "--wall-clock-extension-reason requires --extend-wall-clock-on-resume"
+            )
+        return None
+    if not cast(bool, args.resume):
+        raise ARC3ValidationError("--extend-wall-clock-on-resume requires --resume")
+    return WiseScientistRun.normalize_wall_clock_extension_reason(supplied)
 
 
 def _emit(value: object) -> None:
@@ -266,6 +292,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     exposure_status = "not-attempted"
     try:
+        wall_clock_extension_reason = _resume_wall_clock_extension_reason(args)
         artifact_dir = _inside_checkout(args.artifact_dir, field="artifact directory")
         environment_dir = _inside_checkout(args.environments_dir, field="environment directory")
         recordings_dir = _inside_checkout(args.recordings_dir, field="recordings directory")
@@ -320,6 +347,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                 max_environment_actions=cast(int, args.max_actions),
                 max_resets=cast(int, args.max_resets),
                 wall_clock_seconds=cast(float, args.wall_clock_seconds),
+                allow_wall_clock_extension=cast(bool, args.extend_wall_clock_on_resume),
+                wall_clock_extension_reason=wall_clock_extension_reason,
             )
         else:
             run = WiseScientistRun(

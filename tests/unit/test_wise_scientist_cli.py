@@ -1,10 +1,17 @@
 from __future__ import annotations
 
+import argparse
 import json
 from pathlib import Path
 
 import pytest
-from scripts.play_wise_scientist import ROOT, _inside_checkout, _validate_authorization
+from scripts.play_wise_scientist import (
+    ROOT,
+    _inside_checkout,
+    _resume_wall_clock_extension_reason,
+    _validate_authorization,
+    build_parser,
+)
 
 from arc3.errors import ARC3ValidationError
 
@@ -41,3 +48,92 @@ def test_runner_source_contains_no_selected_game_identity() -> None:
 
     assert "ls20-" not in source
     assert "9607627b" not in source
+
+
+def _parse_runner_arguments(*extra: str) -> argparse.Namespace:
+    return build_parser().parse_args(
+        [
+            "--game",
+            "test-game",
+            "--seed",
+            "1",
+            "--frozen-commit",
+            "1" * 40,
+            "--authorization-receipt",
+            "authorization.json",
+            "--artifact-dir",
+            "artifacts/test",
+            "--environments-dir",
+            "environments",
+            "--recordings-dir",
+            "recordings",
+            *extra,
+        ]
+    )
+
+
+def test_runner_accepts_explicit_resume_only_wall_clock_extension_reason() -> None:
+    arguments = _parse_runner_arguments(
+        "--resume",
+        "--extend-wall-clock-on-resume",
+        "--wall-clock-extension-reason",
+        "  Continue a bounded observed-WIN attempt.  ",
+        "--wall-clock-seconds",
+        "86400",
+    )
+
+    assert _resume_wall_clock_extension_reason(arguments) == (
+        "Continue a bounded observed-WIN attempt."
+    )
+
+
+@pytest.mark.parametrize(
+    ("extra", "expected"),
+    [
+        (
+            ("--wall-clock-extension-reason", "reason without opt-in"),
+            "requires --extend-wall-clock-on-resume",
+        ),
+        (
+            (
+                "--extend-wall-clock-on-resume",
+                "--wall-clock-extension-reason",
+                "reason without resume",
+            ),
+            "requires --resume",
+        ),
+        (
+            (
+                "--resume",
+                "--extend-wall-clock-on-resume",
+            ),
+            "nonempty reason",
+        ),
+        (
+            (
+                "--resume",
+                "--extend-wall-clock-on-resume",
+                "--wall-clock-extension-reason",
+                "   ",
+            ),
+            "nonempty reason",
+        ),
+        (
+            (
+                "--resume",
+                "--extend-wall-clock-on-resume",
+                "--wall-clock-extension-reason",
+                "x" * 501,
+            ),
+            "exceeds 500 characters",
+        ),
+    ],
+)
+def test_runner_rejects_implicit_or_unbounded_wall_clock_extension(
+    extra: tuple[str, ...],
+    expected: str,
+) -> None:
+    arguments = _parse_runner_arguments(*extra)
+
+    with pytest.raises(ARC3ValidationError, match=expected):
+        _resume_wall_clock_extension_reason(arguments)
