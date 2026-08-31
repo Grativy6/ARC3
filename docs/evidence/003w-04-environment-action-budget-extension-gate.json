@@ -1,0 +1,63 @@
+{
+  "schema": "arc3.build-003w.environment-action-budget-extension-gate.v0.1",
+  "status": "PASS",
+  "recorded_at": "2026-08-31T05:43:13.3469524Z",
+  "implementation_commit": "5db317cf198beffaa89b7b02dc27a12594538d4a",
+  "trigger": {
+    "official_state": "GAME_OVER",
+    "levels_completed": 4,
+    "win_levels": 7,
+    "unique_logical_environment_actions": 532,
+    "physical_environment_actions": 991,
+    "physical_resets": 2,
+    "old_max_environment_actions": 1000,
+    "remaining_physical_actions": 9
+  },
+  "necessity": {
+    "guarded_replay_actions_required": 532,
+    "projected_physical_actions_after_exact_replay": 1523,
+    "old_ceiling_can_reproduce_checkpoint": false,
+    "mandatory_reset_permitted_only_after_reproduction": true,
+    "reason": "The user-mandated run remains NOT_FINISHED at 4/7. Exact guarded replay alone exceeds the frozen 1000-action ceiling, before the mandatory RESET and remaining levels."
+  },
+  "authorized_extension": {
+    "new_max_environment_actions": 3000,
+    "max_resets_unchanged": 20,
+    "wall_clock_seconds_unchanged": 86400.0,
+    "monotonic": true,
+    "resume_only": true,
+    "explicit_opt_in_required": true,
+    "bounded_nonempty_reason_required": true,
+    "immutable_run_resumed_receipt_required": true,
+    "later_resume_validates_full_extension_chain": true,
+    "replay_actions_counted_as_physical_actions": true,
+    "replayed_resets_counted_as_physical_resets": true,
+    "abort_on_any_observation_mismatch": true
+  },
+  "verification": {
+    "wise_scientist_focused_tests": {
+      "passed": 77,
+      "failed": 0,
+      "skipped": 0
+    },
+    "extension_focused_tests": {
+      "passed": 39,
+      "failed": 0,
+      "skipped": 0
+    },
+    "secret_and_policy_tests": {
+      "passed": 36,
+      "failed": 0,
+      "skipped": 0
+    },
+    "ruff_check": "PASS",
+    "ruff_format": "PASS",
+    "mypy_strict": "PASS",
+    "git_diff_check": "PASS"
+  },
+  "environment_effect": {
+    "replay_started_under_extension": false,
+    "reset_performed_under_extension": false,
+    "new_environment_actions_during_gate_implementation": 0
+  }
+}

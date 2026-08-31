@@ -1,0 +1,23 @@
+{
+  "schema": "arc3.wise-scientist.development-authorization.v0.1",
+  "game_id": "ls20-9607627b",
+  "partition": "development",
+  "surface": "local-public",
+  "official_public": true,
+  "public_holdout_eligible": false,
+  "gameplay_authorized": true,
+  "authority": {
+    "owner_instruction_date": "2026-08-30",
+    "scope": "official public non-holdout development play",
+    "sealed_holdout_consumption_authorized": false
+  },
+  "provenance": {
+    "baseline_predeclaration_path": "docs/evidence/001-09-development-recovery-predeclaration.json",
+    "baseline_predeclaration_sha256": "sha256:dce14e30d47aff7ac99551ad462c9202113dcd44c591dacd410b86363ddad348",
+    "clean_room_decision_commit": "1702c40d159bb1b3fe994aa1998a330d9bcf603c",
+    "clean_room_decision_path": "docs/ledger/build-003w-DECISIONS.md",
+    "clean_room_decision_sha256": "sha256:fcb8245ad4570c183f666bf7795563d600073f3a3248ff1dbe181bafcf30303d",
+    "selection_note": "Inherited evidence identifies this already-exposed game as development material; no holdout identity is selected."
+  },
+  "authorization_hash": "sha256:1d9097b276304996a10cb6c6c47da85cf46ad00bdea0dbd48d6b56456d622d78"
+}

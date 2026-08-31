@@ -1,0 +1,85 @@
+{
+  "schema": "arc3.build-003w.nonplaying-verification.v0.1",
+  "status": "PASS",
+  "recorded_at": "2026-08-30T23:00:00.4884963Z",
+  "runtime": {
+    "python": "CPython 3.12.14",
+    "environment": ".venv",
+    "cache": ".uv-cache",
+    "network_required_by_production": false
+  },
+  "focused_gate": {
+    "ruff_check": "PASS",
+    "ruff_format_check": "PASS",
+    "mypy_strict": "PASS",
+    "pytest": {
+      "passed": 13,
+      "failed": 0,
+      "skipped": 0
+    }
+  },
+  "post_receipt_integrity_gate": {
+    "scope": "secret scan, production policy scan, and repository integrity after adding 003w receipts",
+    "passed": 37,
+    "failed": 0,
+    "skipped": 0,
+    "duration_seconds": 17.10
+  },
+  "broad_relevant_regression": {
+    "scope": [
+      "official adapter",
+      "configuration",
+      "trace",
+      "public evaluation contract",
+      "repository integrity and secret scans",
+      "offline competition configuration",
+      "production source policy scan"
+    ],
+    "passed": 213,
+    "failed": 0,
+    "skipped": 4,
+    "skip_boundary": "Windows host lacks POSIX open-file replacement, symlink privilege, and SIGALRM semantics",
+    "duration_seconds": 55.30
+  },
+  "preserved_failed_attempt": {
+    "classification": "FAILED_INFRASTRUCTURE",
+    "scope": "inherited tests/competition/test_controller_offline_integrity.py",
+    "default_windows_path_result": {
+      "passed": 4,
+      "failed": 9,
+      "skipped": 2,
+      "first_failure": "test_pinned_frame_data_default_action_is_stripped_only_by_official_wrapper",
+      "wrapper_failure_receipt": {
+        "boundary": "controller-decision",
+        "classification": "execution",
+        "error_type": "FileNotFoundError",
+        "compact_trace_events": 1,
+        "game_id": "opaque-wrapper-fixture"
+      }
+    },
+    "diagnosis": "The inherited BlobStore path exceeds the legacy Windows path limit under the long checkout plus pytest-generated test directory.",
+    "resolving_discriminator": {
+      "command_boundary": "the same inherited test file with a checkout-local extended-length \\\\?\\ basetemp",
+      "passed": 13,
+      "failed": 0,
+      "skipped": 2,
+      "duration_seconds": 5.37
+    },
+    "source_or_test_changes_needed": false
+  },
+  "authorization_gate": {
+    "signed_receipt_validated": true,
+    "frozen_commit_required": true,
+    "clean_tree_required": true,
+    "checkout_local_paths_required": true,
+    "ARC_API_KEY_presence_refused": true,
+    "offline_local_adapter_required_after_acquisition": true
+  },
+  "gameplay": {
+    "official_environment_opened": false,
+    "environment_actions": 0,
+    "win_observed": false,
+    "holdout_identities_loaded": 0,
+    "holdout_environment_actions": 0
+  }
+}

@@ -1,0 +1,166 @@
+{
+  "schema": "arc3.build-003w-run-state.v0.1",
+  "workflow": "docs/workflows/003w-wise-scientist-play-directive.md",
+  "repository": "Grativy6/ARC3",
+  "owner": "Christopher D. Pang",
+  "build_status": "PASS",
+  "status": "COMPLETE",
+  "current_stage": "04",
+  "current_task": null,
+  "implementation_branch": "experiment/003w-wise-scientist-clean-room",
+  "started_at": "2026-08-30T22:26:34.2012276Z",
+  "completed_at": "2026-08-31T18:53:05.372569Z",
+  "last_checkpoint_at": "2026-08-31T18:53:05.372569Z",
+  "last_checkpoint_commit": "41d73427468afa7a8d797d93a87efd6e2a7e9403",
+  "gameplay_source_commit": "41d73427468afa7a8d797d93a87efd6e2a7e9403",
+  "clean_room": {
+    "root": "C:/Users/cdpan/OneDrive/Documents/ARC3-Wise-Scientist",
+    "frozen_directive_commit": "04cf10a1e45b40e26bb31a0e5e106593e53b5696",
+    "frozen_directive_tree": "c20a1fb8d141fdef1201af67a077a736f1f01287",
+    "comparison_base": "bea1eac99cb0f1b351526b1dc487d132ba1d40ef",
+    "comparison_base_is_ancestor": true,
+    "sibling_checkout_inspected": false,
+    "build_003_state_imported": false,
+    "other_ref_objects_fetched_during_gameplay": false,
+    "other_ref_source_or_history_content_inspected_during_gameplay": false,
+    "remote_ref_and_pull_request_metadata_checked_during_gameplay": true,
+    "metadata_used_for_gameplay": false,
+    "gameplay_mechanics_or_state_imported": false,
+    "post_win_delivery_verification_workspace_deviation": {
+      "status": "RECORDED_DEVIATION",
+      "pytest_scratch_moved_to_local_temp": true,
+      "occurred_after_official_win": true,
+      "gameplay_or_prior_build_content_imported": false,
+      "official_environment_actions": 0,
+      "evidence": "docs/evidence/003w-06-final-verification.json"
+    }
+  },
+  "game": {
+    "game_id": "ls20-9607627b",
+    "selection_basis": "already-exposed development identity recorded by inherited Build 000/001 evidence",
+    "partition": "development",
+    "surface": "local-public",
+    "holdout": false,
+    "manifest_parsed_for_selection": false,
+    "source_read_during_evaluation": false
+  },
+  "play": {
+    "run_id": "003w-20260830T222634Z",
+    "official_environment_opened": true,
+    "physical_environment_actions": 2315,
+    "unique_logical_environment_actions": 1324,
+    "replay_environment_actions": 991,
+    "physical_resets": 5,
+    "unique_logical_resets": 3,
+    "replay_resets": 2,
+    "physical_environment_calls_including_resets": 2320,
+    "unique_logical_environment_calls_including_resets": 1327,
+    "replay_environment_calls_including_resets": 993,
+    "game_over_events": 3,
+    "levels_completed": 7,
+    "win_levels": 7,
+    "final_state": "WIN",
+    "win_observed": true,
+    "trace_path": "artifacts/003w/run-003w-20260830T2302Z-bridge/events.jsonl",
+    "replay_path": "artifacts/003w/run-003w-20260830T2302Z-bridge/recovery-events.jsonl",
+    "terminal_observation_path": "artifacts/003w/run-003w-20260830T2302Z-bridge/observation-001327.json",
+    "final_receipt_path": "artifacts/003w/run-003w-20260830T2302Z-bridge/final-receipt.json",
+    "final_receipt_hash": "sha256:fd69f3d50d1b03d055db73eb1e8e8c138d73a0ceeb95ad211f42bb13e1c2f6ce",
+    "journal_tail_hash": "sha256:d5c3bb8010cdd936908b12b5010d95eef8a921e72c40932447befa29ba43c756",
+    "recovery_tail_hash": "sha256:56030321740f7b9a02edd907669f0c802674682a4d56881dd5ba0075b16c004f",
+    "official_session_ids": [
+      "d6ef2cfd-a23b-4aa6-8651-208dcb596c2a",
+      "997dd936-dba0-46c9-9941-60019c6f7213",
+      "0c36d92f-6275-40dc-be97-8d7abc8f4e52",
+      "dcf3cbf8-ab5f-4ad3-8cd0-5ca3cf98257b"
+    ],
+    "local_scorecard": {
+      "actions": 1327,
+      "resets": 3,
+      "level_actions": [16, 80, 206, 59, 462, 231, 273],
+      "score": 57.27512786469639,
+      "authority": "local-public only; not official RHAE"
+    }
+  },
+  "environment_action_budget_extension": {
+    "status": "PASS_USED_WITHIN_BOUND",
+    "old_max_environment_actions": 1000,
+    "new_max_environment_actions": 3000,
+    "max_resets": 20,
+    "wall_clock_seconds": 86400.0,
+    "final_physical_environment_actions": 2315,
+    "evidence": "docs/evidence/003w-04-environment-action-budget-extension-gate.json"
+  },
+  "holdout": {
+    "status": "SEALED_UNCONSUMED",
+    "identities_loaded": 0,
+    "manifest_parsed": false,
+    "environment_actions": 0
+  },
+  "stages": {
+    "00": {
+      "name": "clean-room preflight and inherited evidence audit",
+      "status": "PASS",
+      "evidence": "docs/evidence/003w-00-clean-room-preflight.json"
+    },
+    "01": {
+      "name": "Wise Scientist state contract and runner",
+      "status": "PASS",
+      "evidence": "docs/evidence/003w-02-wise-scientist-implementation.json"
+    },
+    "02": {
+      "name": "non-playing verification and gameplay freeze",
+      "status": "PASS",
+      "evidence": "docs/evidence/003w-03-nonplaying-verification.json"
+    },
+    "03": {
+      "name": "official development play through observed WIN",
+      "status": "PASS",
+      "evidence": "docs/evidence/003w-05-official-development-win.json"
+    },
+    "04": {
+      "name": "replay, final verification, report, handoff, and draft PR",
+      "status": "PASS",
+      "evidence": "docs/evidence/003w-06-final-verification.json"
+    }
+  },
+  "verification": {
+    "terminal_invariants": "PASS",
+    "focused_wise_scientist_tests": "PASS_77",
+    "secret_and_policy_tests": "PASS_36",
+    "repository_integrity": "PASS",
+    "ruff_check": "PASS",
+    "ruff_format": "PASS_344_FILES",
+    "mypy_strict": "PASS_195_FILES",
+    "broad_repository_suite": "FAILED_INFRASTRUCTURE_BOUNDED",
+    "broad_attempt_counts": {
+      "passed": 202,
+      "failed": 6,
+      "skipped": 3
+    },
+    "all_six_implicated_tests_resolved_on_compatible_in_repository_paths": true,
+    "full_suite_completion_claimed": false
+  },
+  "delivery": {
+    "draft_pull_request_number": 8,
+    "draft_pull_request_url": "https://github.com/Grativy6/ARC3/pull/8",
+    "draft": true,
+    "state": "OPEN",
+    "merged": false,
+    "base_branch": "main",
+    "head_branch": "experiment/003w-wise-scientist-clean-room"
+  },
+  "human_gated_actions": {
+    "terms_accepted": false,
+    "credentials_used": false,
+    "money_spent": false,
+    "submission_uploaded": false,
+    "pull_request_merged": false
+  },
+  "claims": [
+    "GAMESTATE_WIN_GENUINELY_OBSERVED",
+    "NO_GENERALIZATION_CLAIM",
+    "NO_OFFICIAL_RHAE_CLAIM"
+  ],
+  "next_action": "Owner review of draft pull request 8; do not merge without explicit authorization."
+}

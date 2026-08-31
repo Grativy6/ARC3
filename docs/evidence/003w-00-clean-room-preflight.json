@@ -1,0 +1,70 @@
+{
+  "schema": "arc3.build-003w.preflight.v0.1",
+  "status": "PASS",
+  "recorded_at": "2026-08-30T22:26:34.2012276Z",
+  "repository_root": "C:/Users/cdpan/OneDrive/Documents/ARC3-Wise-Scientist",
+  "branch": "experiment/003w-wise-scientist-clean-room",
+  "head": "04cf10a1e45b40e26bb31a0e5e106593e53b5696",
+  "tree": "c20a1fb8d141fdef1201af67a077a736f1f01287",
+  "comparison_base": "bea1eac99cb0f1b351526b1dc487d132ba1d40ef",
+  "comparison_base_is_ancestor": true,
+  "worktree_clean_before_003w_writes": true,
+  "required_files": [
+    {"path": "AGENTS.md", "sha256": "365489aa151b4a23c967f700b1ea13c12abe3475dc2a84907c1c8e79e8ab3278"},
+    {"path": "README.md", "sha256": "a20afb1eef85e7cc17f20c15ecd5c4514391abccaca3e048dc17ce24c8c55eea"},
+    {"path": "playground/README.md", "sha256": "01c007e52e3c09ed4300cbb6bf1f3676221fbeca03e825227dd298b29478b9b3"},
+    {"path": "docs/workflows/003w-wise-scientist-play-directive.md", "sha256": "39ec55d9ec92095a1567466e5e137b26a7a81ba7ad7453170954a4f318864f8e"},
+    {"path": "docs/workflows/001-local-public-failure-recovery.md", "sha256": "a40cf3de0246b004e043db8785f2a48750a5ca616f83ebeea7d2f4bd1f3d3034"},
+    {"path": "docs/specs/target-architecture.md", "sha256": "a36fef0abcc619c5eff58645699884e508980fc4c186a6642f199f187578d08b"},
+    {"path": "docs/specs/trace-ledger-contract.md", "sha256": "94959d0e3b9c5e3a62bd04b058f9fdb814e9d2b21df9dbb71a8410ba63fc2154"},
+    {"path": "docs/specs/evaluation-protocol.md", "sha256": "978baab8b8a62127c537d972a420a0985988f9c5f77cc4d992c8dd72a5897d8e"},
+    {"path": "docs/handoffs/000-autonomous-arc3.md", "sha256": "93c9e3a340726096875a89359f3fda42b225fb94e4c6702bd92feab33a4b67d3"},
+    {"path": "docs/ledger/run-state.json", "sha256": "c3ae8887037f07794a7d4febf1fadc49371f7c01e3a3dcd5d60cf2ff74d71de8"},
+    {"path": "docs/ledger/DECISIONS.md", "sha256": "a689682c97287e322a1f1d94847da451765bf605a97c0333e705bc1750ea869a"},
+    {"path": "docs/ledger/OPEN_BURDENS.md", "sha256": "5b05caeca59be5343bd7e109dbd850e328fdce66f33bb4026003b8fcdc5459cf"},
+    {"path": "docs/ledger/build-001-run-state.json", "sha256": "9be71b0e206a1e6ab1aa54234d2dafbe33107c0901ea63ecd292d7432ad81643"},
+    {"path": "docs/handoffs/001-local-public-recovery.md", "sha256": "eee320d0a2d95c1af9a505aca711fe98f56082a15dfc0c24d102bdad2ea9d90b"},
+    {"path": "docs/ledger/build-002-run-state.json", "sha256": "98c37cbb72a01eb87e71d4e94d1893d6823e17b8460d44e40a05387b0dc02890"},
+    {"path": "docs/handoffs/002-kaggle-competition-adapter.md", "sha256": "8093ef12dcac5d82ad5f69fb0afa9a4dcb9647fd4fc7140ae612cc58c300484c"}
+  ],
+  "inherited_evidence_verification": {
+    "build_001_repository_artifacts_checked": 62,
+    "build_001_missing": 0,
+    "build_001_hash_mismatches": 0,
+    "build_002_key_artifacts_checked": 10,
+    "build_002_missing_or_hash_mismatches": 0
+  },
+  "host": {
+    "os": "Microsoft Windows 10 Home 10.0.19045",
+    "cpu": "AMD Ryzen 5 2600 Six-Core Processor",
+    "logical_processors": 12,
+    "ram_bytes": 17124503552,
+    "gpu": "NVIDIA GeForce GTX 1660",
+    "git": "git version 2.54.0.windows.1",
+    "uv": "uv 0.12.5 via py -3.13 -m uv",
+    "python_target": "Astral CPython 3.12.14",
+    "timezone": "Eastern Standard Time"
+  },
+  "authority": {
+    "official_public_non_holdout_development_play": true,
+    "local_official_environment_actions": true,
+    "routine_repository_engineering": true,
+    "push_and_draft_pr": true,
+    "sealed_holdout_consumption": false,
+    "credentials_or_terms": false,
+    "paid_services": false,
+    "upload_or_submission": false,
+    "merge": false
+  },
+  "holdout": {
+    "status": "SEALED_UNCONSUMED",
+    "manifest_parsed": false,
+    "identities_loaded": 0,
+    "environment_actions": 0
+  },
+  "gameplay": {
+    "official_environment_opened": false,
+    "environment_actions": 0,
+    "win_observed": false
+  }
+}
