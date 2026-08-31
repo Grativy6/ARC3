@@ -1,5 +1,14 @@
 """Typed, trace-first support for the Wise Scientist play directive."""
 
+from arc3.wise_scientist.frame_witness import (
+    PatternLocation,
+    PositionChangeKind,
+    PositionTransition,
+    locate_pattern,
+    measure_position_transition,
+    require_position_transition,
+    require_unique_pattern,
+)
 from arc3.wise_scientist.journal import WiseEvent, WiseJournal
 from arc3.wise_scientist.models import (
     ActCommand,
@@ -39,6 +48,9 @@ __all__ = [
     "DistinctionRevision",
     "GoalStatus",
     "GoalUpdate",
+    "PatternLocation",
+    "PositionChangeKind",
+    "PositionTransition",
     "Prediction",
     "RevisionKind",
     "ScanCommand",
@@ -49,6 +61,10 @@ __all__ = [
     "WiseRationale",
     "WiseRunPhase",
     "WiseScientistRun",
+    "locate_pattern",
+    "measure_position_transition",
     "observation_hash",
     "observation_payload",
+    "require_position_transition",
+    "require_unique_pattern",
 ]
