@@ -51,6 +51,7 @@
     "environment_actions": 0,
     "resets": 0,
     "score": 0.0,
+    "official_rhae": null,
     "completion_genuinely_observed": false,
     "game_state_win_observed": false,
     "metrics": null,

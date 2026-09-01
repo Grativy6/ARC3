@@ -20,6 +20,7 @@ is consumed and was not rerun.
 | Environment actions | 0 |
 | Resets | 0 |
 | Score | 0.0 |
+| Official RHAE | null; not returned by the authoritative scorecard |
 | `GameState.WIN` observed | No |
 | Completion genuinely observed | No |
 | Raw evidence path | `artifacts/strongwiz-clean-room/runs/strongwiz-ls20-seed0-20260901T100522Z` |
