@@ -63,6 +63,22 @@
       "commit": "a5dfc0b64c625fb4a19cf074af845ebe0bb88ff8",
       "license": "NOASSERTION",
       "license_note": "Documentation source identity only; no repository license was detected."
+    },
+    {
+      "name": "Grativy6/strongwiz",
+      "url": "https://github.com/Grativy6/strongwiz.git",
+      "ref": "6944642da7f4f3e6428a597587038c3b365074a5",
+      "commit": "6944642da7f4f3e6428a597587038c3b365074a5",
+      "tree": "f9097631fa5c6fb1dcce7756baaa290d76d22d92",
+      "git_archive_sha256": "c4f84efa59840b1f77c24a7a0c087bf20665bb6897d7c520264133964a27ef6a",
+      "version": "0.1.0.dev0",
+      "license": "CC BY 4.0",
+      "license_spdx": "CC-BY-4.0",
+      "license_status": "operative",
+      "author": "Christopher D. Pang",
+      "steward": "Christopher D. Pang",
+      "acquired_at": "playground/vendor/strongwiz",
+      "accessed_at": "2026-09-01"
     }
   ],
   "packages": {

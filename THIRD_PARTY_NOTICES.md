@@ -1,7 +1,7 @@
 # Third-party notices
 
-Status: Build 001 Stage 00 license transition; Build 000 lock inventory preserved
-Last verified: 2026-08-21
+Status: Build 001 Stage 00 license transition; Build 000 lock inventory preserved; Strongwiz clean-room provenance added
+Last verified: 2026-09-01
 
 Christopher D. Pang is the author and steward of ARC3. Third-party works retain their own authorship, copyright, and license terms. This inventory records the exact Build 000 runtime, platform-input, and build-only identities; it does not grant a license for ARC3 itself.
 
@@ -10,6 +10,12 @@ owner's explicit 2026-08-21 approval. That first-party grant does not replace, r
 misrepresent any third-party terms below.
 
 The generated `runtime-requirements-linux-cp312.txt`, `runtime-wheels-linux-cp312.json`, and SPDX 2.3 SBOM bind every competition-runtime name and version below to one CPython 3.12 Linux x86_64 wheel SHA-256. The SBOM also records a version-keyed license-file or upstream-license identity for every runtime distribution.
+
+## Strongwiz clean-room dependency
+
+| Component | Exact source identity | License and stewardship | Acquisition and distribution boundary |
+|---|---|---|---|
+| Strongwiz `0.1.0.dev0` | [`Grativy6/strongwiz`](https://github.com/Grativy6/strongwiz.git) commit `6944642da7f4f3e6428a597587038c3b365074a5`; tree `f9097631fa5c6fb1dcce7756baaa290d76d22d92`; `git archive` SHA-256 `c4f84efa59840b1f77c24a7a0c087bf20665bb6897d7c520264133964a27ef6a` | Operative Creative Commons Attribution 4.0 International (`CC BY 4.0` / `CC-BY-4.0`); Christopher D. Pang is author and steward | Acquired at `playground/vendor/strongwiz`; accessed 2026-09-01. This source is pinned for the Strongwiz clean-room experiment and is not identified here as bundled in ARC3's final package. |
 
 ## Competition runtime distributions
 
