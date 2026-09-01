@@ -1,7 +1,9 @@
 # Strongwiz clean-room ARC-AGI-3 protocol v0.1
 
-Status: **FROZEN — NO ENVIRONMENT SESSION OPENED AND NO FRAME OR ACTION CONSUMED**  
-Experiment class: **community-style `local-public`, Codex-operated Strongwiz**  
+Status: **FROZEN — NO ENVIRONMENT SESSION OPENED AND NO FRAME OR ACTION CONSUMED**
+
+Experiment class: **community-style `local-public`, Codex-operated Strongwiz**
+
 Claim ceiling: **no autonomous-agent, Kaggle, hidden-game, or official score claim**
 
 ## Frozen aperture
