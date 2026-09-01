@@ -1,0 +1,138 @@
+{
+  "schema": "arc3.strongwiz-clean-room-result.v0.1",
+  "status": "FAILED_INFRASTRUCTURE",
+  "recorded_at": "2026-09-01T10:14:11.4378843Z",
+  "disposition": "The one measured public-development session ended before the first environment action because the line-oriented PTY transport truncated the operator response. This is not evidence for or against Strongwiz gameplay ability.",
+  "identity": {
+    "repository": "Grativy6/ARC3",
+    "branch": "experiment/003s-strongwiz-clean-room",
+    "comparison_base": "bea1eac99cb0f1b351526b1dc487d132ba1d40ef",
+    "preplay_frozen_commit": "54048a89fc935a2764b643398ce8c46d23e232e8",
+    "protocol_sha256": "9a75b29a73d4b0cf4549c2d083838c27cf7a7b90cc532a376a55f6bcb3d8df56",
+    "strongwiz_commit": "6944642da7f4f3e6428a597587038c3b365074a5",
+    "strongwiz_tree": "f9097631fa5c6fb1dcce7756baaa290d76d22d92",
+    "decision_provider": "external-hosted-codex-operator",
+    "integration_scope": "Strongwiz contracts, content identity, cadence, PEA/PECAN lab policy, routing, and SQLite ledger; not the full ReasoningSession runtime",
+    "hearthline_repository_or_runtime_used": false
+  },
+  "claim_ceiling": {
+    "surface": "local-public",
+    "label": "Codex-operated, community-style/self-reported ARC-AGI-3 public-development diagnostic",
+    "top_level_verified": false,
+    "official_or_kaggle_result": false,
+    "autonomous_offline_agent_result": false,
+    "strongwiz_gameplay_benchmark_earned": false,
+    "reason": "The external model/runtime is session-declared rather than artifact-hash-bound, and transport failed before an action reached the environment."
+  },
+  "target": {
+    "game_id": "ls20-9607627b",
+    "partition": "development",
+    "holdout": false,
+    "holdout_consumed": false,
+    "win_authority": "GameState.WIN"
+  },
+  "session_accounting": {
+    "uninspected_asset_acquisition_sessions": 1,
+    "measured_play_sessions": 1,
+    "additional_measured_sessions_after_failure": 0,
+    "one_shot_consumed": true,
+    "acquisition_frame_exposed_to_operator": false,
+    "public_exposure_ledger_events": 4,
+    "acquisition_intent_event_hash": "sha256:52fc193895d146939063a4b419b708faade4a854961b2a5d0fc76918447b090e",
+    "acquisition_completed_event_hash": "sha256:71522d9b4cbe5a8c58fc0ac5ba418b5569d90ac7c60bca675c3834d53256661b",
+    "measured_intent_event_hash": "sha256:d4e3952ddb2fad7ffd124762dab67c9666bcf134deb9ad336f9c775212e780de",
+    "measured_completed_event_hash": "sha256:4b56b74aa5982e11952ac8e49d75ca9e33cacb43ee8938ed5615c0271a6a71c3"
+  },
+  "authoritative_result": {
+    "run_id": "strongwiz-ls20-seed0-20260901T100522Z",
+    "final_environment_state": "NOT_FINISHED",
+    "levels_completed": 0,
+    "win_levels": 7,
+    "environment_actions": 0,
+    "resets": 0,
+    "score": 0.0,
+    "completion_genuinely_observed": false,
+    "game_state_win_observed": false,
+    "metrics": null,
+    "scorecard": {
+      "surface": "local-public",
+      "scorer": "arc-agi==0.9.9 local ScorecardManager",
+      "verified": true
+    }
+  },
+  "failure": {
+    "classification": "FAILED_INFRASTRUCTURE",
+    "exception_type": "PolicyError",
+    "message": "operator response is not valid JSON",
+    "unknown_environment_effect": false,
+    "operator_selected_action": {
+      "name": "ACTION1",
+      "coordinate": null
+    },
+    "official_environment_step_called": false,
+    "causal_boundary": "The response failed JSON parsing before authorization, submission marking, or the single-writer environment step."
+  },
+  "transport_forensics": {
+    "measured_interaction": {
+      "writes_to_operator_stdin": 1,
+      "intended_json_body_characters": 2168,
+      "transmitted_characters_including_lf": 2169,
+      "transmitted_utf8_bytes": 2169,
+      "ascii_only": true,
+      "trailing_lf_count": 1,
+      "write_chunk_id": "642efd",
+      "write_wall_seconds": 0.4311209,
+      "write_exit_code": 1,
+      "write_original_token_count": 720,
+      "continuation_session_returned": false,
+      "observed_pty_echo": "stopped inside the competing_predictions value before the complete JSON object"
+    },
+    "post_run_synthetic_reproduction": {
+      "arc_environment_opened": false,
+      "purpose": "Exercise only the same exec PTY plus write_stdin boundary.",
+      "intended_ascii_characters_including_lf": 2170,
+      "received_characters_including_lf": 511,
+      "received_ends_with_lf": true,
+      "received_sha256": "485ccd0e2eed21a4b1efcf30895a1e6d18789946a0dda924cf4eca14b37b4c0e",
+      "exec_session_id": 27590,
+      "write_chunk_id": "4b6963",
+      "write_exit_code": 0
+    },
+    "causal_conclusion": "The bridge incorrectly assumed a multi-kilobyte JSON response could be delivered as one PTY input line. The same path delivered only a 511-character newline-terminated prefix to a dummy readline consumer, which reproduces the measured invalid-JSON boundary without interacting with ARC.",
+    "next_reopening_handle": "Replace the PTY JSONL response path with a length-prefixed, chunked, or file-backed authenticated transport; test responses above 511 bytes before authorizing another measured session."
+  },
+  "runtime_resources": {
+    "elapsed_seconds": 81.25,
+    "peak_rss_bytes": 114139136,
+    "evidence_bytes_pre_result": 96167,
+    "declared_wall_limit_seconds": 32400,
+    "declared_memory_limit_bytes": 2147483648,
+    "declared_evidence_limit_bytes": 268435456,
+    "environment_runtime_network_mode": "offline-local",
+    "environment_runtime_socket_guard_attempts": 0
+  },
+  "receipt": {
+    "tracked_receipt_path": "docs/evidence/strongwiz-clean-room-result.v0.1.json",
+    "raw_evidence_path": "artifacts/strongwiz-clean-room/runs/strongwiz-ls20-seed0-20260901T100522Z",
+    "raw_replay_path": "artifacts/strongwiz-clean-room/runs/strongwiz-ls20-seed0-20260901T100522Z/official-recordings/d30053b2-103a-4c4d-8584-e062ea865230/ls20-9607627b-f7c50f91-b2fb-49da-9b31-4ec405c798c5.jsonl",
+    "result_internal_sha256": "sha256:3f25e959ef5f7d54fa486f6022f78311e80bcfc825ee1c551f4f5a182a4ec68c",
+    "result_file_sha256": "sha256:3e86e5ae2c7b897f3662613a5e2fc38c62ea4e98d92bbdcc933ae81f0a31c678",
+    "operator_receipt_internal_sha256": "sha256:22e160921178766848627a6b20dd1c2fe7bcea8d8fd3782e5cb97afdb898be88",
+    "operator_receipt_file_sha256": "sha256:5ef09914a02735b628d3cf8ca763b27e36fc9b56c3dc1d74fcc5fea7ee97bc0c",
+    "strongwiz_ledger_receipts": 4,
+    "strongwiz_ledger_head": "13bdafcd785f3e122ef3c464938de23d437c8734937907aa2eca8ff5f5f7b650",
+    "arc_trace_events": 2,
+    "arc_trace_file_sha256": "sha256:83e34b387f2c0e075268b00fc8621efdec00a1799d2f302391fcbe663476867a",
+    "arc_frame_blob_sha256": "sha256:f530cf6adb4a6d0fe87baa072ecf62be621169f9ef3b0baf09539904c5f4220f",
+    "official_recording_file_sha256": "sha256:25c36d8e0e750a49e39ef9e7bd9aee2bd412d78b1b5510c7c3bd13a8cd4ad770",
+    "public_exposure_ledger_file_sha256": "sha256:966ff4141155292f94479c78a95abde2c61c5bf91a413a8b1e477682d9a9b4ba"
+  },
+  "integrity": {
+    "context_boundary_incident": "CONTAINED_BEFORE_ENVIRONMENT_OPEN",
+    "context_boundary_receipt": "docs/evidence/strongwiz-clean-room-context-boundary-incident.v0.1.json",
+    "fresh_context_isolated_operator_selected_measured_actions": true,
+    "raw_frames_or_replay_committed": false,
+    "raw_artifact_availability": "repository-local ignored evidence; the tracked receipt preserves paths, identities, and hashes without publishing the observed frame",
+    "post_failure_arc_rerun_performed": false
+  }
+}
