@@ -40,6 +40,12 @@ jobs:
 
       - name: Acquire exact public Strongwiz source
         run: uv run python -m scripts.acquire_strongwiz_source
+        env:
+          # The frozen source receipt binds the measured Git-for-Windows CRLF
+          # worktree bytes. Keep the CI checkout conversion equally explicit.
+          GIT_CONFIG_COUNT: "1"
+          GIT_CONFIG_KEY_0: core.autocrlf
+          GIT_CONFIG_VALUE_0: "true"
 
       - name: Verify pinned Strongwiz itself
         run: >-
