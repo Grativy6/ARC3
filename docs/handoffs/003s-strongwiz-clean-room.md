@@ -13,6 +13,7 @@ Authoritative game receipt:
 - final state: `NOT_FINISHED`;
 - levels completed: 0 of 7;
 - actions/resets: 0/0;
+- measured wall time: 81.25 seconds;
 - completion genuinely observed: no;
 - run ID: `strongwiz-ls20-seed0-20260901T100522Z`;
 - result internal hash:

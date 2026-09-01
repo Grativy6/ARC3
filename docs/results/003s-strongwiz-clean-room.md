@@ -21,6 +21,7 @@ is consumed and was not rerun.
 | Resets | 0 |
 | Score | 0.0 |
 | Official RHAE | null; not returned by the authoritative scorecard |
+| Measured wall time | 81.25 seconds |
 | `GameState.WIN` observed | No |
 | Completion genuinely observed | No |
 | Raw evidence path | `artifacts/strongwiz-clean-room/runs/strongwiz-ls20-seed0-20260901T100522Z` |
