@@ -1,0 +1,21 @@
+{
+  "schema": "arc3.strongwiz-protocol-freeze.v0.1",
+  "status": "FROZEN_BEFORE_ENVIRONMENT_OPEN",
+  "frozen_at": "2026-09-01T08:27:57.0852123Z",
+  "protocol_path": "docs/experiments/strongwiz-clean-room-protocol.v0.1.md",
+  "protocol_sha256": "ec967187067a73512e8c33a94c6bb3c2920bb53ad6cdff92c52cd47920ad0331",
+  "environment_sessions_opened_before_freeze": 0,
+  "runtime_frames_consumed_before_freeze": 0,
+  "environment_actions_consumed_before_freeze": 0,
+  "target": "ls20-9607627b",
+  "partition": "development",
+  "measurement_scope": "single-game-local-public",
+  "non_reset_checkpoint_interval": 80,
+  "non_reset_safety_ceiling": 4096,
+  "reset_checkpoint_interval": 8,
+  "reset_safety_ceiling": 64,
+  "wall_time_safety_ceiling_seconds": 32400,
+  "terminal_authority": "GameState.WIN",
+  "operator_decision_source": "external-hosted-codex-operator",
+  "holdout_consumed": false
+}
