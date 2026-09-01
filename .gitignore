@@ -68,3 +68,5 @@ Desktop.ini
 *.trace
 tmp/
 temp/
+playground/**
+!playground/README.md

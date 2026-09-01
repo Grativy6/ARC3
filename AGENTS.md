@@ -2,6 +2,18 @@
 
 Bootstrap reference (frozen): `docs/reference/AGENTS.arc3-bootstrap.v0.1.md`
 
+## Strongwiz clean-room workspace boundary
+
+Before writing or executing an experiment in this checkout, read
+[`README.md`](README.md#strongwiz-clean-room-playground) and
+[`playground/README.md`](playground/README.md). When the active owner instruction directs work
+here, all project writes and generated task state must remain beneath this checkout's repository
+root. Do not inspect or import another ARC3 checkout, any Build 003 or 003w implementation,
+receipt, trace, replay, PR, or artifact, or either Hearthline repository. Strongwiz source may be
+used only after its exact public commit and license are pinned and it is brought inside this
+checkout. A task that grants read-only access remains read-only; these workspace instructions do
+not independently authorize a build, environment action, or mutation.
+
 ## Controlling instruction
 
 The controlling build plan is:
