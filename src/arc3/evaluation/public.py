@@ -24,7 +24,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Protocol, cast
 
 if TYPE_CHECKING:
-    from arc3.adapters import EnvironmentDescriptor, EnvironmentSession, ScoreSummary
+    from arc3.adapters import EnvironmentDescriptor, EnvironmentSession, Observation, ScoreSummary
     from arc3.profiling.hot_path import HotPathProfiler
 
 from arc3.competition_runtime import FROZEN_COMPETITION_RUNTIME
@@ -35,7 +35,14 @@ from arc3.trace import (
     EventJournal,
     ReplayEngine,
 )
-from arc3.types import ActionName, EnvironmentMode, EvaluationSurface, GameId, GameStateName
+from arc3.types import (
+    ActionName,
+    EnvironmentMode,
+    EvaluationSurface,
+    GameId,
+    GameStateName,
+    JSONValue,
+)
 
 from .artifacts import (
     canonical_json_bytes,
@@ -713,6 +720,7 @@ def acquire_local_public_asset(
     environments_dir: str | Path,
     recordings_dir: str | Path,
     base_url: str | None = None,
+    api_key: str | None = None,
 ) -> None:
     """Use the pinned official NORMAL path to cache and initialize one declared game.
 
@@ -745,7 +753,7 @@ def acquire_local_public_asset(
         arcade = cast(
             _ArcadeLike,
             arcade_type(
-                arc_api_key=os.environ.get("ARC_API_KEY", ""),
+                arc_api_key=(os.environ.get("ARC_API_KEY", "") if api_key is None else api_key),
                 arc_base_url=base_url or DEFAULT_BASE_URL,
                 operation_mode=normal_mode,
                 environments_dir=str(Path(environments_dir).resolve()),
@@ -963,7 +971,11 @@ def run_public_episode(
     max_resets: int,
     trace_sink: BaselineTraceSink | None = None,
     hot_path_profiler: HotPathProfiler | None = None,
+    pre_action_selection: Callable[[], None] | None = None,
     pre_action_authorization: Callable[[], None] | None = None,
+    environment_submission_started: Callable[[], None] | None = None,
+    environment_returned: Callable[[Observation], None] | None = None,
+    environment_reasoning: Mapping[str, JSONValue] | None = None,
 ) -> tuple[ScoreSummary | None, dict[str, object]]:
     """Execute one normalized official session with no game-specific behavior."""
 
@@ -981,11 +993,17 @@ def run_public_episode(
     first_progress: float | None = None
     actions_to_first_level: int | None = None
     started = time.perf_counter()
+    submitted_reasoning: Mapping[str, JSONValue] = environment_reasoning or {
+        "category": "stage15-local-public",
+        "summary": "generic typed policy selection; no game-specific rule",
+    }
     if trace_sink is not None:
         trace_sink.record_observation(observation)
     while actions < max_actions:
         if observation.state is GameStateName.WIN:
             break
+        if pre_action_selection is not None:
+            pre_action_selection()
         if trace_sink is not None:
             trace_sink.record_candidates(observation)
         decision_started = time.perf_counter()
@@ -996,34 +1014,32 @@ def run_public_episode(
         if action.name is ActionName.RESET and resets >= max_resets:
             break
         before = observation
-        if trace_sink is not None:
-            trace_sink.record_submitted(before, action)
         try:
-            # The authorization check is deliberately after policy selection
-            # and directly adjacent to the only environment-action boundary.
-            # RESET uses this same typed step path and is therefore covered.
+            # Authorize first so a rejected source/budget check cannot leave a
+            # false submission receipt. The marker and trace are then written
+            # immediately beside the single environment-action boundary.
             if pre_action_authorization is not None:
                 pre_action_authorization()
+            if environment_submission_started is not None:
+                environment_submission_started()
+            if trace_sink is not None:
+                trace_sink.record_submitted(before, action)
             if hot_path_profiler is not None and hot_path_profiler.enabled:
                 with hot_path_profiler.span("environment_step"):
                     observation = session.step(
                         action,
-                        reasoning={
-                            "category": "stage15-local-public",
-                            "summary": "generic typed policy selection; no game-specific rule",
-                        },
+                        reasoning=submitted_reasoning,
                     )
             else:
                 observation = session.step(
                     action,
-                    reasoning={
-                        "category": "stage15-local-public",
-                        "summary": "generic typed policy selection; no game-specific rule",
-                    },
+                    reasoning=submitted_reasoning,
                 )
         except Exception:
             invalid_actions += 1
             raise
+        if environment_returned is not None:
+            environment_returned(observation)
         if trace_sink is not None:
             trace_sink.record_consequence(before, action, observation)
             trace_sink.record_observation(observation)

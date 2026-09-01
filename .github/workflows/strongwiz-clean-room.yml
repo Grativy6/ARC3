@@ -1,0 +1,88 @@
+name: Strongwiz clean-room bridge
+
+"on":
+  push:
+    branches:
+      - "experiment/**"
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: "arc3-strongwiz-${{ github.workflow }}-${{ github.ref }}"
+  cancel-in-progress: true
+
+jobs:
+  verify-bridge:
+    name: Exact source and bridge contracts
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out exact ARC3 source
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install pinned uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.12.5"
+          enable-cache: true
+
+      - name: Install pinned Python
+        run: uv python install 3.12.14
+
+      - name: Synchronize locked ARC3 environment
+        run: uv sync --frozen --all-extras --dev --python 3.12.14 --link-mode copy
+
+      - name: Acquire exact public Strongwiz source
+        run: uv run python -m scripts.acquire_strongwiz_source
+
+      - name: Verify pinned Strongwiz itself
+        run: >-
+          uv run python -m pytest -q
+          -c playground/vendor/strongwiz/pyproject.toml
+          --basetemp="${{ runner.temp }}/strongwiz-pytest"
+          playground/vendor/strongwiz/tests
+        env:
+          PYTHONPATH: playground/vendor/strongwiz/src
+
+      - name: Verify Strongwiz bridge and affected adapter contracts
+        run: >-
+          uv run pytest -q
+          --basetemp="${{ runner.temp }}/arc3-strongwiz-pytest"
+          tests/unit/test_public_evaluation_contract.py
+          tests/integration/test_public_episode.py
+          tests/unit/test_strongwiz_operator.py
+          tests/unit/test_strongwiz_clean_run_freeze.py
+          tests/unit/test_strongwiz_runner_boundary.py
+
+      - name: Verify secret scanner behavior
+        run: >-
+          uv run pytest -q
+          --basetemp="${{ runner.temp }}/arc3-strongwiz-secret-pytest"
+          tests/integrity/test_secret_scan.py
+
+      - name: Lint and format-check changed surfaces
+        run: |
+          uv run ruff check src/arc3/evaluation/public.py src/arc3/evaluation/strongwiz_operator.py src/arc3/trace/instrumentation.py scripts/acquire_strongwiz_source.py scripts/run_strongwiz_operator.py tests/unit/test_strongwiz_clean_run_freeze.py tests/unit/test_strongwiz_operator.py tests/unit/test_strongwiz_runner_boundary.py
+          uv run ruff format --check src/arc3/evaluation/public.py src/arc3/evaluation/strongwiz_operator.py src/arc3/trace/instrumentation.py scripts/acquire_strongwiz_source.py scripts/run_strongwiz_operator.py tests/unit/test_strongwiz_clean_run_freeze.py tests/unit/test_strongwiz_operator.py tests/unit/test_strongwiz_runner_boundary.py
+
+      - name: Strict type-check bridge
+        run: >-
+          uv run mypy --strict
+          src/arc3/evaluation/public.py
+          src/arc3/evaluation/strongwiz_operator.py
+          scripts/acquire_strongwiz_source.py
+          scripts/run_strongwiz_operator.py
+
+      - name: Confirm tracked tree remains clean
+        shell: pwsh
+        run: |
+          $status = git status --porcelain --untracked-files=all
+          if ($status) {
+            throw "Verification changed the tracked ARC3 specimen:`n$status"
+          }

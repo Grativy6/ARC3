@@ -21,12 +21,21 @@ def _action_payload(action: ActionRequest) -> dict[str, JSONValue]:
 
 @dataclass(slots=True)
 class BaselineTraceSink(BaselineReceiptSink):
-    """Append raw baseline receipts without retaining mutable observations."""
+    """Append raw policy receipts without retaining mutable observations.
+
+    Historical callers keep the baseline defaults. Experiment adapters may supply
+    truthful concise labels without changing the immutable event vocabulary.
+    """
 
     journal: EventJournal
     episode_id: str
     source: SourceIdentity
     code_identity: CodeIdentity
+    rationale_category: RationaleCategory = RationaleCategory.BASELINE
+    rationale_summary: str = "bounded deterministic baseline selection"
+    alternative_interpretation: str = "unranked deterministic baseline alternative"
+    consequence_classification: str = "uninterpreted-baseline"
+    model_update_summary: str = "not-applicable-baseline"
     level_index: int = 0
     step_index: int = 0
 
@@ -103,15 +112,15 @@ class BaselineTraceSink(BaselineReceiptSink):
                     {
                         "action": candidate.value,
                         "weight": 0.0,
-                        "interpretation": "unranked deterministic baseline alternative",
+                        "interpretation": self.alternative_interpretation,
                     }
                     for candidate in observation.available_actions
                 ],
                 "selected_probe_or_plan_id": None,
                 "active_hypothesis_ids": [],
                 "predicted_outcome_ids": [],
-                "rationale_category": RationaleCategory.BASELINE.value,
-                "rationale_summary": "bounded deterministic baseline selection",
+                "rationale_category": self.rationale_category.value,
+                "rationale_summary": self.rationale_summary,
                 "alternatives_summary": "all currently advertised actions were eligible",
             },
         )
@@ -144,8 +153,8 @@ class BaselineTraceSink(BaselineReceiptSink):
                 "after_state": after.state.value,
                 "returned_frames": frame_receipts,
                 "levels_completed": after.levels_completed,
-                "effect_classification": "uninterpreted-baseline",
-                "model_update": "not-applicable-baseline",
+                "effect_classification": self.consequence_classification,
+                "model_update": self.model_update_summary,
             },
         )
         self.step_index += 1

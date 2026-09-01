@@ -1,0 +1,28 @@
+{
+  "schema": "arc3.strongwiz-context-boundary-incident.v0.1",
+  "status": "CONTAINED_BEFORE_ENVIRONMENT_OPEN",
+  "recorded_at": "2026-09-01T08:29:31.4072148Z",
+  "incident": {
+    "source_class": "unexpected_cross-task_payload_in_collaboration_status_output",
+    "game_specific_details_reproduced": false,
+    "affected_contexts": [
+      "root-supervisor",
+      "strongwiz-clean-play-lead"
+    ],
+    "all_affected_contexts_quarantined_from_gameplay_selection": true
+  },
+  "containment": {
+    "generic_bridge_engineering_may_continue": true,
+    "affected_contexts_may_open_environment": false,
+    "affected_contexts_may_select_measured_actions": false,
+    "fresh_fork_turns_none_operator_required": true,
+    "fresh_operator_must_not_inspect_collaboration_tree_or_status": true
+  },
+  "state_at_containment": {
+    "protocol_sha256": "9a75b29a73d4b0cf4549c2d083838c27cf7a7b90cc532a376a55f6bcb3d8df56",
+    "environment_sessions_opened": 0,
+    "runtime_frames_consumed": 0,
+    "environment_actions_consumed": 0,
+    "holdout_consumed": false
+  }
+}
