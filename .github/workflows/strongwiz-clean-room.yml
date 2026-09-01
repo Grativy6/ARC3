@@ -39,7 +39,9 @@ jobs:
         run: uv sync --frozen --all-extras --dev --python 3.12.14 --link-mode copy
 
       - name: Acquire exact public Strongwiz source
-        run: uv run python -m scripts.acquire_strongwiz_source
+        run: |
+          uv run python -m scripts.acquire_strongwiz_source
+          git -C playground/vendor/strongwiz config core.autocrlf true
         env:
           # The frozen source receipt binds the measured Git-for-Windows CRLF
           # worktree bytes. Keep the CI checkout conversion equally explicit.
