@@ -15,6 +15,9 @@
     "integration_scope": "Strongwiz contracts, content identity, cadence, PEA/PECAN lab policy, routing, and SQLite ledger; not the full ReasoningSession runtime",
     "hearthline_repository_or_runtime_used": false
   },
+  "policy_network_mode": "external-hosted-codex-operator",
+  "environment_acquisition_network_mode": "official-public-normal",
+  "environment_runtime_network_mode": "offline-local",
   "claim_ceiling": {
     "surface": "local-public",
     "label": "Codex-operated, community-style/self-reported ARC-AGI-3 public-development diagnostic",
