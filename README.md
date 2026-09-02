@@ -1,13 +1,13 @@
 # ARC3
 
 > [!CAUTION]
-> **Retired public research archive — read-only, unmaintained, and not approved for deployment.**
+> **Retired public research archive — unmaintained and not supported or endorsed by the author for deployment.**
 >
 > ARC3 is preserved for provenance and historical inspection. Do not deploy it, resume its autonomous workflows, or connect it to external systems, accounts, resources, people, or real-world decisions. Public availability, technical capability, a benchmark result, or successful execution does not create consent, permission, ethical approval, or authority.
 
 ARC3 was an ARC-AGI-3 research project exploring model-scientist workflows, BLA/CLEF learning, Wise Scientist, and an early Strongwiz clean-room bridge. It produced useful bounded evidence, but its autonomous instruction and execution surfaces predated integrated PECAN v1.0.4, PEA Core v1.1.3, and SEED v0.3 controls. Prompt-level budgets, workspace limits, receipts, and human gates are not an ethical-control system, security boundary, or containment guarantee.
 
-The current default branch therefore removes the quickstart, command-line launcher, official online adapter dependency, runnable source and scripts, and active GitHub Actions. Earlier versions remain visible only as historical commits and recorded public branch snapshots.
+The current default branch therefore removes the quickstart, command-line launcher, official online adapter dependency, runnable source and scripts, and default-branch workflow definitions. Repository-level Actions execution is disabled separately. Earlier runnable versions remain available through public Git history and existing public branch heads; forks, clones, caches, workflow artifacts, or other copies may also persist. Residual Actions artifacts are inventoried and may remain downloadable until expiry or deletion.
 
 ## Current boundary
 
@@ -26,7 +26,7 @@ Read the controlling retirement materials:
 
 ## Historical record
 
-The final active `main` commit before retirement was [`16ecb87c04b8a4db214db12d13d8d1d672d5a254`](https://github.com/Grativy6/ARC3/commit/16ecb87c04b8a4db214db12d13d8d1d672d5a254). The exact public refs visible at the transition are recorded in [the public-ref manifest](docs/legal/pre-retirement-public-refs.json). ARC3 had no tagged release and made no official competition submission.
+The final active `main` commit before retirement was [`16ecb87c04b8a4db214db12d13d8d1d672d5a254`](https://github.com/Grativy6/ARC3/commit/16ecb87c04b8a4db214db12d13d8d1d672d5a254). The exact public refs visible at the transition are recorded in [the public-ref manifest](docs/legal/pre-retirement-public-refs.json). The [retirement verification seal](docs/legal/RETIREMENT-SEAL.md) records the transition tree, bounded checks, GitHub settings, and the captured Actions artifact-and-cache inventory without claiming those objects were deleted. ARC3 had no tagged release and made no official competition submission.
 
 Earlier first-party ARC3 snapshots were publicly offered under MIT-0 when a root MIT-0 license was present. Retirement does not revoke or narrow rights already granted for those snapshots. New retirement material is all rights reserved unless a file expressly states otherwise; third-party material retains its own terms. See [LICENSE](LICENSE), [LICENSES/MIT-0-HISTORICAL.txt](LICENSES/MIT-0-HISTORICAL.txt), and [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 

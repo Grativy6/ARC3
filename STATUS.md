@@ -6,7 +6,7 @@
 | Active development | Ended |
 | Maintenance commitment | None |
 | Supported execution | None |
-| Approved deployment | None |
+| Author-supported deployment | None |
 | Final active `main` commit | `16ecb87c04b8a4db214db12d13d8d1d672d5a254` |
 | Historical first-party license | MIT-0 where present in recorded pre-retirement snapshots |
 | Retirement additions | All rights reserved unless a file states otherwise |
@@ -19,11 +19,11 @@ ARC3 produced useful bounded research evidence, but its autonomous instruction a
 
 ## Preserved record
 
-The repository retains reports, receipts, failures, limitations, history, dependency notices, and measured results for provenance. The default branch removes runnable source, scripts, packaging metadata, tests, and active workflows; Git history and recorded pre-retirement refs preserve their exact earlier state.
+The repository retains reports, receipts, failures, limitations, history, dependency notices, and measured results for provenance. The default branch removes runnable source, scripts, packaging metadata, tests, and default-branch workflow definitions; Git history and recorded pre-retirement refs preserve their exact earlier state. Repository-level Actions execution is disabled separately.
 
 Retirement does not strengthen any result or turn partial, local, synthetic, benchmark, or replay evidence into a broader claim. ARC3 does not establish AGI, consciousness, hidden-game generalization, ethical validity, or safe autonomous deployment.
 
-The public-ref boundary is recorded in [docs/legal/pre-retirement-public-refs.json](docs/legal/pre-retirement-public-refs.json). A public archive remains visible and may remain cloneable or forkable. Archival is preservation, not recall.
+The public-ref boundary is recorded in [docs/legal/pre-retirement-public-refs.json](docs/legal/pre-retirement-public-refs.json). The pre-archive setting checks, verification results, and captured Actions artifact-and-cache inventory are bound in [docs/legal/RETIREMENT-SEAL.md](docs/legal/RETIREMENT-SEAL.md). A public archive remains visible and may remain cloneable or forkable. Archival is preservation, not recall.
 
 ## Licensing boundary
 
