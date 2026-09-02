@@ -1,5 +1,8 @@
 # ARC3 Build 001 — Owner handoff
 
+> [!CAUTION]
+> **Historical, nonoperative record.** ARC3 is retired. Commands, permissions, next steps, and continuation language below are quotations from an earlier state and grant no present authority. Do not execute them; see the root `AGENTS.md` and `SAFETY.md`.
+
 ## Disposition
 
 - **Overall:** `BUILD 001: PARTIAL`

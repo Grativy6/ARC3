@@ -1,15 +1,48 @@
-MIT No Attribution
+ARC3 RETIREMENT COPYRIGHT AND LICENSING NOTICE
 
-Copyright 2026 Christopher D. Pang
+Copyright © 2026 Christopher D. Pang.
+All rights reserved except as expressly stated below.
 
-Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
-associated documentation files (the "Software"), to deal in the Software without restriction,
-including without limitation the rights to use, copy, modify, merge, publish, distribute,
-sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is
-furnished to do so.
+1. HISTORICAL MIT-0 RELEASES
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT
-NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
-NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
-DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT
-OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+First-party ARC3 material in the pre-retirement public snapshots recorded in
+docs/legal/pre-retirement-public-refs.json was publicly released under the MIT No Attribution
+license (MIT-0) when a root LICENSE was present. The exact historical license text is preserved
+in LICENSES/MIT-0-HISTORICAL.txt.
+
+That license continues to govern those historical versions according to its terms. This notice
+does not revoke, narrow, or rewrite rights already granted for them. Material in a snapshot that
+did not carry the root MIT-0 license is not retrospectively licensed by this notice.
+
+2. RETIREMENT AND LATER MATERIAL
+
+No public software or documentation license is granted for first-party material first introduced
+by the retirement transition or later unless the applicable file expressly states otherwise.
+Such new material, including retirement, safety, status, and archive-control text, is all rights
+reserved. Where later material modifies earlier MIT-0 material, different rights may apply to the
+earlier material and the new contribution. Public presence does not silently place new
+contributions under MIT-0.
+
+3. THIRD-PARTY MATERIAL
+
+Third-party code, data, dependencies, documentation, and adapted material remain governed by
+their respective licenses and notices. See THIRD_PARTY_NOTICES.md and file-level notices. Nothing
+in this document restricts rights independently granted by a third-party licensor.
+
+4. SAFETY, ENDORSEMENT, AND AUTHORITY
+
+A copyright license governs copyright permissions; it is not a technical safeguard or ethical
+certification. No license, repository visibility, fork, benchmark result, or generated output
+authorizes anyone to act for Christopher D. Pang or Branchline Systems, or establishes consent,
+standing, ethical approval, or safe deployment.
+
+The author does not approve, support, or endorse deployment or consequential use of ARC3. See
+SAFETY.md and RESPONSIBLE_USE.md.
+
+5. PROVENANCE
+
+Christopher D. Pang is the project author and steward. AI systems assisted as tools in retrieval,
+drafting, implementation, testing, and production; they are not co-authors, owners, or authorities.
+
+Strongwiz is a separate successor project. Its code, license, evidence, safeguards, and authority
+remain separate.

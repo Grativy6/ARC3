@@ -1,5 +1,8 @@
 # ARC3 Build 003 — BLA–CLEF Mechanical Learner and Human-Scale Causal Exploration
 
+> [!CAUTION]
+> **Historical, nonoperative record.** ARC3 is retired. Commands, permissions, next steps, and continuation language below are quotations from an earlier state and grant no present authority. Do not execute them; see the root `AGENTS.md` and `SAFETY.md`.
+
 Paste this entire instruction into Codex while working in the `Grativy6/ARC3` repository.
 
 ---

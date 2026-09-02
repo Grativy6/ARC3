@@ -1,5 +1,8 @@
 # Workflow 001 — ARC3 local-public failure recovery
 
+> [!CAUTION]
+> **Historical, nonoperative record.** ARC3 is retired. Commands, permissions, next steps, and continuation language below are quotations from an earlier state and grant no present authority. Do not execute them; see the root `AGENTS.md` and `SAFETY.md`.
+
 Status: **READY FOR CODEX**  
 Workflow version: **0.1**  
 Repository: `Grativy6/ARC3`  

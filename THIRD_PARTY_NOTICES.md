@@ -1,13 +1,16 @@
 # Third-party notices
 
-Status: Build 001 Stage 00 license transition; Build 000 lock inventory preserved
-Last verified: 2026-08-21
+Status: Historical dependency inventory preserved under the 2026-09-02 ARC3 retirement transition
+Last verified: 2026-09-02
 
 Christopher D. Pang is the author and steward of ARC3. Third-party works retain their own authorship, copyright, and license terms. This inventory records the exact Build 000 runtime, platform-input, and build-only identities; it does not grant a license for ARC3 itself.
 
-ARC3 first-party source is licensed under MIT-0 by the operative root `LICENSE`, following the
-owner's explicit 2026-08-21 approval. That first-party grant does not replace, relax, or
-misrepresent any third-party terms below.
+Earlier ARC3 first-party snapshots carrying the recorded root license were released under MIT-0
+following the owner's explicit 2026-08-21 approval. The 2026-09-02 retirement transition does not
+revoke that historical grant and does not offer new retirement material under MIT-0. See the
+operative root `LICENSE`, `LICENSES/MIT-0-HISTORICAL.txt`, and
+`docs/legal/pre-retirement-public-refs.json`. Neither the historical grant nor the prospective
+retirement notice replaces, relaxes, or misrepresents any third-party terms below.
 
 The generated `runtime-requirements-linux-cp312.txt`, `runtime-wheels-linux-cp312.json`, and SPDX 2.3 SBOM bind every competition-runtime name and version below to one CPython 3.12 Linux x86_64 wheel SHA-256. The SBOM also records a version-keyed license-file or upstream-license identity for every runtime distribution.
 
@@ -107,7 +110,8 @@ The platform's `arc_agi_3_wheels` directory is also an external competition inpu
 
 ## First-party distribution boundary
 
-The root `LICENSE` grants MIT-0 for ARC3 first-party source. Current ARC3 package metadata and
-SBOMs declare `MIT-0`. The original file under `docs/legal/candidates/` remains a nonoperative
-historical review surface; it is not the operative license. Third-party and platform-supplied
+The default branch is a retired, non-packaged archive. Historical ARC3 package metadata and SBOMs
+that declare `MIT-0` remain preserved as provenance for the snapshots that produced them; they do
+not describe newly added retirement material. The original file under `docs/legal/candidates/`
+also remains a nonoperative historical review surface. Third-party and platform-supplied
 components remain under the independent terms recorded above.

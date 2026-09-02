@@ -1,5 +1,8 @@
 # Build 000 — owner merge provenance
 
+> [!CAUTION]
+> **Historical, nonoperative record.** ARC3 is retired. Commands, permissions, next steps, and continuation language below are quotations from an earlier state and grant no present authority. Do not execute them; see the root `AGENTS.md` and `SAFETY.md`.
+
 Status: **OWNER ACTION RECORDED**  
 Recorded: 2026-08-21  
 Repository: `Grativy6/ARC3`

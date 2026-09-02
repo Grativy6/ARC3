@@ -1,0 +1,111 @@
+{
+  "schema": "arc3.pre-retirement-public-refs.v1",
+  "repository": "https://github.com/Grativy6/ARC3",
+  "recorded_at": "2026-09-02T03:51:44Z",
+  "default_branch": "main",
+  "final_active_main_commit": "16ecb87c04b8a4db214db12d13d8d1d672d5a254",
+  "final_active_main_tree": "790f4cab54cd9b65b59adf331dc583506f13fa0c",
+  "historical_mit0": {
+    "git_blob": "268e761c192fb45438d52dfa336c7be0d5cbabaa",
+    "sha256": "7f433e520d07d56ad14d92e9da9f580771479c30a2bfccc8024eed308f21bbe8",
+    "preserved_path": "LICENSES/MIT-0-HISTORICAL.txt"
+  },
+  "notes": [
+    "This records public branch tips immediately before the retirement transition.",
+    "MIT-0 applies where the recorded snapshot carried the identified root LICENSE; this manifest does not revoke or expand any historical grant.",
+    "A null root_license records absence of a root LICENSE at that tip and makes no affirmative license conclusion.",
+    "No tags existed at the recorded time."
+  ],
+  "refs": [
+    {
+      "ref": "refs/heads/build/000-arc3-end-to-end",
+      "commit": "ee4938b4fdba8bcea9fa3660d32d7b9597644896",
+      "tree": "61314e7d7367fe80c89e7188384fdf2d107cd52f",
+      "root_license": null
+    },
+    {
+      "ref": "refs/heads/build/001-local-public-recovery",
+      "commit": "8a42e43c96ac1edada21725746cdedcee24e68f9",
+      "tree": "7ddc02a03908e43caeda31edaf09bea9bd426cfd",
+      "root_license": "MIT-0"
+    },
+    {
+      "ref": "refs/heads/build/002-kaggle-competition-adapter",
+      "commit": "5448c53f3b7e08f606cf292e6068f3f9c9db16d4",
+      "tree": "700718c09c2a1532cea16526b290f57be0120371",
+      "root_license": "MIT-0"
+    },
+    {
+      "ref": "refs/heads/build/003-bla-clef-mechanical-learner",
+      "commit": "10e53c2150ea40da87eec5566ba7af1cfc3a591e",
+      "tree": "5724f886f1b6531492aa361272743f620a78588a",
+      "root_license": "MIT-0"
+    },
+    {
+      "ref": "refs/heads/chore/archive-agents-bootstrap-copy",
+      "commit": "df88ed44bbd8d1604e3003e22169f50d198356c3",
+      "tree": "371f39a033fe976dba6b310d93b3040fedbfe5c7",
+      "root_license": null
+    },
+    {
+      "ref": "refs/heads/chore/archive-agents-bootstrap-final",
+      "commit": "df88ed44bbd8d1604e3003e22169f50d198356c3",
+      "tree": "371f39a033fe976dba6b310d93b3040fedbfe5c7",
+      "root_license": null
+    },
+    {
+      "ref": "refs/heads/chore/archive-agents-bootstrap",
+      "commit": "df88ed44bbd8d1604e3003e22169f50d198356c3",
+      "tree": "371f39a033fe976dba6b310d93b3040fedbfe5c7",
+      "root_license": null
+    },
+    {
+      "ref": "refs/heads/chore/archive-agents-copy-v01",
+      "commit": "df88ed44bbd8d1604e3003e22169f50d198356c3",
+      "tree": "371f39a033fe976dba6b310d93b3040fedbfe5c7",
+      "root_license": null
+    },
+    {
+      "ref": "refs/heads/chore/archive-agents-v01",
+      "commit": "df88ed44bbd8d1604e3003e22169f50d198356c3",
+      "tree": "371f39a033fe976dba6b310d93b3040fedbfe5c7",
+      "root_license": null
+    },
+    {
+      "ref": "refs/heads/chore/archive-agents",
+      "commit": "8150f9c8f18d5790d104d89eca788058b6d7b5a2",
+      "tree": "8403c4f7473c2b9d920c1c3703485ec43616518b",
+      "root_license": null
+    },
+    {
+      "ref": "refs/heads/experiment/003s-strongwiz-clean-room",
+      "commit": "1ece4fba33cffa9571ea3d6f638813aa8bd35a22",
+      "tree": "838e34d920ef5f36dcceaa6b1901dad3b2c25c17",
+      "root_license": "MIT-0"
+    },
+    {
+      "ref": "refs/heads/experiment/003w-wise-scientist-clean-room",
+      "commit": "467b54d7dfba85042cdd68b653f7cad2243d9dd9",
+      "tree": "04b031a5cda5ebd9efa66ead0f8b856b7ec02da1",
+      "root_license": "MIT-0"
+    },
+    {
+      "ref": "refs/heads/main",
+      "commit": "16ecb87c04b8a4db214db12d13d8d1d672d5a254",
+      "tree": "790f4cab54cd9b65b59adf331dc583506f13fa0c",
+      "root_license": "MIT-0"
+    },
+    {
+      "ref": "refs/heads/workflow/000-autonomous-arc3",
+      "commit": "5d08e97a21290ba24e3b0282a2aefd6a32784330",
+      "tree": "371f39a033fe976dba6b310d93b3040fedbfe5c7",
+      "root_license": null
+    },
+    {
+      "ref": "refs/heads/workflow/001-local-public-recovery",
+      "commit": "d4ca724ad72fd4f16c904725e1a4ab2dab0eb137",
+      "tree": "4586299448e9b1b585a0878674ed5f9afa60c384",
+      "root_license": null
+    }
+  ]
+}

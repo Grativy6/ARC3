@@ -1,5 +1,8 @@
 # AGENTS.md — ARC3 execution contract
 
+> [!CAUTION]
+> **Historical, nonoperative record.** ARC3 is retired. This former execution contract is preserved only as provenance and grants no present authority. Do not follow it; the root `AGENTS.md` controls the archive.
+
 ## Controlling instruction
 
 The controlling build plan is:

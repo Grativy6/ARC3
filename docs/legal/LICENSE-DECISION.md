@@ -1,5 +1,8 @@
 # ARC3 license decision — owner gate
 
+> [!IMPORTANT]
+> This is a preserved historical decision record. On 2026-09-02, ARC3 entered a prospective retirement transition. That transition does not revoke the MIT-0 grant recorded here, but it does not offer new retirement material under MIT-0. See [RETIREMENT-LICENSE-DECISION.md](RETIREMENT-LICENSE-DECISION.md), the operative root `LICENSE`, and [pre-retirement-public-refs.json](pre-retirement-public-refs.json).
+
 Status: **APPROVED — MIT-0 OPERATIVE FOR ARC3 FIRST-PARTY SOURCE**
 
 Owner: **Christopher D. Pang**
